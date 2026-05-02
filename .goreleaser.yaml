@@ -1,0 +1,142 @@
+# GoReleaser config — produces signed binaries + multi-arch container images
+# on every git tag matching v*.*.*. See https://goreleaser.com/.
+version: 2
+
+project_name: cluster-health-autopilot
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: cha
+    main: ./cmd/cha
+    binary: cha
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+      - -X main.version={{ .Version }}
+      - -X main.commit={{ .ShortCommit }}
+    goos:
+      - linux
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    # We don't build a Windows binary in v0.1 — the binary's primary surface
+    # is SRE laptops (mac/linux) and CI/CD runners (linux). Add windows
+    # later if a partner asks.
+
+archives:
+  - id: cha
+    formats: [tar.gz]
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files:
+      - LICENSE
+      - README.md
+      - SECURITY.md
+
+checksum:
+  name_template: "checksums.txt"
+
+snapshot:
+  version_template: "{{ .Tag }}-next"
+
+# Container images: multi-arch, published to GitHub Container Registry.
+# The Helm chart's default image.tag matches Chart.appVersion, so a
+# release with tag v0.1.0 produces ghcr.io/<owner>/cluster-health-autopilot:v0.1.0
+# which the chart will then pull cleanly.
+dockers:
+  - id: amd64
+    image_templates:
+      - "ghcr.io/bionic-ai-solutions/cluster-health-autopilot:{{ .Version }}-amd64"
+      - "ghcr.io/bionic-ai-solutions/cluster-health-autopilot:latest-amd64"
+    use: buildx
+    build_flag_templates:
+      - "--platform=linux/amd64"
+      - "--label=org.opencontainers.image.source=https://github.com/Bionic-AI-Solutions/cluster-health-autopilot"
+      - "--label=org.opencontainers.image.title={{ .ProjectName }}"
+      - "--label=org.opencontainers.image.description=Self-healing operations layer for Kubernetes"
+      - "--label=org.opencontainers.image.url=https://github.com/Bionic-AI-Solutions/cluster-health-autopilot"
+      - "--label=org.opencontainers.image.version={{ .Version }}"
+      - "--label=org.opencontainers.image.revision={{ .FullCommit }}"
+      - "--label=org.opencontainers.image.licenses=Apache-2.0"
+      - "--build-arg=VERSION={{ .Version }}"
+      - "--build-arg=COMMIT={{ .ShortCommit }}"
+      - "--build-arg=TARGETOS=linux"
+      - "--build-arg=TARGETARCH=amd64"
+    extra_files:
+      - cmd
+      - internal
+      - go.mod
+      - go.sum
+    goarch: amd64
+
+  - id: arm64
+    image_templates:
+      - "ghcr.io/bionic-ai-solutions/cluster-health-autopilot:{{ .Version }}-arm64"
+      - "ghcr.io/bionic-ai-solutions/cluster-health-autopilot:latest-arm64"
+    use: buildx
+    build_flag_templates:
+      - "--platform=linux/arm64"
+      - "--label=org.opencontainers.image.source=https://github.com/Bionic-AI-Solutions/cluster-health-autopilot"
+      - "--label=org.opencontainers.image.title={{ .ProjectName }}"
+      - "--label=org.opencontainers.image.description=Self-healing operations layer for Kubernetes"
+      - "--label=org.opencontainers.image.url=https://github.com/Bionic-AI-Solutions/cluster-health-autopilot"
+      - "--label=org.opencontainers.image.version={{ .Version }}"
+      - "--label=org.opencontainers.image.revision={{ .FullCommit }}"
+      - "--label=org.opencontainers.image.licenses=Apache-2.0"
+      - "--build-arg=VERSION={{ .Version }}"
+      - "--build-arg=COMMIT={{ .ShortCommit }}"
+      - "--build-arg=TARGETOS=linux"
+      - "--build-arg=TARGETARCH=arm64"
+    extra_files:
+      - cmd
+      - internal
+      - go.mod
+      - go.sum
+    goarch: arm64
+
+# Multi-arch manifest: combines the two arch-specific images under a
+# single tag (and `latest`), so users pull `:v0.1.0` and Docker picks
+# the right arch for their platform automatically.
+docker_manifests:
+  - name_template: "ghcr.io/bionic-ai-solutions/cluster-health-autopilot:{{ .Version }}"
+    image_templates:
+      - "ghcr.io/bionic-ai-solutions/cluster-health-autopilot:{{ .Version }}-amd64"
+      - "ghcr.io/bionic-ai-solutions/cluster-health-autopilot:{{ .Version }}-arm64"
+  - name_template: "ghcr.io/bionic-ai-solutions/cluster-health-autopilot:latest"
+    image_templates:
+      - "ghcr.io/bionic-ai-solutions/cluster-health-autopilot:latest-amd64"
+      - "ghcr.io/bionic-ai-solutions/cluster-health-autopilot:latest-arm64"
+
+changelog:
+  sort: asc
+  use: github
+  filters:
+    exclude:
+      - "^docs:"
+      - "^chore:"
+      - "^ci:"
+      - "Merge pull request"
+
+release:
+  github:
+    owner: Bionic-AI-Solutions
+    name: cluster-health-autopilot
+  draft: false
+  prerelease: auto
+  name_template: "{{ .ProjectName }} {{ .Version }}"
+  header: |
+    Cluster Health Autopilot **{{ .Version }}** — see the [README](https://github.com/Bionic-AI-Solutions/cluster-health-autopilot/blob/main/README.md) for the 30-second demo.
+
+    ## Install
+    - Binaries below for darwin-{amd64,arm64} and linux-{amd64,arm64}.
+    - Container image: `ghcr.io/bionic-ai-solutions/cluster-health-autopilot:{{ .Version }}` (multi-arch).
+    - Helm chart: `charts/cluster-health-autopilot/` at this tag.
+  footer: |
+    ---
+    Full changelog: [{{ .PreviousTag }}...{{ .Tag }}](https://github.com/Bionic-AI-Solutions/cluster-health-autopilot/compare/{{ .PreviousTag }}...{{ .Tag }})
