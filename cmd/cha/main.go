@@ -21,6 +21,7 @@ import (
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/diagnose"
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/fix"
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/probe"
+	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/report"
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/snapshot"
 	"github.com/spf13/cobra"
 )
@@ -157,6 +158,7 @@ func remediateCmd() *cobra.Command {
 		kubeconfig   string
 		outputFormat string
 		dryRun       bool
+		slackWebhook string
 	)
 	c := &cobra.Command{
 		Use:   "remediate",
@@ -206,6 +208,16 @@ Secrets, ConfigMaps, or any CRD.`,
 				results = append(results, f.Run(ctx, src, mut))
 			}
 
+			// Optional Slack post — summary of actions taken (read-only diagnose
+			// is empty here since remediate doesn't probe; the diagnose
+			// subcommand is the right surface for the full picture).
+			if slackWebhook != "" {
+				payload := report.FormatSlack(nil, nil, results, !dryRun)
+				if err := report.PostSlack(nil, slackWebhook, payload); err != nil {
+					fmt.Fprintln(os.Stderr, "warning: slack post failed:", err)
+				}
+			}
+
 			switch outputFormat {
 			case "json":
 				return printRemediateJSON(results, dryRun)
@@ -221,6 +233,7 @@ Secrets, ConfigMaps, or any CRD.`,
 	c.Flags().StringVar(&kubeconfig, "kubeconfig", "", "Path to kubeconfig (default: in-cluster, then $KUBECONFIG, then ~/.kube/config)")
 	c.Flags().StringVar(&outputFormat, "format", "text", "Output format: text|json")
 	c.Flags().BoolVar(&dryRun, "dry-run", false, "Show what would be done without mutating cluster state (each fixer reports Refused)")
+	c.Flags().StringVar(&slackWebhook, "slack-webhook", "", "Optional Slack incoming-webhook URL — posts a summary of fixes applied")
 	return c
 }
 
@@ -289,6 +302,7 @@ func diagnoseCmd() *cobra.Command {
 		live         bool
 		kubeconfig   string
 		outputFormat string
+		slackWebhook string
 	)
 	c := &cobra.Command{
 		Use:   "diagnose",
@@ -336,6 +350,15 @@ func diagnoseCmd() *cobra.Command {
 				diagnostics = append(diagnostics, a.Run(ctx, src)...)
 			}
 
+			// Slack post is fire-and-forget — failures are logged but the
+			// command's primary output (text/JSON to stdout) still runs.
+			if slackWebhook != "" {
+				payload := report.FormatSlack(results, diagnostics, nil, false)
+				if err := report.PostSlack(nil, slackWebhook, payload); err != nil {
+					fmt.Fprintln(os.Stderr, "warning: slack post failed:", err)
+				}
+			}
+
 			switch outputFormat {
 			case "json":
 				return printJSON(results, diagnostics)
@@ -350,6 +373,7 @@ func diagnoseCmd() *cobra.Command {
 	c.Flags().BoolVar(&live, "live", false, "Run against the live cluster")
 	c.Flags().StringVar(&kubeconfig, "kubeconfig", "", "Path to kubeconfig (default: in-cluster, then $KUBECONFIG, then ~/.kube/config)")
 	c.Flags().StringVar(&outputFormat, "format", "text", "Output format: text|json")
+	c.Flags().StringVar(&slackWebhook, "slack-webhook", "", "Optional Slack incoming-webhook URL — posts a formatted summary of the run (works with both --snapshot and --live)")
 	return c
 }
 
