@@ -99,6 +99,7 @@ func diagnoseCmd() *cobra.Command {
 
 			probes := []probe.Probe{
 				probe.Nodes{},
+				probe.Postgres{},
 				probe.PVCs{},
 				probe.Services{Targets: probe.DefaultTargets()},
 			}
