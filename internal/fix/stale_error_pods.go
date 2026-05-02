@@ -42,16 +42,9 @@ func (StaleErrorPods) Run(ctx context.Context, src snapshot.Source, m snapshot.M
 		name := pod.GetName()
 		object := "Pod/" + ns + "/" + name
 
-		if IsProtectedNamespace(ns) {
-			r.Skipped = append(r.Skipped, SkipReason{
-				Object: object,
-				Reason: "protected namespace",
-			})
-			continue
-		}
-
-		// Status phase Failed covers both Error/CrashLoop terminals. The
-		// kubectl STATUS column "Error" surfaces the same underlying state.
+		// Pattern gate first: only Failed pods are candidates. This keeps
+		// the Skipped list informative — we don't list every Running pod
+		// in kube-system as "protected namespace".
 		phase, _, _ := nestedString(pod.Object, "status", "phase")
 		if phase != "Failed" {
 			continue
@@ -70,6 +63,16 @@ func (StaleErrorPods) Run(ctx context.Context, src snapshot.Source, m snapshot.M
 				})
 				continue
 			}
+		}
+
+		// Now the namespace gate: only flag protected-ns pods that WOULD
+		// have been candidates.
+		if IsProtectedNamespace(ns) {
+			r.Skipped = append(r.Skipped, SkipReason{
+				Object: object,
+				Reason: "protected namespace",
+			})
+			continue
 		}
 
 		if err := m.Delete(ctx, snapshot.GVRPod, ns, name); err != nil {
