@@ -13,31 +13,52 @@ A self-healing operational layer for Kubernetes clusters: **detect → remediate
 - **Zero-trust offline mode** — point it at a captured `kubectl get … -o json` snapshot. No install, no RBAC, no write permissions. Diagnose your cluster from your laptop in 30 seconds.
 - **In-cluster live mode** — installed via Helm; runs as a CronJob with two narrowly-scoped ClusterRoles (read-only + tightly-bounded write); posts to Slack on a schedule.
 
-## Quickstart — zero-trust diagnose
+## 30-second demo (no cluster needed)
+
+Try the analyzer against the sample fixture in this repo:
 
 ```sh
-# 1. Capture a snapshot of your cluster (read-only)
-kubectl get pods,events,nodes,pvc,deployments,replicasets,jobs,cronjobs \
-  --all-namespaces -o json > snapshot.json
-kubectl get externalsecrets,clusters.postgresql.cnpg.io \
-  --all-namespaces -o json >> snapshot.json 2>/dev/null  # optional CRDs
-
-# 2. Run cha against the snapshot — never touches your cluster
-cha diagnose --snapshot snapshot.json
+git clone https://github.com/Bionic-AI-Solutions/cluster-health-autopilot.git
+cd cluster-health-autopilot
+go run ./cmd/cha diagnose --snapshot examples/sample-cluster
 ```
 
-Sample output:
-```
-🔎 Secret `mcp/mcp-openproject-secrets` missing key `openproject-url`
-   referenced by Deployment/mcp-openproject-server.
-   Owning ExternalSecret: `mcp/mcp-openproject-secrets`.
-   Action: add data/template entry exposing `openproject-url`,
-           or remove the env reference if unused.
+Expected output:
 
-🔎 ExternalSecret `mail/mail-service-api-key` not Ready:
-   cannot find secret data for key: "mail_service_api_key"
-   Action: check Vault path / property names.
 ```
+• Ceph Storage:     🟢 HEALTHY    1 cluster(s): rook-ceph@rook-ceph OK (11.5% used)
+• Cluster Nodes:    🟢 HEALTHY    All 4 nodes ready
+• PostgreSQL:       🟢 HEALTHY    1 CNPG cluster(s): main@data (3/3 ready, primary=main-1)
+• Storage Claims:   🟢 HEALTHY    All 3 PVCs bound
+
+Diagnostics (3):
+  🔎 Secret `billing/billing-svc-secrets` missing key `STRIPE_API_KEY` (referenced by
+     Deployment/billing-svc in ns billing). Owning ExternalSecret: `billing/billing-svc-secrets`
+     — add data/template entry exposing `STRIPE_API_KEY`, or remove the env reference if unused.
+  🔎 ExternalSecret `billing/billing-svc-secrets` not Ready: error processing spec.data[0]
+     (key: shared/billing/config), err: cannot find secret data for key: "stripe_api_key".
+  🔎 ExternalSecret `billing/old-payment-gateway` not Ready: error processing spec.data[0]
+     (key: shared/legacy/payments), err: vault path not found.
+```
+
+That's the headline: a precise diagnosis (which Secret, which key, which Deployment, which ExternalSecret, what Vault property is missing) without an install, without RBAC, without writing anything.
+
+## Run on your own cluster
+
+```sh
+# 1. Capture a snapshot of your cluster (read-only — never modifies state)
+cha snapshot capture --out ./my-cluster
+# or single-tarball form for sharing:
+cha snapshot capture --tar my-cluster.tgz
+
+# 2. Diagnose offline against the captured snapshot
+cha diagnose --snapshot ./my-cluster
+
+# 3. Or just run it against the live cluster directly
+cha diagnose --live
+```
+
+`cha snapshot capture` reads only — it cannot modify any cluster state. It writes a directory (or `.tgz`) of `kubectl get -o json` files for the canonical resource set the analyzers need.
 
 ## In-cluster install (Helm)
 

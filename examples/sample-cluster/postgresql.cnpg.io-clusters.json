@@ -1,0 +1,17 @@
+{
+  "apiVersion": "postgresql.cnpg.io/v1",
+  "kind": "ClusterList",
+  "items": [
+    {
+      "apiVersion": "postgresql.cnpg.io/v1",
+      "kind": "Cluster",
+      "metadata": {"name": "main", "namespace": "data"},
+      "status": {
+        "phase": "Cluster in healthy state",
+        "instances": 3,
+        "readyInstances": 3,
+        "currentPrimary": "main-1"
+      }
+    }
+  ]
+}

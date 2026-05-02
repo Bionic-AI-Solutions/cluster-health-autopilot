@@ -1,0 +1,71 @@
+{
+  "apiVersion": "v1",
+  "kind": "PodList",
+  "items": [
+    {
+      "apiVersion": "v1",
+      "kind": "Pod",
+      "metadata": {
+        "name": "frontend-deploy-7d4f8c-abcde",
+        "namespace": "demo",
+        "labels": {"app": "frontend"},
+        "ownerReferences": [{"kind": "ReplicaSet", "name": "frontend-deploy-7d4f8c"}]
+      },
+      "status": {
+        "phase": "Running",
+        "containerStatuses": [{"name": "web", "ready": true, "state": {"running": {}}}]
+      }
+    },
+    {
+      "apiVersion": "v1",
+      "kind": "Pod",
+      "metadata": {
+        "name": "frontend-deploy-7d4f8c-fghij",
+        "namespace": "demo",
+        "labels": {"app": "frontend"},
+        "ownerReferences": [{"kind": "ReplicaSet", "name": "frontend-deploy-7d4f8c"}]
+      },
+      "status": {
+        "phase": "Running",
+        "containerStatuses": [{"name": "web", "ready": true, "state": {"running": {}}}]
+      }
+    },
+    {
+      "apiVersion": "v1",
+      "kind": "Pod",
+      "metadata": {
+        "name": "billing-svc-9a2b1-old1",
+        "namespace": "billing",
+        "labels": {"app": "billing-svc"},
+        "ownerReferences": [{"kind": "ReplicaSet", "name": "billing-svc-9a2b1"}]
+      },
+      "status": {
+        "phase": "Running",
+        "containerStatuses": [{"name": "api", "ready": true, "state": {"running": {}}}]
+      }
+    },
+    {
+      "apiVersion": "v1",
+      "kind": "Pod",
+      "metadata": {
+        "name": "billing-svc-d3e4f-new1",
+        "namespace": "billing",
+        "labels": {"app": "billing-svc"},
+        "ownerReferences": [{"kind": "ReplicaSet", "name": "billing-svc-d3e4f"}]
+      },
+      "status": {
+        "phase": "Running",
+        "containerStatuses": [{
+          "name": "api",
+          "ready": false,
+          "state": {
+            "waiting": {
+              "reason": "CreateContainerConfigError",
+              "message": "couldn't find key STRIPE_API_KEY in Secret billing/billing-svc-secrets"
+            }
+          }
+        }]
+      }
+    }
+  ]
+}

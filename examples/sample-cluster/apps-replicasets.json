@@ -1,0 +1,33 @@
+{
+  "apiVersion": "apps/v1",
+  "kind": "ReplicaSetList",
+  "items": [
+    {
+      "apiVersion": "apps/v1",
+      "kind": "ReplicaSet",
+      "metadata": {
+        "name": "billing-svc-d3e4f",
+        "namespace": "billing",
+        "ownerReferences": [{"kind": "Deployment", "name": "billing-svc"}]
+      }
+    },
+    {
+      "apiVersion": "apps/v1",
+      "kind": "ReplicaSet",
+      "metadata": {
+        "name": "billing-svc-9a2b1",
+        "namespace": "billing",
+        "ownerReferences": [{"kind": "Deployment", "name": "billing-svc"}]
+      }
+    },
+    {
+      "apiVersion": "apps/v1",
+      "kind": "ReplicaSet",
+      "metadata": {
+        "name": "frontend-deploy-7d4f8c",
+        "namespace": "demo",
+        "ownerReferences": [{"kind": "Deployment", "name": "frontend-deploy"}]
+      }
+    }
+  ]
+}
