@@ -1,0 +1,26 @@
+# Build artifacts
+/bin/
+/dist/
+/coverage.out
+/coverage.html
+
+# Go
+*.test
+*.prof
+*.exe
+*.exe~
+
+# Editor / IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Local testing fixtures with real data
+testdata/local/
+*.tgz
+!examples/*.tgz
+
+# OS
+.DS_Store
+Thumbs.db
