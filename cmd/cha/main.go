@@ -112,6 +112,7 @@ func diagnoseCmd() *cobra.Command {
 
 			analyzers := []diagnose.Analyzer{
 				diagnose.SecretKeyMissing{},
+				diagnose.FailingExternalSecrets{},
 			}
 			var diagnostics []diagnose.Diagnostic
 			for _, a := range analyzers {
