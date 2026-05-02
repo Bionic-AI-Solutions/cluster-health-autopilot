@@ -134,6 +134,7 @@ var kindToResource = map[string]string{
 	"CronJob":               "cronjobs",
 	"ExternalSecret":        "externalsecrets",
 	"Cluster":               "clusters",
+	"CephCluster":           "cephclusters",
 }
 
 func indexKey(gvr schema.GroupVersionResource) string {
