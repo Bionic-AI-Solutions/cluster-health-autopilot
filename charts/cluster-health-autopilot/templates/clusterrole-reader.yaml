@@ -1,0 +1,47 @@
+{{- if .Values.rbac.create }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "cha.readerName" . }}
+  labels:
+    {{- include "cha.labels" . | nindent 4 }}
+rules:
+  # Core probe surface.
+  - apiGroups: [""]
+    resources: ["pods", "nodes", "persistentvolumeclaims", "events", "namespaces"]
+    verbs: ["get", "list"]
+  # Workload owner-chain walkers (Pod → ReplicaSet → Deployment / Job / CronJob).
+  - apiGroups: ["apps"]
+    resources: ["deployments", "replicasets", "statefulsets", "daemonsets"]
+    verbs: ["get", "list"]
+  - apiGroups: ["batch"]
+    resources: ["jobs", "cronjobs"]
+    verbs: ["get", "list"]
+  # Schema-drift analyzers.
+  - apiGroups: ["external-secrets.io"]
+    resources: ["externalsecrets"]
+    verbs: ["get", "list"]
+  # Database-operator probe (CloudNativePG).
+  - apiGroups: ["postgresql.cnpg.io"]
+    resources: ["clusters"]
+    verbs: ["get", "list"]
+  # Storage-cluster probe (rook-ceph).
+  - apiGroups: ["ceph.rook.io"]
+    resources: ["cephclusters"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "cha.readerName" . }}
+  labels:
+    {{- include "cha.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "cha.readerName" . }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "cha.serviceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+{{- end }}

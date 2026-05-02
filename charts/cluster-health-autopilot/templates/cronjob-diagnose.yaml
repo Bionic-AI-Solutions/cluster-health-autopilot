@@ -1,0 +1,63 @@
+{{- if .Values.diagnose.enabled }}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "cha.fullname" . }}-diagnose
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "cha.labels" . | nindent 4 }}
+    cha.bionicaisolutions.com/role: diagnose
+spec:
+  schedule: {{ .Values.diagnose.schedule | quote }}
+  concurrencyPolicy: {{ .Values.diagnose.concurrencyPolicy }}
+  successfulJobsHistoryLimit: {{ .Values.diagnose.successfulJobsHistoryLimit }}
+  failedJobsHistoryLimit: {{ .Values.diagnose.failedJobsHistoryLimit }}
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            {{- include "cha.selectorLabels" . | nindent 12 }}
+            cha.bionicaisolutions.com/role: diagnose
+        spec:
+          serviceAccountName: {{ include "cha.serviceAccountName" . }}
+          restartPolicy: OnFailure
+          {{- with .Values.image.pullSecrets }}
+          imagePullSecrets:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.priorityClassName }}
+          priorityClassName: {{ . }}
+          {{- end }}
+          {{- with .Values.nodeSelector }}
+          nodeSelector:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.tolerations }}
+          tolerations:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.affinity }}
+          affinity:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          securityContext:
+            {{- toYaml .Values.podSecurityContext | nindent 12 }}
+          containers:
+            - name: cha
+              image: {{ include "cha.image" . }}
+              imagePullPolicy: {{ .Values.image.pullPolicy }}
+              args:
+                - diagnose
+                - --live
+                - --format={{ .Values.diagnose.format }}
+                {{- if and .Values.slack.enabled .Values.slack.webhookSecretName }}
+                - --slack-webhook=$(SLACK_WEBHOOK_URL)
+                {{- end }}
+              env:
+                {{- include "cha.slackEnv" . | nindent 16 }}
+              resources:
+                {{- toYaml .Values.resources | nindent 16 }}
+              securityContext:
+                {{- toYaml .Values.securityContext | nindent 16 }}
+{{- end }}

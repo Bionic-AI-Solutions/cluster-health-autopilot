@@ -1,0 +1,52 @@
+Cluster Health Autopilot has been installed.
+
+Next scheduled run:
+{{- if .Values.diagnose.enabled }}
+  diagnose:    {{ include "cha.fullname" . }}-diagnose       (schedule: {{ .Values.diagnose.schedule }})
+{{- end }}
+{{- if .Values.remediation.enabled }}
+  remediate:   {{ include "cha.fullname" . }}-remediate      (schedule: {{ .Values.remediation.schedule }}, dryRun: {{ .Values.remediation.dryRun }})
+{{- else }}
+  remediate:   DISABLED (set --set remediation.enabled=true to turn on auto-fixers)
+{{- end }}
+
+Run an ad-hoc diagnose right now (does NOT wait for the cron tick):
+
+  kubectl create job --from=cronjob/{{ include "cha.fullname" . }}-diagnose \
+    -n {{ .Release.Namespace }} cha-diagnose-now
+
+  kubectl logs -n {{ .Release.Namespace }} job/cha-diagnose-now -f
+
+{{- if not .Values.slack.enabled }}
+
+Slack reporting is OFF. To enable, create a Secret holding your incoming-
+webhook URL and helm upgrade with:
+
+  helm upgrade {{ .Release.Name }} <chart> \
+    --reuse-values \
+    --set slack.enabled=true \
+    --set slack.webhookSecretName=<your-secret-name>
+
+The Secret should look like:
+  apiVersion: v1
+  kind: Secret
+  metadata:
+    name: <your-secret-name>
+    namespace: {{ .Release.Namespace }}
+  type: Opaque
+  data:
+    WEBHOOK_URL: <base64 of https://hooks.slack.com/services/...>
+{{- end }}
+
+Permissions granted to ServiceAccount "{{ include "cha.serviceAccountName" . }}":
+  ✅ Read: pods, nodes, pvc, events, deployments, replicasets, jobs, cronjobs,
+          externalsecrets, cnpg clusters, cephclusters
+{{- if .Values.remediation.enabled }}
+  ✅ Write: pods/delete, jobs/delete, deployments/patch
+            (NEVER: secrets, configmaps, CRDs)
+{{- else }}
+  ❌ No write permissions (remediation disabled).
+{{- end }}
+
+For more information, see:
+  https://github.com/Bionic-AI-Solutions/cluster-health-autopilot

@@ -1,0 +1,82 @@
+# Default values for cluster-health-autopilot.
+#
+# Two CronJobs are templated:
+#   1. diagnose   — read-only probes + analyzers, ALWAYS enabled.
+#   2. remediate  — runs the whitelisted auto-fixers (live cluster mutation),
+#                   OPT-IN via .Values.remediation.enabled. Off by default.
+
+image:
+  repository: ghcr.io/bionic-ai-solutions/cluster-health-autopilot
+  tag: ""                         # default = .Chart.appVersion (e.g. v0.1.0)
+  pullPolicy: IfNotPresent
+  pullSecrets: []                 # e.g. [{name: dockerhub-secret}]
+
+# Diagnose CronJob — always enabled.
+diagnose:
+  enabled: true
+  schedule: "0 9 * * *"           # Daily 09:00 UTC. Same default as the bash version.
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  concurrencyPolicy: Forbid
+  format: text                    # text | json — JSON for fleet-console pipelines
+
+# Remediate CronJob — opt-in.
+remediation:
+  enabled: false
+  schedule: "*/30 * * * *"        # Every 30 min. Off by default — turn on once your team trusts the fixers.
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  concurrencyPolicy: Forbid
+  dryRun: false                   # When true, fixers report Refused without mutating cluster state.
+
+# Slack reporting. URL must come from a pre-existing Secret in the install namespace.
+# Per the Vault-only secrets policy, prefer wiring this Secret via External Secrets Operator
+# from a Vault path your team already trusts (see SECURITY.md).
+slack:
+  enabled: false
+  webhookSecretName: ""           # e.g. "cha-slack-webhook"
+  webhookSecretKey: "WEBHOOK_URL" # key inside the Secret holding the webhook URL
+
+# RBAC. Keep enabled — the CronJob will fail without these.
+rbac:
+  create: true
+  # Read-only role: probes + analyzers.
+  reader:
+    name: ""                      # default: <release>-reader
+  # Write role: fixers. Granted only when .Values.remediation.enabled is true.
+  remediator:
+    name: ""                      # default: <release>-remediator
+
+serviceAccount:
+  create: true
+  name: ""                        # default: <release>-sa
+  annotations: {}
+
+# Resource requests / limits (per CronJob pod).
+resources:
+  limits:
+    cpu: 500m
+    memory: 256Mi
+  requests:
+    cpu: 50m
+    memory: 64Mi
+
+# Pod-level scheduling controls.
+nodeSelector: {}
+tolerations: []
+affinity: {}
+priorityClassName: ""
+
+# Pod / container security context.
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 65532
+  fsGroup: 65532
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop: ["ALL"]

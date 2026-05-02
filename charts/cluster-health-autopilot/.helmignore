@@ -1,0 +1,12 @@
+# Patterns to ignore when packaging.
+.DS_Store
+.git/
+.gitignore
+.vscode/
+.idea/
+*.swp
+*.swo
+*.tmproj
+*.bak
+*.log
+README.md.tmp
