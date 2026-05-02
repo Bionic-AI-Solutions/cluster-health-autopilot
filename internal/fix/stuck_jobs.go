@@ -53,15 +53,15 @@ func (StuckJobsWithBadSecretRef) Run(ctx context.Context, src snapshot.Source, m
 		podName := pod.GetName()
 		podObj := "Pod/" + ns + "/" + podName
 
-		if IsProtectedNamespace(ns) {
-			r.Skipped = append(r.Skipped, SkipReason{Object: podObj, Reason: "protected namespace"})
-			continue
-		}
 		jobName := ownerNameByKind(pod.GetOwnerReferences(), "Job")
 		if jobName == "" {
 			continue
 		}
 		if !podHasMissingSecretKey(pod) {
+			continue
+		}
+		if IsProtectedNamespace(ns) {
+			r.Skipped = append(r.Skipped, SkipReason{Object: podObj, Reason: "protected namespace"})
 			continue
 		}
 
@@ -115,6 +115,25 @@ func ownerNameByKind(refs []metav1.OwnerReference, kind string) string {
 		}
 	}
 	return ""
+}
+
+// podInCCE reports whether any container's waiting reason is
+// CreateContainerConfigError. Mirrors the bash awk on the STATUS column
+// against the structured pod state.
+func podInCCE(pod unstructured.Unstructured) bool {
+	statuses, _, _ := unstructured.NestedSlice(pod.Object, "status", "containerStatuses")
+	for _, s := range statuses {
+		sm, ok := s.(map[string]any)
+		if !ok {
+			continue
+		}
+		state, _ := sm["state"].(map[string]any)
+		waiting, _ := state["waiting"].(map[string]any)
+		if reason, _ := waiting["reason"].(string); reason == "CreateContainerConfigError" {
+			return true
+		}
+	}
+	return false
 }
 
 // podHasMissingSecretKey reports whether any container's waiting message

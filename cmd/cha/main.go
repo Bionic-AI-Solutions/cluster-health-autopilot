@@ -7,13 +7,9 @@
 //
 //	cha diagnose --snapshot <path>   # zero-trust offline mode (no cluster access)
 //	cha diagnose --live              # live cluster mode (uses kubeconfig or in-cluster SA)
+//	cha snapshot capture             # wraps `kubectl get` into a kubectl-shaped JSON bundle
+//	cha remediate --live             # runs the whitelisted fixers (live mode only)
 //	cha version                      # version info
-//
-// Future:
-//
-//	cha snapshot capture             # wraps `kubectl get` to produce a snapshot bundle
-//	cha report --format slack|json   # post a structured report somewhere
-//	cha remediate --live             # gated; runs the whitelisted fixers
 package main
 
 import (
@@ -23,6 +19,7 @@ import (
 	"os"
 
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/diagnose"
+	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/fix"
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/probe"
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/snapshot"
 	"github.com/spf13/cobra"
@@ -40,15 +37,19 @@ a whitelist of known-safe fixes, re-verifies, and reports.
 
 Two modes:
   --snapshot   zero-trust offline diagnose against a captured kubectl JSON export.
-  --live       in-cluster live mode using kubeconfig or in-cluster SA.
+               No install, no RBAC, no write permissions, no cluster access.
+  --live       live mode using kubeconfig or in-cluster ServiceAccount.
 
-In v0.1.x, fixers are not yet ported (live remediation is week-4 work).
-This release is diagnose-only.`,
+Subcommands:
+  diagnose     run probes + analyzers (read-only; works in both modes)
+  snapshot     capture cluster state for offline diagnose
+  remediate    run the whitelisted auto-fixers (live mode only)`,
 		SilenceUsage: true,
 	}
 
 	root.AddCommand(diagnoseCmd())
 	root.AddCommand(snapshotCmd())
+	root.AddCommand(remediateCmd())
 	root.AddCommand(versionCmd())
 
 	if err := root.Execute(); err != nil {
@@ -148,6 +149,127 @@ func printCaptureSummary(s *snapshot.CaptureSummary, isTar bool) {
 		fmt.Printf(" (%d skipped)", skipped)
 	}
 	fmt.Println()
+}
+
+func remediateCmd() *cobra.Command {
+	var (
+		live         bool
+		kubeconfig   string
+		outputFormat string
+		dryRun       bool
+	)
+	c := &cobra.Command{
+		Use:   "remediate",
+		Short: "Run the whitelisted auto-fixers (live mode only)",
+		Long: `Runs the whitelisted auto-remediation fixers against the live cluster.
+
+Refuses to run against snapshots — fixers are live-only by design (the
+type system enforces this; snapshot.File does not implement Mutator).
+
+The current fixer set is intentionally small and reversible:
+  - StaleErrorPods           delete Failed pods owned by Job or unowned
+  - StuckJobsWithBadSecretRef delete a frozen CronJob Job so the cron respawns
+  - StuckRSPods              kubectl rollout restart when stuck RS rev != live
+
+Mutations forbidden by design (would need a human + git): edits to
+Secrets, ConfigMaps, or any CRD.`,
+		Example: `  cha remediate --live
+  cha remediate --live --format json
+  cha remediate --live --dry-run`,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if !live {
+				return fmt.Errorf("remediate requires --live; fixers refuse to run against snapshots")
+			}
+			ctx := cmd.Context()
+			if ctx == nil {
+				ctx = context.Background()
+			}
+			src, err := snapshot.LoadLive(kubeconfig)
+			if err != nil {
+				return err
+			}
+			var mut snapshot.Mutator
+			if !dryRun {
+				mut = snapshot.AsMutator(src)
+				if mut == nil {
+					return fmt.Errorf("source does not support mutation; expected Live source")
+				}
+			}
+
+			fixers := []fix.Fixer{
+				fix.StaleErrorPods{},
+				fix.StuckJobsWithBadSecretRef{},
+				fix.StuckRSPods{},
+			}
+			results := make([]fix.Result, 0, len(fixers))
+			for _, f := range fixers {
+				results = append(results, f.Run(ctx, src, mut))
+			}
+
+			switch outputFormat {
+			case "json":
+				return printRemediateJSON(results, dryRun)
+			case "text", "":
+				printRemediateText(results, dryRun)
+				return nil
+			default:
+				return fmt.Errorf("unknown --format %q (want json or text)", outputFormat)
+			}
+		},
+	}
+	c.Flags().BoolVar(&live, "live", false, "Run against the live cluster (required)")
+	c.Flags().StringVar(&kubeconfig, "kubeconfig", "", "Path to kubeconfig (default: in-cluster, then $KUBECONFIG, then ~/.kube/config)")
+	c.Flags().StringVar(&outputFormat, "format", "text", "Output format: text|json")
+	c.Flags().BoolVar(&dryRun, "dry-run", false, "Show what would be done without mutating cluster state (each fixer reports Refused)")
+	return c
+}
+
+func printRemediateJSON(results []fix.Result, dryRun bool) error {
+	out := map[string]any{
+		"version": version,
+		"dryRun":  dryRun,
+		"fixers":  results,
+	}
+	enc := json.NewEncoder(os.Stdout)
+	enc.SetIndent("", "  ")
+	return enc.Encode(out)
+}
+
+func printRemediateText(results []fix.Result, dryRun bool) {
+	tag := "live"
+	if dryRun {
+		tag = "dry-run"
+	}
+	fmt.Printf("Cluster Health Autopilot — remediate (%s)\n", tag)
+	fmt.Println(repeatRune('=', 60))
+	totalActions := 0
+	totalSkipped := 0
+	for _, r := range results {
+		fmt.Printf("\n• %s", r.Fixer)
+		if r.Refused != "" {
+			fmt.Printf(" — refused (%s)\n", r.Refused)
+			continue
+		}
+		fmt.Printf(": %d action(s), %d skipped\n", len(r.Actions), len(r.Skipped))
+		for _, a := range r.Actions {
+			fmt.Printf("    🔧 %s [%s]\n", a.Description, a.Object)
+			totalActions++
+		}
+		// Print only the first 5 skips per fixer to avoid drowning the output.
+		shown := r.Skipped
+		if len(shown) > 5 {
+			shown = shown[:5]
+		}
+		for _, s := range shown {
+			fmt.Printf("    ⏭️  %s — %s\n", s.Object, s.Reason)
+		}
+		if len(r.Skipped) > 5 {
+			fmt.Printf("    … and %d more skipped\n", len(r.Skipped)-5)
+		}
+		totalSkipped += len(r.Skipped)
+	}
+	fmt.Println(repeatRune('=', 60))
+	fmt.Printf("Total: %d action(s) applied, %d skipped\n", totalActions, totalSkipped)
 }
 
 func versionCmd() *cobra.Command {
