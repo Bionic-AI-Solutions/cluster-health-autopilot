@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/diagnose"
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/probe"
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/snapshot"
 	"github.com/spf13/cobra"
@@ -109,11 +110,19 @@ func diagnoseCmd() *cobra.Command {
 				results = append(results, p.Run(ctx, src))
 			}
 
+			analyzers := []diagnose.Analyzer{
+				diagnose.SecretKeyMissing{},
+			}
+			var diagnostics []diagnose.Diagnostic
+			for _, a := range analyzers {
+				diagnostics = append(diagnostics, a.Run(ctx, src)...)
+			}
+
 			switch outputFormat {
 			case "json":
-				return printJSON(results)
+				return printJSON(results, diagnostics)
 			case "text", "":
-				return printText(results, src.Mode())
+				return printText(results, diagnostics, src.Mode())
 			default:
 				return fmt.Errorf("unknown --format %q (want json or text)", outputFormat)
 			}
@@ -126,17 +135,18 @@ func diagnoseCmd() *cobra.Command {
 	return c
 }
 
-func printJSON(results []probe.Result) error {
+func printJSON(results []probe.Result, diagnostics []diagnose.Diagnostic) error {
 	out := map[string]any{
-		"version": version,
-		"results": results,
+		"version":     version,
+		"results":     results,
+		"diagnostics": diagnostics,
 	}
 	enc := json.NewEncoder(os.Stdout)
 	enc.SetIndent("", "  ")
 	return enc.Encode(out)
 }
 
-func printText(results []probe.Result, mode snapshot.Mode) error {
+func printText(results []probe.Result, diagnostics []diagnose.Diagnostic, mode snapshot.Mode) error {
 	fmt.Printf("Cluster Health Autopilot — diagnose (%s mode)\n", mode)
 	fmt.Println(repeatRune('=', 60))
 	totalFindings := 0
@@ -151,8 +161,14 @@ func printText(results []probe.Result, mode snapshot.Mode) error {
 			}
 		}
 	}
+	if len(diagnostics) > 0 {
+		fmt.Printf("\nDiagnostics (%d):\n", len(diagnostics))
+		for _, d := range diagnostics {
+			fmt.Printf("  🔎 %s\n", d.Message)
+		}
+	}
 	fmt.Println(repeatRune('=', 60))
-	fmt.Printf("Total findings: %d\n", totalFindings)
+	fmt.Printf("Total findings: %d, diagnostics: %d\n", totalFindings, len(diagnostics))
 	return nil
 }
 
