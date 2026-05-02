@@ -23,7 +23,7 @@ jobs:
 
       - uses: actions/setup-go@v6
         with:
-          go-version: "1.25.x"
+          go-version: "1.26.x"
           check-latest: true
           cache: true
 
@@ -59,11 +59,11 @@ jobs:
 
       - uses: actions/setup-go@v6
         with:
-          go-version: "1.25.x"
+          go-version: "1.26.x"
           check-latest: true
           cache: true
 
       - uses: golangci/golangci-lint-action@v8
         with:
-          version: v2.5.0
+          version: v2.12.0
           args: --timeout=5m
