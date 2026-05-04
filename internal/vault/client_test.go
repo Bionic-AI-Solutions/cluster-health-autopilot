@@ -96,6 +96,23 @@ func TestNew_RejectsEmptyAddress(t *testing.T) {
 	}
 }
 
+func TestListKeys_RejectsTraversalPath(t *testing.T) {
+	// path.Join used to clean "../" silently; explicit string construction must
+	// reject traversal before making any HTTP call.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Errorf("HTTP request must not be made for traversal path; got %s", r.URL.Path)
+	}))
+	defer srv.Close()
+
+	c, _ := New(Config{Address: srv.URL, Token: "t", HTTPClient: srv.Client()})
+	for _, bad := range []string{"../../sys/policies", "team/../admin", "../secret"} {
+		_, err := c.ListKeys(context.Background(), bad)
+		if err == nil {
+			t.Errorf("path %q: want error, got nil", bad)
+		}
+	}
+}
+
 func TestListKeys_CustomMount(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/v1/kv/data/foo" {

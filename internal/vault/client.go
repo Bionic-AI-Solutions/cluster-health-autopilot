@@ -26,7 +26,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"path"
 	"strings"
 	"time"
 )
@@ -122,12 +121,21 @@ func New(cfg Config) (*HTTPClient, error) {
 
 // ListKeys implements Client.
 func (c *HTTPClient) ListKeys(ctx context.Context, secretPath string) ([]string, error) {
+	// Reject path traversal. secretPath comes from ESO spec.data[].remoteRef.key
+	// and spec.dataFrom[].extract.key, which are writable by namespace admins.
+	// path.Join would silently clean "../" components and redirect the request
+	// to an unintended Vault path (e.g. "../../sys/policies" → "/v1/sys/policies").
+	for _, seg := range strings.Split(secretPath, "/") {
+		if seg == ".." || seg == "." {
+			return nil, fmt.Errorf("vault: path %q contains traversal component %q", secretPath, seg)
+		}
+	}
 	// KV-v2 read URL: {addr}/v1/{mount}/data/{path}
 	u, err := url.Parse(c.addr)
 	if err != nil {
 		return nil, fmt.Errorf("vault: invalid address: %w", err)
 	}
-	u.Path = path.Join(u.Path, "v1", c.mount, "data", secretPath)
+	u.Path = "/v1/" + c.mount + "/data/" + secretPath
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
 	if err != nil {
 		return nil, err
