@@ -20,6 +20,12 @@ import (
 // needs. Anything not in this list is invisible to probes/analyzers.
 //
 // Order is stable so file layouts in tarballs are reproducible.
+// Note on GVRSecret: we list Secrets so the proactive L5 analyzer can see
+// which keys exist on each Secret, but `cha snapshot capture` deliberately
+// does NOT include them — capturing Secret values to disk would be a
+// privacy regression (any auditor reading the snapshot tarball would see
+// every secret in the cluster). Live mode reads Secrets directly and
+// inspects only the key NAMES, never the byte values.
 var CaptureGVRs = []schema.GroupVersionResource{
 	GVRPod,
 	GVRNode,
@@ -32,6 +38,7 @@ var CaptureGVRs = []schema.GroupVersionResource{
 	GVRExtSecret,
 	GVRCNPGCluster,
 	GVRCephCluster,
+	// GVRSecret intentionally excluded — see comment above.
 }
 
 // CaptureSummary records what a Capture call wrote.

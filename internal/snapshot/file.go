@@ -130,11 +130,13 @@ var kindToResource = map[string]string{
 	"Event":                 "events",
 	"Deployment":            "deployments",
 	"ReplicaSet":            "replicasets",
+	"StatefulSet":           "statefulsets",
 	"Job":                   "jobs",
 	"CronJob":               "cronjobs",
 	"ExternalSecret":        "externalsecrets",
 	"Cluster":               "clusters",
 	"CephCluster":           "cephclusters",
+	"Secret":                "secrets",
 }
 
 func indexKey(gvr schema.GroupVersionResource) string {

@@ -10,6 +10,15 @@ rules:
   - apiGroups: [""]
     resources: ["pods", "nodes", "persistentvolumeclaims", "events", "namespaces"]
     verbs: ["get", "list"]
+  # Secret reads — the ProactiveSecretKeyCheck analyzer needs to inspect the
+  # SET OF KEY NAMES on each Secret (not their byte values) to detect
+  # references-to-missing-keys before pods crash. The analyzer code only
+  # iterates `for k := range secret.Data` and never reads the values.
+  # See internal/diagnose/proactive_secret_key_check.go for the privacy
+  # contract; remove this rule if the analyzer is ever disabled.
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "list"]
   # Workload owner-chain walkers (Pod → ReplicaSet → Deployment / Job / CronJob).
   - apiGroups: ["apps"]
     resources: ["deployments", "replicasets", "statefulsets", "daemonsets"]
