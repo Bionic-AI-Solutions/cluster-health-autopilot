@@ -3,22 +3,27 @@
 
 // cha — Cluster Health Autopilot CLI
 //
-// Subcommands (v0.1.x):
+// Subcommands:
 //
 //	cha diagnose --snapshot <path>   # zero-trust offline mode (no cluster access)
 //	cha diagnose --live              # live cluster mode (uses kubeconfig or in-cluster SA)
 //	cha snapshot capture             # wraps `kubectl get` into a kubectl-shaped JSON bundle
-//	cha remediate --live             # runs the whitelisted fixers (live mode only)
+//	cha remediate --live             # runs the whitelisted auto-fixers (live mode only)
+//	cha anonymize [file...]          # anonymize cha diagnose --format json output to JSONL
 //	cha version                      # version info
 package main
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
+	"path/filepath"
 	"time"
 
+	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/anonymize"
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/diagnose"
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/fix"
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/probe"
@@ -53,6 +58,7 @@ Subcommands:
 	root.AddCommand(diagnoseCmd())
 	root.AddCommand(snapshotCmd())
 	root.AddCommand(remediateCmd())
+	root.AddCommand(anonymizeCmd())
 	root.AddCommand(versionCmd())
 
 	if err := root.Execute(); err != nil {
@@ -285,6 +291,76 @@ func printRemediateText(results []fix.Result, dryRun bool) {
 	}
 	fmt.Println(repeatRune('=', 60))
 	fmt.Printf("Total: %d action(s) applied, %d skipped\n", totalActions, totalSkipped)
+}
+
+// anonymizeCmd implements `cha anonymize [file...]`.
+// Each input file must be a `cha diagnose --format json` run. When no files
+// are given, JSON is read from stdin. Each run is written as one JSONL line
+// to stdout with all PII fields hashed.
+func anonymizeCmd() *cobra.Command {
+	var runID string
+	var ts string
+
+	c := &cobra.Command{
+		Use:   "anonymize [file...]",
+		Short: "Anonymize cha diagnose --format json output to JSONL",
+		Long: `anonymize reads one or more cha diagnose --format json files (or stdin)
+and writes an anonymized JSONL record per run to stdout.
+
+Namespace names, workload names, secret names, and Vault path segments are
+replaced with deterministic short hashes (SHA-256 truncated to 8 hex chars).
+The same token always produces the same hash, so time-series comparisons
+across daily runs remain coherent.
+
+Typical pipeline (daily cron + nightly GitHub Action):
+
+  cha diagnose --live --format json > /tmp/run.json
+  cha anonymize /tmp/run.json >> runs/$(date +%Y-%m-%d).jsonl`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			a := anonymize.New()
+			enc := json.NewEncoder(os.Stdout)
+
+			processReader := func(r io.Reader, name string) error {
+				data, err := io.ReadAll(r)
+				if err != nil {
+					return fmt.Errorf("read %s: %w", name, err)
+				}
+				var in anonymize.RunInput
+				if err := json.Unmarshal(data, &in); err != nil {
+					return fmt.Errorf("parse %s: %w", name, err)
+				}
+				rid := runID
+				if rid == "" {
+					rid = filepath.Base(name)
+				}
+				stamp := ts
+				if stamp == "" {
+					stamp = time.Now().UTC().Format(time.RFC3339)
+				}
+				rec := a.Anonymize(in, rid, stamp)
+				return enc.Encode(rec)
+			}
+
+			if len(args) == 0 {
+				return processReader(bufio.NewReader(os.Stdin), "stdin")
+			}
+			for _, f := range args {
+				fh, err := os.Open(f)
+				if err != nil {
+					return err
+				}
+				err = processReader(fh, f)
+				_ = fh.Close()
+				if err != nil {
+					return err
+				}
+			}
+			return nil
+		},
+	}
+	c.Flags().StringVar(&runID, "run-id", "", "Run identifier stamped on each JSONL record (default: input filename)")
+	c.Flags().StringVar(&ts, "timestamp", "", "RFC3339 timestamp to stamp on each record (default: now)")
+	return c
 }
 
 func versionCmd() *cobra.Command {
