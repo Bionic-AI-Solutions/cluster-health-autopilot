@@ -30,6 +30,7 @@ type CertExpiry struct {
 	WarnWindow time.Duration
 }
 
+// Name returns the analyzer's identifier.
 func (CertExpiry) Name() string { return "CertExpiry" }
 
 const defaultWarnWindow = 14 * 24 * time.Hour

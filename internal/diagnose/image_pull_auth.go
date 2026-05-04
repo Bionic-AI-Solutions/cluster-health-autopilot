@@ -25,6 +25,7 @@ import (
 // .dockerconfigjson for the registry in question.
 type ImagePullAuth struct{}
 
+// Name returns the analyzer's identifier.
 func (ImagePullAuth) Name() string { return "ImagePullAuth" }
 
 // authSignals are substrings in kubelet pull-failure events that indicate a
