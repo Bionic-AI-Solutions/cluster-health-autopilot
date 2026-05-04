@@ -88,3 +88,28 @@ can compose with their own env definitions.
       key: {{ .Values.slack.webhookSecretKey | default "WEBHOOK_URL" }}
 {{- end -}}
 {{- end -}}
+
+{{/*
+Vault-probe env block. Empty when vaultProbe disabled.
+Auth precedence: $VAULT_TOKEN (from Secret reference, dev/test) → kubernetes
+auth via $VAULT_K8S_ROLE (production posture: SA JWT login). Both modes
+inject $VAULT_ADDR and $VAULT_KV_MOUNT.
+*/}}
+{{- define "cha.vaultEnv" -}}
+{{- if .Values.vaultProbe.enabled -}}
+- name: VAULT_ADDR
+  value: {{ .Values.vaultProbe.address | quote }}
+- name: VAULT_KV_MOUNT
+  value: {{ .Values.vaultProbe.kvMount | default "secret" | quote }}
+{{- if eq (.Values.vaultProbe.auth.method | default "kubernetes") "kubernetes" }}
+- name: VAULT_K8S_ROLE
+  value: {{ .Values.vaultProbe.auth.role | quote }}
+{{- else if eq .Values.vaultProbe.auth.method "token" }}
+- name: VAULT_TOKEN
+  valueFrom:
+    secretKeyRef:
+      name: {{ .Values.vaultProbe.auth.tokenSecretRef.name | quote }}
+      key: {{ .Values.vaultProbe.auth.tokenSecretRef.key | default "token" | quote }}
+{{- end }}
+{{- end -}}
+{{- end -}}

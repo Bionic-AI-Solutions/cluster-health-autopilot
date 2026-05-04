@@ -45,6 +45,28 @@ slack:
 driftReport:
   enabled: true
 
+# Vault-probe — closes the L1 stale-Ready window: queries Vault directly to
+# verify each ExternalSecret's referenced path + property still exists, BEFORE
+# the ESO controller's next refresh marks itself not-Ready. Catches the case
+# where someone edits Vault but pods stay alive on cached Secret data and
+# the next pod restart fails with CreateContainerConfigError.
+#
+# Privacy contract: cha never reads Vault byte values — only key NAMES at
+# each path. Same posture as the secrets RBAC rule in clusterrole-reader.yaml.
+#
+# Default: disabled. Enabling requires either a Vault role bound to the cha
+# ServiceAccount (kubernetes-auth, recommended) or a token in a Secret.
+vaultProbe:
+  enabled: false
+  address: ""                     # e.g. "https://vault.svc.cluster.local:8200"
+  kvMount: "secret"               # KV-v2 mount path; ESO `data[].remoteRef.key` is mount-relative
+  auth:
+    method: kubernetes            # kubernetes | token
+    role: ""                      # required when method=kubernetes; the Vault role bound to the cha SA
+    tokenSecretRef:               # required when method=token
+      name: ""                    # K8s Secret holding a Vault token
+      key: "token"                # key within that Secret
+
 # RBAC. Keep enabled — the CronJob will fail without these.
 rbac:
   create: true

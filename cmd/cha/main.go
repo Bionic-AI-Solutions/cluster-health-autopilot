@@ -24,6 +24,7 @@ import (
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/probe"
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/report"
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/snapshot"
+	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/vault"
 	"github.com/spf13/cobra"
 )
 
@@ -305,6 +306,9 @@ func diagnoseCmd() *cobra.Command {
 		outputFormat      string
 		slackWebhook      string
 		writeDriftReports bool
+		vaultAddr         string
+		vaultMount        string
+		vaultRole         string
 	)
 	c := &cobra.Command{
 		Use:   "diagnose",
@@ -347,6 +351,18 @@ func diagnoseCmd() *cobra.Command {
 				diagnose.SecretKeyMissing{},
 				diagnose.FailingExternalSecrets{},
 				diagnose.ProactiveSecretKeyCheck{},
+			}
+			// VaultPathMissing is opt-in: when --vault-addr is set we
+			// construct a client and append the analyzer. Live mode only
+			// (the analyzer also self-checks but the client construction
+			// would fail noisily on a snapshot-only host without VAULT_TOKEN).
+			if vaultAddr != "" && live {
+				vc, err := buildVaultClient(vaultAddr, vaultMount, vaultRole)
+				if err != nil {
+					fmt.Fprintln(os.Stderr, "warning: vault client unavailable:", err)
+				} else {
+					analyzers = append(analyzers, diagnose.VaultPathMissing{Client: vc})
+				}
 			}
 			var diagnostics []diagnose.Diagnostic
 			for _, a := range analyzers {
@@ -393,7 +409,37 @@ func diagnoseCmd() *cobra.Command {
 	c.Flags().StringVar(&outputFormat, "format", "text", "Output format: text|json")
 	c.Flags().StringVar(&slackWebhook, "slack-webhook", "", "Optional Slack incoming-webhook URL — posts a formatted summary of the run (works with both --snapshot and --live)")
 	c.Flags().BoolVar(&writeDriftReports, "write-driftreports", true, "Upsert DriftReport CRs into the cluster (live mode only; ignored on --snapshot)")
+	c.Flags().StringVar(&vaultAddr, "vault-addr", os.Getenv("VAULT_ADDR"), "Vault HTTP endpoint (default: $VAULT_ADDR). Empty disables the VaultPathMissing analyzer.")
+	c.Flags().StringVar(&vaultMount, "vault-kv-mount", envOrDefault("VAULT_KV_MOUNT", "secret"), "Vault KV-v2 mount path (default: $VAULT_KV_MOUNT or 'secret')")
+	c.Flags().StringVar(&vaultRole, "vault-k8s-role", os.Getenv("VAULT_K8S_ROLE"), "Vault kubernetes-auth role (default: $VAULT_K8S_ROLE). When unset, falls back to $VAULT_TOKEN.")
 	return c
+}
+
+// buildVaultClient constructs a Vault client honoring the auth precedence:
+//  1. $VAULT_TOKEN (development / kubeconfig-style)
+//  2. kubernetes auth using the in-cluster SA JWT + the configured role
+//
+// Returns an error rather than nil so the caller can surface a clear
+// reason in the run log; the analyzer itself treats client==nil as
+// "Vault probe disabled".
+func buildVaultClient(addr, mount, role string) (vault.Client, error) {
+	cfg := vault.Config{Address: addr, Mount: mount}
+	if tok := os.Getenv("VAULT_TOKEN"); tok != "" {
+		cfg.Token = tok
+		return vault.New(cfg)
+	}
+	if role == "" {
+		return nil, fmt.Errorf("either VAULT_TOKEN or --vault-k8s-role must be set")
+	}
+	cfg.KubernetesAuth = &vault.KubernetesAuthConfig{Role: role}
+	return vault.New(cfg)
+}
+
+func envOrDefault(envVar, def string) string {
+	if v := os.Getenv(envVar); v != "" {
+		return v
+	}
+	return def
 }
 
 func printJSON(results []probe.Result, diagnostics []diagnose.Diagnostic) error {
