@@ -66,6 +66,22 @@ func (a VaultPathMissing) Run(ctx context.Context, src snapshot.Source) []Diagno
 	// "vault path not found" than to silently skip a real drift event.
 	vaultStoreNS := loadVaultBackedStores(ctx, src)
 
+	// When the reader ClusterRole lacks secretstores/clustersecretstores RBAC
+	// (e.g. binary upgraded without `helm upgrade`), emit one informational
+	// diagnostic rather than silently degrading to the all-ESOs-are-Vault mode.
+	var rbacHintOut []Diagnostic
+	if vaultStoreNS.rbacHint != "" {
+		rbacHintOut = []Diagnostic{{
+			Subject: "vault-store-rbac-missing",
+			Message: fmt.Sprintf(
+				"VaultPathMissing: could not list SecretStore/ClusterSecretStore objects (%s). "+
+					"Falling back to treating ALL ExternalSecrets as Vault-backed — expect false-positive diagnostics "+
+					"on non-Vault stores. Run `helm upgrade` to apply the updated reader ClusterRole.",
+				vaultStoreNS.rbacHint,
+			),
+		}}
+	}
+
 	// Build the requirement map: vault-path → set of required keys.
 	// Each requirement also tracks the set of consuming ExternalSecrets
 	// so the diagnostic can name a culpable resource.
@@ -154,7 +170,7 @@ func (a VaultPathMissing) Run(ctx context.Context, src snapshot.Source) []Diagno
 	}
 
 	out = append(out, renderTransportErrors(transportErrs)...)
-	return out
+	return append(rbacHintOut, out...)
 }
 
 // vaultOutageThreshold collapses N per-path errors of the same shape into
@@ -329,6 +345,11 @@ type vaultStoreSet struct {
 	// known to this analyzer and we fall back to the v0.2 "treat all as
 	// Vault" behavior so we don't silently drop real drift detection.
 	hasAnyStore bool
+	// rbacHint is non-empty when a SecretStore/ClusterSecretStore list call
+	// failed (typically RBAC forbidden). It is emitted as one informational
+	// diagnostic so operators know to run `helm upgrade` to apply the updated
+	// ClusterRole rather than discovering the fallback mode silently.
+	rbacHint string
 }
 
 func loadVaultBackedStores(ctx context.Context, src snapshot.Source) *vaultStoreSet {
@@ -337,6 +358,7 @@ func loadVaultBackedStores(ctx context.Context, src snapshot.Source) *vaultStore
 		cluster:    map[string]bool{},
 	}
 
+	var listErr error
 	if list, err := src.List(ctx, snapshot.GVRClusterSecretStore, ""); err == nil {
 		for _, css := range list.Items {
 			out.hasAnyStore = true
@@ -344,6 +366,8 @@ func loadVaultBackedStores(ctx context.Context, src snapshot.Source) *vaultStore
 				out.cluster[css.GetName()] = true
 			}
 		}
+	} else {
+		listErr = err
 	}
 	if list, err := src.List(ctx, snapshot.GVRSecretStore, ""); err == nil {
 		for _, ss := range list.Items {
@@ -357,6 +381,15 @@ func loadVaultBackedStores(ctx context.Context, src snapshot.Source) *vaultStore
 			}
 			out.namespaced[ns][ss.GetName()] = true
 		}
+	} else if listErr == nil {
+		listErr = err
+	}
+
+	// If we couldn't list any store CRDs and got an error, record a hint so
+	// the caller can emit one informational diagnostic. The fallback behavior
+	// (treat all ESOs as Vault-backed) is still correct but now visible.
+	if !out.hasAnyStore && listErr != nil {
+		out.rbacHint = truncate(listErr.Error(), 200)
 	}
 	return out
 }

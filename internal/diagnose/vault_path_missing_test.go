@@ -45,6 +45,9 @@ type vaultSrc struct {
 	secretStores        []unstructured.Unstructured
 	clusterSecretStores []unstructured.Unstructured
 	mode                snapshot.Mode
+	// storeListErr, if non-nil, is returned for SecretStore/ClusterSecretStore
+	// list calls — used to simulate RBAC-forbidden responses.
+	storeListErr error
 }
 
 func (v *vaultSrc) List(_ context.Context, gvr schema.GroupVersionResource, _ string) (*unstructured.UnstructuredList, error) {
@@ -52,8 +55,14 @@ func (v *vaultSrc) List(_ context.Context, gvr schema.GroupVersionResource, _ st
 	case snapshot.GVRExtSecret:
 		return &unstructured.UnstructuredList{Items: v.esos}, nil
 	case snapshot.GVRSecretStore:
+		if v.storeListErr != nil {
+			return nil, v.storeListErr
+		}
 		return &unstructured.UnstructuredList{Items: v.secretStores}, nil
 	case snapshot.GVRClusterSecretStore:
+		if v.storeListErr != nil {
+			return nil, v.storeListErr
+		}
 		return &unstructured.UnstructuredList{Items: v.clusterSecretStores}, nil
 	}
 	return &unstructured.UnstructuredList{}, nil
@@ -321,6 +330,32 @@ func TestVaultPathMissing_FilterDegradesWithoutStores(t *testing.T) {
 	}
 	if len(fv.calls) != 1 {
 		t.Errorf("want 1 vault call (degraded mode), got %d", len(fv.calls))
+	}
+}
+
+func TestVaultPathMissing_RBACHintEmittedWhenStoreListFails(t *testing.T) {
+	// When SecretStore/ClusterSecretStore RBAC is missing, the analyzer must
+	// emit one informational diagnostic rather than silently degrading — so
+	// operators know to run `helm upgrade` to apply the updated ClusterRole.
+	eso := makeESOWithStore("ns", "app", "SecretStore", "any",
+		[]map[string]string{{"secretKey": "K", "key": "p", "property": "K"}})
+	src := &vaultSrc{
+		esos:         []unstructured.Unstructured{eso},
+		mode:         snapshot.ModeLive,
+		storeListErr: fmt.Errorf("secretstores.external-secrets.io is forbidden: User cannot list resource"),
+	}
+	fv := &fakeVault{keys: map[string][]string{"p": {"K"}}}
+	out := VaultPathMissing{Client: fv}.Run(context.Background(), src)
+	// Expect exactly 1 RBAC hint diagnostic (path "p" exists with correct key
+	// so no drift diagnostics — only the hint).
+	if len(out) != 1 {
+		t.Fatalf("want 1 RBAC hint diagnostic, got %d: %v", len(out), out)
+	}
+	if out[0].Subject != "vault-store-rbac-missing" {
+		t.Errorf("subject = %q, want vault-store-rbac-missing", out[0].Subject)
+	}
+	if !strings.Contains(out[0].Message, "helm upgrade") {
+		t.Errorf("message should mention helm upgrade: %s", out[0].Message)
 	}
 }
 

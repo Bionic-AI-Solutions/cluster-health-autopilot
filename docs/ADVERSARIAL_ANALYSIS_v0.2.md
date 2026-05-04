@@ -292,12 +292,22 @@ items scheduled for v0.3.
 envFrom.secretRef walk). DOCUMENT items remain unchanged — they're
 accepted-forever items, not v0.3 work.
 
+**Update — v0.4 follow-up**: three additional findings from the post-v0.3
+adversarial review are now closed:
+
+| v0.4 finding | Severity | Status |
+|---|---|---|
+| `path.Join` path-traversal in `vault/client.go` | medium | ✅ FIXED — explicit string construction + upfront `..`/`.` check |
+| RBAC missing → silent all-ESOs fallback | low | ✅ FIXED — emits `vault-store-rbac-missing` hint diagnostic |
+| Helm chart: no validation on `vaultProbe.auth.role` | low | ✅ FIXED — `fail` guard in `_helpers.tpl` |
+
 ---
 
 ## 7. Pre-tag checklist
 
 - [x] All MUST-FIX items resolved (none).
 - [x] All DOCUMENT items captured in SECURITY.md / README / values.yaml comments.
+- [x] v0.4 security finding (path.Join traversal) closed; validated by `TestListKeys_RejectsTraversalPath`.
 - [ ] `helm template --set vaultProbe.enabled=true …` rendered against a real Vault role; smoke test on the production cluster.
 - [ ] `kubectl get driftreports -A` round-tripped on the production cluster (CRD installs, CRs created, deleted on resolve).
 - [ ] WhisperLive STT silence-hallucination work is *not* in this release scope (already shipped separately).
