@@ -1,0 +1,110 @@
+# publish-runs.yml — WS-C nightly pipeline
+#
+# Pulls the day's cha diagnose --format json output from the private MinIO
+# bucket, anonymizes it with `cha anonymize`, appends to runs/YYYY-MM-DD.jsonl,
+# regenerates runs/SUMMARY.md with `cha summarize`, then commits and pushes.
+#
+# Required GitHub Actions secrets (set in repo Settings → Secrets):
+#   MINIO_ENDPOINT    e.g. https://minio.internal:9000
+#   MINIO_ACCESS_KEY  MinIO / S3 access key ID
+#   MINIO_SECRET_KEY  MinIO / S3 secret access key
+#   MINIO_BUCKET      bucket name, e.g. cha-runs
+#
+# The CronJob in-cluster must write each run as:
+#   <bucket>/runs/YYYY-MM-DD/run-HHMMSS.json
+# using:
+#   cha diagnose --live --format json > /tmp/run.json
+#   mc cp /tmp/run.json minio/$MINIO_BUCKET/runs/$(date +%Y-%m-%d)/run-$(date +%H%M%S).json
+
+name: publish-runs
+
+on:
+  schedule:
+    # 02:00 UTC daily — after the in-cluster CronJob has written today's run.
+    - cron: "0 2 * * *"
+  workflow_dispatch:
+    inputs:
+      date:
+        description: "Date to pull (YYYY-MM-DD). Defaults to yesterday."
+        required: false
+
+permissions:
+  contents: write   # to push the JSONL commit
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - name: Build cha
+        run: go build -o cha ./cmd/cha
+
+      - name: Install MinIO client (mc)
+        run: |
+          curl -sSL https://dl.min.io/client/mc/release/linux-amd64/mc -o mc
+          chmod +x mc
+
+      - name: Resolve target date
+        id: date
+        run: |
+          if [ -n "${{ github.event.inputs.date }}" ]; then
+            echo "date=${{ github.event.inputs.date }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "date=$(date -u -d 'yesterday' +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Configure mc alias
+        env:
+          MINIO_ENDPOINT: ${{ secrets.MINIO_ENDPOINT }}
+          MINIO_ACCESS_KEY: ${{ secrets.MINIO_ACCESS_KEY }}
+          MINIO_SECRET_KEY: ${{ secrets.MINIO_SECRET_KEY }}
+        run: ./mc alias set minio "$MINIO_ENDPOINT" "$MINIO_ACCESS_KEY" "$MINIO_SECRET_KEY"
+
+      - name: Pull run files from MinIO
+        env:
+          MINIO_BUCKET: ${{ secrets.MINIO_BUCKET }}
+        run: |
+          DATE=${{ steps.date.outputs.date }}
+          mkdir -p /tmp/cha-runs/"$DATE"
+          ./mc cp --recursive minio/"$MINIO_BUCKET"/runs/"$DATE"/ /tmp/cha-runs/"$DATE"/ || true
+          COUNT=$(find /tmp/cha-runs/"$DATE" -name "*.json" | wc -l)
+          echo "Downloaded $COUNT run file(s) for $DATE"
+          if [ "$COUNT" -eq 0 ]; then
+            echo "No run files found for $DATE — skipping."
+            echo "skip=true" >> "$GITHUB_ENV"
+          fi
+
+      - name: Anonymize and append JSONL
+        if: env.skip != 'true'
+        run: |
+          DATE=${{ steps.date.outputs.date }}
+          mkdir -p runs
+          for f in /tmp/cha-runs/"$DATE"/*.json; do
+            RUN_ID="$(basename "$f" .json)"
+            ./cha anonymize --run-id "$RUN_ID" --timestamp "${DATE}T02:00:00Z" "$f" >> runs/"$DATE".jsonl
+          done
+          LINES=$(wc -l < runs/"$DATE".jsonl)
+          echo "Appended $LINES record(s) to runs/$DATE.jsonl"
+
+      - name: Regenerate SUMMARY.md
+        if: env.skip != 'true'
+        run: ./cha summarize runs/ > runs/SUMMARY.md
+
+      - name: Commit and push
+        if: env.skip != 'true'
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          DATE=${{ steps.date.outputs.date }}
+          git add runs/"$DATE".jsonl runs/SUMMARY.md
+          git diff --cached --quiet || git commit -m "runs: add anonymized run for $DATE"
+          git push

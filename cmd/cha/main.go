@@ -29,6 +29,7 @@ import (
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/probe"
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/report"
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/snapshot"
+	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/summarize"
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/vault"
 	"github.com/spf13/cobra"
 )
@@ -59,6 +60,7 @@ Subcommands:
 	root.AddCommand(snapshotCmd())
 	root.AddCommand(remediateCmd())
 	root.AddCommand(anonymizeCmd())
+	root.AddCommand(summarizeCmd())
 	root.AddCommand(versionCmd())
 
 	if err := root.Execute(); err != nil {
@@ -361,6 +363,29 @@ Typical pipeline (daily cron + nightly GitHub Action):
 	c.Flags().StringVar(&runID, "run-id", "", "Run identifier stamped on each JSONL record (default: input filename)")
 	c.Flags().StringVar(&ts, "timestamp", "", "RFC3339 timestamp to stamp on each record (default: now)")
 	return c
+}
+
+// summarizeCmd implements `cha summarize <runs-dir>`.
+func summarizeCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "summarize <runs-dir>",
+		Short: "Generate runs/SUMMARY.md from anonymized JSONL run records",
+		Long: `summarize reads all *.jsonl files in <runs-dir>, aggregates the anonymized
+run records, and writes a Markdown SUMMARY.md to stdout.
+
+Typical usage (nightly GitHub Action):
+
+  cha summarize runs/ > runs/SUMMARY.md`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(_ *cobra.Command, args []string) error {
+			r, err := summarize.FromDir(args[0])
+			if err != nil {
+				return err
+			}
+			r.Render(os.Stdout)
+			return nil
+		},
+	}
 }
 
 func versionCmd() *cobra.Command {
