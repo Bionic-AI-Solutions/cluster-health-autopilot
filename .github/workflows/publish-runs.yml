@@ -1,32 +1,31 @@
 # publish-runs.yml — WS-C nightly run-log pipeline
 #
-# Two operating modes — choose ONE in your repo's workflow settings:
+# Two operating modes — choose ONE by toggling the `if:` on each job:
 #
 # MODE A — Self-hosted runner (RECOMMENDED, no MinIO needed)
 #   The runner lives inside the cluster. The workflow runs `cha diagnose --live`
 #   directly and pipes output through `cha anonymize`. No intermediate object
 #   storage required. Set runs-on to [self-hosted, cluster] (or your runner label).
+#   → Set publish-self-hosted.if: true  AND  publish-minio.if: false
 #
-# MODE B — GitHub-hosted runner + MinIO (if self-hosted runner is unavailable)
+# MODE B — GitHub-hosted runner + MinIO
 #   Credentials are read from Vault at runtime via hashicorp/vault-action.
 #   Requires ONE GitHub Actions secret: VAULT_TOKEN
 #   All MinIO/bucket config lives in Vault at secret/t6-apps/cha/config.
+#   IMPORTANT: MinIO must be reachable from the internet (not cluster-internal).
+#   If the endpoint is private/unreachable, the job emits a warning and skips
+#   cleanly — it does NOT fail the workflow.
+#   → Set publish-minio.if: true  AND  publish-self-hosted.if: false
 #
-# Vault secret layout (both modes use this for the Slack webhook):
-#   vault kv put secret/t6-apps/cha/config \
-#     minio_endpoint="http://minio.minio.svc.cluster.local:9000" \
-#     minio_access_key="..."                                       \
-#     minio_secret_key="..."                                       \
-#     minio_bucket="cha-runs"
+# Vault secret (already created at secret/t6-apps/cha/config):
+#   minio_endpoint   = "https://s3.baisoln.com"   ← must be internet-reachable
+#   minio_access_key = "<scoped service account>"
+#   minio_secret_key = "<scoped service account>"
+#   minio_bucket     = "cha-runs"
 #
 # GitHub Actions secrets required:
-#   VAULT_TOKEN  — Vault token with read on secret/t6-apps/cha/config
-#                  (Only needed for Mode B; Mode A uses the in-cluster SA)
-#
-# Vault policy for the GH Actions token (create once):
-#   path "secret/data/t6-apps/cha/config" {
-#     capabilities = ["read"]
-#   }
+#   VAULT_TOKEN  — token with policy cha-publish-runs (read on above path)
+#                  (Only needed for Mode B; Mode A uses the in-cluster runner SA)
 #
 # Vault address is baked in (vault.baisoln.com is publicly reachable).
 
@@ -153,19 +152,24 @@ jobs:
             echo "date=$(date -u -d 'yesterday' +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Configure mc alias
-        run: ./mc alias set minio "$MINIO_ENDPOINT" "$MINIO_ACCESS_KEY" "$MINIO_SECRET_KEY"
-
-      - name: Pull run files from MinIO
+      - name: Configure mc alias and pull run files from MinIO
         run: |
           DATE=${{ steps.date.outputs.date }}
           mkdir -p /tmp/cha-runs/"$DATE"
-          ./mc cp --recursive minio/"$MINIO_BUCKET"/runs/"$DATE"/ /tmp/cha-runs/"$DATE"/ || true
-          COUNT=$(find /tmp/cha-runs/"$DATE" -name "*.json" | wc -l)
-          echo "Downloaded $COUNT run file(s) for $DATE"
-          if [ "$COUNT" -eq 0 ]; then
-            echo "No run files found for $DATE — skipping."
+          # mc alias set probes MinIO with a signed request; if the endpoint is
+          # private/unreachable from this runner, treat it as "no files" rather
+          # than a hard failure so the job completes cleanly.
+          if ! ./mc alias set minio "$MINIO_ENDPOINT" "$MINIO_ACCESS_KEY" "$MINIO_SECRET_KEY" 2>&1; then
+            echo "::warning::MinIO endpoint unreachable from this runner — skipping publish."
             echo "skip=true" >> "$GITHUB_ENV"
+          else
+            ./mc cp --recursive minio/"$MINIO_BUCKET"/runs/"$DATE"/ /tmp/cha-runs/"$DATE"/ || true
+            COUNT=$(find /tmp/cha-runs/"$DATE" -name "*.json" | wc -l)
+            echo "Downloaded $COUNT run file(s) for $DATE"
+            if [ "$COUNT" -eq 0 ]; then
+              echo "No run files found for $DATE — skipping."
+              echo "skip=true" >> "$GITHUB_ENV"
+            fi
           fi
 
       - name: Anonymize and append JSONL
