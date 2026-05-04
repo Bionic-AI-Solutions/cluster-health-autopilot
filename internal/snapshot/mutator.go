@@ -13,33 +13,11 @@ import (
 	"k8s.io/client-go/dynamic"
 )
 
-// Mutator is the live-only contract that allows fixers to mutate cluster state.
-//
-// Snapshot sources (the offline file-backed variant) do NOT implement this
-// interface — the type system enforces that no fixer can accidentally run
-// against a snapshot. Fixers must call AsMutator on their snapshot.Source
-// argument and refuse to act when the result is nil.
-//
-// The interface is intentionally minimal: only the verbs each whitelisted
-// fixer actually needs (Delete, Patch). Adding new verbs is a deliberate
-// review event — keep the surface tight.
-type Mutator interface {
-	// Delete removes a single resource. Background propagation by default.
-	Delete(ctx context.Context, gvr schema.GroupVersionResource, ns, name string) error
-
-	// Patch applies a strategic-merge or JSON-merge patch to a single resource.
-	// patchType is one of types.{StrategicMergePatchType, MergePatchType, JSONPatchType}.
-	Patch(ctx context.Context, gvr schema.GroupVersionResource, ns, name string, patchType types.PatchType, patch []byte) error
-
-	// Create writes a new resource. Used by the DriftReport writer to upsert
-	// drift CRs each cron tick. Like Delete/Patch, this is intentionally
-	// scoped — fixers are not permitted to create resources, only the
-	// report writer.
-	Create(ctx context.Context, gvr schema.GroupVersionResource, ns string, obj *unstructured.Unstructured) error
-}
-
 // AsMutator returns the source as a Mutator if it supports live mutation,
 // or nil otherwise. Fixers must check this and refuse on nil.
+//
+// Defined here for backward compatibility; pkg/snapshot.AsMutator is the
+// canonical version available to external catalog packages.
 func AsMutator(s Source) Mutator {
 	m, _ := s.(Mutator)
 	return m

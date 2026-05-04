@@ -12,58 +12,31 @@
 // Probes and analyzers consume the Source interface — they never touch
 // client-go or the filesystem directly. This is the contract that makes the
 // "run on a captured snapshot from your laptop" headline possible.
+//
+// The canonical interface types live in pkg/snapshot; the aliases below keep
+// all internal packages compiling without import changes.
 package snapshot
 
 import (
-	"context"
-
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	pkgsnapshot "github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/snapshot"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
-// Source returns Kubernetes objects to a probe.
-//
-// Implementations must:
-//   - Return cluster-scoped resources when ns == "" and namespaced resources
-//     when ns is provided (or "" to mean "all namespaces").
-//   - Return an empty list (not error) when a resource type does not exist
-//     in this cluster (e.g. CNPG CRD not installed); callers distinguish
-//     "not installed" from "permission denied" via the err return.
-type Source interface {
-	// List returns all instances of the given GVR, optionally filtered by namespace.
-	// If ns == "", returns objects across all namespaces (for namespaced resources)
-	// or the single cluster-scoped collection (for cluster resources).
-	List(ctx context.Context, gvr schema.GroupVersionResource, ns string) (*unstructured.UnstructuredList, error)
-
-	// Get returns a single instance by namespace + name.
-	Get(ctx context.Context, gvr schema.GroupVersionResource, ns, name string) (*unstructured.Unstructured, error)
-
-	// Mode reports whether this source is live (allows fixers to run) or
-	// snapshot-backed (read-only — fixers refuse to operate).
-	Mode() Mode
-}
-
-// Mode reports whether a Source is backed by a live cluster or a snapshot.
-type Mode int
-
-// Mode values.
-const (
-	ModeLive Mode = iota
-	ModeSnapshot
+// Source, Mutator, and Mode are the canonical types from pkg/snapshot,
+// re-exported here so internal packages compile without import changes.
+type (
+	Source  = pkgsnapshot.Source
+	Mutator = pkgsnapshot.Mutator
+	Mode    = pkgsnapshot.Mode
 )
 
-func (m Mode) String() string {
-	switch m {
-	case ModeLive:
-		return "live"
-	case ModeSnapshot:
-		return "snapshot"
-	default:
-		return "unknown"
-	}
-}
+// Mode constants re-exported from pkg/snapshot.
+const (
+	ModeLive     = pkgsnapshot.ModeLive
+	ModeSnapshot = pkgsnapshot.ModeSnapshot
+)
 
-// Common GVRs used across probes.
+// Common GVRs used across probes and analyzers.
 var (
 	GVRPod         = schema.GroupVersionResource{Group: "", Version: "v1", Resource: "pods"}
 	GVRNode        = schema.GroupVersionResource{Group: "", Version: "v1", Resource: "nodes"}
@@ -80,14 +53,8 @@ var (
 	GVRSecret      = schema.GroupVersionResource{Group: "", Version: "v1", Resource: "secrets"}
 	GVRDriftReport = schema.GroupVersionResource{Group: "cha.bionicaisolutions.com", Version: "v1alpha1", Resource: "driftreports"}
 
-	// External-Secrets Operator store kinds. Used by VaultPathMissing to
-	// filter ExternalSecrets to only those whose backing store is Vault —
-	// avoids false-positive diagnostics for ESOs backed by AWS Secrets
-	// Manager, GCP Secret Manager, etc.
 	GVRSecretStore        = schema.GroupVersionResource{Group: "external-secrets.io", Version: "v1", Resource: "secretstores"}
 	GVRClusterSecretStore = schema.GroupVersionResource{Group: "external-secrets.io", Version: "v1", Resource: "clustersecretstores"}
 
-	// cert-manager Certificate resources. Used by CertExpiry analyzer.
-	// Returns an empty list (not an error) when cert-manager is not installed.
 	GVRCertificate = schema.GroupVersionResource{Group: "cert-manager.io", Version: "v1", Resource: "certificates"}
 )

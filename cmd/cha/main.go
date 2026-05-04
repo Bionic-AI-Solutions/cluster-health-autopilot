@@ -23,6 +23,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/catalog"
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/anonymize"
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/diagnose"
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/fix"
@@ -208,11 +209,7 @@ Secrets, ConfigMaps, or any CRD.`,
 				}
 			}
 
-			fixers := []fix.Fixer{
-				fix.StaleErrorPods{},
-				fix.StuckJobsWithBadSecretRef{},
-				fix.StuckRSPods{},
-			}
+			fixers := catalog.Default().Fixers()
 			results := make([]fix.Result, 0, len(fixers))
 			for _, f := range fixers {
 				results = append(results, f.Run(ctx, src, mut))
@@ -435,40 +432,24 @@ func diagnoseCmd() *cobra.Command {
 				ctx = context.Background()
 			}
 
-			probes := []probe.Probe{
-				probe.Ceph{},
-				probe.Nodes{},
-				probe.Postgres{},
-				probe.PVCs{},
-				probe.Services{Targets: probe.DefaultTargets()},
-			}
-
-			results := make([]probe.Result, 0, len(probes))
-			for _, p := range probes {
-				results = append(results, p.Run(ctx, src))
-			}
-
-			analyzers := []diagnose.Analyzer{
-				diagnose.SecretKeyMissing{},
-				diagnose.FailingExternalSecrets{},
-				diagnose.ProactiveSecretKeyCheck{},
-				diagnose.ImagePullAuth{},
-				diagnose.CertExpiry{},
-			}
-			// VaultPathMissing is opt-in: when --vault-addr is set we
-			// construct a client and append the analyzer. Live mode only
-			// (the analyzer also self-checks but the client construction
-			// would fail noisily on a snapshot-only host without VAULT_TOKEN).
+			reg := catalog.Default()
+			// VaultPathMissing is opt-in: requires a Vault client; live mode only.
 			if vaultAddr != "" && live {
 				vc, err := buildVaultClient(vaultAddr, vaultMount, vaultRole)
 				if err != nil {
 					fmt.Fprintln(os.Stderr, "warning: vault client unavailable:", err)
 				} else {
-					analyzers = append(analyzers, diagnose.VaultPathMissing{Client: vc})
+					reg.RegisterAnalyzer(diagnose.VaultPathMissing{Client: vc})
 				}
 			}
+
+			results := make([]probe.Result, 0, len(reg.Probes()))
+			for _, p := range reg.Probes() {
+				results = append(results, p.Run(ctx, src))
+			}
+
 			var diagnostics []diagnose.Diagnostic
-			for _, a := range analyzers {
+			for _, a := range reg.Analyzers() {
 				diagnostics = append(diagnostics, a.Run(ctx, src)...)
 			}
 

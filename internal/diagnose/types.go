@@ -9,30 +9,17 @@
 // The contract is intentionally distinct from probe: probes report
 // component-level health, analyzers report cross-resource correlations
 // (e.g. "this Secret is missing key X that this Deployment expects").
+//
+// The canonical Analyzer interface and Diagnostic type live in pkg/diagnose.
+// The aliases below keep all internal implementations compiling unchanged;
+// they are identical types, so any implementation here satisfies the
+// exported interface expected by pkg/registry.
 package diagnose
 
-import (
-	"context"
+import pkgdiagnose "github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/diagnose"
 
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/snapshot"
+// Diagnostic and Analyzer are re-exported from pkg/diagnose.
+type (
+	Diagnostic = pkgdiagnose.Diagnostic
+	Analyzer   = pkgdiagnose.Analyzer
 )
-
-// Diagnostic is a single human-readable hint with no auto-applicable action.
-type Diagnostic struct {
-	// Subject is the symbolic identity of the issue (used for de-duplication
-	// across iterations). Example: "Secret/mcp/mcp-openproject-secrets/openproject-url"
-	Subject string `json:"subject"`
-
-	// Message is the rendered hint (one line, formatted for Slack mrkdwn).
-	Message string `json:"message"`
-}
-
-// Analyzer is the contract every diagnostic analyzer implements.
-//
-// Run returns zero or more Diagnostics. It must not mutate cluster state
-// and must tolerate any GVR being absent from the snapshot (e.g. CRD not
-// installed) without erroring.
-type Analyzer interface {
-	Name() string
-	Run(ctx context.Context, src snapshot.Source) []Diagnostic
-}

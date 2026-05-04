@@ -21,6 +21,14 @@ testdata/local/
 *.tgz
 !examples/*.tgz
 
+# Commercial docs — GTM notes, solution briefs, pricing strategy
+/docs/*.pdf
+/docs/*.docx
+
+# Raw cluster run data — anonymized versions are published via `cha anonymize`
+/runs/*.jsonl
+/runs/SUMMARY.md
+
 # OS
 .DS_Store
 Thumbs.db
