@@ -134,6 +134,8 @@ var kindToResource = map[string]string{
 	"Job":                   "jobs",
 	"CronJob":               "cronjobs",
 	"ExternalSecret":        "externalsecrets",
+	"SecretStore":           "secretstores",
+	"ClusterSecretStore":    "clustersecretstores",
 	"Cluster":               "clusters",
 	"CephCluster":           "cephclusters",
 	"Secret":                "secrets",

@@ -79,4 +79,11 @@ var (
 	GVRCephCluster = schema.GroupVersionResource{Group: "ceph.rook.io", Version: "v1", Resource: "cephclusters"}
 	GVRSecret      = schema.GroupVersionResource{Group: "", Version: "v1", Resource: "secrets"}
 	GVRDriftReport = schema.GroupVersionResource{Group: "cha.bionicaisolutions.com", Version: "v1alpha1", Resource: "driftreports"}
+
+	// External-Secrets Operator store kinds. Used by VaultPathMissing to
+	// filter ExternalSecrets to only those whose backing store is Vault —
+	// avoids false-positive diagnostics for ESOs backed by AWS Secrets
+	// Manager, GCP Secret Manager, etc.
+	GVRSecretStore        = schema.GroupVersionResource{Group: "external-secrets.io", Version: "v1", Resource: "secretstores"}
+	GVRClusterSecretStore = schema.GroupVersionResource{Group: "external-secrets.io", Version: "v1", Resource: "clustersecretstores"}
 )

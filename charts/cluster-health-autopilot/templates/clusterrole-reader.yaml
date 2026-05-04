@@ -30,6 +30,14 @@ rules:
   - apiGroups: ["external-secrets.io"]
     resources: ["externalsecrets"]
     verbs: ["get", "list"]
+  # SecretStore + ClusterSecretStore reads — VaultPathMissing filters
+  # ExternalSecrets to those whose backing store is Vault-backed, so the
+  # analyzer doesn't query Vault for AWS / GCP / etc. paths and emit
+  # phantom "missing path" diagnostics. Without these reads the filter
+  # degrades to v0.2 behavior (treat every ESO as Vault-backed).
+  - apiGroups: ["external-secrets.io"]
+    resources: ["secretstores", "clustersecretstores"]
+    verbs: ["get", "list"]
   # Database-operator probe (CloudNativePG).
   - apiGroups: ["postgresql.cnpg.io"]
     resources: ["clusters"]

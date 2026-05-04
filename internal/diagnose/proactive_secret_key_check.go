@@ -72,6 +72,7 @@ func (ProactiveSecretKeyCheck) Run(ctx context.Context, src snapshot.Source) []D
 				if !ok {
 					continue
 				}
+				// Per-key references via env[].valueFrom.secretKeyRef.
 				envs, _, _ := unstructured.NestedSlice(cm, "env")
 				for _, e := range envs {
 					em, ok := e.(map[string]any)
@@ -140,6 +141,48 @@ func (ProactiveSecretKeyCheck) Run(ctx context.Context, src snapshot.Source) []D
 							),
 						})
 					}
+				}
+
+				// Whole-secret import via envFrom[].secretRef. Pre-restart we
+				// can only verify the SECRET exists — there's no key list to
+				// validate against because envFrom imports every key. Missing
+				// the Secret entirely will hard-fail pod start regardless of
+				// which keys downstream consumers actually use.
+				envFroms, _, _ := unstructured.NestedSlice(cm, "envFrom")
+				for _, ef := range envFroms {
+					efm, ok := ef.(map[string]any)
+					if !ok {
+						continue
+					}
+					sref, _ := efm["secretRef"].(map[string]any)
+					if sref == nil {
+						continue
+					}
+					secretName, _ := sref["name"].(string)
+					if secretName == "" {
+						continue
+					}
+					optional, _ := sref["optional"].(bool)
+					secretKey := ns + "/" + secretName
+					if _, exists := keysBySecret[secretKey]; exists {
+						continue
+					}
+					if optional {
+						continue
+					}
+					dedupe := "missing-secret/" + secretKey
+					if _, dup := seen[dedupe]; dup {
+						continue
+					}
+					seen[dedupe] = struct{}{}
+					out = append(out, Diagnostic{
+						Subject: dedupe,
+						Message: fmt.Sprintf(
+							"Secret `%s` does NOT exist (referenced by %s/%s in ns %s, envFrom whole-secret import). "+
+								"Pod will fail to start on next restart. Create the Secret or remove the envFrom entry.",
+							secretKey, workloadKind, name, ns,
+						),
+					})
 				}
 			}
 		}

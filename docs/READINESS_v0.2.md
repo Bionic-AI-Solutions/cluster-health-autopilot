@@ -60,9 +60,9 @@ here so design partners aren't surprised.
 | Gap | Rationale | Target |
 |---|---|---|
 | Multi-Vault / multi-SecretStore support | Brief assumed one Vault per cluster | v0.4 |
-| envFrom.secretRef walk in proactive analyzer | `envFrom` whole-secret import doesn't reference specific keys | v0.3 |
-| Vault-outage diagnostic dedupe | Single-issue summary instead of per-path diagnostics | v0.3 |
-| SecretStore-provider filter (skip non-Vault ESOs in VaultPathMissing) | Mixed-provider clusters get noisy false-positives | v0.3 |
+| envFrom.secretRef walk in proactive analyzer | `envFrom` whole-secret import doesn't reference specific keys | ✅ closed in v0.3 |
+| Vault-outage diagnostic dedupe | Single-issue summary instead of per-path diagnostics | ✅ closed in v0.3 |
+| SecretStore-provider filter (skip non-Vault ESOs in VaultPathMissing) | Mixed-provider clusters get noisy false-positives | ✅ closed in v0.3 |
 | Self-hosted DriftReport viewer | Currently kubectl + grep; a tiny web UI is post-fundraise | v1.0+ |
 | Trend / time-series storage | DriftReport `.status.observationCount` is the closest thing | v1.0+ (Fleet Console scope) |
 | Cross-cluster aggregation | Single-cluster scope; multi-cluster is the commercial wedge | post-fundraise |

@@ -22,7 +22,7 @@ The new code surface under review:
 ## 1. False-positive surface
 
 ### 1.1 VaultPathMissing reports phantom drift on non-Vault SecretStores
-**Severity: medium · Likelihood: high · Resolution: DOCUMENT (v0.3 fix)**
+**Severity: medium · Likelihood: high · Resolution: ✅ FIXED in v0.3**
 
 The analyzer walks every ExternalSecret cluster-wide and queries the
 configured Vault for each path. If the cluster also runs ESOs backed by
@@ -31,20 +31,19 @@ from Vault and the analyzer will emit `missing-vault-path` diagnostics
 that are entirely false.
 
 **Why we accept it for v0.2**: the brief and the design-partner profile
-target Vault-exclusive clusters. The OSS user with mixed providers will
-see noise but not data corruption — they can disable the probe with
-`vaultProbe.enabled=false` until v0.3 ships the SecretStore-provider
-filter.
+target Vault-exclusive clusters. The OSS user with mixed providers would
+see noise but not data corruption.
 
-**Mitigation in v0.2**: README + values.yaml comment explicitly call out
-"Vault-exclusive cluster only — disable on mixed-provider deployments."
-
-**Fix for v0.3**: list `SecretStore`/`ClusterSecretStore`, build a set of
-store names whose `spec.provider.vault` is non-nil, filter
-ExternalSecrets by `spec.secretStoreRef.name` ∈ that set.
+**Fix in v0.3**: VaultPathMissing now resolves each ESO's
+`spec.secretStoreRef` to a SecretStore/ClusterSecretStore and only
+queries Vault for ESOs whose backing store has `spec.provider.vault`
+set. Mixed-provider clusters work cleanly. RBAC adds `secretstores`
++ `clustersecretstores` `get,list` to the reader role. Fall-back
+(no SecretStore CRDs visible) preserves v0.2 behavior so we never
+silently drop drift detection.
 
 ### 1.2 Vault outage spams 1× diagnostic per path
-**Severity: low · Likelihood: high · Resolution: WILL-FIX (v0.3)**
+**Severity: low · Likelihood: high · Resolution: ✅ FIXED in v0.3**
 
 If Vault is unreachable, every reference path emits a `vault-error/<path>`
 diagnostic. A cluster with 200 ExternalSecrets each pointing at 1 unique
@@ -52,16 +51,15 @@ path will emit 200 near-identical "connection refused" diagnostics. The
 DriftReport reconciler will faithfully create 200 CRs, then delete them
 all when Vault comes back. Operationally noisy.
 
-**Mitigation in v0.2**: dedupe map exists (subject-keyed) so the *same*
-path-error doesn't repeat within a single tick. But each path still fires
-its own diagnostic.
-
-**Fix for v0.3**: accumulate transport errors, emit a single
-"Vault probe could not reach `<addr>`: N paths affected" diagnostic when
-≥3 paths return identical transport-level error.
+**Fix in v0.3**: transport errors are accumulated and grouped by error
+string. When a group has ≥3 paths, the analyzer emits one summary
+diagnostic ("VaultPathMissing analyzer could not query Vault: N paths
+failed with `<err>`") with up to 3 sample paths and a "+N more" suffix.
+Below the threshold, per-path diagnostics still fire so isolated
+misconfigurations stay visible.
 
 ### 1.3 ProactiveSecretKeyCheck misses `envFrom.secretRef`
-**Severity: low · Likelihood: medium · Resolution: WILL-FIX (v0.3)**
+**Severity: low · Likelihood: medium · Resolution: ✅ FIXED in v0.3**
 
 The analyzer walks `env[].valueFrom.secretKeyRef` only. Containers using
 `envFrom: [secretRef: {name: foo}]` (whole-secret import) are not
@@ -71,11 +69,15 @@ SecretKeyMissing analyzer catches it).
 
 **Why this is low-priority**: `envFrom` consumers don't reference
 specific keys, so "missing key X" can't be precomputed; the analyzer's
-contract degrades to "Secret exists at all" — already covered by the
+contract degrades to "Secret exists at all" — covered now by the
 "missing-secret" branch.
 
-**Fix for v0.3**: add `envFrom.secretRef` walk that emits the
-"missing-secret" diagnostic when the referenced Secret is absent.
+**Fix in v0.3**: ProactiveSecretKeyCheck now also walks
+`container.envFrom[].secretRef`. Whole-secret imports referencing a
+non-existent Secret emit the same `missing-secret/<ns>/<name>`
+diagnostic the per-key path emits, with a message that distinguishes
+"envFrom whole-secret import" from "env key" so operators know which
+spec section to fix. `optional: true` is honored.
 
 ### 1.4 DriftReport churn on flapping probes
 **Severity: medium · Likelihood: medium · Resolution: DOCUMENT**
@@ -276,13 +278,19 @@ TTL ≥ cron schedule.
 | No kubectl-queryable diagnostic surface | ⚠️ | ✅ | Closed by DriftReport CRD (Gap 2) |
 | Cluster-wide Secret read | ✅ | ⚠️ NEW | Code-level privacy contract; documented |
 | Vault key-name leak via diagnostic | n/a | ⚠️ NEW | Operator scopes Vault role; documented |
-| Mixed-provider ESO false-positive noise | n/a | ⚠️ NEW | Disable probe; v0.3 will filter |
-| Diagnostic output flood on Vault outage | n/a | ⚠️ NEW | v0.3 will collapse |
+| Mixed-provider ESO false-positive noise | n/a | ⚠️ NEW (v0.2) | ✅ closed in v0.3 (SecretStore-provider filter) |
+| Diagnostic output flood on Vault outage | n/a | ⚠️ NEW (v0.2) | ✅ closed in v0.3 (group-by-error summary) |
+| envFrom.secretRef invisibility | n/a | ⚠️ NEW (v0.2) | ✅ closed in v0.3 (envFrom walk added) |
 | CRD schema instability | n/a | ⚠️ NEW | v1alpha1; documented |
 
 **Net**: v0.2 closes the three brief-defined gaps without introducing
 any **MUST-FIX** issue. Five **DOCUMENT** items, three **WILL-FIX**
 items scheduled for v0.3.
+
+**Update — v0.3 follow-up**: all three WILL-FIX items are now closed
+(SecretStore-provider filter, Vault-outage diagnostic dedupe,
+envFrom.secretRef walk). DOCUMENT items remain unchanged — they're
+accepted-forever items, not v0.3 work.
 
 ---
 

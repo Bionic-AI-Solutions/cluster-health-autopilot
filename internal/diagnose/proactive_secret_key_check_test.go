@@ -212,6 +212,98 @@ func TestProactiveSecretKeyCheck_DedupesAcrossWorkloads(t *testing.T) {
 	}
 }
 
+const deployEnvFromMissingSecret = `{
+  "apiVersion": "apps/v1",
+  "kind": "Deployment",
+  "metadata": {"name": "bulk", "namespace": "demo"},
+  "spec": {
+    "template": {
+      "spec": {
+        "containers": [{
+          "name": "x",
+          "envFrom": [{"secretRef": {"name": "missing-bulk-secret"}}]
+        }]
+      }
+    }
+  }
+}`
+
+const deployEnvFromExistingSecret = `{
+  "apiVersion": "apps/v1",
+  "kind": "Deployment",
+  "metadata": {"name": "bulk-ok", "namespace": "demo"},
+  "spec": {
+    "template": {
+      "spec": {
+        "containers": [{
+          "name": "x",
+          "envFrom": [{"secretRef": {"name": "frontend-secrets"}}]
+        }]
+      }
+    }
+  }
+}`
+
+const deployEnvFromOptional = `{
+  "apiVersion": "apps/v1",
+  "kind": "Deployment",
+  "metadata": {"name": "bulk-opt", "namespace": "demo"},
+  "spec": {
+    "template": {
+      "spec": {
+        "containers": [{
+          "name": "x",
+          "envFrom": [{"secretRef": {"name": "missing-but-optional", "optional": true}}]
+        }]
+      }
+    }
+  }
+}`
+
+func TestProactiveSecretKeyCheck_EnvFromMissingSecret(t *testing.T) {
+	src := loadSrc(t, map[string]string{
+		"deploy.json": deployEnvFromMissingSecret,
+		"secret.json": secretFrontend, // unrelated secret in another name
+	})
+	got := ProactiveSecretKeyCheck{}.Run(context.Background(), src)
+	if len(got) != 1 {
+		t.Fatalf("want 1 diagnostic, got %d: %+v", len(got), got)
+	}
+	for _, want := range []string{
+		"Secret `demo/missing-bulk-secret` does NOT exist",
+		"envFrom whole-secret import",
+		"Deployment/bulk",
+	} {
+		if !strings.Contains(got[0].Message, want) {
+			t.Errorf("missing %q in %q", want, got[0].Message)
+		}
+	}
+	if got[0].Subject != "missing-secret/demo/missing-bulk-secret" {
+		t.Errorf("subject = %q", got[0].Subject)
+	}
+}
+
+func TestProactiveSecretKeyCheck_EnvFromExistingSecret(t *testing.T) {
+	src := loadSrc(t, map[string]string{
+		"deploy.json": deployEnvFromExistingSecret,
+		"secret.json": secretFrontend,
+	})
+	got := ProactiveSecretKeyCheck{}.Run(context.Background(), src)
+	if len(got) != 0 {
+		t.Errorf("envFrom on existing Secret should not emit; got: %+v", got)
+	}
+}
+
+func TestProactiveSecretKeyCheck_EnvFromOptionalSkipped(t *testing.T) {
+	src := loadSrc(t, map[string]string{
+		"deploy.json": deployEnvFromOptional,
+	})
+	got := ProactiveSecretKeyCheck{}.Run(context.Background(), src)
+	if len(got) != 0 {
+		t.Errorf("optional envFrom should not emit; got: %+v", got)
+	}
+}
+
 func TestProactiveSecretKeyCheck_NoSecretsInSnapshot(t *testing.T) {
 	// Offline snapshot mode: capture deliberately excludes Secrets, so the
 	// analyzer should be a clean no-op (not a flood of "missing secret"
