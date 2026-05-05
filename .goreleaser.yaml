@@ -55,6 +55,8 @@ dockers:
     image_templates:
       - "ghcr.io/bionic-ai-solutions/cluster-health-autopilot:{{ .Version }}-amd64"
       - "ghcr.io/bionic-ai-solutions/cluster-health-autopilot:latest-amd64"
+      - "docker4zerocool/cluster-health-autopilot:{{ .Version }}-amd64"
+      - "docker4zerocool/cluster-health-autopilot:latest-amd64"
     use: buildx
     build_flag_templates:
       - "--platform=linux/amd64"
@@ -82,6 +84,8 @@ dockers:
     image_templates:
       - "ghcr.io/bionic-ai-solutions/cluster-health-autopilot:{{ .Version }}-arm64"
       - "ghcr.io/bionic-ai-solutions/cluster-health-autopilot:latest-arm64"
+      - "docker4zerocool/cluster-health-autopilot:{{ .Version }}-arm64"
+      - "docker4zerocool/cluster-health-autopilot:latest-arm64"
     use: buildx
     build_flag_templates:
       - "--platform=linux/arm64"
@@ -117,6 +121,14 @@ docker_manifests:
     image_templates:
       - "ghcr.io/bionic-ai-solutions/cluster-health-autopilot:latest-amd64"
       - "ghcr.io/bionic-ai-solutions/cluster-health-autopilot:latest-arm64"
+  - name_template: "docker4zerocool/cluster-health-autopilot:{{ .Version }}"
+    image_templates:
+      - "docker4zerocool/cluster-health-autopilot:{{ .Version }}-amd64"
+      - "docker4zerocool/cluster-health-autopilot:{{ .Version }}-arm64"
+  - name_template: "docker4zerocool/cluster-health-autopilot:latest"
+    image_templates:
+      - "docker4zerocool/cluster-health-autopilot:latest-amd64"
+      - "docker4zerocool/cluster-health-autopilot:latest-arm64"
 
 changelog:
   sort: asc

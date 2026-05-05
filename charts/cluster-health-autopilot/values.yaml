@@ -6,7 +6,7 @@
 #                   OPT-IN via .Values.remediation.enabled. Off by default.
 
 image:
-  repository: ghcr.io/bionic-ai-solutions/cluster-health-autopilot
+  repository: docker4zerocool/cluster-health-autopilot
   tag: ""                         # default = .Chart.appVersion (e.g. v0.1.0)
   pullPolicy: IfNotPresent
   pullSecrets: []                 # e.g. [{name: dockerhub-secret}]
