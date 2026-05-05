@@ -23,16 +23,17 @@ builds:
     goos:
       - linux
       - darwin
+      - windows
     goarch:
       - amd64
       - arm64
-    # We don't build a Windows binary in v0.1 — the binary's primary surface
-    # is SRE laptops (mac/linux) and CI/CD runners (linux). Add windows
-    # later if a partner asks.
 
 archives:
   - id: cha
     formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
     name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
     files:
       - LICENSE
@@ -134,7 +135,7 @@ release:
     Cluster Health Autopilot **{{ .Version }}** — see the [README](https://github.com/Bionic-AI-Solutions/cluster-health-autopilot/blob/main/README.md) for the 30-second demo.
 
     ## Install
-    - Binaries below for darwin-{amd64,arm64} and linux-{amd64,arm64}.
+    - Binaries below for darwin-{amd64,arm64}, linux-{amd64,arm64}, and windows-{amd64,arm64}.
     - Container image: `ghcr.io/bionic-ai-solutions/cluster-health-autopilot:{{ .Version }}` (multi-arch).
     - Helm chart: `charts/cluster-health-autopilot/` at this tag.
   footer: |
