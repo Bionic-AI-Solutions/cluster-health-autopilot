@@ -63,13 +63,14 @@ cha diagnose --live
 ## In-cluster install (Helm)
 
 ```sh
-helm repo add cha https://<org>.github.io/cluster-health-autopilot
+helm repo add cha https://bionic-ai-solutions.github.io/cluster-health-autopilot
+helm repo update
 helm install cha cha/cluster-health-autopilot \
   --namespace cluster-health-autopilot --create-namespace \
   --set slackWebhookSecretName=cha-slack-webhook
 ```
 
-Full Helm chart at [`charts/cluster-health-autopilot/`](charts/cluster-health-autopilot).
+Full Helm chart at [`charts/cluster-health-autopilot/`](charts/cluster-health-autopilot) — published at `https://bionic-ai-solutions.github.io/cluster-health-autopilot/`.
 
 ## What it checks (probes)
 
