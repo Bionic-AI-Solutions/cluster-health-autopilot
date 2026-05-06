@@ -2,7 +2,7 @@
 
 **Audience**: SRE / Platform Engineer evaluating CHA as a design partner or pilot customer.  
 **Time**: ~45 minutes end-to-end; zero-trust section alone takes 5 minutes.  
-**What you need**: macOS or Linux laptop; `kubectl` context to a real cluster for the in-cluster sections (optional).
+**What you need**: macOS or Linux laptop with `jq` installed; `kubectl` context to a real cluster only for Parts 3 and 4 (optional).
 
 ---
 
@@ -68,18 +68,21 @@ The snapshot at `examples/sample-cluster/` is a real anonymized capture from a p
 • Storage Claims:        🟢 HEALTHY — All 3 PVCs bound
 • Critical Services:     🟢 HEALTHY — All 0 critical services operational
 
-Diagnostics (3):
+Diagnostics (6):
   🔎 Secret `billing/billing-svc-secrets` missing key `STRIPE_API_KEY` (SecretKeyMissing)
   🔎 ExternalSecret `billing/billing-svc-secrets` not Ready: cannot find secret data for key: "stripe_api_key"
   🔎 ExternalSecret `billing/old-payment-gateway` not Ready: vault path not found
+  🔎 Pod `monitoring/metrics-exporter-5c7d8b-abc12` container "exporter" cannot pull image — auth failure: 401 unauthorized
+  🔎 Certificate `monitoring/grafana-tls` is not Ready: ACME rate-limited (too many certificates issued)
+  🔎 Certificate `production/api-server-tls` EXPIRED at 2025-02-28 00:00 UTC
 
-Total findings: 0, diagnostics: 3
+Total findings: 0, diagnostics: 6
 ```
 
 **Talking points**:
 - Five probes ran across storage, nodes, database, PVCs, and services — all green.
-- Three diagnostics surfaced from analyzers: a secret key mismatch between the Vault path and what the pod expects, and a stale ExternalSecret pointing at a Vault path that no longer exists.
-- The pod `billing/billing-svc-d3e4f-new1` is currently stuck in `CreateContainerConfigError` — CHA detected the root cause (STRIPE_API_KEY missing from the secret) before anyone filed a ticket.
+- Six diagnostics from four different analyzers: secret key mismatch, two failing ExternalSecrets, a registry auth failure, a cert-manager ACME rate-limit, and an expired TLS certificate.
+- The pod `billing/billing-svc-d3e4f-new1` is stuck in `CreateContainerConfigError` — CHA traced the root cause to a Vault key name mismatch before anyone filed a ticket.
 - **Nothing was connected to your cluster**. Zero RBAC. Zero trust required.
 
 ### 1.4 — Switch to JSON output (for pipeline demos)
@@ -94,6 +97,10 @@ The structured output is designed for fleet-console pipelines: each diagnostic c
 
 ## Part 2 — Failure Showcase (Sample Fixture Walk-Through)
 
+> All four failures below are visible from the same `examples/sample-cluster/` snapshot — no
+> live cluster or `kubectl` needed. The `jq` queries let you "open the hood" and show the
+> audience the raw data CHA reasoned over.
+
 ### Failure 1: SecretKeyMissing
 
 **What happened in the fixture**:
@@ -107,10 +114,12 @@ The structured output is designed for fleet-console pipelines: each diagnostic c
 🔎 Secret `billing/billing-svc-secrets` missing key `STRIPE_API_KEY` (SecretKeyMissing)
 ```
 
-**What to show the audience**:
+**Show the raw data**:
 ```bash
 # See the pod stuck
-cat examples/sample-cluster/core-pods.json | jq '.items[] | select(.status.containerStatuses[0].state.waiting.reason == "CreateContainerConfigError") | {name: .metadata.name, ns: .metadata.namespace, reason: .status.containerStatuses[0].state.waiting.reason}'
+cat examples/sample-cluster/core-pods.json \
+  | jq '.items[] | select(.status.containerStatuses[0].state.waiting.reason == "CreateContainerConfigError")
+        | {pod: .metadata.name, ns: .metadata.namespace, reason: .status.containerStatuses[0].state.waiting.reason}'
 ```
 
 **Root cause chain**: `stripe_api_key` (Vault key) → `STRIPE_API_KEY` (pod env ref) → name mismatch → pod cannot start.
@@ -121,7 +130,7 @@ cat examples/sample-cluster/core-pods.json | jq '.items[] | select(.status.conta
 
 **What happened in the fixture**:
 - `billing/billing-svc-secrets`: ESO fetched the secret but the key name in the Vault response didn't match the `remoteRef.property` in the ExternalSecret spec.
-- `billing/old-payment-gateway`: ESO tried to sync but the Vault path `secret/t6-apps/billing/old-payment` no longer exists (someone deleted it during a Vault cleanup).
+- `billing/old-payment-gateway`: ESO tried to sync but the Vault path `secret/t6-apps/billing/old-payment` no longer exists (deleted during a Vault cleanup).
 
 **CHA detection**:
 ```
@@ -129,66 +138,73 @@ cat examples/sample-cluster/core-pods.json | jq '.items[] | select(.status.conta
 🔎 ExternalSecret `billing/old-payment-gateway` not Ready: vault path not found
 ```
 
-**What to show the audience**:
+**Show the raw data**:
 ```bash
-cat examples/sample-cluster/external-secrets.io-externalsecrets.json | jq '.items[] | {name: .metadata.name, ns: .metadata.namespace, ready: (.status.conditions[] | select(.type == "Ready") | .status), message: (.status.conditions[] | select(.type == "Ready") | .message)}'
+cat examples/sample-cluster/external-secrets.io-externalsecrets.json \
+  | jq '.items[] | select(.status.conditions[0].status == "False")
+        | {name: .metadata.name, ns: .metadata.namespace,
+           ready: .status.conditions[0].status,
+           message: .status.conditions[0].message}'
 ```
 
 ---
 
-### Failure 3: ImagePullAuth (analyzer, inject to fixture or live)
+### Failure 3: ImagePullAuth
 
-**What it detects**: Registry authentication failures — 401 Unauthorized, credential errors, `pull access denied`.  
-**What it ignores**: Legitimate "image not found" errors (`manifest unknown`, `not found`).
+**What happened in the fixture**:
+- The `monitoring/metrics-exporter` pod references a private GHCR image.
+- No `imagePullSecret` is configured — the kubelet's pull attempt returns HTTP 401.
+- Pod state: `ImagePullBackOff`.
 
-**Simulated scenario** (explain, or inject into a live cluster):
-```yaml
-# Create a pod that pulls from a private registry with bad credentials
-kubectl apply -f - <<EOF
-apiVersion: v1
-kind: Pod
-metadata:
-  name: bad-creds-demo
-  namespace: default
-spec:
-  containers:
-  - name: app
-    image: ghcr.io/myorg/private-app:latest
-    # No imagePullSecrets — will fail with 401
-EOF
+**CHA detection**:
+```
+🔎 Pod `monitoring/metrics-exporter-5c7d8b-abc12` container "exporter" cannot pull image
+   "ghcr.io/myorg/metrics-exporter:v2.1.0": auth failure — 401 unauthorized: authentication required
 ```
 
-After a minute, CHA will surface:
-```
-🔎 Pod default/bad-creds-demo container app image ghcr.io/myorg/private-app:latest — pull auth failure: unauthorized: authentication required
+**Show the raw data** (two queries — pod state, then the auth event):
+```bash
+# Pod stuck in ImagePullBackOff
+cat examples/sample-cluster/core-pods.json \
+  | jq '.items[] | select(.status.containerStatuses[0].state.waiting.reason == "ImagePullBackOff")
+        | {pod: .metadata.name, ns: .metadata.namespace,
+           image: .status.containerStatuses[0].image,
+           reason: .status.containerStatuses[0].state.waiting.reason}'
+
+# The kubelet event carrying the 401 error
+cat examples/sample-cluster/core-events.json \
+  | jq '.items[] | select(.reason == "Failed" and (.message | test("unauthorized|401")))
+        | {pod: .involvedObject.name, ns: .metadata.namespace, message: .message}'
 ```
 
-**Note**: CHA reads the Kubernetes Events for the pod and filters on auth-signal keywords (`unauthorized`, `401`, `denied`, `pull access denied`, `no basic auth credentials`). Non-auth pull failures are intentionally excluded to avoid noise.
+**Why CHA ignores non-auth pull failures**: `manifest unknown`, `image not found`, and other deployment errors are noise — the team already knows their image tags. CHA only surfaces auth-signal keywords (`401`, `unauthorized`, `denied`, `authentication required`, `pull access denied`) so the on-call engineer doesn't have to grep events manually.
 
 ---
 
-### Failure 4: CertExpiry (analyzer)
+### Failure 4: CertExpiry
 
-**What it detects**: cert-manager `Certificate` resources that are:
-1. Not Ready (any reason — cert-manager hasn't issued yet, or issuance failed)
-2. Already expired (`notAfter` in the past)
-3. Expiring within 14 days
+**What happened in the fixture**:
+- `monitoring/grafana-tls`: cert-manager hit an ACME rate-limit and cannot renew. The certificate is not Ready.
+- `production/api-server-tls`: The certificate expired on 2025-02-28. TLS secrets are still mounted in running pods but will break on the next pod restart.
 
-**Simulated scenario** (explain, or on a live cluster with cert-manager):
+**CHA detection**:
+```
+🔎 Certificate `monitoring/grafana-tls` is not Ready: ACME rate-limited (too many certificates issued)
+🔎 Certificate `production/api-server-tls` EXPIRED at 2025-02-28 00:00 UTC
+```
+
+**Show the raw data**:
 ```bash
-# Check any near-expiry certs
-kubectl get certificates -A -o json | jq '.items[] | {name: .metadata.name, ns: .metadata.namespace, ready: (.status.conditions[] | select(.type == "Ready") | .status), notAfter: .status.notAfter}'
+cat examples/sample-cluster/cert-manager.io-certificates.json \
+  | jq '.items[] | {name: .metadata.name, ns: .metadata.namespace,
+                    ready: (.status.conditions[0] | {status: .status, message: .message}),
+                    notAfter: .status.notAfter}'
 ```
 
-CHA output for an expiring cert:
-```
-🔎 Certificate monitoring/grafana-tls expiring in 8d (CertExpiry)
-```
-
-CHA output for a not-Ready cert:
-```
-🔎 Certificate staging/api-tls not Ready: BackoffLimitExceeded (CertExpiry)
-```
+**Three conditions CHA flags** (explain to the audience):
+1. `Ready: False` — renewal stalled (ACME error, issuer down, DNS misconfiguration)
+2. `notAfter` in the past — certificate already expired
+3. `notAfter` within 14 days — cert-manager renewal has likely stalled (sits above the default 2/3-of-validity renewal point)
 
 ---
 
@@ -203,7 +219,7 @@ helm version
 # Verify kubectl context
 kubectl config current-context
 
-# Add the chart repo (or use the local checkout)
+# Add the chart repo (one-time setup)
 helm repo add cha https://bionic-ai-solutions.github.io/cluster-health-autopilot
 helm repo update
 ```
@@ -225,10 +241,33 @@ Verify the install:
 ```bash
 kubectl get all -n cluster-health-autopilot
 kubectl get clusterrole | grep cha
-kubectl get driftreports -A   # empty until first run
 ```
 
-### 3.2 — Enable Slack reporting
+### 3.2 — Trigger a manual run (don't wait for the cron)
+
+```bash
+kubectl create job --from=cronjob/cha-cluster-health-autopilot-diagnose cha-diagnose-manual \
+  -n cluster-health-autopilot
+kubectl logs -f job/cha-diagnose-manual -n cluster-health-autopilot
+```
+
+You will see the same probe + diagnostic output as the snapshot mode, but against the live cluster.
+
+### 3.3 — Inspect DriftReport CRDs (kubectl-queryable diagnostics)
+
+After the CronJob (or manual job) runs:
+```bash
+kubectl get driftreports -A
+# NAMESPACE   NAME                              AGE
+# billing     secretkeymissing-billing-svc...   2m
+# billing     failingexternalsecret-billing...  2m
+
+kubectl describe driftreport secretkeymissing-billing-svc-secrets -n billing
+```
+
+DriftReports are Kubernetes objects — they integrate with any existing alerting that watches for CRD events (Prometheus, Datadog operator, Grafana k8sevents).
+
+### 3.4 — Enable Slack reporting
 
 ```bash
 # First, create a Secret with your webhook URL
@@ -243,17 +282,6 @@ helm upgrade cha cha/cluster-health-autopilot \
   --set slack.enabled=true \
   --set slack.webhookSecretName=cha-slack-webhook
 ```
-
-### 3.3 — Trigger a manual run (don't wait for the cron)
-
-```bash
-# The cronjob name includes the release name prefix
-kubectl create job --from=cronjob/cha-cluster-health-autopilot-diagnose cha-diagnose-manual \
-  -n cluster-health-autopilot
-kubectl logs -f job/cha-diagnose-manual -n cluster-health-autopilot
-```
-
-You will see the same probe + diagnostic output as the snapshot mode, but against the live cluster.
 
 ---
 
@@ -327,7 +355,7 @@ kubectl get pods -n default -l job-name=crash-demo
 # crash-demo-abc12        0/1     Error    0          45s
 ```
 
-Now run `cha remediate --dry-run` to confirm detection:
+Run `cha remediate` in dry-run to confirm detection:
 ```bash
 kubectl create job --from=cronjob/cha-cluster-health-autopilot-remediate cha-remediate-check \
   -n cluster-health-autopilot
@@ -376,20 +404,6 @@ They send you the `.tgz`. You analyze it:
 **What's in the snapshot**: pods, nodes, PVCs, events, deployments, replicasets, jobs, cronjobs, externalsecrets, cnpg clusters, ceph clusters, cert-manager certificates.
 
 **What's NOT in the snapshot**: Secret values (never captured to disk — the tool deliberately excludes them). See `internal/snapshot/capture.go` for the explicit exclusion comment.
-
-### 5.2 — DriftReport CRDs (kubectl-queryable diagnostics)
-
-After the in-cluster CronJob runs:
-```bash
-kubectl get driftreports -A
-# NAMESPACE   NAME                              AGE
-# billing     secretkeymissing-billing-svc...   2m
-# billing     failingexternalsecret-billing...  2m
-
-kubectl describe driftreport secretkeymissing-billing-svc-secrets -n billing
-```
-
-DriftReports are Kubernetes objects — they integrate with any existing alerting that watches for CRD events (Prometheus, Datadog operator, Grafana k8sevents).
 
 ---
 
@@ -444,7 +458,7 @@ The ask: "Let us deploy the Helm chart to one non-prod namespace, let the CronJo
 |---|---|
 | `cha: permission denied` | `chmod +x cha` |
 | `cha diagnose --snapshot` shows no diagnostics on sample-cluster | Verify you're using the repo's `examples/sample-cluster/` directory, not a custom snapshot |
-| Helm install fails: `no matches for kind "ExternalSecret"` | ESO not installed; skip the runner ExternalSecret section or install ESO first |
+| Helm install fails: `no matches for kind "ExternalSecret"` | ESO not installed; the diagnose CronJob still runs — it simply skips ExternalSecret probes |
 | Runner pod stays `Pending` | `kubectl describe pod -n cluster-health-autopilot -l app=cha-runner` — likely imagePullBackOff on `myoung34/github-runner:ubuntu-jammy` |
 | DriftReports not appearing | Check `kubectl logs -n cluster-health-autopilot job/<latest-diagnose-job>`; DriftReport CRD may need manual install: `kubectl apply -f charts/cluster-health-autopilot/crds/` |
 | `cha remediate --live` refuses in snapshot mode | Expected — fixers are type-system-gated. Must use `--live` flag with valid kubeconfig |

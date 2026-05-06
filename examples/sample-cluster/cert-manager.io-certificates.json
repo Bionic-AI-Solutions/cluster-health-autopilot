@@ -1,0 +1,37 @@
+{
+  "apiVersion": "cert-manager.io/v1",
+  "kind": "CertificateList",
+  "items": [
+    {
+      "apiVersion": "cert-manager.io/v1",
+      "kind": "Certificate",
+      "metadata": {"name": "grafana-tls", "namespace": "monitoring"},
+      "spec": {
+        "secretName": "grafana-tls",
+        "issuerRef": {"name": "letsencrypt-prod", "kind": "ClusterIssuer"},
+        "dnsNames": ["grafana.example.internal"]
+      },
+      "status": {
+        "conditions": [{
+          "type": "Ready",
+          "status": "False",
+          "message": "Failed to create Order: 429 urn:ietf:params:acme:error:rateLimited: Error creating new order :: too many certificates already issued for \"example.internal\""
+        }]
+      }
+    },
+    {
+      "apiVersion": "cert-manager.io/v1",
+      "kind": "Certificate",
+      "metadata": {"name": "api-server-tls", "namespace": "production"},
+      "spec": {
+        "secretName": "api-server-tls",
+        "issuerRef": {"name": "vault-issuer", "kind": "ClusterIssuer"},
+        "dnsNames": ["api.example.internal"]
+      },
+      "status": {
+        "conditions": [{"type": "Ready", "status": "True", "message": "Certificate is up to date and has not expired"}],
+        "notAfter": "2025-02-28T00:00:00Z"
+      }
+    }
+  ]
+}

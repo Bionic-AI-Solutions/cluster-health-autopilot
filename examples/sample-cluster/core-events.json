@@ -19,6 +19,15 @@
       "reason": "UpdateFailed",
       "message": "error processing spec.data[0] (key: shared/legacy/payments), err: vault path not found",
       "lastTimestamp": "2026-04-30T09:00:00Z"
+    },
+    {
+      "apiVersion": "v1",
+      "kind": "Event",
+      "metadata": {"name": "metrics-exporter-5c7d8b-abc12.pullauth", "namespace": "monitoring"},
+      "involvedObject": {"kind": "Pod", "name": "metrics-exporter-5c7d8b-abc12", "namespace": "monitoring"},
+      "reason": "Failed",
+      "message": "Failed to pull image \"ghcr.io/myorg/metrics-exporter:v2.1.0\": rpc error: code = Unknown desc = failed to pull and unpack image: unexpected status code 401 Unauthorized: unauthorized: authentication required",
+      "lastTimestamp": "2026-04-30T12:00:00Z"
     }
   ]
 }
