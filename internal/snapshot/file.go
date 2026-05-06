@@ -4,6 +4,8 @@
 package snapshot
 
 import (
+	"archive/tar"
+	"compress/gzip"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -31,10 +33,17 @@ type File struct {
 	objects map[string][]unstructured.Unstructured
 }
 
-// LoadFile reads a snapshot from a path that is either a file or directory
-// of *.json captures. It is tolerant of unknown kinds (silently skipped)
-// and of mixing List / single-object payloads in the same file or tree.
+// LoadFile reads a snapshot from path, which may be:
+//   - a directory containing *.json captures
+//   - a single *.json file
+//   - a *.tar.gz / *.tgz archive produced by `cha snapshot capture --tar`
+//
+// It is tolerant of unknown kinds (silently skipped) and of mixing List /
+// single-object payloads in the same file or tree.
 func LoadFile(path string) (*File, error) {
+	if strings.HasSuffix(path, ".tar.gz") || strings.HasSuffix(path, ".tgz") {
+		return loadTarGZ(path)
+	}
 	st, err := os.Stat(path)
 	if err != nil {
 		return nil, fmt.Errorf("snapshot path %q: %w", path, err)
@@ -59,6 +68,46 @@ func LoadFile(path string) (*File, error) {
 	return f, nil
 }
 
+// loadTarGZ reads a .tar.gz / .tgz snapshot archive directly into memory
+// without writing to disk. Each *.json entry in the archive is parsed the
+// same way as a file on disk.
+func loadTarGZ(path string) (*File, error) {
+	fh, err := os.Open(path)
+	if err != nil {
+		return nil, fmt.Errorf("open %q: %w", path, err)
+	}
+	defer func() { _ = fh.Close() }()
+
+	gz, err := gzip.NewReader(fh)
+	if err != nil {
+		return nil, fmt.Errorf("decompress %q: %w", path, err)
+	}
+	defer func() { _ = gz.Close() }()
+
+	f := &File{objects: make(map[string][]unstructured.Unstructured)}
+	tr := tar.NewReader(gz)
+	for {
+		hdr, err := tr.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return nil, fmt.Errorf("read tar %q: %w", path, err)
+		}
+		if hdr.Typeflag != tar.TypeReg || !strings.HasSuffix(hdr.Name, ".json") {
+			continue
+		}
+		data, err := io.ReadAll(tr)
+		if err != nil {
+			return nil, fmt.Errorf("read entry %q in %q: %w", hdr.Name, path, err)
+		}
+		if err := f.loadJSONBytes(hdr.Name, data); err != nil {
+			return nil, err
+		}
+	}
+	return f, nil
+}
+
 func (f *File) loadJSONFile(p string) error {
 	fh, err := os.Open(p)
 	if err != nil {
@@ -69,19 +118,23 @@ func (f *File) loadJSONFile(p string) error {
 	if err != nil {
 		return fmt.Errorf("read %q: %w", p, err)
 	}
+	return f.loadJSONBytes(p, data)
+}
+
+func (f *File) loadJSONBytes(name string, data []byte) error {
 	// Determine if this is a List or a single object by peeking at "kind".
 	var probe struct {
 		Kind  string            `json:"kind"`
 		Items []json.RawMessage `json:"items"`
 	}
 	if err := json.Unmarshal(data, &probe); err != nil {
-		return fmt.Errorf("parse %q: %w", p, err)
+		return fmt.Errorf("parse %q: %w", name, err)
 	}
 	if strings.HasSuffix(probe.Kind, "List") && len(probe.Items) > 0 {
 		for i, raw := range probe.Items {
 			obj := unstructured.Unstructured{}
 			if err := obj.UnmarshalJSON(raw); err != nil {
-				return fmt.Errorf("parse item %d in %q: %w", i, p, err)
+				return fmt.Errorf("parse item %d in %q: %w", i, name, err)
 			}
 			f.add(obj)
 		}
@@ -90,10 +143,9 @@ func (f *File) loadJSONFile(p string) error {
 	// Treat as a single object.
 	obj := unstructured.Unstructured{}
 	if err := obj.UnmarshalJSON(data); err != nil {
-		return fmt.Errorf("parse %q as single object: %w", p, err)
+		return fmt.Errorf("parse %q as single object: %w", name, err)
 	}
 	if obj.GetKind() == "" {
-		// No kind — likely an empty result; ignore.
 		return nil
 	}
 	f.add(obj)
@@ -138,6 +190,7 @@ var kindToResource = map[string]string{
 	"ClusterSecretStore":    "clustersecretstores",
 	"Cluster":               "clusters",
 	"CephCluster":           "cephclusters",
+	"Certificate":           "certificates",
 	"Secret":                "secrets",
 }
 

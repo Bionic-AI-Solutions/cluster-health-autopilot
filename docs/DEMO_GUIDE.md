@@ -4,6 +4,8 @@
 **Time**: ~45 minutes end-to-end; zero-trust section alone takes 5 minutes.  
 **What you need**: macOS or Linux laptop; `kubectl` context to a real cluster for the in-cluster sections (optional).
 
+> **Note on release naming**: GoReleaser includes the version in asset filenames — e.g. `cluster-health-autopilot_0.8.0_darwin_arm64.tar.gz`. Replace `0.8.0` with the current release version as needed.
+
 ---
 
 ## Part 1 — Zero-Trust Demo (No Install, No RBAC, 5 Minutes)
@@ -13,27 +15,31 @@
 
 ### 1.1 — Download the binary
 
+Set `VERSION` to the latest release (check [Releases](https://github.com/Bionic-AI-Solutions/cluster-health-autopilot/releases)):
+
 ```bash
+VERSION=0.8.0
+
 # macOS arm64 (Apple Silicon)
-curl -L https://github.com/Bionic-AI-Solutions/cluster-health-autopilot/releases/latest/download/cluster-health-autopilot_darwin_arm64.tar.gz \
+curl -L "https://github.com/Bionic-AI-Solutions/cluster-health-autopilot/releases/download/v${VERSION}/cluster-health-autopilot_${VERSION}_darwin_arm64.tar.gz" \
   | tar xz
 chmod +x cha
 
 # macOS amd64 (Intel)
-curl -L https://github.com/Bionic-AI-Solutions/cluster-health-autopilot/releases/latest/download/cluster-health-autopilot_darwin_amd64.tar.gz \
+curl -L "https://github.com/Bionic-AI-Solutions/cluster-health-autopilot/releases/download/v${VERSION}/cluster-health-autopilot_${VERSION}_darwin_amd64.tar.gz" \
   | tar xz
 chmod +x cha
 
 # Linux amd64
-curl -L https://github.com/Bionic-AI-Solutions/cluster-health-autopilot/releases/latest/download/cluster-health-autopilot_linux_amd64.tar.gz \
+curl -L "https://github.com/Bionic-AI-Solutions/cluster-health-autopilot/releases/download/v${VERSION}/cluster-health-autopilot_${VERSION}_linux_amd64.tar.gz" \
   | tar xz
 chmod +x cha
 ```
 
 **Windows** (PowerShell):
 ```powershell
-# Windows amd64
-Invoke-WebRequest -Uri "https://github.com/Bionic-AI-Solutions/cluster-health-autopilot/releases/latest/download/cluster-health-autopilot_windows_amd64.zip" -OutFile cha.zip
+$VERSION = "0.8.0"
+Invoke-WebRequest -Uri "https://github.com/Bionic-AI-Solutions/cluster-health-autopilot/releases/download/v$VERSION/cluster-health-autopilot_${VERSION}_windows_amd64.zip" -OutFile cha.zip
 Expand-Archive cha.zip -DestinationPath .
 # Binary is cha.exe — run as: .\cha.exe diagnose --snapshot examples\sample-cluster
 ```
@@ -208,7 +214,7 @@ helm repo update
 
 ```bash
 helm install cha cha/cluster-health-autopilot \
-  --namespace cha \
+  --namespace cluster-health-autopilot \
   --create-namespace
 ```
 
@@ -219,7 +225,7 @@ This deploys:
 
 Verify the install:
 ```bash
-kubectl get all -n cha
+kubectl get all -n cluster-health-autopilot
 kubectl get clusterrole | grep cha
 kubectl get driftreports -A   # empty until first run
 ```
@@ -230,11 +236,11 @@ kubectl get driftreports -A   # empty until first run
 # First, create a Secret with your webhook URL
 kubectl create secret generic cha-slack-webhook \
   --from-literal=WEBHOOK_URL="https://hooks.slack.com/services/..." \
-  --namespace cha
+  --namespace cluster-health-autopilot
 
 # Upgrade with Slack enabled
 helm upgrade cha cha/cluster-health-autopilot \
-  --namespace cha \
+  --namespace cluster-health-autopilot \
   --reuse-values \
   --set slack.enabled=true \
   --set slack.webhookSecretName=cha-slack-webhook
@@ -243,8 +249,10 @@ helm upgrade cha cha/cluster-health-autopilot \
 ### 3.3 — Trigger a manual run (don't wait for the cron)
 
 ```bash
-kubectl create job --from=cronjob/cha-diagnose cha-diagnose-manual -n cha
-kubectl logs -f job/cha-diagnose-manual -n cha
+# The cronjob name includes the release name prefix
+kubectl create job --from=cronjob/cha-cluster-health-autopilot-diagnose cha-diagnose-manual \
+  -n cluster-health-autopilot
+kubectl logs -f job/cha-diagnose-manual -n cluster-health-autopilot
 ```
 
 You will see the same probe + diagnostic output as the snapshot mode, but against the live cluster.
@@ -259,7 +267,7 @@ You will see the same probe + diagnostic output as the snapshot mode, but agains
 
 ```bash
 helm upgrade cha cha/cluster-health-autopilot \
-  --namespace cha \
+  --namespace cluster-health-autopilot \
   --reuse-values \
   --set remediation.enabled=true \
   --set remediation.dryRun=true
@@ -267,8 +275,9 @@ helm upgrade cha cha/cluster-health-autopilot \
 
 Trigger a manual remediation run:
 ```bash
-kubectl create job --from=cronjob/cha-remediate cha-remediate-dryrun -n cha
-kubectl logs -f job/cha-remediate-dryrun -n cha
+kubectl create job --from=cronjob/cha-cluster-health-autopilot-remediate cha-remediate-dryrun \
+  -n cluster-health-autopilot
+kubectl logs -f job/cha-remediate-dryrun -n cluster-health-autopilot
 ```
 
 The output will show what *would* be fixed, without touching the cluster:
@@ -322,20 +331,22 @@ kubectl get pods -n default -l job-name=crash-demo
 
 Now run `cha remediate --dry-run` to confirm detection:
 ```bash
-kubectl create job --from=cronjob/cha-remediate cha-remediate-check -n cha
-kubectl logs -f job/cha-remediate-check -n cha
+kubectl create job --from=cronjob/cha-cluster-health-autopilot-remediate cha-remediate-check \
+  -n cluster-health-autopilot
+kubectl logs -f job/cha-remediate-check -n cluster-health-autopilot
 # [DRY-RUN] Would delete pod default/crash-demo-abc12 (StaleErrorPods)
 ```
 
 Switch to live mode and confirm:
 ```bash
 helm upgrade cha cha/cluster-health-autopilot \
-  --namespace cha \
+  --namespace cluster-health-autopilot \
   --reuse-values \
   --set remediation.dryRun=false
 
-kubectl create job --from=cronjob/cha-remediate cha-remediate-live -n cha
-kubectl logs -f job/cha-remediate-live -n cha
+kubectl create job --from=cronjob/cha-cluster-health-autopilot-remediate cha-remediate-live \
+  -n cluster-health-autopilot
+kubectl logs -f job/cha-remediate-live -n cluster-health-autopilot
 # Deleted pod default/crash-demo-abc12 (StaleErrorPods)
 
 # Verify pod is gone
@@ -440,7 +451,7 @@ The ask: "Let us deploy the Helm chart to one non-prod namespace, let the CronJo
 | DriftReports not appearing | Check `kubectl logs -n cha job/<latest-diagnose-job>`; DriftReport CRD may need manual install: `kubectl apply -f charts/cluster-health-autopilot/crds/` |
 | `cha remediate --live` refuses in snapshot mode | Expected — fixers are type-system-gated. Must use `--live` flag with valid kubeconfig |
 
-## Appendix B — Full Analyzer + Probe Catalog (v0.7.0)
+## Appendix B — Full Analyzer + Probe Catalog (v0.8.0)
 
 **Probes** (read cluster state, report findings):
 | Probe | What it checks |
