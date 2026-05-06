@@ -23,6 +23,28 @@ func AsMutator(s Source) Mutator {
 	return m
 }
 
+// DryRunMutator implements Mutator without performing any real cluster
+// mutations. Pass it to fixers when --dry-run is active: they see a non-nil
+// Mutator and execute their full evaluation logic (condition checks, candidate
+// selection), but every Delete/Patch call is a no-op. The resulting
+// fix.Result.Actions list reflects what would have been done.
+type DryRunMutator struct{}
+
+// Delete is a no-op in dry-run mode.
+func (DryRunMutator) Delete(_ context.Context, _ schema.GroupVersionResource, _, _ string) error {
+	return nil
+}
+
+// Patch is a no-op in dry-run mode.
+func (DryRunMutator) Patch(_ context.Context, _ schema.GroupVersionResource, _, _ string, _ types.PatchType, _ []byte) error {
+	return nil
+}
+
+// Create is a no-op in dry-run mode.
+func (DryRunMutator) Create(_ context.Context, _ schema.GroupVersionResource, _ string, _ *unstructured.Unstructured) error {
+	return nil
+}
+
 // Delete removes the named resource from the live cluster.
 func (l *Live) Delete(ctx context.Context, gvr schema.GroupVersionResource, ns, name string) error {
 	var ri dynamic.ResourceInterface

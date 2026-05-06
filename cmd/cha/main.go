@@ -202,7 +202,9 @@ Secrets, ConfigMaps, or any CRD.`,
 				return err
 			}
 			var mut snapshot.Mutator
-			if !dryRun {
+			if dryRun {
+				mut = snapshot.DryRunMutator{}
+			} else {
 				mut = snapshot.AsMutator(src)
 				if mut == nil {
 					return fmt.Errorf("source does not support mutation; expected Live source")
@@ -239,7 +241,7 @@ Secrets, ConfigMaps, or any CRD.`,
 	c.Flags().BoolVar(&live, "live", false, "Run against the live cluster (required)")
 	c.Flags().StringVar(&kubeconfig, "kubeconfig", "", "Path to kubeconfig (default: in-cluster, then $KUBECONFIG, then ~/.kube/config)")
 	c.Flags().StringVar(&outputFormat, "format", "text", "Output format: text|json")
-	c.Flags().BoolVar(&dryRun, "dry-run", false, "Show what would be done without mutating cluster state (each fixer reports Refused)")
+	c.Flags().BoolVar(&dryRun, "dry-run", false, "Evaluate fixers and report what would be done without mutating cluster state")
 	c.Flags().StringVar(&slackWebhook, "slack-webhook", "", "Optional Slack incoming-webhook URL — posts a summary of fixes applied")
 	return c
 }
@@ -272,7 +274,11 @@ func printRemediateText(results []fix.Result, dryRun bool) {
 		}
 		fmt.Printf(": %d action(s), %d skipped\n", len(r.Actions), len(r.Skipped))
 		for _, a := range r.Actions {
-			fmt.Printf("    🔧 %s [%s]\n", a.Description, a.Object)
+			if dryRun {
+				fmt.Printf("    [DRY-RUN] Would: %s [%s]\n", a.Description, a.Object)
+			} else {
+				fmt.Printf("    🔧 %s [%s]\n", a.Description, a.Object)
+			}
 			totalActions++
 		}
 		// Print only the first 5 skips per fixer to avoid drowning the output.
