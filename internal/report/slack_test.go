@@ -180,6 +180,25 @@ func TestPostSlack_Failure(t *testing.T) {
 	}
 }
 
+// TestPostSlack_RejectedPayload — Slack returns HTTP 200 with a non-"ok" body
+// (e.g. "no_service", "channel_not_found"). Must surface as an error so the
+// caller logs a warning rather than silently dropping the message.
+func TestPostSlack_RejectedPayload(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte("no_service"))
+	}))
+	defer srv.Close()
+
+	p := FormatSlack(nil, nil, nil, false)
+	err := PostSlack(srv.Client(), srv.URL, p)
+	if err == nil {
+		t.Fatal("expected error when Slack returns non-ok body with HTTP 200")
+	}
+	if !strings.Contains(err.Error(), "no_service") {
+		t.Errorf("error should include Slack's response body: %v", err)
+	}
+}
+
 // TestPostSlack_EmptyURL — empty webhook URL should error early, no network.
 func TestPostSlack_EmptyURL(t *testing.T) {
 	if err := PostSlack(nil, "", FormatSlack(nil, nil, nil, false)); err == nil {

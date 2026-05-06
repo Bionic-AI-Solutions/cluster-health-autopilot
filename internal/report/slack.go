@@ -180,9 +180,8 @@ func PostSlack(client *http.Client, webhookURL string, payload SlackPayload) err
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("webhook returned HTTP %d: %s", resp.StatusCode, string(respBody))
 	}
-	if strings.TrimSpace(string(respBody)) != "ok" {
-		// Non-Slack webhooks may return JSON; only treat non-200 as fatal.
-		return nil
+	if body := strings.TrimSpace(string(respBody)); body != "ok" {
+		return fmt.Errorf("webhook rejected payload: %s", body)
 	}
 	return nil
 }
