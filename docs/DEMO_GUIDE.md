@@ -4,8 +4,6 @@
 **Time**: ~45 minutes end-to-end; zero-trust section alone takes 5 minutes.  
 **What you need**: macOS or Linux laptop; `kubectl` context to a real cluster for the in-cluster sections (optional).
 
-> **Note on release naming**: GoReleaser includes the version in asset filenames — e.g. `cluster-health-autopilot_0.8.0_darwin_arm64.tar.gz`. Replace `0.8.0` with the current release version as needed.
-
 ---
 
 ## Part 1 — Zero-Trust Demo (No Install, No RBAC, 5 Minutes)
@@ -15,31 +13,31 @@
 
 ### 1.1 — Download the binary
 
-Set `VERSION` to the latest release (check [Releases](https://github.com/Bionic-AI-Solutions/cluster-health-autopilot/releases)):
-
 ```bash
-VERSION=0.8.0
-
 # macOS arm64 (Apple Silicon)
-curl -L "https://github.com/Bionic-AI-Solutions/cluster-health-autopilot/releases/download/v${VERSION}/cluster-health-autopilot_${VERSION}_darwin_arm64.tar.gz" \
+curl -L https://github.com/Bionic-AI-Solutions/cluster-health-autopilot/releases/latest/download/cluster-health-autopilot_darwin_arm64.tar.gz \
   | tar xz
 chmod +x cha
 
 # macOS amd64 (Intel)
-curl -L "https://github.com/Bionic-AI-Solutions/cluster-health-autopilot/releases/download/v${VERSION}/cluster-health-autopilot_${VERSION}_darwin_amd64.tar.gz" \
+curl -L https://github.com/Bionic-AI-Solutions/cluster-health-autopilot/releases/latest/download/cluster-health-autopilot_darwin_amd64.tar.gz \
   | tar xz
 chmod +x cha
 
 # Linux amd64
-curl -L "https://github.com/Bionic-AI-Solutions/cluster-health-autopilot/releases/download/v${VERSION}/cluster-health-autopilot_${VERSION}_linux_amd64.tar.gz" \
+curl -L https://github.com/Bionic-AI-Solutions/cluster-health-autopilot/releases/latest/download/cluster-health-autopilot_linux_amd64.tar.gz \
+  | tar xz
+chmod +x cha
+
+# Linux arm64
+curl -L https://github.com/Bionic-AI-Solutions/cluster-health-autopilot/releases/latest/download/cluster-health-autopilot_linux_arm64.tar.gz \
   | tar xz
 chmod +x cha
 ```
 
 **Windows** (PowerShell):
 ```powershell
-$VERSION = "0.8.0"
-Invoke-WebRequest -Uri "https://github.com/Bionic-AI-Solutions/cluster-health-autopilot/releases/download/v$VERSION/cluster-health-autopilot_${VERSION}_windows_amd64.zip" -OutFile cha.zip
+Invoke-WebRequest -Uri "https://github.com/Bionic-AI-Solutions/cluster-health-autopilot/releases/latest/download/cluster-health-autopilot_windows_amd64.zip" -OutFile cha.zip
 Expand-Archive cha.zip -DestinationPath .
 # Binary is cha.exe — run as: .\cha.exe diagnose --snapshot examples\sample-cluster
 ```
@@ -447,8 +445,8 @@ The ask: "Let us deploy the Helm chart to one non-prod namespace, let the CronJo
 | `cha: permission denied` | `chmod +x cha` |
 | `cha diagnose --snapshot` shows no diagnostics on sample-cluster | Verify you're using the repo's `examples/sample-cluster/` directory, not a custom snapshot |
 | Helm install fails: `no matches for kind "ExternalSecret"` | ESO not installed; skip the runner ExternalSecret section or install ESO first |
-| Runner pod stays `Pending` | `kubectl describe pod -n cha -l app=cha-runner` — likely imagePullBackOff on `myoung34/github-runner:ubuntu-jammy` |
-| DriftReports not appearing | Check `kubectl logs -n cha job/<latest-diagnose-job>`; DriftReport CRD may need manual install: `kubectl apply -f charts/cluster-health-autopilot/crds/` |
+| Runner pod stays `Pending` | `kubectl describe pod -n cluster-health-autopilot -l app=cha-runner` — likely imagePullBackOff on `myoung34/github-runner:ubuntu-jammy` |
+| DriftReports not appearing | Check `kubectl logs -n cluster-health-autopilot job/<latest-diagnose-job>`; DriftReport CRD may need manual install: `kubectl apply -f charts/cluster-health-autopilot/crds/` |
 | `cha remediate --live` refuses in snapshot mode | Expected — fixers are type-system-gated. Must use `--live` flag with valid kubeconfig |
 
 ## Appendix B — Full Analyzer + Probe Catalog (v0.8.0)
