@@ -227,11 +227,7 @@ helm repo update
 ### 3.1 — Minimal install (diagnostics only, daily 09:00 UTC)
 
 ```bash
-# Clone the repo first if you haven't already
-git clone https://github.com/Bionic-AI-Solutions/cluster-health-autopilot.git
-cd cluster-health-autopilot
-
-helm install cha ./charts/cluster-health-autopilot \
+helm install cha cha/cluster-health-autopilot \
   --namespace cluster-health-autopilot \
   --create-namespace
 ```
@@ -290,11 +286,10 @@ kubectl get secret cha-slack-webhook -n cluster-health-autopilot \
   -o jsonpath='{.data.WEBHOOK_URL}' | base64 -d | cat -A
 ```
 
-Enable Slack in the Helm release. Always use the local chart path (not `cha/cluster-health-autopilot`
-from the repo) so `--reuse-values` picks up the correct `appVersion`:
+Enable Slack in the Helm release:
 
 ```bash
-helm upgrade cha ./charts/cluster-health-autopilot \
+helm upgrade cha cha/cluster-health-autopilot \
   --namespace cluster-health-autopilot \
   --reuse-values \
   --set slack.enabled=true \
