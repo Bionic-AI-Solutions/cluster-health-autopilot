@@ -30,14 +30,17 @@ func AsMutator(s Source) Mutator {
 // fix.Result.Actions list reflects what would have been done.
 type DryRunMutator struct{}
 
+// Delete is a no-op in dry-run mode.
 func (DryRunMutator) Delete(_ context.Context, _ schema.GroupVersionResource, _, _ string) error {
 	return nil
 }
 
+// Patch is a no-op in dry-run mode.
 func (DryRunMutator) Patch(_ context.Context, _ schema.GroupVersionResource, _, _ string, _ types.PatchType, _ []byte) error {
 	return nil
 }
 
+// Create is a no-op in dry-run mode.
 func (DryRunMutator) Create(_ context.Context, _ schema.GroupVersionResource, _ string, _ *unstructured.Unstructured) error {
 	return nil
 }
