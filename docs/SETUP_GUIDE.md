@@ -15,9 +15,10 @@ logs. Sections are ordered by complexity; stop at the level you need.
 5. [Slack alerts](#5-slack-alerts)
 6. [Vault probe (optional — closes the L1 stale-Ready window)](#6-vault-probe)
 7. [DriftReport CRD (kubectl-queryable diagnostics)](#7-driftreport-crd)
-8. [Run-log publishing pipeline (WS-C)](#8-run-log-publishing-pipeline)
-9. [Verification checklist](#9-verification-checklist)
-10. [Troubleshooting](#10-troubleshooting)
+8. [Watcher mode (event-driven, real-time)](#8-watcher-mode)
+9. [Run-log publishing pipeline (WS-C)](#9-run-log-publishing-pipeline)
+10. [Verification checklist](#10-verification-checklist)
+11. [Troubleshooting](#11-troubleshooting)
 
 ---
 
@@ -395,7 +396,129 @@ kubectl delete crd driftreports.cha.bionicaisolutions.com
 
 ---
 
-## 8. Run-log publishing pipeline
+## 8. Watcher mode
+
+Watcher mode deploys a long-running `Deployment` (instead of a CronJob) that
+holds open Kubernetes watches for all resource types CHA analyzes. When any
+resource changes, a short debounce fires, then the full probe+analyzer stack
+runs — exactly like `cha diagnose --live` but in under 15 seconds instead of
+waiting for the next cron tick.
+
+**Slack deduplication**: each diagnostic is fingerprinted by subject + severity
++ message. Slack only posts when a diagnostic is new, changes, or resolves. The
+seen-map is seeded from existing DriftReport CRs on pod startup to avoid a Slack
+flood after a rolling update.
+
+### Enable via Helm
+
+```sh
+helm upgrade cha cha/cluster-health-autopilot \
+  --namespace cluster-health-autopilot \
+  --reuse-values \
+  --set watcher.enabled=true
+```
+
+With Slack:
+
+```sh
+helm upgrade cha cha/cluster-health-autopilot \
+  --namespace cluster-health-autopilot \
+  --reuse-values \
+  --set watcher.enabled=true \
+  --set slack.enabled=true \
+  --set slack.webhookSecretName=cha-slack-webhook
+```
+
+With auto-remediation (fixers run after each cycle, post-fix state reported):
+
+```sh
+helm upgrade cha cha/cluster-health-autopilot \
+  --namespace cluster-health-autopilot \
+  --reuse-values \
+  --set watcher.enabled=true \
+  --set watcher.remedy.enabled=true
+```
+
+### Helm values reference
+
+```yaml
+watcher:
+  enabled: false           # Deploy the watcher Deployment
+  debounce: 10s            # Wait this long after the last event before running diagnostics
+  resyncPeriod: 10m        # Full re-diagnose regardless of events (catches non-event drift)
+  slack:
+    postOnResolved: true   # Post when a diagnostic disappears
+    repeatInterval: 4h     # Re-post still-active issues at this cadence (0 = never)
+  remedy:
+    enabled: false         # Run auto-fixers after each diagnose cycle
+    dryRun: false          # Evaluate fixers without cluster mutation
+  resources:               # Resource requests/limits for the watcher pod
+    limits:
+      cpu: 500m
+      memory: 256Mi
+    requests:
+      cpu: 50m
+      memory: 64Mi
+```
+
+### Run manually (without Helm)
+
+```sh
+cha watch --live \
+  --debounce=10s \
+  --resync-period=10m \
+  --slack-webhook=$(SLACK_WEBHOOK_URL) \
+  --slack-post-on-resolved=true \
+  --slack-repeat-interval=4h \
+  --write-driftreports=true
+
+# With remediation:
+cha watch --live --remedy --slack-webhook=$(SLACK_WEBHOOK_URL)
+
+# All flags:
+cha watch --help
+```
+
+### CLI flags
+
+| Flag | Default | Description |
+|---|---|---|
+| `--live` | — | Required; runs against the live cluster |
+| `--kubeconfig` | in-cluster / `$KUBECONFIG` | Path to kubeconfig |
+| `--debounce` | `10s` | Debounce window after a Kubernetes event |
+| `--resync-period` | `10m` | Periodic full re-diagnose interval |
+| `--slack-webhook` | — | Slack webhook URL; omit to disable Slack |
+| `--slack-post-on-resolved` | `true` | Post when a diagnostic resolves |
+| `--slack-repeat-interval` | `4h` | Re-post still-active diagnostics; `0` disables |
+| `--write-driftreports` | `true` | Upsert DriftReport CRs on every cycle |
+| `--remedy` | `false` | Run auto-fixers after each diagnose cycle |
+| `--dry-run` | `false` | With `--remedy`: evaluate without mutating |
+| `--vault-addr` | `$VAULT_ADDR` | Vault endpoint (enables VaultPathMissing analyzer) |
+| `--vault-kv-mount` | `secret` | Vault KV-v2 mount path |
+| `--vault-k8s-role` | `$VAULT_K8S_ROLE` | Vault kubernetes-auth role |
+
+### RBAC note
+
+The chart's `clusterrole-reader` already includes `watch` verb on all monitored
+resources (added in v0.9.0). If you are upgrading from an earlier version, run
+`helm upgrade` to apply the updated ClusterRole — otherwise the watcher will
+fail to open watches and fall back to no-op reconnect loops.
+
+```sh
+kubectl get clusterrole <release>-reader -o yaml | grep -A2 "verbs:"
+# Should include: ["get", "list", "watch"]
+```
+
+### Coexistence with the diagnose CronJob
+
+Running both the watcher Deployment and the daily diagnose CronJob is safe:
+- The CronJob provides a full-state snapshot each day (WS-C evidence, anonymized JSONL).
+- The watcher provides sub-minute reactive alerting.
+- Both write to DriftReport CRs; the upsert logic is idempotent (update wins).
+
+---
+
+## 9. Run-log publishing pipeline
 
 WS-C publishes anonymized daily run logs to `runs/` in the public repo so
 design partners and the community can see the analyzer's track record over
@@ -655,7 +778,7 @@ gh workflow run publish-runs.yml --field date=2026-05-04
 
 ---
 
-## 9. Verification checklist
+## 10. Verification checklist
 
 Work through this after completing each section.
 
@@ -673,6 +796,15 @@ cha diagnose --snapshot examples/sample-cluster
 kubectl -n cluster-health-autopilot create job --from=cronjob/cha-diagnose verify-$(date +%s)
 kubectl -n cluster-health-autopilot wait --for=condition=complete job/verify-...
 kubectl -n cluster-health-autopilot logs -l job-name=verify-... | tail -20
+```
+
+### Watcher mode
+
+```sh
+kubectl get deployment -n cluster-health-autopilot | grep watcher
+kubectl logs -f deployment/cha-cluster-health-autopilot-watcher \
+  -n cluster-health-autopilot
+# Expected: "watcher: initial diagnose cycle" then idle log lines
 ```
 
 ### DriftReport CRD
@@ -693,7 +825,8 @@ kubectl get driftreports   # empty if cluster is healthy
 ### Slack
 
 Check the configured Slack channel for the formatted summary attachment
-after a job run.
+after a job run. For the watcher, inject a failure (see DEMO_GUIDE §5.3)
+and verify a deduped message arrives within ~15 seconds.
 
 ### Run-log pipeline
 
@@ -705,7 +838,7 @@ git pull && ls runs/
 
 ---
 
-## 10. Troubleshooting
+## 11. Troubleshooting
 
 ### `cha diagnose --live` returns no results
 
@@ -737,6 +870,39 @@ git pull && ls runs/
 
 - Set `--set vaultProbe.auth.role=<your-vault-role>` or add it to
   `values.yaml` before enabling `vaultProbe.enabled=true`.
+
+### Watcher pod crash-loops with `watch requires --live`
+
+- The Helm template always injects `--live`; this error means you are running
+  `cha watch` manually without the flag. Add `--live`.
+
+### Watcher Slack posts firing on every resync
+
+- The repeat interval defaults to `4h`. Set `watcher.slack.repeatInterval: 0`
+  in values to disable repeat posts entirely, or increase the interval.
+
+### Watcher Slack floods Slack after pod restart
+
+- This happens when DriftReport CRD is absent — the watcher cannot seed its
+  seen-map. Install the CRD first:
+  ```sh
+  kubectl apply -f charts/cluster-health-autopilot/templates/crd-driftreport.yaml
+  ```
+
+### Watcher `watch … no matches for kind` log lines
+
+- Normal for CRDs not installed in this cluster (e.g. CNPG absent on a plain
+  cluster). The watcher exits the goroutine for that GVR silently and continues
+  watching all others.
+
+### Watcher RBAC: `cannot watch pods`
+
+- The `watch` verb was added to `clusterrole-reader` in v0.9.0. If you
+  installed an earlier chart, run `helm upgrade` to apply the updated role:
+  ```sh
+  helm upgrade cha cha/cluster-health-autopilot \
+    --namespace cluster-health-autopilot --reuse-values
+  ```
 
 ### `path contains traversal component` error in Vault logs
 

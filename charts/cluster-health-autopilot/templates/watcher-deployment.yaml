@@ -1,0 +1,75 @@
+{{- if .Values.watcher.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "cha.fullname" . }}-watcher
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "cha.labels" . | nindent 4 }}
+    cha.bionicaisolutions.com/role: watcher
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "cha.selectorLabels" . | nindent 6 }}
+      cha.bionicaisolutions.com/role: watcher
+  # Recreate avoids two watcher pods both writing DriftReports simultaneously.
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        {{- include "cha.selectorLabels" . | nindent 8 }}
+        cha.bionicaisolutions.com/role: watcher
+    spec:
+      serviceAccountName: {{ include "cha.serviceAccountName" . }}
+      {{- with .Values.image.pullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.priorityClassName }}
+      priorityClassName: {{ . }}
+      {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: cha
+          image: {{ include "cha.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args:
+            - watch
+            - --live
+            - --debounce={{ .Values.watcher.debounce | default "10s" }}
+            - --resync-period={{ .Values.watcher.resyncPeriod | default "10m" }}
+            - --write-driftreports={{ .Values.driftReport.enabled }}
+            {{- if and .Values.slack.enabled .Values.slack.webhookSecretName }}
+            - --slack-webhook=$(SLACK_WEBHOOK_URL)
+            - --slack-post-on-resolved={{ .Values.watcher.slack.postOnResolved | default true }}
+            - --slack-repeat-interval={{ .Values.watcher.slack.repeatInterval | default "4h" }}
+            {{- end }}
+            {{- if .Values.watcher.remedy.enabled }}
+            - --remedy
+            {{- if .Values.watcher.remedy.dryRun }}
+            - --dry-run
+            {{- end }}
+            {{- end }}
+          env:
+            {{- include "cha.slackEnv" . | nindent 12 }}
+            {{- include "cha.vaultEnv" . | nindent 12 }}
+          resources:
+            {{- toYaml .Values.watcher.resources | nindent 12 }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+{{- end }}

@@ -10,6 +10,7 @@ import (
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
@@ -91,6 +92,14 @@ func (l *Live) Get(ctx context.Context, gvr schema.GroupVersionResource, ns, nam
 
 // Mode reports live mode — fixers are permitted.
 func (l *Live) Mode() Mode { return ModeLive }
+
+// Watch returns a watch.Interface for the given GVR across all namespaces.
+// The caller must call Stop() on the returned watcher when done.
+// ResourceNotFound errors (CRD not installed) are returned as-is so callers
+// can decide to skip the watch for that GVR.
+func (l *Live) Watch(ctx context.Context, gvr schema.GroupVersionResource) (watch.Interface, error) {
+	return l.client.Resource(gvr).Watch(ctx, v1.ListOptions{})
+}
 
 // isResourceNotFound returns true for the API-server "no resource type" error
 // (typically when a CRD is not installed). This is intentionally string-based

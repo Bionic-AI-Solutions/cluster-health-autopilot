@@ -395,7 +395,122 @@ kubectl get pods -n default -l job-name=crash-demo
 
 ---
 
-## Part 5 — Snapshot Capture (Your Own Cluster, Zero-Trust)
+## Part 5 — Event-Driven Watcher (Real-Time Alerts)
+
+> **New in v0.9.0.** Instead of waiting for a CronJob tick, the watcher reacts
+> within seconds of a Kubernetes event. Great for showing how CHA integrates into
+> an on-call workflow.
+
+### 5.1 — Enable the watcher via Helm
+
+```bash
+helm upgrade cha cha/cluster-health-autopilot \
+  --namespace cluster-health-autopilot \
+  --reuse-values \
+  --set watcher.enabled=true \
+  --set slack.enabled=true \
+  --set slack.webhookSecretName=cha-slack-webhook
+```
+
+This deploys a long-running `Deployment` (single replica, `Recreate` strategy)
+that watches all resource types CHA already analyzes.
+
+Verify it's running:
+
+```bash
+kubectl get deployment -n cluster-health-autopilot
+# NAME                             READY   UP-TO-DATE   AVAILABLE
+# cha-...-watcher                  1/1     1            1
+
+kubectl logs -f deployment/cha-cluster-health-autopilot-watcher \
+  -n cluster-health-autopilot
+# watcher: pre-populated seen map with N DriftReports
+# watcher: initial diagnose cycle
+# watcher: driftreports: 0 created, N updated, 0 deleted
+```
+
+### 5.2 — Slack deduplication behavior
+
+The Slack channel stays quiet as long as cluster state doesn't change:
+
+| Condition | Slack posts? |
+|---|---|
+| Diagnostic first appears | ✅ Yes |
+| Severity or message changes | ✅ Yes |
+| Diagnostic resolves | ✅ Yes (if `--slack-post-on-resolved=true`) |
+| Repeat interval expires (default 4 h) | ✅ Yes (reminder) |
+| Same diagnostic, same fingerprint | ❌ Silently skipped |
+
+Fingerprint = `SHA-256(subject | severity | message)`. DriftReport CRs are the
+durable source of truth; after a pod restart, the seen-map is seeded from
+existing DriftReport status so there is no Slack flood on rollout.
+
+### 5.3 — Live demo: inject a failure and watch Slack fire
+
+```bash
+# Inject a bad ExternalSecret to trigger a FailingExternalSecrets diagnostic
+kubectl apply -f - <<EOF
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: watcher-demo-bad-es
+  namespace: default
+spec:
+  secretStoreRef:
+    name: vault-backend
+    kind: ClusterSecretStore
+  target:
+    name: watcher-demo-bad-es
+  data:
+    - secretKey: some-key
+      remoteRef:
+        key: secret/nonexistent-path
+        property: nonexistent-property
+EOF
+```
+
+Within ~10–15 seconds (debounce + one diagnose cycle), Slack receives:
+
+```
+*Cluster Health Autopilot — Watch* — 2026-05-07 09:42:01 UTC
+
+*🔔 Active Issues (1):*
+• ⚠️ *ExternalSecret/default/watcher-demo-bad-es*
+  ExternalSecret `default/watcher-demo-bad-es` not Ready: …
+```
+
+Clean up:
+
+```bash
+kubectl delete externalsecret watcher-demo-bad-es -n default
+# Slack gets a ✅ Resolved message within the next cycle.
+```
+
+### 5.4 — With --remedy: immediate fix + post-fix report
+
+Enable remediation on the watcher:
+
+```bash
+helm upgrade cha cha/cluster-health-autopilot \
+  --namespace cluster-health-autopilot \
+  --reuse-values \
+  --set watcher.remedy.enabled=true
+```
+
+Now on each cycle, after the diagnose pass the watcher:
+1. Runs the whitelisted fixers (`StaleErrorPods`, `StuckJobsWithBadSecretRef`, `StuckRSPods`)
+2. Re-diagnoses post-fix to capture the accurate cluster state
+3. Posts a combined Slack message: what was fixed + remaining active issues
+
+**Talking points for the audience**:
+- Detection latency drops from minutes (CronJob) to seconds (watch event + 10 s debounce).
+- Slack remains quiet for stable clusters — no alert fatigue.
+- Remediation is the same whitelist as `cha remediate --live`; no new risk surface.
+- Pod restart does not re-flood Slack — DriftReport CRs serve as the durable state.
+
+---
+
+## Part 6 — Snapshot Capture (Your Own Cluster, Zero-Trust)
 
 Use this when a prospect wants to see CHA run against their cluster without giving you access.
 
@@ -420,7 +535,7 @@ They send you the `.tgz`. You analyze it:
 
 ---
 
-## Part 6 — Nightly Run Pipeline (WS-C Evidence)
+## Part 7 — Nightly Run Pipeline (WS-C Evidence)
 
 > This section is for demos after Gate G3 (week 8 onward).
 
@@ -451,7 +566,7 @@ The `SUMMARY.md` is auto-generated nightly by the GitHub Actions workflow in Mod
 
 ---
 
-## Part 7 — Design-Partner Pitch Close
+## Part 8 — Design-Partner Pitch Close
 
 After the demo, hand the prospect three things:
 
@@ -475,8 +590,12 @@ The ask: "Let us deploy the Helm chart to one non-prod namespace, let the CronJo
 | Runner pod stays `Pending` | `kubectl describe pod -n cluster-health-autopilot -l app=cha-runner` — likely imagePullBackOff on `myoung34/github-runner:ubuntu-jammy` |
 | DriftReports not appearing | Check `kubectl logs -n cluster-health-autopilot job/<latest-diagnose-job>`; DriftReport CRD may need manual install: `kubectl apply -f charts/cluster-health-autopilot/crds/` |
 | `cha remediate --live` refuses in snapshot mode | Expected — fixers are type-system-gated. Must use `--live` flag with valid kubeconfig |
+| Watcher pod restarts in a loop | Check `kubectl logs deployment/cha-…-watcher`; likely kubeconfig missing or SA lacks `watch` verb. Run `helm upgrade` to pick up the updated ClusterRole |
+| Slack flooded after watcher pod restart | Expected only if DriftReport CRD is absent (seen-map cannot be seeded). Install the CRD: `kubectl apply -f charts/cluster-health-autopilot/templates/crd-driftreport.yaml` |
+| Watcher posts Slack on every resync | `--slack-repeat-interval` defaults to 4 h; reduce alert volume with `watcher.slack.repeatInterval: 0` to disable repeats |
+| Watcher not firing on CRD resources (e.g. ExternalSecrets) | Normal if the CRD is not installed in this cluster — the watcher skips the watch silently. Check logs for `watch … no matches for kind` |
 
-## Appendix B — Full Analyzer + Probe Catalog (v0.8.0)
+## Appendix B — Full Analyzer + Probe Catalog (v0.9.0)
 
 **Probes** (read cluster state, report findings):
 | Probe | What it checks |

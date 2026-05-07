@@ -32,6 +32,7 @@ import (
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/snapshot"
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/summarize"
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/vault"
+	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/watcher"
 	"github.com/spf13/cobra"
 )
 
@@ -58,6 +59,7 @@ Subcommands:
 	}
 
 	root.AddCommand(diagnoseCmd())
+	root.AddCommand(watchCmd())
 	root.AddCommand(snapshotCmd())
 	root.AddCommand(remediateCmd())
 	root.AddCommand(anonymizeCmd())
@@ -400,6 +402,112 @@ func versionCmd() *cobra.Command {
 			return nil
 		},
 	}
+}
+
+func watchCmd() *cobra.Command {
+	var (
+		live              bool
+		kubeconfig        string
+		debounce          time.Duration
+		resyncPeriod      time.Duration
+		slackWebhook      string
+		postOnResolved    bool
+		repeatInterval    time.Duration
+		writeDriftReports bool
+		remedy            bool
+		dryRun            bool
+		vaultAddr         string
+		vaultMount        string
+		vaultRole         string
+	)
+	c := &cobra.Command{
+		Use:   "watch",
+		Short: "Event-driven cluster health watcher (live mode only)",
+		Long: `Starts Kubernetes watches for all resource types cha analyzes.
+
+On relevant create/update/delete events a short debounce fires, then the
+full probe+analyzer stack runs — identical to cha diagnose --live.
+
+Slack posts are deduplicated by fingerprint: only new/changed/resolved
+diagnostics trigger a post. The seen-map is seeded from existing DriftReport
+CRs on startup to avoid re-flooding Slack after a pod restart.
+
+With --remedy, fixers run after each diagnose cycle and the report reflects
+the post-fix cluster state.`,
+		Example: `  # Basic watcher
+  cha watch --live
+
+  # With Slack dedup + remediation
+  cha watch --live --slack-webhook=$(SLACK_WEBHOOK_URL) --remedy
+
+  # Tune debounce and repeat interval
+  cha watch --live --debounce=15s --slack-repeat-interval=6h \
+      --slack-webhook=$(SLACK_WEBHOOK_URL)`,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if !live {
+				return fmt.Errorf("watch requires --live")
+			}
+			ctx := cmd.Context()
+			if ctx == nil {
+				ctx = context.Background()
+			}
+
+			lv, err := snapshot.LoadLive(kubeconfig)
+			if err != nil {
+				return err
+			}
+
+			reg := catalog.Default()
+			if vaultAddr != "" {
+				vc, verr := buildVaultClient(vaultAddr, vaultMount, vaultRole)
+				if verr != nil {
+					fmt.Fprintln(os.Stderr, "warning: vault client unavailable:", verr)
+				} else {
+					reg.RegisterAnalyzer(diagnose.VaultPathMissing{Client: vc})
+				}
+			}
+
+			var mut snapshot.Mutator
+			if remedy {
+				if dryRun {
+					mut = snapshot.DryRunMutator{}
+				} else {
+					m := snapshot.AsMutator(lv)
+					if m == nil {
+						return fmt.Errorf("source does not support mutation; expected Live source")
+					}
+					mut = m
+				}
+			}
+
+			cfg := watcher.Config{
+				Debounce:          debounce,
+				ResyncPeriod:      resyncPeriod,
+				SlackWebhook:      slackWebhook,
+				PostOnResolved:    postOnResolved,
+				RepeatInterval:    repeatInterval,
+				WriteDriftReports: writeDriftReports,
+				RunRemediation:    remedy,
+				DryRun:            dryRun,
+			}
+			w := watcher.New(lv, reg, mut, cfg)
+			return w.Run(ctx)
+		},
+	}
+	c.Flags().BoolVar(&live, "live", false, "Run against the live cluster (required)")
+	c.Flags().StringVar(&kubeconfig, "kubeconfig", "", "Path to kubeconfig (default: in-cluster, then $KUBECONFIG, then ~/.kube/config)")
+	c.Flags().DurationVar(&debounce, "debounce", 10*time.Second, "Debounce window after a Kubernetes event before re-running diagnostics")
+	c.Flags().DurationVar(&resyncPeriod, "resync-period", 10*time.Minute, "Full re-diagnose interval regardless of events (catches non-event drift)")
+	c.Flags().StringVar(&slackWebhook, "slack-webhook", "", "Slack incoming-webhook URL — posts new/changed/resolved diagnostics only")
+	c.Flags().BoolVar(&postOnResolved, "slack-post-on-resolved", true, "Post to Slack when a diagnostic resolves")
+	c.Flags().DurationVar(&repeatInterval, "slack-repeat-interval", 4*time.Hour, "Re-post still-active diagnostics at this interval (0 = never repeat)")
+	c.Flags().BoolVar(&writeDriftReports, "write-driftreports", true, "Upsert DriftReport CRs on every cycle (live mode only)")
+	c.Flags().BoolVar(&remedy, "remedy", false, "Run auto-fixers after each diagnose cycle; post-fix state is reported")
+	c.Flags().BoolVar(&dryRun, "dry-run", false, "With --remedy: evaluate fixers without applying changes")
+	c.Flags().StringVar(&vaultAddr, "vault-addr", os.Getenv("VAULT_ADDR"), "Vault HTTP endpoint (default: $VAULT_ADDR)")
+	c.Flags().StringVar(&vaultMount, "vault-kv-mount", envOrDefault("VAULT_KV_MOUNT", "secret"), "Vault KV-v2 mount path")
+	c.Flags().StringVar(&vaultRole, "vault-k8s-role", os.Getenv("VAULT_K8S_ROLE"), "Vault kubernetes-auth role (default: $VAULT_K8S_ROLE)")
+	return c
 }
 
 func diagnoseCmd() *cobra.Command {

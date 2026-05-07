@@ -7,9 +7,10 @@ metadata:
     {{- include "cha.labels" . | nindent 4 }}
 rules:
   # Core probe surface.
+  # watch verb added for cha watch --live (watcher mode); get+list retained for CronJob mode.
   - apiGroups: [""]
     resources: ["pods", "nodes", "persistentvolumeclaims", "events", "namespaces"]
-    verbs: ["get", "list"]
+    verbs: ["get", "list", "watch"]
   # Secret reads — the ProactiveSecretKeyCheck analyzer needs to inspect the
   # SET OF KEY NAMES on each Secret (not their byte values) to detect
   # references-to-missing-keys before pods crash. The analyzer code only
@@ -18,18 +19,18 @@ rules:
   # contract; remove this rule if the analyzer is ever disabled.
   - apiGroups: [""]
     resources: ["secrets"]
-    verbs: ["get", "list"]
+    verbs: ["get", "list", "watch"]
   # Workload owner-chain walkers (Pod → ReplicaSet → Deployment / Job / CronJob).
   - apiGroups: ["apps"]
     resources: ["deployments", "replicasets", "statefulsets", "daemonsets"]
-    verbs: ["get", "list"]
+    verbs: ["get", "list", "watch"]
   - apiGroups: ["batch"]
     resources: ["jobs", "cronjobs"]
-    verbs: ["get", "list"]
+    verbs: ["get", "list", "watch"]
   # Schema-drift analyzers.
   - apiGroups: ["external-secrets.io"]
     resources: ["externalsecrets"]
-    verbs: ["get", "list"]
+    verbs: ["get", "list", "watch"]
   # SecretStore + ClusterSecretStore reads — VaultPathMissing filters
   # ExternalSecrets to those whose backing store is Vault-backed, so the
   # analyzer doesn't query Vault for AWS / GCP / etc. paths and emit
@@ -37,25 +38,26 @@ rules:
   # degrades to v0.2 behavior (treat every ESO as Vault-backed).
   - apiGroups: ["external-secrets.io"]
     resources: ["secretstores", "clustersecretstores"]
-    verbs: ["get", "list"]
+    verbs: ["get", "list", "watch"]
   # cert-manager Certificate resources — CertExpiry analyzer checks expiry and
   # not-Ready conditions. Rule is a no-op when cert-manager is not installed.
   - apiGroups: ["cert-manager.io"]
     resources: ["certificates"]
-    verbs: ["get", "list"]
+    verbs: ["get", "list", "watch"]
   # Database-operator probe (CloudNativePG).
   - apiGroups: ["postgresql.cnpg.io"]
     resources: ["clusters"]
-    verbs: ["get", "list"]
+    verbs: ["get", "list", "watch"]
   # Storage-cluster probe (rook-ceph).
   - apiGroups: ["ceph.rook.io"]
     resources: ["cephclusters"]
-    verbs: ["get", "list"]
+    verbs: ["get", "list", "watch"]
 {{- if .Values.driftReport.enabled }}
   # DriftReport CRD — read existing CRs to compute the upsert diff each tick.
+  # watch added so watcher mode can seed its seen-map on startup.
   - apiGroups: ["cha.bionicaisolutions.com"]
     resources: ["driftreports"]
-    verbs: ["get", "list"]
+    verbs: ["get", "list", "watch"]
 {{- end }}
 ---
 apiVersion: rbac.authorization.k8s.io/v1
