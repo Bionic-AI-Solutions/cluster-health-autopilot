@@ -233,7 +233,11 @@ func (w *Watcher) runCycle(ctx context.Context) {
 	var fixResults []fix.Result
 	if w.cfg.RunRemediation && w.mut != nil {
 		for _, f := range w.reg.Fixers() {
-			fixResults = append(fixResults, f.Run(ctx, w.lv, w.mut))
+			fr := f.Run(ctx, w.lv, w.mut)
+			for _, a := range fr.Actions {
+				log.Printf("watcher: fix[%s]: %s — %s", fr.Fixer, a.Object, a.Description)
+			}
+			fixResults = append(fixResults, fr)
 		}
 		// Re-diagnose post-fix so report reflects actual cluster state.
 		probeResults, diagnostics = w.runDiagnose(ctx)
