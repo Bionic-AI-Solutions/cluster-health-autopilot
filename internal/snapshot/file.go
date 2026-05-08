@@ -191,6 +191,8 @@ var kindToResource = map[string]string{
 	"Cluster":               "clusters",
 	"CephCluster":           "cephclusters",
 	"Certificate":           "certificates",
+	"CertificateRequest":    "certificaterequests",
+	"Order":                 "orders",
 	"Secret":                "secrets",
 }
 

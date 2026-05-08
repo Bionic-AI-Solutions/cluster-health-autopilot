@@ -53,6 +53,7 @@ func RegisterOSS(r *registry.Registry) {
 		fix.StaleErrorPods{},
 		fix.StuckJobsWithBadSecretRef{},
 		fix.StuckRSPods{},
+		fix.StuckCertificateRequests{},
 	)
 }
 

@@ -1,4 +1,5 @@
-{{- if and .Values.rbac.create .Values.remediation.enabled }}
+{{- $remedyEnabled := or .Values.remediation.enabled ((.Values.watcher.remedy).enabled) }}
+{{- if and .Values.rbac.create $remedyEnabled }}
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
@@ -17,6 +18,12 @@ rules:
   - apiGroups: ["apps"]
     resources: ["deployments"]
     verbs: ["patch"]   # for `kubectl rollout restart` (template restartedAt patch)
+  - apiGroups: ["cert-manager.io"]
+    resources: ["certificaterequests"]
+    verbs: ["delete"]
+  - apiGroups: ["acme.cert-manager.io"]
+    resources: ["orders"]
+    verbs: ["delete"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding

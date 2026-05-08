@@ -381,10 +381,11 @@ kubectl logs -f job/cha-remediate-dryrun -n cluster-health-autopilot
 | **StaleErrorPods** | Pods in `Error`/`OOMKilled` state that are owned by a completed `Job` | Only deletes if the owning Job is already complete — never touches live Job pods |
 | **StuckJobsWithBadSecretRef** | A `Job` frozen due to `CreateContainerConfigError` on a bad Secret ref, when a newer CronJob run is already pending | Only deletes if: (1) Job is CronJob-owned, (2) Job is frozen (no active pods, no succeeded pods), (3) a newer run exists |
 | **StuckRSPods** | Pods owned by an old `ReplicaSet` that the `Deployment` has already moved past | Only restarts if the RS's revision is behind the current Deployment revision |
+| **StuckCertificateRequests** | `CertificateRequest` CRs with `Ready=False/reason=Failed` or `failureTime` set; ACME `Order` CRs in state `errored` or `invalid` | Only deletes terminally-failed CRs — never touches pending/in-progress issuance; cert-manager recreates the CR immediately and retries |
 
 **Safety properties** (explain to the audience):
-1. All three fixers are **snapshot-mode-refused at compile time** via Go's type system — they cannot be called in `--snapshot` mode, only `--live`.
-2. All three are **whitelisted** — there is no "auto-fix everything" mode.
+1. All fixers are **snapshot-mode-refused at compile time** via Go's type system — they cannot be called in `--snapshot` mode, only `--live`.
+2. All fixers are **whitelisted** — there is no "auto-fix everything" mode.
 3. The fix decision is re-evaluated fresh each run from the live cluster state — no persistent decisions.
 
 ### 4.3 — Staged live remediation demo

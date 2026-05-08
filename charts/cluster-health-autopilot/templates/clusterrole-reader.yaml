@@ -39,10 +39,14 @@ rules:
   - apiGroups: ["external-secrets.io"]
     resources: ["secretstores", "clustersecretstores"]
     verbs: ["get", "list", "watch"]
-  # cert-manager Certificate resources — CertExpiry analyzer checks expiry and
-  # not-Ready conditions. Rule is a no-op when cert-manager is not installed.
+  # cert-manager resources — CertExpiry analyzer (certificates) and
+  # StuckCertificateRequests fixer (certificaterequests + orders).
+  # Rules are no-ops when cert-manager is not installed.
   - apiGroups: ["cert-manager.io"]
-    resources: ["certificates"]
+    resources: ["certificates", "certificaterequests"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["acme.cert-manager.io"]
+    resources: ["orders"]
     verbs: ["get", "list", "watch"]
   # Database-operator probe (CloudNativePG).
   - apiGroups: ["postgresql.cnpg.io"]
