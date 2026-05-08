@@ -68,21 +68,25 @@ The snapshot at `examples/sample-cluster/` is a real anonymized capture from a p
 • Storage Claims:        🟢 HEALTHY — All 3 PVCs bound
 • Critical Services:     🟢 HEALTHY — All 0 critical services operational
 
-Diagnostics (6):
-  🔎 Secret `billing/billing-svc-secrets` missing key `STRIPE_API_KEY` (SecretKeyMissing)
-  🔎 ExternalSecret `billing/billing-svc-secrets` not Ready: cannot find secret data for key: "stripe_api_key"
-  🔎 ExternalSecret `billing/old-payment-gateway` not Ready: vault path not found
+Diagnostics (9):
+  🔎 Secret `billing/billing-svc-secrets` missing key `STRIPE_API_KEY` (referenced by Deployment/billing-svc in ns billing)...
+  🔎 ExternalSecret `billing/billing-svc-secrets` not Ready: ... Vault path `shared/billing/config` does not follow t6 hierarchy; expected: `secret/t6-apps/billing/config`.
+  🔎 ExternalSecret `billing/old-payment-gateway` not Ready: vault path not found. ... Vault path `shared/legacy/payments` does not follow t6 hierarchy; expected: `secret/t6-apps/billing/config`.
+  🔎 Secret `tools/repomind-secrets` exists but is missing key `github-token`... Key `GITHUB_TOKEN` is a case/format variant — possible naming mismatch.
+  🔎 Secret `playground/playground-agent-secrets` does NOT exist (referenced by Deployment/playground-agent in ns playground, envFrom whole-secret import)...
+  🔎 Secret `playground/playground-agent-secrets` referenced by Deployment/playground-agent has no ExternalSecret provisioning it. Create an ExternalSecret ... pointing to Vault path `secret/t6-apps/playground/config`.
   🔎 Pod `monitoring/metrics-exporter-5c7d8b-abc12` container "exporter" cannot pull image — auth failure: 401 unauthorized
   🔎 Certificate `monitoring/grafana-tls` is not Ready: ACME rate-limited (too many certificates issued)
   🔎 Certificate `production/api-server-tls` EXPIRED at 2025-02-28 00:00 UTC
 
-Total findings: 0, diagnostics: 6
+Total findings: 0, diagnostics: 9
 ```
 
 **Talking points**:
 - Five probes ran across storage, nodes, database, PVCs, and services — all green.
-- Six diagnostics from four different analyzers: secret key mismatch, two failing ExternalSecrets, a registry auth failure, a cert-manager ACME rate-limit, and an expired TLS certificate.
-- The pod `billing/billing-svc-d3e4f-new1` is stuck in `CreateContainerConfigError` — CHA traced the root cause to a Vault key name mismatch before anyone filed a ticket.
+- Nine diagnostics from six different analyzers spanning: secret key mismatch, two failing ExternalSecrets with t6 path hints, a case/format key name mismatch, an unprovisioned Secret (no ESO), a registry auth failure, a cert-manager ACME rate-limit, and an expired TLS certificate.
+- The `playground-agent` Deployment references a Secret that has no ExternalSecret — CHA suggests the exact Vault path to create.
+- The `repomind` Deployment references `github-token` but the Secret contains `GITHUB_TOKEN` — CHA detected the format variant before the pod crashed.
 - **Nothing was connected to your cluster**. Zero RBAC. Zero trust required.
 
 ### 1.4 — Switch to JSON output (for pipeline demos)
@@ -126,16 +130,20 @@ cat examples/sample-cluster/core-pods.json \
 
 ---
 
-### Failure 2: FailingExternalSecrets
+### Failure 2: FailingExternalSecrets + t6 Path Hint
 
 **What happened in the fixture**:
 - `billing/billing-svc-secrets`: ESO fetched the secret but the key name in the Vault response didn't match the `remoteRef.property` in the ExternalSecret spec.
-- `billing/old-payment-gateway`: ESO tried to sync but the Vault path `secret/t6-apps/billing/old-payment` no longer exists (deleted during a Vault cleanup).
+- `billing/old-payment-gateway`: ESO tried to sync but the Vault path `shared/legacy/payments` no longer exists — it was never migrated to the t6 hierarchy.
 
-**CHA detection**:
+**CHA detection** (v0.9.1+: t6 path hint appended when path doesn't follow `t6-apps/` convention):
 ```
-🔎 ExternalSecret `billing/billing-svc-secrets` not Ready: cannot find secret data for key: "stripe_api_key"
-🔎 ExternalSecret `billing/old-payment-gateway` not Ready: vault path not found
+🔎 ExternalSecret `billing/billing-svc-secrets` not Ready: cannot find secret data for key: "stripe_api_key".
+   Check Vault path / property names. Vault path `shared/billing/config` does not follow t6 hierarchy;
+   expected: `secret/t6-apps/billing/config`.
+🔎 ExternalSecret `billing/old-payment-gateway` not Ready: vault path not found.
+   Check Vault path / property names. Vault path `shared/legacy/payments` does not follow t6 hierarchy;
+   expected: `secret/t6-apps/billing/config`.
 ```
 
 **Show the raw data**:
@@ -143,8 +151,70 @@ cat examples/sample-cluster/core-pods.json \
 cat examples/sample-cluster/external-secrets.io-externalsecrets.json \
   | jq '.items[] | select(.status.conditions[0].status == "False")
         | {name: .metadata.name, ns: .metadata.namespace,
-           ready: .status.conditions[0].status,
+           vault_path: .spec.data[0].remoteRef.key,
            message: .status.conditions[0].message}'
+```
+
+---
+
+### Failure 5: ProactiveSecretKeyCheck Near-Miss
+
+**What happened in the fixture**:
+- `tools/repomind-secrets` was synced by ESO with the key `GITHUB_TOKEN` (uppercase, from `t6-apps/repomind/config`).
+- The Deployment's `env[].valueFrom.secretKeyRef.key` was written as `github-token` (lowercase-hyphen) — a different format.
+- The Secret exists and ESO is healthy, but the pod will crash on the next restart.
+
+**CHA detection** (v0.9.1+: near-miss hint when case/format variant exists):
+```
+🔎 Secret `tools/repomind-secrets` exists but is missing key `github-token` (referenced by Deployment/repomind in ns tools).
+   Pod will hit CreateContainerConfigError on next restart. Existing keys: [GITHUB_TOKEN].
+   Key `GITHUB_TOKEN` is a case/format variant — possible naming mismatch.
+```
+
+**Show the raw data**:
+```bash
+cat examples/sample-cluster/core-secrets.json \
+  | jq '.items[] | select(.metadata.name == "repomind-secrets")
+        | {name: .metadata.name, keys: (.data | keys)}'
+
+cat examples/sample-cluster/apps-deployments.json \
+  | jq '.items[] | select(.metadata.name == "repomind")
+        | .spec.template.spec.containers[0].env[0].valueFrom.secretKeyRef'
+```
+
+**Root cause chain**: `GITHUB_TOKEN` (ESO/Vault key) vs `github-token` (Deployment reference) → `normalizeKeyName` detects they are the same after lowercasing and hyphen→underscore substitution.
+
+---
+
+### Failure 6: UnprovisionedSecret
+
+**What happened in the fixture**:
+- `playground/playground-agent-secrets` is referenced via `envFrom` by the `playground-agent` Deployment.
+- No ExternalSecret exists in the `playground` namespace targeting this Secret name.
+- The Secret itself is missing — there is no provisioning mechanism at all.
+
+**CHA detection** (v0.9.1+: new `UnprovisionedSecret` analyzer):
+```
+🔎 Secret `playground/playground-agent-secrets` does NOT exist (referenced by Deployment/playground-agent
+   in ns playground, envFrom whole-secret import). Pod will fail to start on next restart.
+🔎 Secret `playground/playground-agent-secrets` referenced by Deployment/playground-agent has no
+   ExternalSecret provisioning it. Create an ExternalSecret with spec.target.name=playground-agent-secrets
+   pointing to Vault path `secret/t6-apps/playground/config`.
+```
+
+The first diagnostic (from `ProactiveSecretKeyCheck`) says **the pod will crash**. The second (from `UnprovisionedSecret`) says **why** and **what to create** — the two together give a complete picture without a Vault UI, ESO status, or Deployment YAML lookup.
+
+**Show the raw data**:
+```bash
+# No ESO in playground namespace
+cat examples/sample-cluster/external-secrets.io-externalsecrets.json \
+  | jq '[.items[] | select(.metadata.namespace == "playground")] | length'
+# 0
+
+# Deployment still references the missing Secret
+cat examples/sample-cluster/apps-deployments.json \
+  | jq '.items[] | select(.metadata.name == "playground-agent")
+        | .spec.template.spec.containers[0].envFrom'
 ```
 
 ---
@@ -571,7 +641,7 @@ helm upgrade cha cha/cluster-health-autopilot \
 ```
 
 Now on each cycle, after the diagnose pass the watcher:
-1. Runs the whitelisted fixers (`StaleErrorPods`, `StuckJobsWithBadSecretRef`, `StuckRSPods`)
+1. Runs the whitelisted fixers (`StaleErrorPods`, `StuckJobsWithBadSecretRef`, `StuckRSPods`, `StuckCertificateRequests`)
 2. Re-diagnoses post-fix to capture the accurate cluster state
 3. Posts a combined Slack message: what was fixed + remaining active issues
 
@@ -672,7 +742,7 @@ The ask: "Let us deploy the Helm chart to one non-prod namespace with the watche
 | Watcher posts Slack on every resync | `--slack-repeat-interval` defaults to 4 h; reduce alert volume with `watcher.slack.repeatInterval: 0` to disable repeats |
 | Watcher not firing on CRD resources (e.g. ExternalSecrets) | Normal if the CRD is not installed in this cluster — the watcher skips the watch silently. Check logs for `watch … no matches for kind` |
 
-## Appendix B — Full Analyzer + Probe Catalog (v0.9.0)
+## Appendix B — Full Analyzer + Probe Catalog (v0.9.1)
 
 **Probes** (read cluster state, report findings):
 | Probe | What it checks |
@@ -687,8 +757,9 @@ The ask: "Let us deploy the Helm chart to one non-prod namespace with the watche
 | Analyzer | What it detects |
 |---|---|
 | SecretKeyMissing | Pod `envFrom`/`env.valueFrom.secretKeyRef` references a key absent from the Secret object |
-| FailingExternalSecrets | ExternalSecret with `Ready: False` condition |
-| ProactiveSecretKeyCheck | ESO-managed Secret where a key referenced by a pod is present in the Secret but the Vault value returns empty |
+| FailingExternalSecrets | ExternalSecret with `Ready: False`; appends t6 path hint when `spec.data[].remoteRef.key` doesn't start with `t6-apps/` |
+| ProactiveSecretKeyCheck | Secret key referenced by a pod is missing; adds case/format near-miss hint when a variant key exists (e.g. `github-token` vs `GITHUB_TOKEN`) |
+| **UnprovisionedSecret** | Workload references a Secret via `envFrom` or volume with no ExternalSecret targeting it; suggests canonical `secret/t6-apps/<namespace>/config` Vault path |
 | ImagePullAuth | ImagePullBackOff with auth-signal event messages (401, unauthorized, denied) |
 | CertExpiry | cert-manager Certificate: not-Ready, expired, or expiring within 14 days |
 
@@ -698,3 +769,4 @@ The ask: "Let us deploy the Helm chart to one non-prod namespace with the watche
 | StaleErrorPods | Deletes Error-state pods whose owning Job is complete |
 | StuckJobsWithBadSecretRef | Deletes frozen CronJob-owned Jobs so the next run can start |
 | StuckRSPods | Rollout-restarts Deployments with pods stuck on old ReplicaSets |
+| StuckCertificateRequests | Deletes terminally-failed CertificateRequest and ACME Order CRs so cert-manager retries |

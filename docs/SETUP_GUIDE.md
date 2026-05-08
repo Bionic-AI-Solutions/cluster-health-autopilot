@@ -14,11 +14,12 @@ logs. Sections are ordered by complexity; stop at the level you need.
 4. [In-cluster install via Helm](#4-in-cluster-install-via-helm)
 5. [Slack alerts](#5-slack-alerts)
 6. [Vault probe (optional — closes the L1 stale-Ready window)](#6-vault-probe)
-7. [DriftReport CRD (kubectl-queryable diagnostics)](#7-driftreport-crd)
-8. [Watcher mode (event-driven, real-time)](#8-watcher-mode)
-9. [Run-log publishing pipeline (WS-C)](#9-run-log-publishing-pipeline)
-10. [Verification checklist](#10-verification-checklist)
-11. [Troubleshooting](#11-troubleshooting)
+7. [ESO / Vault provisioning analyzers (UnprovisionedSecret + hints)](#7-eso--vault-provisioning-analyzers)
+8. [DriftReport CRD (kubectl-queryable diagnostics)](#8-driftreport-crd)
+9. [Watcher mode (event-driven, real-time)](#9-watcher-mode)
+10. [Run-log publishing pipeline (WS-C)](#10-run-log-publishing-pipeline)
+11. [Verification checklist](#11-verification-checklist)
+12. [Troubleshooting](#12-troubleshooting)
 
 ---
 
@@ -145,11 +146,11 @@ helm install cha cha/cluster-health-autopilot \
 
 This creates:
 - `ServiceAccount/cha` in the `cluster-health-autopilot` namespace
-- `ClusterRole/cha-reader` — read-only access to the resource set the
-  probes and analyzers need (pods, nodes, pvcs, events, deployments,
-  replicasets, statefulsets, jobs, cronjobs, externalsecrets,
-  secretstores, clustersecretstores, secrets, clusters, cephclusters,
-  driftreports)
+- `ClusterRole/cha-reader` — read-only (`get`, `list`, `watch`) on: pods,
+  nodes, pvcs, events, namespaces, deployments, replicasets, statefulsets,
+  daemonsets, jobs, cronjobs, externalsecrets, secretstores,
+  clustersecretstores, secrets, clusters (CNPG), cephclusters,
+  certificates, certificaterequests, orders (ACME), driftreports
 - `ClusterRole/cha-remediator` — narrowly-scoped write access for the
   whitelisted fixers: delete pods/jobs, patch deployment annotations,
   delete cert-manager CertificateRequests and ACME Orders
@@ -334,7 +335,70 @@ helm upgrade cha ... \
 
 ---
 
-## 7. DriftReport CRD
+## 7. ESO / Vault Provisioning Analyzers
+
+Three analyzers work together to detect the full class of "Secret not reachable" failures — each adding a layer of detail to the diagnostic.
+
+### UnprovisionedSecret (new in v0.9.1)
+
+Walks every Deployment, StatefulSet, and CronJob and checks whether each Secret
+referenced via `envFrom.secretRef` or `volumes.secret.secretName` either:
+- exists in the cluster, **or**
+- has an ExternalSecret (ESO) configured to provision it.
+
+When neither is true, the diagnostic emits:
+
+```
+Secret `playground/playground-agent-secrets` referenced by Deployment/playground-agent
+has no ExternalSecret provisioning it. Create an ExternalSecret with
+spec.target.name=playground-agent-secrets pointing to Vault path
+`secret/t6-apps/playground/config`.
+```
+
+The suggested t6 path is derived from the workload's namespace (`secret/t6-apps/<namespace>/config`),
+which is the canonical hierarchy in this cluster. If your Vault layout differs, use the suggestion
+as a starting point and adjust the path.
+
+**Works in both live and snapshot mode** — in snapshot mode without Secrets captured, the analyzer
+falls back to ESO-coverage-only: any workload with no backing ESO is reported regardless of whether
+the Secret exists on-cluster.
+
+### ProactiveSecretKeyCheck near-miss hint (enhanced in v0.9.1)
+
+When a `secretKeyRef` references a key that is absent from the Secret, CHA now checks whether a
+case/format variant of that key exists. If so, it appends:
+
+```
+Key `GITHUB_TOKEN` is a case/format variant — possible naming mismatch.
+```
+
+Normalization: lowercase + replace `-` and `.` with `_`. This catches the common pattern where
+a Deployment manifest uses `github-token` and the ESO template produces `GITHUB_TOKEN`.
+
+### FailingExternalSecrets t6 path hint (enhanced in v0.9.1)
+
+When an ESO reports `Ready: False`, CHA now checks whether its `spec.data[].remoteRef.key`
+(or `spec.dataFrom[].extract.key`) starts with `t6-apps/`. If not, it appends:
+
+```
+Vault path `counsellor/config` does not follow t6 hierarchy;
+expected: `secret/t6-apps/livekit-agents/config`.
+```
+
+This immediately distinguishes "wrong Vault path layout" from "correct path, missing property".
+
+### None of these are auto-fixable
+
+All three are **diagnostic-only**. The underlying issues require human action:
+- Creating a Vault KV path and seeding it with the required keys
+- Creating an ExternalSecret resource pointing to that path
+- Patching a Deployment manifest to use the correct key name
+
+CHA surfaces the exact action needed so the fix takes minutes, not a support ticket.
+
+---
+
+## 8. DriftReport CRD (kubectl-queryable diagnostics)
 
 `cha` creates and maintains `DriftReport` cluster-scoped CRs — one per
 active issue. This gives `kubectl` users a live view of the cluster's health
@@ -397,7 +461,7 @@ kubectl delete crd driftreports.cha.bionicaisolutions.com
 
 ---
 
-## 8. Watcher mode
+## 9. Watcher mode
 
 Watcher mode deploys a long-running `Deployment` (instead of a CronJob) that
 holds open Kubernetes watches for all resource types CHA analyzes. When any
@@ -519,7 +583,7 @@ Running both the watcher Deployment and the daily diagnose CronJob is safe:
 
 ---
 
-## 9. Run-log publishing pipeline
+## 10. Run-log publishing pipeline
 
 WS-C publishes anonymized daily run logs to `runs/` in the public repo so
 design partners and the community can see the analyzer's track record over
@@ -779,7 +843,7 @@ gh workflow run publish-runs.yml --field date=2026-05-04
 
 ---
 
-## 10. Verification checklist
+## 11. Verification checklist
 
 Work through this after completing each section.
 
@@ -787,7 +851,8 @@ Work through this after completing each section.
 
 ```sh
 cha diagnose --snapshot examples/sample-cluster
-# Expected: 3 diagnostics (see README demo output)
+# Expected: 9 diagnostics spanning secret drift, unprovisioned Secrets,
+#           key-name mismatches, image pull auth, and cert expiry.
 ```
 
 ### In-cluster mode
@@ -839,7 +904,7 @@ git pull && ls runs/
 
 ---
 
-## 11. Troubleshooting
+## 12. Troubleshooting
 
 ### `cha diagnose --live` returns no results
 
