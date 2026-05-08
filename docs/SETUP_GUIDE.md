@@ -151,7 +151,8 @@ This creates:
   secretstores, clustersecretstores, secrets, clusters, cephclusters,
   driftreports)
 - `ClusterRole/cha-remediator` — narrowly-scoped write access for the
-  three whitelisted fixers (delete pods/jobs, patch deployment annotations)
+  whitelisted fixers: delete pods/jobs, patch deployment annotations,
+  delete cert-manager CertificateRequests and ACME Orders
 - `ClusterRole/cha-driftreport-writer` — create/patch/delete DriftReport
   CRs only
 - `CronJob/cha-diagnose` — runs `cha diagnose --live` on a schedule
