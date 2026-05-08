@@ -157,8 +157,8 @@ func TestUnprovisionedSecret_SilentWhenESOProvisions(t *testing.T) {
 func TestUnprovisionedSecret_SilentWhenSecretExists(t *testing.T) {
 	// Secret exists in cluster (e.g. manually created or created by Helm).
 	src := loadSrc(t, map[string]string{
-		"deploy.json":  unprovDeployEnvFrom,
-		"secret.json":  unprovExistingSecret,
+		"deploy.json": unprovDeployEnvFrom,
+		"secret.json": unprovExistingSecret,
 	})
 	got := UnprovisionedSecret{}.Run(context.Background(), src)
 	if len(got) != 0 {

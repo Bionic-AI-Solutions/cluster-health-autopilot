@@ -335,8 +335,8 @@ func TestProactiveSecretKeyCheck_NearMissKeyHint(t *testing.T) {
 	// "github-token" normalizes to "github_token"; "GITHUB_TOKEN" also normalizes
 	// to "github_token" — the hint should fire.
 	src := loadSrc(t, map[string]string{
-		"deploy.json":  deployRefsWrongCaseKey,
-		"secret.json":  secretRepomindUpperCase,
+		"deploy.json": deployRefsWrongCaseKey,
+		"secret.json": secretRepomindUpperCase,
 	})
 	got := ProactiveSecretKeyCheck{}.Run(context.Background(), src)
 	if len(got) != 1 {
