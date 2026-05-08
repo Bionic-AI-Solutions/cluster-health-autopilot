@@ -132,12 +132,18 @@ func (ProactiveSecretKeyCheck) Run(ctx context.Context, src snapshot.Source) []D
 						if len(haveSummary) > 100 {
 							haveSummary = haveSummary[:97] + "..."
 						}
+						nearMissHint := ""
+						if nm := findNearMissKey(keyName, haveKeys); nm != "" {
+							nearMissHint = fmt.Sprintf(
+								" Key `%s` is a case/format variant — possible naming mismatch.", nm,
+							)
+						}
 						out = append(out, Diagnostic{
 							Subject: dedupe,
 							Message: fmt.Sprintf(
 								"Secret `%s` exists but is missing key `%s` (referenced by %s/%s in ns %s). "+
-									"Pod will hit CreateContainerConfigError on next restart. Existing keys: [%s].",
-								secretKey, keyName, workloadKind, name, ns, haveSummary,
+									"Pod will hit CreateContainerConfigError on next restart. Existing keys: [%s].%s",
+								secretKey, keyName, workloadKind, name, ns, haveSummary, nearMissHint,
 							),
 						})
 					}
@@ -206,4 +212,26 @@ func sortedKeys(set map[string]struct{}) []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+// findNearMissKey returns the first candidate whose normalized form matches
+// the normalized form of want, or "" if none match.
+// Normalization: lowercase + replace hyphens and dots with underscores.
+// This catches the common mismatch where a Deployment references "github-token"
+// but the Secret key is "GITHUB_TOKEN" (or vice-versa).
+func findNearMissKey(want string, candidates []string) string {
+	nw := normalizeKeyName(want)
+	for _, c := range candidates {
+		if normalizeKeyName(c) == nw {
+			return c
+		}
+	}
+	return ""
+}
+
+func normalizeKeyName(s string) string {
+	s = strings.ToLower(s)
+	s = strings.ReplaceAll(s, "-", "_")
+	s = strings.ReplaceAll(s, ".", "_")
+	return s
 }

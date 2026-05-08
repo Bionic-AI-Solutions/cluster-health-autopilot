@@ -304,6 +304,71 @@ func TestProactiveSecretKeyCheck_EnvFromOptionalSkipped(t *testing.T) {
 	}
 }
 
+// deployRefsWrongCaseKey references "github-token" but the Secret has "GITHUB_TOKEN".
+const deployRefsWrongCaseKey = `{
+  "apiVersion": "apps/v1",
+  "kind": "Deployment",
+  "metadata": {"name": "repomind", "namespace": "tools"},
+  "spec": {
+    "template": {
+      "spec": {
+        "containers": [{
+          "name": "app",
+          "env": [{
+            "name": "GH_TOKEN",
+            "valueFrom": {"secretKeyRef": {"name": "repomind-secrets", "key": "github-token"}}
+          }]
+        }]
+      }
+    }
+  }
+}`
+
+const secretRepomindUpperCase = `{
+  "apiVersion": "v1",
+  "kind": "Secret",
+  "metadata": {"name": "repomind-secrets", "namespace": "tools"},
+  "data": {"GITHUB_TOKEN": "Z2hwXzEyMzQ1Njc4OQ=="}
+}`
+
+func TestProactiveSecretKeyCheck_NearMissKeyHint(t *testing.T) {
+	// "github-token" normalizes to "github_token"; "GITHUB_TOKEN" also normalizes
+	// to "github_token" — the hint should fire.
+	src := loadSrc(t, map[string]string{
+		"deploy.json": deployRefsWrongCaseKey,
+		"secret.json": secretRepomindUpperCase,
+	})
+	got := ProactiveSecretKeyCheck{}.Run(context.Background(), src)
+	if len(got) != 1 {
+		t.Fatalf("want 1 diagnostic, got %d: %+v", len(got), got)
+	}
+	d := got[0]
+	if !strings.Contains(d.Message, "missing key `github-token`") {
+		t.Errorf("expected missing-key name in message: %s", d.Message)
+	}
+	if !strings.Contains(d.Message, "GITHUB_TOKEN") {
+		t.Errorf("expected near-miss key name in message: %s", d.Message)
+	}
+	if !strings.Contains(d.Message, "case/format variant") {
+		t.Errorf("expected near-miss hint in message: %s", d.Message)
+	}
+}
+
+func TestProactiveSecretKeyCheck_NoNearMissWhenTrulyMissing(t *testing.T) {
+	// "stripe_api_key" has no case/format variant in the Secret — no hint.
+	src := loadSrc(t, map[string]string{
+		"deploy.json": deployRefsMissingKey,
+		"secret.json": secretBillingMissingStripe,
+	})
+	got := ProactiveSecretKeyCheck{}.Run(context.Background(), src)
+	if len(got) != 1 {
+		t.Fatalf("want 1 diagnostic, got %d", len(got))
+	}
+	if strings.Contains(got[0].Message, "case/format variant") {
+		t.Errorf("near-miss hint should NOT appear when no variant exists: %s", got[0].Message)
+	}
+}
+
 func TestProactiveSecretKeyCheck_NoSecretsInSnapshot(t *testing.T) {
 	// Offline snapshot mode: capture deliberately excludes Secrets, so the
 	// analyzer should be a clean no-op (not a flood of "missing secret"
