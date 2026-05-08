@@ -46,6 +46,7 @@ func RegisterOSS(r *registry.Registry) {
 		diagnose.SecretKeyMissing{},
 		diagnose.FailingExternalSecrets{},
 		diagnose.ProactiveSecretKeyCheck{},
+		diagnose.UnprovisionedSecret{},
 		diagnose.ImagePullAuth{},
 		diagnose.CertExpiry{},
 	)

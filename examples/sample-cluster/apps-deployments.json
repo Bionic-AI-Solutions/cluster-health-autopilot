@@ -1,0 +1,41 @@
+{
+  "apiVersion": "apps/v1",
+  "kind": "DeploymentList",
+  "items": [
+    {
+      "apiVersion": "apps/v1",
+      "kind": "Deployment",
+      "metadata": {"name": "repomind", "namespace": "tools"},
+      "spec": {
+        "template": {
+          "spec": {
+            "containers": [{
+              "name": "repomind",
+              "env": [
+                {
+                  "name": "GITHUB_TOKEN",
+                  "valueFrom": {"secretKeyRef": {"name": "repomind-secrets", "key": "github-token"}}
+                }
+              ]
+            }]
+          }
+        }
+      }
+    },
+    {
+      "apiVersion": "apps/v1",
+      "kind": "Deployment",
+      "metadata": {"name": "playground-agent", "namespace": "playground"},
+      "spec": {
+        "template": {
+          "spec": {
+            "containers": [{
+              "name": "agent",
+              "envFrom": [{"secretRef": {"name": "playground-agent-secrets"}}]
+            }]
+          }
+        }
+      }
+    }
+  ]
+}

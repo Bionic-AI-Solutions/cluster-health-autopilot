@@ -103,6 +103,73 @@ func TestFailingExternalSecrets_NoCRDInstalled(t *testing.T) {
 	}
 }
 
+func TestFailingExternalSecrets_T6PathHintOnNonT6Path(t *testing.T) {
+	// ESO references a flat path ("counsellor/config") — not t6-aligned.
+	esoNonT6 := `{
+  "apiVersion": "external-secrets.io/v1",
+  "kind": "ExternalSecret",
+  "metadata": {"name": "counsellor-secrets", "namespace": "livekit-agents"},
+  "spec": {
+    "target": {"name": "counsellor-secrets"},
+    "data": [{"remoteRef": {"key": "counsellor/config", "property": "livekit_url"}}]
+  },
+  "status": {
+    "conditions": [{"type": "Ready", "status": "False", "message": "vault path not found"}]
+  }
+}`
+	src := loadSrc(t, map[string]string{"eso.json": esoNonT6})
+	got := FailingExternalSecrets{}.Run(context.Background(), src)
+	if len(got) != 1 {
+		t.Fatalf("want 1 diagnostic, got %d", len(got))
+	}
+	d := got[0]
+	if !strings.Contains(d.Message, "counsellor/config") {
+		t.Errorf("expected vault path in message: %s", d.Message)
+	}
+	if !strings.Contains(d.Message, "does not follow t6 hierarchy") {
+		t.Errorf("expected t6 hint in message: %s", d.Message)
+	}
+	if !strings.Contains(d.Message, "secret/t6-apps/livekit-agents/config") {
+		t.Errorf("expected suggested t6 path: %s", d.Message)
+	}
+}
+
+func TestFailingExternalSecrets_NoT6HintWhenAlreadyT6(t *testing.T) {
+	// ESO uses a correct t6-aligned path — no hint needed.
+	esoT6 := `{
+  "apiVersion": "external-secrets.io/v1",
+  "kind": "ExternalSecret",
+  "metadata": {"name": "app-secrets", "namespace": "myapp"},
+  "spec": {
+    "target": {"name": "app-secrets"},
+    "data": [{"remoteRef": {"key": "t6-apps/myapp/config", "property": "api_key"}}]
+  },
+  "status": {
+    "conditions": [{"type": "Ready", "status": "False", "message": "key not found"}]
+  }
+}`
+	src := loadSrc(t, map[string]string{"eso.json": esoT6})
+	got := FailingExternalSecrets{}.Run(context.Background(), src)
+	if len(got) != 1 {
+		t.Fatalf("want 1 diagnostic, got %d", len(got))
+	}
+	if strings.Contains(got[0].Message, "does not follow t6 hierarchy") {
+		t.Errorf("t6 hint should NOT appear for a t6-aligned path: %s", got[0].Message)
+	}
+}
+
+func TestFailingExternalSecrets_NoT6HintWhenNoSpecData(t *testing.T) {
+	// ESO has no spec.data — can't determine path, so no hint.
+	src := loadSrc(t, map[string]string{"eso.json": esoFailingWithEvent})
+	got := FailingExternalSecrets{}.Run(context.Background(), src)
+	if len(got) != 1 {
+		t.Fatalf("want 1 diagnostic, got %d", len(got))
+	}
+	if strings.Contains(got[0].Message, "does not follow t6 hierarchy") {
+		t.Errorf("t6 hint should NOT appear when spec.data is absent: %s", got[0].Message)
+	}
+}
+
 func TestFailingExternalSecrets_TruncatesLongMessages(t *testing.T) {
 	long := strings.Repeat("x", 500)
 	esoLong := `{
