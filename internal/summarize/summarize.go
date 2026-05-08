@@ -49,9 +49,9 @@ type Report struct {
 	LastDate    string
 	RunCount    int
 	Runs        []Stats
-	Records     []anonymize.RunRecord  // full per-run data for day-by-day detail rendering
-	TopDiags    []CategoryFreq         // top diagnostic subject prefixes by frequency
-	TopFindings []CategoryFreq         // top finding severity+component pairs by frequency
+	Records     []anonymize.RunRecord // full per-run data for day-by-day detail rendering
+	TopDiags    []CategoryFreq        // top diagnostic subject prefixes by frequency
+	TopFindings []CategoryFreq        // top finding severity+component pairs by frequency
 }
 
 // FromDir reads all *.jsonl files in dir, parses each line as a RunRecord,
