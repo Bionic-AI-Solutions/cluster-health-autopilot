@@ -1,5 +1,9 @@
 # publish-runs.yml — WS-C nightly run-log pipeline
 #
+# Run data is committed to the `data` branch (not `main`), so it is not
+# subject to the main branch protection (PR + CI requirement).
+# The `data` branch is unprotected; github-actions[bot] can push directly.
+#
 # Two operating modes — choose ONE by toggling the `if:` on each job:
 #
 # MODE A — Self-hosted runner (RECOMMENDED, no MinIO needed)
@@ -46,7 +50,7 @@ on:
         default: ""
 
 permissions:
-  contents: write   # to commit the JSONL and SUMMARY.md
+  contents: write   # to commit the JSONL and SUMMARY.md to the data branch
 
 jobs:
   # ─────────────────────────────────────────────────────────────────────────
@@ -59,7 +63,7 @@ jobs:
     runs-on: [self-hosted, cluster]
     if: true
     steps:
-      - name: Checkout
+      - name: Checkout main (build source)
         uses: actions/checkout@v5
         with:
           fetch-depth: 0
@@ -84,27 +88,42 @@ jobs:
             echo "date=$(date -u -d 'yesterday' +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Diagnose, anonymize, append JSONL
+      - name: Diagnose, anonymize — write to /tmp
         run: |
           DATE=${{ steps.date.outputs.date }}
           RUN_ID="run-${DATE}"
-          mkdir -p runs
+          mkdir -p /tmp/cha-runs
           ./cha diagnose --live --format json \
             | ./cha anonymize --run-id "$RUN_ID" --timestamp "${DATE}T02:00:00Z" \
-            >> runs/"$DATE".jsonl
-          echo "Appended 1 record to runs/$DATE.jsonl"
+            > /tmp/cha-runs/"$DATE".jsonl
+          echo "Wrote 1 record to /tmp/cha-runs/$DATE.jsonl"
 
-      - name: Regenerate SUMMARY.md
-        run: ./cha summarize runs/ > runs/SUMMARY.md
+      - name: Switch to data branch
+        run: |
+          if git fetch origin data:refs/remotes/origin/data 2>/dev/null && git checkout data 2>/dev/null; then
+            echo "Checked out existing data branch"
+          else
+            git checkout --orphan data
+            git rm -rf . 2>/dev/null || true
+            echo "Created new orphan data branch"
+          fi
+          mkdir -p runs
 
-      - name: Commit and push
+      - name: Merge new JSONL + regenerate SUMMARY.md
+        run: |
+          DATE=${{ steps.date.outputs.date }}
+          cp /tmp/cha-runs/"$DATE".jsonl runs/"$DATE".jsonl
+          ./cha summarize runs/ > runs/SUMMARY.md
+          echo "Added run for $DATE; total runs: $(ls runs/*.jsonl 2>/dev/null | wc -l)"
+
+      - name: Commit and push to data branch
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           DATE=${{ steps.date.outputs.date }}
-          git add -f runs/"$DATE".jsonl runs/SUMMARY.md
+          git add runs/"$DATE".jsonl runs/SUMMARY.md
           git diff --cached --quiet || git commit -m "runs: add anonymized run for $DATE"
-          git push
+          git push origin HEAD:data
 
   # ─────────────────────────────────────────────────────────────────────────
   # MODE B — GitHub-hosted runner: pull from MinIO, creds from Vault
@@ -115,7 +134,7 @@ jobs:
     # Set to `true` when switching to Mode B (requires internet-reachable MinIO).
     if: false
     steps:
-      - name: Checkout
+      - name: Checkout main (build source)
         uses: actions/checkout@v5
         with:
           fetch-depth: 0
@@ -174,28 +193,44 @@ jobs:
             fi
           fi
 
-      - name: Anonymize and append JSONL
+      - name: Anonymize — write to /tmp
         if: env.skip != 'true'
         run: |
           DATE=${{ steps.date.outputs.date }}
-          mkdir -p runs
+          mkdir -p /tmp/cha-runs-out
           for f in /tmp/cha-runs/"$DATE"/*.json; do
             RUN_ID="$(basename "$f" .json)"
             ./cha anonymize --run-id "$RUN_ID" --timestamp "${DATE}T02:00:00Z" "$f" \
-              >> runs/"$DATE".jsonl
+              >> /tmp/cha-runs-out/"$DATE".jsonl
           done
-          echo "Appended $(wc -l < runs/"$DATE".jsonl) record(s) to runs/$DATE.jsonl"
+          echo "Anonymized $(wc -l < /tmp/cha-runs-out/"$DATE".jsonl) record(s)"
 
-      - name: Regenerate SUMMARY.md
+      - name: Switch to data branch
         if: env.skip != 'true'
-        run: ./cha summarize runs/ > runs/SUMMARY.md
+        run: |
+          if git fetch origin data:refs/remotes/origin/data 2>/dev/null && git checkout data 2>/dev/null; then
+            echo "Checked out existing data branch"
+          else
+            git checkout --orphan data
+            git rm -rf . 2>/dev/null || true
+            echo "Created new orphan data branch"
+          fi
+          mkdir -p runs
 
-      - name: Commit and push
+      - name: Merge new JSONL + regenerate SUMMARY.md
+        if: env.skip != 'true'
+        run: |
+          DATE=${{ steps.date.outputs.date }}
+          cp /tmp/cha-runs-out/"$DATE".jsonl runs/"$DATE".jsonl
+          ./cha summarize runs/ > runs/SUMMARY.md
+          echo "Added run for $DATE; total runs: $(ls runs/*.jsonl 2>/dev/null | wc -l)"
+
+      - name: Commit and push to data branch
         if: env.skip != 'true'
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           DATE=${{ steps.date.outputs.date }}
-          git add -f runs/"$DATE".jsonl runs/SUMMARY.md
+          git add runs/"$DATE".jsonl runs/SUMMARY.md
           git diff --cached --quiet || git commit -m "runs: add anonymized run for $DATE"
-          git push
+          git push origin HEAD:data
