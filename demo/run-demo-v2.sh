@@ -20,6 +20,8 @@ HELM="helm${KUBE_CONTEXT:+ --kube-context ${KUBE_CONTEXT}}"
 NAMESPACE="demo-app"
 RELEASE="cha-remote"
 CHA_NS="cha"
+DIAGNOSE_CJ="${RELEASE}-cluster-health-autopilot-diagnose"
+REMEDIATE_CJ="${RELEASE}-cluster-health-autopilot-remediate"
 DEMO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(dirname "${DEMO_DIR}")"
 SNAPSHOT_DIR="/tmp/cha-demo-snapshot"
@@ -60,22 +62,25 @@ helm_upgrade() {
 # ─── Helper: trigger an ad-hoc diagnose job and tail it ───────────────────────
 run_diagnose_now() {
   local job="cha-demo-diag-$(date +%s | tail -c 5)"
-  $KUBECTL create job --from=cronjob/"${RELEASE}-diagnose" "${job}" -n "${CHA_NS}" 2>/dev/null
+  $KUBECTL create job --from=cronjob/"${DIAGNOSE_CJ}" "${job}" -n "${CHA_NS}" 2>/dev/null || {
+    warn "diagnose CronJob '${DIAGNOSE_CJ}' not found — skipping"
+    return 0
+  }
   echo "  Waiting for job/${job} to complete..."
-  $KUBECTL wait --for=condition=complete job/"${job}" -n "${CHA_NS}" --timeout=120s 2>/dev/null
-  $KUBECTL logs -n "${CHA_NS}" "job/${job}" 2>/dev/null
+  $KUBECTL wait --for=condition=complete job/"${job}" -n "${CHA_NS}" --timeout=120s 2>/dev/null || true
+  $KUBECTL logs -n "${CHA_NS}" "job/${job}" 2>/dev/null || true
 }
 
 # ─── Helper: trigger an ad-hoc remediate job and tail it ──────────────────────
 run_remediate_now() {
   local job="cha-demo-rem-$(date +%s | tail -c 5)"
-  $KUBECTL create job --from=cronjob/"${RELEASE}-remediate" "${job}" -n "${CHA_NS}" 2>/dev/null || {
+  $KUBECTL create job --from=cronjob/"${REMEDIATE_CJ}" "${job}" -n "${CHA_NS}" 2>/dev/null || {
     echo "  (remediate CronJob not enabled yet — skipping)"
     return 0
   }
   echo "  Waiting for job/${job} to complete..."
-  $KUBECTL wait --for=condition=complete job/"${job}" -n "${CHA_NS}" --timeout=120s 2>/dev/null
-  $KUBECTL logs -n "${CHA_NS}" "job/${job}" 2>/dev/null
+  $KUBECTL wait --for=condition=complete job/"${job}" -n "${CHA_NS}" --timeout=120s 2>/dev/null || true
+  $KUBECTL logs -n "${CHA_NS}" "job/${job}" 2>/dev/null || true
 }
 
 # ═══════════════════════════════════════════════════════════════════════════════
