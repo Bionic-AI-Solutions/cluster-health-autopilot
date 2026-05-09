@@ -22,6 +22,7 @@ RELEASE="cha-remote"
 CHA_NS="cha"
 DIAGNOSE_CJ="${RELEASE}-cluster-health-autopilot-diagnose"
 REMEDIATE_CJ="${RELEASE}-cluster-health-autopilot-remediate"
+WATCHER_DEPLOY="${RELEASE}-cluster-health-autopilot-watcher"
 DEMO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(dirname "${DEMO_DIR}")"
 SNAPSHOT_DIR="/tmp/cha-demo-snapshot"
@@ -41,6 +42,8 @@ cleanup() {
   echo ""
   echo -e "${BOLD}Running cleanup...${NC}"
   KUBE_CONTEXT="${KUBE_CONTEXT:-}" bash "${DEMO_DIR}/simulate/06-cleanup-all.sh" "${NAMESPACE}" 2>/dev/null || true
+  $KUBECTL delete driftreports --all 2>/dev/null || true
+  $KUBECTL delete namespace "${NAMESPACE}" --ignore-not-found 2>/dev/null || true
   if [[ -f "${ORIG_VALUES_FILE}" ]]; then
     echo "Restoring original Helm values..."
     $HELM upgrade "${RELEASE}" "${REPO_DIR}/charts/cluster-health-autopilot" \
@@ -322,22 +325,17 @@ helm_upgrade \
   --set remediation.enabled=false
 
 section "Watcher rollout"
-$KUBECTL rollout status deploy/"${RELEASE}-watcher" -n "${CHA_NS}" --timeout=90s 2>/dev/null
+$KUBECTL rollout status deploy/"${WATCHER_DEPLOY}" -n "${CHA_NS}" --timeout=90s 2>/dev/null
 echo ""
 $KUBECTL get pods -n "${CHA_NS}" --no-headers 2>/dev/null | grep watcher
 
 echo ""
-info "The watcher pre-populates from existing DriftReports on startup..."
-info "Since all 5 issues are pre-existing, the seen-map is seeded and no Slack flood occurs."
+info "Clearing any leftover DriftReports so the watcher starts with an empty seen-map..."
+$KUBECTL delete driftreports --all 2>/dev/null || true
 echo ""
-warn "To force a fresh first post: the watcher will re-post after --slack-repeat-interval (4h)."
-warn "For demo purposes, restart the pod to reset the seen-map:"
-echo ""
-echo "    $KUBECTL rollout restart deploy/${RELEASE}-watcher -n ${CHA_NS}"
-echo ""
-echo -e "  ${BOLD}Restarting watcher with empty seen-map to trigger first-post...${NC}"
-$KUBECTL rollout restart deploy/"${RELEASE}-watcher" -n "${CHA_NS}" 2>/dev/null
-$KUBECTL rollout status deploy/"${RELEASE}-watcher" -n "${CHA_NS}" --timeout=90s 2>/dev/null
+echo -e "  ${BOLD}Restarting watcher to trigger first-post of all active issues...${NC}"
+$KUBECTL rollout restart deploy/"${WATCHER_DEPLOY}" -n "${CHA_NS}" 2>/dev/null
+$KUBECTL rollout status deploy/"${WATCHER_DEPLOY}" -n "${CHA_NS}" --timeout=90s 2>/dev/null
 
 pause "Watch Slack — first Slack message with all active issues (🔔 Active Issues). Ready for live remediation?"
 
@@ -363,7 +361,7 @@ helm_upgrade \
   --set "watcher.remedy.enabled=true" \
   --set "watcher.remedy.dryRun=false"
 
-$KUBECTL rollout status deploy/"${RELEASE}-watcher" -n "${CHA_NS}" --timeout=90s 2>/dev/null
+$KUBECTL rollout status deploy/"${WATCHER_DEPLOY}" -n "${CHA_NS}" --timeout=90s 2>/dev/null
 
 echo ""
 info "Watcher now running in autopilot mode."
@@ -413,7 +411,7 @@ PODEOF
 info "Pod ${POD_NAME} created — exits immediately with code 1 → Failed"
 echo ""
 info "Watch the watcher log:"
-echo "    $KUBECTL logs -n ${CHA_NS} deploy/${RELEASE}-watcher -f --tail=5"
+echo "    $KUBECTL logs -n ${CHA_NS} deploy/${WATCHER_DEPLOY} -f --tail=5"
 echo ""
 info "Watch Slack — you should see the alert + fix within ~30 seconds."
 
@@ -508,6 +506,8 @@ header "Section 10 — Cleanup"
 section "Removing all demo-injected resources"
 KUBE_CONTEXT="${KUBE_CONTEXT:-}" bash "${DEMO_DIR}/simulate/06-cleanup-all.sh" "${NAMESPACE}"
 $KUBECTL delete pods -n "${NAMESPACE}" -l demo=live-inject --ignore-not-found 2>/dev/null || true
+$KUBECTL delete driftreports --all 2>/dev/null || true
+$KUBECTL delete namespace "${NAMESPACE}" --ignore-not-found 2>/dev/null || true
 
 section "Restoring original Helm values"
 $HELM upgrade "${RELEASE}" "${REPO_DIR}/charts/cluster-health-autopilot" \

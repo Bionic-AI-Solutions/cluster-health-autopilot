@@ -60,12 +60,11 @@ if $KUBECTL get deployment "${TARGET}" -n "${NAMESPACE}" &>/dev/null; then
   $KUBECTL rollout restart deployment/"${TARGET}" -n "${NAMESPACE}"
   $KUBECTL rollout status deployment/"${TARGET}" -n "${NAMESPACE}" --timeout=120s
 else
-  echo "    Not a Deployment. Patch the ServiceAccount to add imagePullSecrets:"
-  echo "    ${KUBECTL} patch serviceaccount default -n ${NAMESPACE} \\"
-  echo "      -p '{\"imagePullSecrets\": [{\"name\": \"${SECRET_NAME}\"}]}'"
-  echo ""
-  echo "    Then delete and recreate the pod:"
-  echo "    ${KUBECTL} delete pod ${TARGET} -n ${NAMESPACE}"
+  echo "    Not a Deployment — patching default ServiceAccount and deleting pod..."
+  $KUBECTL patch serviceaccount default -n "${NAMESPACE}" \
+    -p "{\"imagePullSecrets\": [{\"name\": \"${SECRET_NAME}\"}]}" 2>/dev/null || true
+  $KUBECTL delete pod "${TARGET}" -n "${NAMESPACE}" --ignore-not-found 2>/dev/null || true
+  echo "    Pod deleted — kubelet will recreate it with the new imagePullSecret."
 fi
 
 echo ""
