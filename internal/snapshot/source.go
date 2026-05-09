@@ -57,7 +57,8 @@ var (
 	GVRSecretStore        = schema.GroupVersionResource{Group: "external-secrets.io", Version: "v1", Resource: "secretstores"}
 	GVRClusterSecretStore = schema.GroupVersionResource{Group: "external-secrets.io", Version: "v1", Resource: "clustersecretstores"}
 
-	GVRCertificate        = schema.GroupVersionResource{Group: "cert-manager.io", Version: "v1", Resource: "certificates"}
-	GVRCertificateRequest = schema.GroupVersionResource{Group: "cert-manager.io", Version: "v1", Resource: "certificaterequests"}
-	GVRCertManagerOrder   = schema.GroupVersionResource{Group: "acme.cert-manager.io", Version: "v1", Resource: "orders"}
+	GVRCertificate          = schema.GroupVersionResource{Group: "cert-manager.io", Version: "v1", Resource: "certificates"}
+	GVRCertificateRequest   = schema.GroupVersionResource{Group: "cert-manager.io", Version: "v1", Resource: "certificaterequests"}
+	GVRCertManagerOrder     = schema.GroupVersionResource{Group: "acme.cert-manager.io", Version: "v1", Resource: "orders"}
+	GVRCertManagerChallenge = schema.GroupVersionResource{Group: "acme.cert-manager.io", Version: "v1", Resource: "challenges"}
 )

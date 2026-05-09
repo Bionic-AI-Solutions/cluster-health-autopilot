@@ -23,6 +23,10 @@ type Diagnostic struct {
 
 	// Message is the rendered hint (one line, Slack mrkdwn-formatted).
 	Message string `json:"message"`
+
+	// Remediation is an optional actionable fix instruction surfaced in Slack
+	// below the message. Empty when no specific action can be recommended.
+	Remediation string `json:"remediation,omitempty"`
 }
 
 // Analyzer is the contract every diagnostic analyzer must implement.

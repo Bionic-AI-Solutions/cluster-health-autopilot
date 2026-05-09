@@ -332,10 +332,11 @@ func buildCurrentState(results []probe.Result, diags []diagnose.Diagnostic) map[
 	}
 	for _, d := range diags {
 		m[d.Subject] = &seenEntry{
-			fp:       fingerprint(d.Subject, "warning", d.Message),
-			subject:  d.Subject,
-			severity: "warning",
-			message:  d.Message,
+			fp:          fingerprint(d.Subject, "warning", d.Message),
+			subject:     d.Subject,
+			severity:    "warning",
+			message:     d.Message,
+			remediation: d.Remediation,
 		}
 	}
 	return m

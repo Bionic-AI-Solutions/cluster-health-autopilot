@@ -46,7 +46,7 @@ rules:
     resources: ["certificates", "certificaterequests"]
     verbs: ["get", "list", "watch"]
   - apiGroups: ["acme.cert-manager.io"]
-    resources: ["orders"]
+    resources: ["orders", "challenges"]
     verbs: ["get", "list", "watch"]
   # Database-operator probe (CloudNativePG).
   - apiGroups: ["postgresql.cnpg.io"]
