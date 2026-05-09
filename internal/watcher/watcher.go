@@ -230,6 +230,12 @@ func (w *Watcher) runCycle(ctx context.Context) {
 
 	probeResults, diagnostics := w.runDiagnose(ctx)
 
+	// Capture pre-fix state for the Slack diff so that issues fixed in this
+	// same cycle still appear in the "Active Issues" section of the alert.
+	// Without this, fixers delete the pods/resources before buildCurrentState
+	// runs, so the diff sees an empty toPost and the alert carries no context.
+	preFix := buildCurrentState(probeResults, diagnostics)
+
 	var fixResults []fix.Result
 	if w.cfg.RunRemediation && w.mut != nil {
 		for _, f := range w.reg.Fixers() {
@@ -239,15 +245,21 @@ func (w *Watcher) runCycle(ctx context.Context) {
 			}
 			fixResults = append(fixResults, fr)
 		}
-		// Re-diagnose post-fix so report reflects actual cluster state.
+		// Re-diagnose post-fix so DriftReports reflect actual cluster state.
 		probeResults, diagnostics = w.runDiagnose(ctx)
 	}
 
-	current := buildCurrentState(probeResults, diagnostics)
+	// Use post-fix state for DriftReport persistence; use pre-fix state for
+	// the Slack diff so immediately-fixed issues still generate an alert.
+	postFix := buildCurrentState(probeResults, diagnostics)
+	diffState := postFix
+	if hasActions(fixResults) {
+		diffState = preFix
+	}
 
 	w.mu.Lock()
-	toPost, toResolve := w.diff(current)
-	w.updateSeen(current, toPost)
+	toPost, toResolve := w.diff(diffState)
+	w.updateSeen(postFix, toPost)
 	w.mu.Unlock()
 
 	autopilot := w.cfg.RunRemediation && !w.cfg.DryRun
