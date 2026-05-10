@@ -1,6 +1,6 @@
 # Cluster Health Autopilot — Run Summary
 
-_Auto-generated 2026-05-09 05:20 UTC · 5 run(s) · 2026-05-04 → 2026-05-08_
+_Auto-generated 2026-05-10 05:36 UTC · 6 run(s) · 2026-05-04 → 2026-05-09_
 
 ## Health trend
 
@@ -11,16 +11,17 @@ _Auto-generated 2026-05-09 05:20 UTC · 5 run(s) · 2026-05-04 → 2026-05-08_
 | 2026-05-06 | run-2026-05-06 | 5 | 5 | 0 | 0 | 0 | 7 |
 | 2026-05-07 | run-2026-05-07 | 5 | 5 | 0 | 0 | 0 | 7 |
 | 2026-05-08 | run-2026-05-08 | 5 | 5 | 0 | 0 | 0 | 7 |
+| 2026-05-09 | run-2026-05-09 | 5 | 5 | 0 | 0 | 0 | 7 |
 
 ## Diagnostic patterns (top categories, anonymized)
 
 | Category | Occurrences |
 |---|---|
-| `missing-secret` | 10 |
-| `unprovisioned` | 10 |
-| `ExternalSecret` | 5 |
-| `cert-expiry` | 5 |
-| `missing-key` | 5 |
+| `missing-secret` | 12 |
+| `unprovisioned` | 12 |
+| `ExternalSecret` | 6 |
+| `cert-expiry` | 6 |
+| `missing-key` | 6 |
 
 ## Day-by-day details
 
@@ -134,6 +135,33 @@ _Auto-generated 2026-05-09 05:20 UTC · 5 run(s) · 2026-05-04 → 2026-05-08_
 
 <details>
 <summary><strong>2026-05-08</strong> — 5 component(s) · 7 diagnostic(s)</summary>
+
+### Probes
+
+| Component | Status | Detail |
+|---|---|---|
+| Ceph Storage | HEALTHY | 1 cluster(s): rook-ceph@rook-ceph OK (12.1% used) |
+| Cluster Nodes | HEALTHY | All 6 nodes ready |
+| PostgreSQL | HEALTHY | 1 CNPG cluster(s): pg-ceph@pg (2/2 ready, primary=pg-ceph-5) |
+| Storage Claims | HEALTHY | All 75 PVCs bound |
+| Critical Services | HEALTHY | All 30 critical services operational |
+
+### Diagnostics
+
+| # | Category | Message |
+|---|---|---|
+| 1 | `ExternalSecret` | ExternalSecret `b143e54c/289879e3` not Ready: error processing spec.data[0] (key: counsellor/config), err: Secret does not exist. Check Vault path / property names. Vault path `15d8e727/b79606fb` does not follow t6 hierarchy; expected: `2bb80d53/6374e63e/b143e54c/b79606fb`. |
+| 2 | `missing-secret` | Secret `7f8e2ea7/97356135` does NOT exist (referenced by Deployment/openproject-cron in ns openproject, envFrom whole-secret import). Pod will fail to start on next restart. Create the Secret or remove the envFrom entry. |
+| 3 | `missing-secret` | Secret `f3cc87f7/83e0fc4a` does NOT exist (referenced by Deployment/playground-agent in ns playground, envFrom whole-secret import). Pod will fail to start on next restart. Create the Secret or remove the envFrom entry. |
+| 4 | `missing-key` | Secret `47c88e9e/73442ae4` exists but is missing key `github-token`b2a694ad/1124edcd`GITHUB_TOKEN` is a case/format variant — possible naming mismatch. |
+| 5 | `unprovisioned` | Secret `7f8e2ea7/97356135` referenced by Deployment/openproject-cron has no ExternalSecret provisioning it. Create an ExternalSecret with spec.target.name=openproject-cron-environment pointing to Vault path `2bb80d53/6374e63e/7f8e2ea7/b79606fb`. |
+| 6 | `unprovisioned` | Secret `f3cc87f7/83e0fc4a` referenced by Deployment/playground-agent has no ExternalSecret provisioning it. Create an ExternalSecret with spec.target.name=playground-agent-secrets pointing to Vault path `2bb80d53/6374e63e/f3cc87f7/b79606fb`. |
+| 7 | `cert-expiry` | Certificate `25bf6a1d/9b6c2336` is not Ready: Issuing certificate as Secret does not exist. Check Issuer/ClusterIssuer status and cert-manager controller logs. |
+
+</details>
+
+<details>
+<summary><strong>2026-05-09</strong> — 5 component(s) · 7 diagnostic(s)</summary>
 
 ### Probes
 
