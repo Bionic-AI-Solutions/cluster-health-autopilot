@@ -18,7 +18,7 @@ diagnose:
   successfulJobsHistoryLimit: 3
   failedJobsHistoryLimit: 3
   concurrencyPolicy: Forbid
-  format: text                    # text | json — JSON for fleet-console pipelines
+  format: daily                   # daily | text | json — daily posts to #healthinfo; text/json for ad-hoc runs
 
 # Remediate CronJob — opt-in.
 remediation:
@@ -29,13 +29,27 @@ remediation:
   concurrencyPolicy: Forbid
   dryRun: false                   # When true, fixers report Refused without mutating cluster state.
 
-# Slack reporting. URL must come from a pre-existing Secret in the install namespace.
-# Per the Vault-only secrets policy, prefer wiring this Secret via External Secrets Operator
-# from a Vault path your team already trusts (see SECURITY.md).
+# Slack three-channel routing.
+# Each channel maps to a dedicated incoming-webhook Secret.
+# All URLs must come from pre-existing Secrets in the install namespace — prefer
+# wiring them via External Secrets Operator from Vault (see SECURITY.md).
+#
+#   alerts    → #ceph-alerts:   event-driven, CHA acted (auto-fixed issues)
+#   critical  → #ceph-critical: event-driven, human action required
+#   healthinfo→ #healthinfo:    daily 09:00 UTC digest (diagnose CronJob)
 slack:
-  enabled: false
-  webhookSecretName: ""           # e.g. "cha-slack-webhook"
-  webhookSecretKey: "WEBHOOK_URL" # key inside the Secret holding the webhook URL
+  alerts:
+    enabled: false
+    secretName: ""           # e.g. "cha-slack-ceph-alerts"
+    secretKey: "WEBHOOK_URL"
+  critical:
+    enabled: false
+    secretName: ""           # e.g. "cha-slack-ceph-critical"
+    secretKey: "WEBHOOK_URL"
+  healthinfo:
+    enabled: false
+    secretName: ""           # e.g. "cha-slack-healthinfo"
+    secretKey: "WEBHOOK_URL"
 
 # DriftReport CRD — kubectl-queryable diagnostic objects.
 # Each cron tick upserts one DriftReport per active diagnostic; CRs whose

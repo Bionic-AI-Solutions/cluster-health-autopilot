@@ -54,8 +54,13 @@ spec:
             - --debounce={{ .Values.watcher.debounce | default "10s" }}
             - --resync-period={{ .Values.watcher.resyncPeriod | default "10m" }}
             - --write-driftreports={{ .Values.driftReport.enabled }}
-            {{- if and .Values.slack.enabled .Values.slack.webhookSecretName }}
-            - --slack-webhook=$(SLACK_WEBHOOK_URL)
+            {{- if and .Values.slack.alerts.enabled .Values.slack.alerts.secretName }}
+            - --slack-alerts=$(SLACK_ALERTS_URL)
+            {{- end }}
+            {{- if and .Values.slack.critical.enabled .Values.slack.critical.secretName }}
+            - --slack-critical=$(SLACK_CRITICAL_URL)
+            {{- end }}
+            {{- if or (and .Values.slack.alerts.enabled .Values.slack.alerts.secretName) (and .Values.slack.critical.enabled .Values.slack.critical.secretName) }}
             - --slack-post-on-resolved={{ ((.Values.watcher.slack).postOnResolved) | default true }}
             - --slack-repeat-interval={{ ((.Values.watcher.slack).repeatInterval) | default "4h" }}
             {{- end }}
@@ -66,7 +71,8 @@ spec:
             {{- end }}
             {{- end }}
           env:
-            {{- include "cha.slackEnv" . | nindent 12 }}
+            {{- include "cha.slackAlertsEnv" . | nindent 12 }}
+            {{- include "cha.slackCriticalEnv" . | nindent 12 }}
             {{- include "cha.vaultEnv" . | nindent 12 }}
           resources:
             {{- toYaml .Values.watcher.resources | nindent 12 }}

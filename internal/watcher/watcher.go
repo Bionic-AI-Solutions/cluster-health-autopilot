@@ -48,7 +48,11 @@ type Config struct {
 	// catching drift that didn't produce a watch event.
 	ResyncPeriod time.Duration
 
-	SlackWebhook   string
+	// SlackChannels holds the two event-driven webhook URLs.
+	//   Alerts   → #ceph-alerts:   CHA acted (fixers ran and resolved issues)
+	//   Critical → #ceph-critical: human action required (unfixable / still active)
+	// Either may be empty — posts are silently skipped for empty strings.
+	SlackChannels  report.SlackChannels
 	PostOnResolved bool
 	// RepeatInterval re-posts active diagnostics to Slack after this duration.
 	// Zero disables repeat posts.
@@ -262,31 +266,32 @@ func (w *Watcher) runCycle(ctx context.Context) {
 	w.updateSeen(postFix, toPost)
 	w.mu.Unlock()
 
-	autopilot := w.cfg.RunRemediation && !w.cfg.DryRun
 	needsSlack := len(toPost) > 0 || len(toResolve) > 0 ||
-		(autopilot && hasActions(fixResults))
+		(w.cfg.RunRemediation && !w.cfg.DryRun && hasActions(fixResults))
 
-	if w.cfg.SlackWebhook != "" && needsSlack {
-		newOrChanged := make([]report.DeltaDiag, 0, len(toPost))
+	if needsSlack && (w.cfg.SlackChannels.Alerts != "" || w.cfg.SlackChannels.Critical != "") {
+		postFixSubjects := make(map[string]bool, len(postFix))
+		for subj := range postFix {
+			postFixSubjects[subj] = true
+		}
+
+		toPostDiags := make([]report.DeltaDiag, 0, len(toPost))
 		for _, e := range toPost {
-			newOrChanged = append(newOrChanged, report.DeltaDiag{
+			toPostDiags = append(toPostDiags, report.DeltaDiag{
 				Subject:     e.subject,
 				Severity:    e.severity,
 				Message:     e.message,
 				Remediation: e.remediation,
 			})
 		}
-		resolved := make([]report.ResolvedDiag, 0, len(toResolve))
+		toResolveDiags := make([]report.ResolvedDiag, 0, len(toResolve))
 		for _, e := range toResolve {
-			resolved = append(resolved, report.ResolvedDiag{
+			toResolveDiags = append(toResolveDiags, report.ResolvedDiag{
 				Subject: e.subject,
 				Message: e.message,
 			})
 		}
-		payload := report.FormatSlackDelta(newOrChanged, resolved, fixResults, autopilot)
-		if err := report.PostSlack(nil, w.cfg.SlackWebhook, payload); err != nil {
-			log.Printf("watcher: slack post: %v", err)
-		}
+		report.RouteAndPost(nil, w.cfg.SlackChannels, postFixSubjects, toPostDiags, toResolveDiags, fixResults)
 	}
 
 	if w.cfg.WriteDriftReports {
