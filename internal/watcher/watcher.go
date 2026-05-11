@@ -52,11 +52,25 @@ type Config struct {
 	//   Alerts   → #ceph-alerts:   CHA acted (fixers ran and resolved issues)
 	//   Critical → #ceph-critical: human action required (unfixable / still active)
 	// Either may be empty — posts are silently skipped for empty strings.
+	// When AlertmanagerURL is set, Alertmanager handles routing and these are
+	// used only as a fallback.
 	SlackChannels  report.SlackChannels
 	PostOnResolved bool
 	// RepeatInterval re-posts active diagnostics to Slack after this duration.
 	// Zero disables repeat posts.
 	RepeatInterval time.Duration
+
+	// AlertmanagerURL is the base URL of the Alertmanager API
+	// (e.g. "http://alertmanager.pg.svc.cluster.local:9093").
+	// When set, CHA posts the full active-issue state each cycle as Prometheus
+	// alerts. Alertmanager handles dedup, grouping, silencing, and routing to
+	// all configured receivers (Slack, PagerDuty, Teams, email, …).
+	// The TTL for each posted alert is set to 2× ResyncPeriod + 1 minute buffer
+	// so alerts auto-resolve if CHA stops refreshing them.
+	AlertmanagerURL string
+	// ClusterName is stamped as the `cluster` label on every Alertmanager alert.
+	// Defaults to "cluster" when empty.
+	ClusterName string
 
 	WriteDriftReports bool
 
@@ -265,6 +279,27 @@ func (w *Watcher) runCycle(ctx context.Context) {
 	toPost, toResolve := w.diff(diffState)
 	w.updateSeen(postFix, toPost)
 	w.mu.Unlock()
+
+	// Alertmanager: post the full current state every cycle so Alertmanager
+	// refreshes TTLs on active alerts and auto-resolves cleared ones.
+	// This runs unconditionally when configured — Alertmanager deduplicates.
+	if w.cfg.AlertmanagerURL != "" {
+		clusterName := w.cfg.ClusterName
+		if clusterName == "" {
+			clusterName = "cluster"
+		}
+		ttl := 2*w.cfg.ResyncPeriod + time.Minute
+		allActive := make([]report.DeltaDiag, 0, len(postFix))
+		for _, e := range postFix {
+			allActive = append(allActive, report.DeltaDiag{
+				Subject:     e.subject,
+				Severity:    e.severity,
+				Message:     e.message,
+				Remediation: e.remediation,
+			})
+		}
+		report.PostActiveStateToAM(nil, w.cfg.AlertmanagerURL, allActive, fixResults, clusterName, ttl)
+	}
 
 	needsSlack := len(toPost) > 0 || len(toResolve) > 0 ||
 		(w.cfg.RunRemediation && !w.cfg.DryRun && hasActions(fixResults))

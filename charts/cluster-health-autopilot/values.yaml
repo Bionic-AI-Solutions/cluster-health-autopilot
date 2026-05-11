@@ -81,6 +81,20 @@ vaultProbe:
       name: ""                    # K8s Secret holding a Vault token
       key: "token"                # key within that Secret
 
+# Alertmanager integration — Kubernetes-native event routing.
+# When enabled, CHA posts the full active-issue state to Alertmanager each
+# watcher cycle. Alertmanager handles: dedup, grouping, silencing, repeat
+# intervals, and fan-out to all configured receivers (Slack, PagerDuty,
+# Teams, email, webhook, …). This is the preferred model over direct Slack
+# webhooks; the slack.alerts/critical fields become fallback-only.
+#
+# url: in-cluster service URL of the Alertmanager API.
+# clusterName: stamped as the `cluster` label on every alert.
+alertmanager:
+  enabled: false
+  url: ""                        # e.g. "http://alertmanager.pg.svc.cluster.local:9093"
+  clusterName: "cluster"         # identifies this cluster in alert labels
+
 # Watcher — event-driven, long-running Deployment (Phase 1).
 # Replaces polling latency (CronJob tick) with near-instant reaction to
 # Kubernetes watch events. Debounces burst updates before re-running the

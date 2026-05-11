@@ -64,6 +64,10 @@ spec:
             - --slack-post-on-resolved={{ ((.Values.watcher.slack).postOnResolved) | default true }}
             - --slack-repeat-interval={{ ((.Values.watcher.slack).repeatInterval) | default "4h" }}
             {{- end }}
+            {{- if and .Values.alertmanager.enabled .Values.alertmanager.url }}
+            - --alertmanager-url={{ .Values.alertmanager.url }}
+            - --cluster-name={{ .Values.alertmanager.clusterName | default "cluster" }}
+            {{- end }}
             {{- if ((.Values.watcher.remedy).enabled) }}
             - --remedy
             {{- if ((.Values.watcher.remedy).dryRun) }}

@@ -417,6 +417,8 @@ func watchCmd() *cobra.Command {
 		writeDriftReports bool
 		remedy            bool
 		dryRun            bool
+		alertmanagerURL   string
+		clusterName       string
 		vaultAddr         string
 		vaultMount        string
 		vaultRole         string
@@ -493,6 +495,8 @@ the post-fix cluster state.`,
 				WriteDriftReports: writeDriftReports,
 				RunRemediation:    remedy,
 				DryRun:            dryRun,
+				AlertmanagerURL:   alertmanagerURL,
+				ClusterName:       clusterName,
 			}
 			w := watcher.New(lv, reg, mut, cfg)
 			return w.Run(ctx)
@@ -502,8 +506,10 @@ the post-fix cluster state.`,
 	c.Flags().StringVar(&kubeconfig, "kubeconfig", "", "Path to kubeconfig (default: in-cluster, then $KUBECONFIG, then ~/.kube/config)")
 	c.Flags().DurationVar(&debounce, "debounce", 10*time.Second, "Debounce window after a Kubernetes event before re-running diagnostics")
 	c.Flags().DurationVar(&resyncPeriod, "resync-period", 10*time.Minute, "Full re-diagnose interval regardless of events (catches non-event drift)")
-	c.Flags().StringVar(&slackAlerts, "slack-alerts", "", "Slack webhook for #ceph-alerts — CHA acted (auto-fixed issues)")
-	c.Flags().StringVar(&slackCritical, "slack-critical", "", "Slack webhook for #ceph-critical — human action required")
+	c.Flags().StringVar(&alertmanagerURL, "alertmanager-url", os.Getenv("ALERTMANAGER_URL"), "Alertmanager base URL (e.g. http://alertmanager.pg:9093). When set, CHA posts all active issues as Prometheus alerts each cycle; AM handles routing to Slack/PagerDuty/etc.")
+	c.Flags().StringVar(&clusterName, "cluster-name", envOrDefault("CLUSTER_NAME", "cluster"), "Cluster name stamped on Alertmanager alert labels (default: $CLUSTER_NAME or 'cluster')")
+	c.Flags().StringVar(&slackAlerts, "slack-alerts", "", "Slack webhook for #ceph-alerts — CHA acted (auto-fixed issues); used as fallback when --alertmanager-url is not set")
+	c.Flags().StringVar(&slackCritical, "slack-critical", "", "Slack webhook for #ceph-critical — human action required; used as fallback when --alertmanager-url is not set")
 	c.Flags().BoolVar(&postOnResolved, "slack-post-on-resolved", true, "Post to Slack when a diagnostic resolves")
 	c.Flags().DurationVar(&repeatInterval, "slack-repeat-interval", 4*time.Hour, "Re-post still-active diagnostics at this interval (0 = never repeat)")
 	c.Flags().BoolVar(&writeDriftReports, "write-driftreports", true, "Upsert DriftReport CRs on every cycle (live mode only)")
