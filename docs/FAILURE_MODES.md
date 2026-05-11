@@ -1,12 +1,15 @@
 # Failure-Mode Catalog
 
-The default catalog covers three auto-fixers and two analyzers. Each is a separate Go function with a published unit-test corpus under [`internal/`](../internal/). The "real example" column is a real incident from the cluster the product was built on.
+The default catalog (v0.9.5) covers **four auto-fixers** and **eight analyzers**.
+Each is a separate Go function with a published unit-test corpus under
+[`internal/`](../internal/). The "real example" column is a real incident from
+the cluster the product was built on.
 
 ---
 
 ## A. Auto-fixers (whitelist; default-OFF; opt-in via `remediation.enabled=true`)
 
-Each fixer is gated by the **Mutator interface** at the type-system level: `snapshot.File` doesn't implement `Mutator`, so fixers physically cannot run against a captured snapshot. Live mode only. The remediator ClusterRole grants exactly three verbs (`pods/delete`, `jobs/delete`, `deployments/patch`); no Secret, ConfigMap, or CRD writes are possible regardless of how the binary is called.
+Each fixer is gated by the **Mutator interface** at the type-system level: `snapshot.File` doesn't implement `Mutator`, so fixers physically cannot run against a captured snapshot. Live mode only. The remediator ClusterRole grants five narrow verbs (`pods/delete`, `jobs/delete`, `deployments/patch`, `certificaterequests/delete`, `orders/delete`); no Secret, ConfigMap, or generic CRD writes are possible regardless of how the binary is called.
 
 ### 1. `StaleErrorPods`
 
@@ -41,6 +44,17 @@ Each fixer is gated by the **Mutator interface** at the type-system level: `snap
 | **Real example** | `frontend-deploy` revision 7 stuck because revision 6's pod template had a different env layout that took longer than `progressDeadlineSeconds=600` to converge. Manual `kubectl rollout restart` from on-call cleared it; this fixer does the same automatically when the revision diff says it's safe. |
 | **Source** | [`internal/fix/stuck_rs_pods.go`](../internal/fix/stuck_rs_pods.go) |
 
+### 4. `StuckCertificateRequests` (added in v0.9.1)
+
+| | |
+|---|---|
+| **Symptom** | `kubectl get certificaterequest -A` shows requests stuck in `Ready=False`/`reason=Failed` for hours/days; cert-manager won't retry because the failed CR is still present. ACME `Order` CRs in `state=errored` or `state=invalid` keep the parent CR wedged. |
+| **Root cause class** | Transient ACME failure (rate limit, DNS-01 propagation slowness, account-key rotation) that the CR captured permanently. cert-manager creates one CR per renewal attempt — once a CR is terminally failed, the next renewal cycle stalls behind it. |
+| **What it does** | Filters CertificateRequest CRs to terminally-failed states (`Ready=False` with `reason=Failed`, or `status.failureTime` set). Filters ACME Orders to `state=errored` or `state=invalid`. Calls `certificaterequests.delete` / `orders.delete`. cert-manager recreates the CR within seconds and retries. |
+| **Why it's safe** | The fixer only touches **terminally-failed** CRs — never pending or in-progress issuance. cert-manager's recovery model is "delete the failed CR; I'll make a new one" — this fixer just automates that step. No private-key material is touched (Secrets are untouched). |
+| **Real example** | `dashboard-baisoln-com-tls` Certificate showed `Ready=False` for 11 hours because a CertificateRequest from the previous renewal hit an ACME rate-limit and never cleared. Once deleted, cert-manager issued a fresh CR and renewed within 90 seconds. |
+| **Source** | [`internal/fix/stuck_cert_requests.go`](../internal/fix/stuck_cert_requests.go) |
+
 ---
 
 ## B. Analyzers (read-only; never act; surface diagnostics for human action)
@@ -64,8 +78,68 @@ Analyzers run in both `cha diagnose` and `cha remediate`. They produce structure
 | **Symptom** | An ExternalSecret has `Ready=False`. The Kubernetes Secret it owns still exists with a stale-but-cached value. Running pods don't notice; the next pod restart will. |
 | **What it produces** | One Diagnostic line per failing ESO, with the most recent `UpdateFailed` event message — which carries the precise missing Vault property name. Falls back to the condition message when no events are in the snapshot. |
 | **Why no auto-fix** | Resolution requires writing to Vault — not a place an automated tool should reach. The diagnostic surfaces the exact path + property name so the operator can `vault kv put` in seconds. |
-| **Output (verbatim)** | `🔎 ExternalSecret mail/mail-service-api-key not Ready: error processing spec.data[0] (key: t6-apps/mail/config), err: cannot find secret data for key: "mail_service_api_key". Check Vault path / property names.` |
+| **Output (verbatim)** | `🔎 ExternalSecret mail/mail-service-api-key not Ready: error processing spec.data[0] (key: t6-apps/mail/config), err: cannot find secret data for key: "mail_service_api_key". Check Vault path / property names. Vault path 'counsellor/config' does not follow t6 hierarchy; expected: 'secret/t6-apps/mail/config'.` |
 | **Source** | [`internal/diagnose/failing_externalsecrets.go`](../internal/diagnose/failing_externalsecrets.go) |
+
+### 3. `ProactiveSecretKeyCheck`
+
+| | |
+|---|---|
+| **Symptom** | A Deployment env reference points at a Secret key the live Secret object does NOT contain — the cluster is **silently primed to fail** on the next pod restart. The current pod is happy because its env was resolved at start. The next rollout will hit CreateContainerConfigError. |
+| **What it produces** | Walks every Deployment/StatefulSet/CronJob `env[].valueFrom.secretKeyRef` and `envFrom[].secretRef`. For each reference, checks the live Secret. If the key is absent, emits a diagnostic naming the workload + Secret + missing key. Appends a **case/format variant hint** when a normalized form of the key exists (e.g. `github-token` referenced but Secret has `GITHUB_TOKEN`). |
+| **Why no auto-fix** | Same as SecretKeyMissing — fix is to either edit the workload manifest or the ESO template. Both are git-side actions. |
+| **Output (verbatim)** | `🔎 Secret repomind/repomind-secrets exists but is missing key github-token (referenced by Deployment/repomind in ns repomind). Pod will hit CreateContainerConfigError on next restart. Existing keys: [GITHUB_TOKEN, REDIS_URL]. Key 'GITHUB_TOKEN' is a case/format variant — possible naming mismatch.` |
+| **Source** | [`internal/diagnose/proactive_secret_key_check.go`](../internal/diagnose/proactive_secret_key_check.go) |
+
+### 4. `UnprovisionedSecret` (added in v0.9.1)
+
+| | |
+|---|---|
+| **Symptom** | A workload references a Secret via `envFrom` or volume that has NO ExternalSecret provisioning it. The Secret is absent and there is no mechanism by which it will appear — pods will fail on next restart. |
+| **What it produces** | Walks every Deployment/StatefulSet/CronJob and checks each Secret reference for either (a) live existence or (b) an ExternalSecret targeting the same Secret name. When neither is true, emits a diagnostic suggesting the canonical Vault path `secret/t6-apps/<namespace>/config`. |
+| **Why no auto-fix** | Creating an ExternalSecret requires choosing a Vault path AND populating Vault — both human decisions. |
+| **Output (verbatim)** | `🔎 Secret playground/playground-agent-secrets referenced by Deployment/playground-agent has no ExternalSecret provisioning it. Create an ExternalSecret with spec.target.name=playground-agent-secrets pointing to Vault path 'secret/t6-apps/playground/config'.` |
+| **Source** | [`internal/diagnose/unprovisioned_secret.go`](../internal/diagnose/unprovisioned_secret.go) |
+
+### 5. `VaultPathMissing`
+
+| | |
+|---|---|
+| **Symptom** | Vault has been edited (path deleted, key renamed, KV mount remounted) but the ESO controller's next refresh hasn't fired yet. The ExternalSecret is still `Ready=True` from its last successful sync — but the next pod restart will fail with `couldn't find key` because ESO will fail to repopulate the K8s Secret. |
+| **What it produces** | Queries Vault directly for every path referenced by ExternalSecrets in the cluster. Reads key NAMES only (privacy contract enforced in code — see [`pkg/registry`](../pkg/registry/) for byte-vs-name boundary). Skips non-Vault SecretStores via provider check (v0.3+). Groups Vault outages with ≥3 affected paths into a single summary diagnostic. |
+| **Why no auto-fix** | Resolution requires writing to Vault — not a place an automated tool reaches. |
+| **Output (verbatim)** | `🔎 VaultPathMissing: 3 paths referenced by ExternalSecrets are not in Vault: t6-apps/playground/config, t6-apps/missing/config, secret/legacy/old (+0 more).` |
+| **Source** | [`internal/diagnose/vault_path_missing.go`](../internal/diagnose/vault_path_missing.go) |
+
+### 6. `CertExpiry`
+
+| | |
+|---|---|
+| **Symptom** | A cert-manager `Certificate` CR has `Ready=False` (renewal stalled), or `status.notAfter` is in the past (expired), or `status.notAfter` is within 14 days (cert-manager should have renewed at 2/3-of-validity — if it hasn't, something's wrong). |
+| **What it produces** | One Diagnostic line per problem certificate naming the CR + namespace + reason. For `Ready=False` includes the condition message (carries ACME rate-limit details if applicable). |
+| **Why no auto-fix** | The underlying issue is usually upstream (ACME issuer, DNS-01 propagation, account key). `StuckCertificateRequests` fixer addresses the proximate symptom (a stuck CR) but does not auto-respond to expiry itself. |
+| **Output (verbatim)** | `🔎 Certificate monitoring/grafana-tls is not Ready: ACME rate-limited (too many certificates issued).` |
+| **Source** | [`internal/diagnose/cert_expiry.go`](../internal/diagnose/cert_expiry.go) |
+
+### 7. `ImagePullAuth`
+
+| | |
+|---|---|
+| **Symptom** | A pod is in `ImagePullBackOff` and the kubelet event message contains an authentication signal — `401`, `unauthorized`, `denied`, `authentication required`, or `pull access denied`. Other pull failures (`manifest unknown`, `image not found`) are intentionally ignored — those are not auth issues. |
+| **What it produces** | Filters pods in `ImagePullBackOff`, scans the kubelet events for auth-signal substrings, emits one Diagnostic per affected pod + image. |
+| **Why no auto-fix** | Resolution requires creating/fixing an `imagePullSecret` — a credential write that CHA's RBAC explicitly excludes. |
+| **Output (verbatim)** | `🔎 Pod monitoring/metrics-exporter container "exporter" cannot pull image 'ghcr.io/myorg/metrics-exporter:v2.1.0': auth failure — 401 unauthorized: authentication required.` |
+| **Source** | [`internal/diagnose/image_pull_auth.go`](../internal/diagnose/image_pull_auth.go) |
+
+### 8. `IngressCoverage` (added in v0.9.x)
+
+| | |
+|---|---|
+| **Symptom** | An `Ingress` exposes a public hostname for which CHA has no endpoint probe target — so TLS faults, missing Kong routes, and DNS failures go undetected. This is a **probe coverage gap**, not a runtime failure. |
+| **What it produces** | Walks every `networking.k8s.io/v1` Ingress and computes the set difference: `{ingress hosts} − {probe.DefaultEndpointTargets()}`. Emits one Diagnostic per uncovered host with the exact Go file + function to edit. |
+| **Why no auto-fix** | Adding a new probe target is a code change with operator intent — it requires choosing a canonical display name and confirming the host is meant to be monitored. Auto-adding everything would hide intentional ingress-only-not-monitored decisions. |
+| **Output (verbatim)** | `🔎 Ingress nextcloud/nextcloud exposes host 'nextcloud.baisoln.com' with no endpoint probe — TLS faults, missing Kong routes, and DNS failures will go undetected. Add '{URL: "https://nextcloud.baisoln.com", Name: "<display name>"}' to probe.DefaultEndpointTargets() in internal/probe/endpoints.go (removal requires explicit operator action — never auto-removed).` |
+| **Source** | [`internal/diagnose/ingress_coverage.go`](../internal/diagnose/ingress_coverage.go) |
 
 ---
 

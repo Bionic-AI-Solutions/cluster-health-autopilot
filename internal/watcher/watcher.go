@@ -48,11 +48,29 @@ type Config struct {
 	// catching drift that didn't produce a watch event.
 	ResyncPeriod time.Duration
 
-	SlackWebhook   string
+	// SlackChannels holds the two event-driven webhook URLs.
+	//   Alerts   → #ceph-alerts:   CHA acted (fixers ran and resolved issues)
+	//   Critical → #ceph-critical: human action required (unfixable / still active)
+	// Either may be empty — posts are silently skipped for empty strings.
+	// When AlertmanagerURL is set, Alertmanager handles routing and these are
+	// used only as a fallback.
+	SlackChannels  report.SlackChannels
 	PostOnResolved bool
 	// RepeatInterval re-posts active diagnostics to Slack after this duration.
 	// Zero disables repeat posts.
 	RepeatInterval time.Duration
+
+	// AlertmanagerURL is the base URL of the Alertmanager API
+	// (e.g. "http://alertmanager.pg.svc.cluster.local:9093").
+	// When set, CHA posts the full active-issue state each cycle as Prometheus
+	// alerts. Alertmanager handles dedup, grouping, silencing, and routing to
+	// all configured receivers (Slack, PagerDuty, Teams, email, …).
+	// The TTL for each posted alert is set to 2× ResyncPeriod + 1 minute buffer
+	// so alerts auto-resolve if CHA stops refreshing them.
+	AlertmanagerURL string
+	// ClusterName is stamped as the `cluster` label on every Alertmanager alert.
+	// Defaults to "cluster" when empty.
+	ClusterName string
 
 	WriteDriftReports bool
 
@@ -230,6 +248,12 @@ func (w *Watcher) runCycle(ctx context.Context) {
 
 	probeResults, diagnostics := w.runDiagnose(ctx)
 
+	// Capture pre-fix state for the Slack diff so that issues fixed in this
+	// same cycle still appear in the "Active Issues" section of the alert.
+	// Without this, fixers delete the pods/resources before buildCurrentState
+	// runs, so the diff sees an empty toPost and the alert carries no context.
+	preFix := buildCurrentState(probeResults, diagnostics)
+
 	var fixResults []fix.Result
 	if w.cfg.RunRemediation && w.mut != nil {
 		for _, f := range w.reg.Fixers() {
@@ -239,42 +263,70 @@ func (w *Watcher) runCycle(ctx context.Context) {
 			}
 			fixResults = append(fixResults, fr)
 		}
-		// Re-diagnose post-fix so report reflects actual cluster state.
+		// Re-diagnose post-fix so DriftReports reflect actual cluster state.
 		probeResults, diagnostics = w.runDiagnose(ctx)
 	}
 
-	current := buildCurrentState(probeResults, diagnostics)
+	// Use post-fix state for DriftReport persistence; use pre-fix state for
+	// the Slack diff so immediately-fixed issues still generate an alert.
+	postFix := buildCurrentState(probeResults, diagnostics)
+	diffState := postFix
+	if hasActions(fixResults) {
+		diffState = preFix
+	}
 
 	w.mu.Lock()
-	toPost, toResolve := w.diff(current)
-	w.updateSeen(current, toPost)
+	toPost, toResolve := w.diff(diffState)
+	w.updateSeen(postFix, toPost)
 	w.mu.Unlock()
 
-	autopilot := w.cfg.RunRemediation && !w.cfg.DryRun
-	needsSlack := len(toPost) > 0 || len(toResolve) > 0 ||
-		(autopilot && hasActions(fixResults))
-
-	if w.cfg.SlackWebhook != "" && needsSlack {
-		newOrChanged := make([]report.DeltaDiag, 0, len(toPost))
-		for _, e := range toPost {
-			newOrChanged = append(newOrChanged, report.DeltaDiag{
+	// Alertmanager: post the full current state every cycle so Alertmanager
+	// refreshes TTLs on active alerts and auto-resolves cleared ones.
+	// This runs unconditionally when configured — Alertmanager deduplicates.
+	if w.cfg.AlertmanagerURL != "" {
+		clusterName := w.cfg.ClusterName
+		if clusterName == "" {
+			clusterName = "cluster"
+		}
+		ttl := 2*w.cfg.ResyncPeriod + time.Minute
+		allActive := make([]report.DeltaDiag, 0, len(postFix))
+		for _, e := range postFix {
+			allActive = append(allActive, report.DeltaDiag{
 				Subject:     e.subject,
 				Severity:    e.severity,
 				Message:     e.message,
 				Remediation: e.remediation,
 			})
 		}
-		resolved := make([]report.ResolvedDiag, 0, len(toResolve))
+		report.PostActiveStateToAM(nil, w.cfg.AlertmanagerURL, allActive, fixResults, clusterName, ttl)
+	}
+
+	needsSlack := len(toPost) > 0 || len(toResolve) > 0 ||
+		(w.cfg.RunRemediation && !w.cfg.DryRun && hasActions(fixResults))
+
+	if needsSlack && (w.cfg.SlackChannels.Alerts != "" || w.cfg.SlackChannels.Critical != "") {
+		postFixSubjects := make(map[string]bool, len(postFix))
+		for subj := range postFix {
+			postFixSubjects[subj] = true
+		}
+
+		toPostDiags := make([]report.DeltaDiag, 0, len(toPost))
+		for _, e := range toPost {
+			toPostDiags = append(toPostDiags, report.DeltaDiag{
+				Subject:     e.subject,
+				Severity:    e.severity,
+				Message:     e.message,
+				Remediation: e.remediation,
+			})
+		}
+		toResolveDiags := make([]report.ResolvedDiag, 0, len(toResolve))
 		for _, e := range toResolve {
-			resolved = append(resolved, report.ResolvedDiag{
+			toResolveDiags = append(toResolveDiags, report.ResolvedDiag{
 				Subject: e.subject,
 				Message: e.message,
 			})
 		}
-		payload := report.FormatSlackDelta(newOrChanged, resolved, fixResults, autopilot)
-		if err := report.PostSlack(nil, w.cfg.SlackWebhook, payload); err != nil {
-			log.Printf("watcher: slack post: %v", err)
-		}
+		report.RouteAndPost(nil, w.cfg.SlackChannels, postFixSubjects, toPostDiags, toResolveDiags, fixResults)
 	}
 
 	if w.cfg.WriteDriftReports {
@@ -320,10 +372,11 @@ func buildCurrentState(results []probe.Result, diags []diagnose.Diagnostic) map[
 	}
 	for _, d := range diags {
 		m[d.Subject] = &seenEntry{
-			fp:       fingerprint(d.Subject, "warning", d.Message),
-			subject:  d.Subject,
-			severity: "warning",
-			message:  d.Message,
+			fp:          fingerprint(d.Subject, "warning", d.Message),
+			subject:     d.Subject,
+			severity:    "warning",
+			message:     d.Message,
+			remediation: d.Remediation,
 		}
 	}
 	return m

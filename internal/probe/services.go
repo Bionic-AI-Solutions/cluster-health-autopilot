@@ -176,5 +176,7 @@ func DefaultTargets() []ServiceTarget {
 		{"vc-livekit", "app=frontend", "VC Frontend"},
 		{"vc-livekit", "app=livekit-agent", "VC LiveKit Agent"},
 		{"nextcloud", "app.kubernetes.io/name=nextcloud", "NextCloud"},
+		{"web", "app.kubernetes.io/name=baisoln-web", "Bionic Web"},
+		{"web", "app.kubernetes.io/name=contact-api", "Contact API"},
 	}
 }

@@ -315,14 +315,40 @@ This deploys:
 - A `ServiceAccount` + `ClusterRole` (read-only + `watch` verb: pods, nodes, pvcs, secrets key-names, externalsecrets, cnpg, ceph, certs)
 - DriftReport CRD writing enabled
 
-**Recommended for live demos — also enable the watcher**:
+**Recommended for live demos — watcher + Alertmanager hub** (production posture):
 ```bash
 helm install cha cha/cluster-health-autopilot \
   --namespace cluster-health-autopilot \
   --create-namespace \
+  --set image.tag=v0.9.5 \
   --set watcher.enabled=true \
-  --set slack.enabled=true \
-  --set slack.webhookSecretName=cha-slack-webhook
+  --set alertmanager.enabled=true \
+  --set alertmanager.url=http://alertmanager.<your-ns>.svc.cluster.local:9093 \
+  --set "alertmanager.clusterName=<your-cluster>"
+```
+
+**With three-channel Slack** (instead of or in addition to Alertmanager):
+```bash
+# First create the three Slack webhook secrets (one per channel):
+kubectl create secret generic cha-slack-ceph-alerts \
+  --namespace cluster-health-autopilot \
+  --from-literal=WEBHOOK_URL=https://hooks.slack.com/services/.../alerts/...
+kubectl create secret generic cha-slack-ceph-critical \
+  --namespace cluster-health-autopilot \
+  --from-literal=WEBHOOK_URL=https://hooks.slack.com/services/.../critical/...
+kubectl create secret generic cha-slack-healthinfo \
+  --namespace cluster-health-autopilot \
+  --from-literal=WEBHOOK_URL=https://hooks.slack.com/services/.../healthinfo/...
+
+# Then install with all three channels enabled:
+helm install cha cha/cluster-health-autopilot \
+  --namespace cluster-health-autopilot \
+  --create-namespace \
+  --set image.tag=v0.9.5 \
+  --set watcher.enabled=true \
+  --set slack.alerts.enabled=true --set slack.alerts.secretName=cha-slack-ceph-alerts \
+  --set slack.critical.enabled=true --set slack.critical.secretName=cha-slack-ceph-critical \
+  --set slack.healthinfo.enabled=true --set slack.healthinfo.secretName=cha-slack-healthinfo
 ```
 
 The watcher is a long-running `Deployment` that reacts within seconds of a cluster event — no manual job triggers needed (see Part 5). The CronJob and watcher run concurrently and serve different purposes.
@@ -361,33 +387,59 @@ kubectl describe driftreport secretkeymissing-billing-svc-secrets -n billing
 
 DriftReports are Kubernetes objects — they integrate with any existing alerting that watches for CRD events (Prometheus, Datadog operator, Grafana k8sevents).
 
-### 3.4 — Enable Slack reporting
+### 3.4 — Alerting and reporting
 
-Create the Secret. Use `printf` (not `echo`) to avoid embedding a trailing newline in
-the URL — a hidden newline causes a `parse` error at post time:
+CHA v0.9.5 offers two complementary delivery modes — pick one or both:
 
-```bash
-printf '%s' 'https://hooks.slack.com/services/YOUR/WEBHOOK/URL' \
-  | kubectl create secret generic cha-slack-webhook \
-      --from-file=WEBHOOK_URL=/dev/stdin \
-      -n cluster-health-autopilot
-```
-
-Verify the value looks clean (no `$` before the bash prompt means no trailing newline):
-
-```bash
-kubectl get secret cha-slack-webhook -n cluster-health-autopilot \
-  -o jsonpath='{.data.WEBHOOK_URL}' | base64 -d | cat -A
-```
-
-Enable Slack in the Helm release:
+**Mode A: Alertmanager-as-hub (recommended)**. CHA posts active issues to
+`/api/v2/alerts` every cycle. Alertmanager handles dedup, silencing, and
+fan-out to any receiver (Slack, PagerDuty, Teams, email, webhook). Best
+choice when you already run kube-prometheus-stack.
 
 ```bash
 helm upgrade cha cha/cluster-health-autopilot \
-  --namespace cluster-health-autopilot \
-  --reuse-values \
-  --set slack.enabled=true \
-  --set slack.webhookSecretName=cha-slack-webhook
+  --namespace cluster-health-autopilot --reuse-values \
+  --set alertmanager.enabled=true \
+  --set alertmanager.url=http://alertmanager.<ns>.svc.cluster.local:9093 \
+  --set alertmanager.clusterName=<your-cluster>
+```
+
+Then configure Alertmanager routes for `alertname=~"cha_.*"` (see SETUP_GUIDE.md §5).
+
+**Mode B: Direct three-channel Slack**. CHA posts directly to three
+dedicated channels based on whether it acted on the issue:
+- `#ceph-alerts` ← CHA auto-fixed (informational)
+- `#ceph-critical` ← issues needing human attention
+- `#healthinfo` ← daily 09:00 UTC digest
+
+Create the three webhook secrets. Use `printf` (not `echo`) to avoid
+embedding a trailing newline — a hidden newline causes a `parse` error at
+post time:
+
+```bash
+for ch in ceph-alerts ceph-critical healthinfo; do
+  printf '%s' "https://hooks.slack.com/services/YOUR/${ch}/URL" \
+    | kubectl create secret generic cha-slack-${ch} \
+        --from-file=WEBHOOK_URL=/dev/stdin \
+        -n cluster-health-autopilot
+done
+```
+
+Verify a value is clean (no `$` before the next bash prompt means no trailing newline):
+
+```bash
+kubectl get secret cha-slack-ceph-alerts -n cluster-health-autopilot \
+  -o jsonpath='{.data.WEBHOOK_URL}' | base64 -d | cat -A
+```
+
+Enable the channels in the Helm release:
+
+```bash
+helm upgrade cha cha/cluster-health-autopilot \
+  --namespace cluster-health-autopilot --reuse-values \
+  --set slack.alerts.enabled=true    --set slack.alerts.secretName=cha-slack-ceph-alerts \
+  --set slack.critical.enabled=true  --set slack.critical.secretName=cha-slack-ceph-critical \
+  --set slack.healthinfo.enabled=true --set slack.healthinfo.secretName=cha-slack-healthinfo
 ```
 
 ---
@@ -546,13 +598,15 @@ kubectl get pods -n default -l job-name=crash-demo
 
 ### 5.1 — Enable the watcher via Helm
 
+The watcher is the recommended deployment mode. Once enabled, alerts route
+either through Alertmanager (recommended) or through the three Slack
+channels — see §3.4 for setting either up. Just enable the watcher itself:
+
 ```bash
 helm upgrade cha cha/cluster-health-autopilot \
   --namespace cluster-health-autopilot \
   --reuse-values \
-  --set watcher.enabled=true \
-  --set slack.enabled=true \
-  --set slack.webhookSecretName=cha-slack-webhook
+  --set watcher.enabled=true
 ```
 
 This deploys a long-running `Deployment` (single replica, `Recreate` strategy)
@@ -612,21 +666,24 @@ spec:
 EOF
 ```
 
-Within ~10–15 seconds (debounce + one diagnose cycle), Slack receives:
+Within ~10–15 seconds (debounce + one diagnose cycle), the alert flows
+either via Alertmanager (if enabled) → its configured Slack receiver, OR
+directly to `#ceph-critical` (since CHA cannot auto-fix an ESO):
 
 ```
-*Cluster Health Autopilot — Watch* — 2026-05-07 09:42:01 UTC
+🔴 CHA Issues | <cluster-name>
 
-*🔔 Active Issues (1):*
-• ⚠️ *ExternalSecret/default/watcher-demo-bad-es*
-  ExternalSecret `default/watcher-demo-bad-es` not Ready: …
+⚠️ ExternalSecret/default/watcher-demo-bad-es
+ExternalSecret `default/watcher-demo-bad-es` not Ready: …
 ```
 
 Clean up:
 
 ```bash
 kubectl delete externalsecret watcher-demo-bad-es -n default
-# Slack gets a ✅ Resolved message within the next cycle.
+# Within the next watcher cycle, the alert auto-resolves:
+#   - Alertmanager: the cha_issue alert disappears (TTL = 2 × resyncPeriod + 1 min)
+#   - Direct Slack: a ✅ Resolved message posts if --slack-post-on-resolved=true (default)
 ```
 
 ### 5.4 — With --remedy: immediate fix + post-fix report
@@ -742,31 +799,42 @@ The ask: "Let us deploy the Helm chart to one non-prod namespace with the watche
 | Watcher posts Slack on every resync | `--slack-repeat-interval` defaults to 4 h; reduce alert volume with `watcher.slack.repeatInterval: 0` to disable repeats |
 | Watcher not firing on CRD resources (e.g. ExternalSecrets) | Normal if the CRD is not installed in this cluster — the watcher skips the watch silently. Check logs for `watch … no matches for kind` |
 
-## Appendix B — Full Analyzer + Probe Catalog (v0.9.1)
+## Appendix B — Full Analyzer + Probe + Fixer Catalog (v0.9.5)
 
 **Probes** (read cluster state, report findings):
 | Probe | What it checks |
 |---|---|
 | Ceph | `CephCluster` CRD `.status.ceph.health` |
 | Nodes | NotReady, MemoryPressure, DiskPressure, PIDPressure, NetworkUnavailable |
-| CNPG / Spilo | CloudNativePG `Cluster` CRD, falls back to Spilo pods if CNPG absent |
+| CNPG / Spilo | CloudNativePG `Cluster` CRD; falls back to Spilo pods if CNPG absent |
 | PVCs | Pending PVCs, Lost PVCs |
 | Services | Pods in CrashLoopBackOff, OOMKilled, Error with no restart budget |
+| **Endpoints** (v0.9.x) | HTTP(S) GET against canonical hostnames (TLS handshake, redirect handling, 2xx/3xx accepted); 10s timeout per target |
 
 **Analyzers** (cross-resource correlation, emit diagnostics):
 | Analyzer | What it detects |
 |---|---|
 | SecretKeyMissing | Pod `envFrom`/`env.valueFrom.secretKeyRef` references a key absent from the Secret object |
-| FailingExternalSecrets | ExternalSecret with `Ready: False`; appends t6 path hint when `spec.data[].remoteRef.key` doesn't start with `t6-apps/` |
-| ProactiveSecretKeyCheck | Secret key referenced by a pod is missing; adds case/format near-miss hint when a variant key exists (e.g. `github-token` vs `GITHUB_TOKEN`) |
-| **UnprovisionedSecret** | Workload references a Secret via `envFrom` or volume with no ExternalSecret targeting it; suggests canonical `secret/t6-apps/<namespace>/config` Vault path |
-| ImagePullAuth | ImagePullBackOff with auth-signal event messages (401, unauthorized, denied) |
-| CertExpiry | cert-manager Certificate: not-Ready, expired, or expiring within 14 days |
+| FailingExternalSecrets | ExternalSecret with `Ready: False`; appends t6 path hint when `spec.data[].remoteRef.key` doesn't follow `secret/t6-apps/<ns>/config` |
+| ProactiveSecretKeyCheck | Pre-restart drift detection: env/envFrom references vs live Secret keys; adds case/format near-miss hint when a variant exists (e.g. `github-token` vs `GITHUB_TOKEN`) |
+| UnprovisionedSecret | Workload references a Secret via `envFrom`/volume with no ExternalSecret targeting it; suggests canonical Vault path |
+| VaultPathMissing | Queries Vault directly for every path referenced by ExternalSecrets — closes the L1 stale-Ready window; groups outage errors |
+| ImagePullAuth | ImagePullBackOff with auth-signal event messages (401, unauthorized, denied, pull access denied) |
+| CertExpiry | cert-manager `Certificate`: not-Ready, expired, or expiring within 14 days |
+| **IngressCoverage** (v0.9.x) | Walks every Ingress; flags hosts not covered by the endpoint probe — closes "ingress exists but unmonitored" blind spots |
 
 **Fixers** (mutation, whitelist-only, refused in snapshot mode):
 | Fixer | What it does |
 |---|---|
-| StaleErrorPods | Deletes Error-state pods whose owning Job is complete |
-| StuckJobsWithBadSecretRef | Deletes frozen CronJob-owned Jobs so the next run can start |
-| StuckRSPods | Rollout-restarts Deployments with pods stuck on old ReplicaSets |
-| StuckCertificateRequests | Deletes terminally-failed CertificateRequest and ACME Order CRs so cert-manager retries |
+| StaleErrorPods | Deletes Error/Failed-state pods owned by a completed Job (or unowned); skips controller-owned pods |
+| StuckJobsWithBadSecretRef | Deletes frozen CronJob-owned Jobs in CCE so the next scheduled tick spawns a fresh Job |
+| StuckRSPods | Rollout-restarts Deployments with pods stuck on old ReplicaSets; refuses when the failure is "couldn't find key" (would reproduce the same error) |
+| **StuckCertificateRequests** (v0.9.1) | Deletes terminally-failed `CertificateRequest` + ACME `Order` CRs; cert-manager recreates the CR and retries |
+
+**Routing & reporting**:
+| Component | What it does |
+|---|---|
+| **Alertmanager hub** (v0.9.5) | POSTs `cha_issue` / `cha_fixer_acted` alerts to `/api/v2/alerts` every watcher cycle; AM handles dedup, silencing, fan-out |
+| **Three-channel Slack** (v0.9.4) | `#ceph-alerts` (CHA-fixed) · `#ceph-critical` (needs human) · `#healthinfo` (daily digest) |
+| **Daily digest** (v0.9.4) | `cha diagnose --format=daily` reads DriftReport CR history; categorizes new (firstObserved < 24h) / persistent / auto-fixed |
+| **DriftReport seeding** (v0.9.0) | Watcher seeds its seen-map from existing DriftReport CRs on pod startup — no Slack flood after rolling update |

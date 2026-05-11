@@ -130,6 +130,9 @@ func FormatSlack(results []probe.Result, diagnostics []diagnose.Diagnostic, fixR
 		fmt.Fprintf(&b, "\n*Diagnostics (%d):*\n", len(diagnostics))
 		for _, d := range diagnostics {
 			fmt.Fprintf(&b, "• 🔎 %s\n", d.Message)
+			if d.Remediation != "" {
+				fmt.Fprintf(&b, "  _→ %s_\n", d.Remediation)
+			}
 		}
 	}
 

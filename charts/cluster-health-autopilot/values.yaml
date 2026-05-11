@@ -18,7 +18,7 @@ diagnose:
   successfulJobsHistoryLimit: 3
   failedJobsHistoryLimit: 3
   concurrencyPolicy: Forbid
-  format: text                    # text | json — JSON for fleet-console pipelines
+  format: daily                   # daily | text | json — daily posts to #healthinfo; text/json for ad-hoc runs
 
 # Remediate CronJob — opt-in.
 remediation:
@@ -29,13 +29,27 @@ remediation:
   concurrencyPolicy: Forbid
   dryRun: false                   # When true, fixers report Refused without mutating cluster state.
 
-# Slack reporting. URL must come from a pre-existing Secret in the install namespace.
-# Per the Vault-only secrets policy, prefer wiring this Secret via External Secrets Operator
-# from a Vault path your team already trusts (see SECURITY.md).
+# Slack three-channel routing.
+# Each channel maps to a dedicated incoming-webhook Secret.
+# All URLs must come from pre-existing Secrets in the install namespace — prefer
+# wiring them via External Secrets Operator from Vault (see SECURITY.md).
+#
+#   alerts    → #ceph-alerts:   event-driven, CHA acted (auto-fixed issues)
+#   critical  → #ceph-critical: event-driven, human action required
+#   healthinfo→ #healthinfo:    daily 09:00 UTC digest (diagnose CronJob)
 slack:
-  enabled: false
-  webhookSecretName: ""           # e.g. "cha-slack-webhook"
-  webhookSecretKey: "WEBHOOK_URL" # key inside the Secret holding the webhook URL
+  alerts:
+    enabled: false
+    secretName: ""           # e.g. "cha-slack-ceph-alerts"
+    secretKey: "WEBHOOK_URL"
+  critical:
+    enabled: false
+    secretName: ""           # e.g. "cha-slack-ceph-critical"
+    secretKey: "WEBHOOK_URL"
+  healthinfo:
+    enabled: false
+    secretName: ""           # e.g. "cha-slack-healthinfo"
+    secretKey: "WEBHOOK_URL"
 
 # DriftReport CRD — kubectl-queryable diagnostic objects.
 # Each cron tick upserts one DriftReport per active diagnostic; CRs whose
@@ -66,6 +80,20 @@ vaultProbe:
     tokenSecretRef:               # required when method=token
       name: ""                    # K8s Secret holding a Vault token
       key: "token"                # key within that Secret
+
+# Alertmanager integration — Kubernetes-native event routing.
+# When enabled, CHA posts the full active-issue state to Alertmanager each
+# watcher cycle. Alertmanager handles: dedup, grouping, silencing, repeat
+# intervals, and fan-out to all configured receivers (Slack, PagerDuty,
+# Teams, email, webhook, …). This is the preferred model over direct Slack
+# webhooks; the slack.alerts/critical fields become fallback-only.
+#
+# url: in-cluster service URL of the Alertmanager API.
+# clusterName: stamped as the `cluster` label on every alert.
+alertmanager:
+  enabled: false
+  url: ""                        # e.g. "http://alertmanager.pg.svc.cluster.local:9093"
+  clusterName: "cluster"         # identifies this cluster in alert labels
 
 # Watcher — event-driven, long-running Deployment (Phase 1).
 # Replaces polling latency (CronJob tick) with near-instant reaction to
