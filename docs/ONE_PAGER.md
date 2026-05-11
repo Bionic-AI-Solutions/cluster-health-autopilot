@@ -20,29 +20,39 @@ Names the exact Secret + missing key + consuming Deployment + owning ExternalSec
 
 ## The product
 
-A single Helm chart. Seven Kubernetes objects. Two CronJobs:
+A single Helm chart. Three operational components:
 
-- **diagnose** — read-only, daily, posts to Slack. Always enabled.
-- **remediate** — opt-in, runs whitelisted auto-fixers, also posts to Slack.
+- **diagnose CronJob** — read-only, daily, posts the daily digest to `#healthinfo`. Always enabled.
+- **remediate CronJob** — opt-in, runs whitelisted auto-fixers.
+- **watcher Deployment** — event-driven; reacts within seconds of a Kubernetes event instead of waiting for a cron tick. Optionally runs fixers each cycle (`--remedy`).
 
-A 16 MB distroless container image. Runs nonroot. Negligible footprint (<100 m CPU request, <100 MB RAM). No long-running pod, no Service, no inbound traffic.
+A **13 MB distroless container image**. Runs nonroot. Negligible footprint (<100 m CPU request, <100 MB RAM). No inbound traffic; outbound only to the Kubernetes API, optional Vault, optional Alertmanager, optional Slack webhooks.
 
 | What it sees | What it does |
 |---|---|
 | Ceph health (CephCluster CRD) | **Auto-fix (whitelisted, audited):** |
 | CloudNativePG / Spilo (Patroni) Postgres | • delete stale `Error`/`Failed` pods |
 | Nodes, PVCs | • delete frozen CronJob Jobs |
-| ~30 critical Deployments (configurable) | • rollout-restart wedged ReplicaSets |
-| Failing ExternalSecrets | **Diagnose (never acts):** |
-| Pods stuck in CCE on missing Secret keys | • Secret-key drift across the chain |
-|  | • ESO sync errors with Vault hint |
+| Critical Services (configurable) | • rollout-restart wedged ReplicaSets |
+| Public endpoint reachability (HTTPS GET) | • delete terminally-failed cert-manager requests |
+| Failing ExternalSecrets + Vault path probe | **Diagnose (never acts):** |
+| Pods stuck in CCE on missing Secret keys | • Secret-key drift across the chain (proactive + reactive) |
+| Workloads referencing unprovisioned Secrets | • ESO sync errors with `t6-apps/` Vault path hint |
+| cert-manager Certificate state | • Cert expiry within 14 days / ACME rate limits |
+| Ingress hosts vs endpoint probe coverage | • ImagePullBackOff with 401/auth signal |
+|  | • Ingress hosts with no reachability probe |
+
+**Alert routing**: Alertmanager-as-hub (recommended) — CHA posts active issues
+to `/api/v2/alerts` every cycle. AM handles dedup, silencing, and fan-out to
+all configured receivers. Fallback to direct three-channel Slack
+(`#ceph-alerts` / `#ceph-critical` / `#healthinfo`).
 
 ## RBAC discipline
 
-Read role and Write role are **separate** ClusterRoles. The Write role grants exactly:
-`pods/delete`, `jobs/delete`, `deployments/patch`. Never Secret/ConfigMap/CRD writes.
+Read role and Write role are **separate** ClusterRoles. The Write (remediator) role grants exactly:
+`pods/delete`, `jobs/delete`, `deployments/patch`, `certificaterequests/delete`, `orders/delete`. Never Secret/ConfigMap/CRD writes.
 
-Six platform namespaces are always skipped — `kube-system`, `kube-public`, `kube-node-lease`, `rook-ceph`, `vault`, `external-secrets`, `cnpg-system`. Enforced both **in code** AND **by RBAC**. The fix list is the source code; an SRE can audit every action the tool will ever take in one afternoon.
+Seven platform namespaces are always skipped — `kube-system`, `kube-public`, `kube-node-lease`, `rook-ceph`, `vault`, `external-secrets`, `cnpg-system`. Enforced both **in code** AND **by RBAC**. The fix list is the source code; an SRE can audit every action the tool will ever take in one afternoon.
 
 ## Zero AI in the hot path
 

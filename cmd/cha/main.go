@@ -410,12 +410,15 @@ func watchCmd() *cobra.Command {
 		kubeconfig        string
 		debounce          time.Duration
 		resyncPeriod      time.Duration
-		slackWebhook      string
+		slackAlerts       string
+		slackCritical     string
 		postOnResolved    bool
 		repeatInterval    time.Duration
 		writeDriftReports bool
 		remedy            bool
 		dryRun            bool
+		alertmanagerURL   string
+		clusterName       string
 		vaultAddr         string
 		vaultMount        string
 		vaultRole         string
@@ -481,14 +484,19 @@ the post-fix cluster state.`,
 			}
 
 			cfg := watcher.Config{
-				Debounce:          debounce,
-				ResyncPeriod:      resyncPeriod,
-				SlackWebhook:      slackWebhook,
+				Debounce:     debounce,
+				ResyncPeriod: resyncPeriod,
+				SlackChannels: report.SlackChannels{
+					Alerts:   slackAlerts,
+					Critical: slackCritical,
+				},
 				PostOnResolved:    postOnResolved,
 				RepeatInterval:    repeatInterval,
 				WriteDriftReports: writeDriftReports,
 				RunRemediation:    remedy,
 				DryRun:            dryRun,
+				AlertmanagerURL:   alertmanagerURL,
+				ClusterName:       clusterName,
 			}
 			w := watcher.New(lv, reg, mut, cfg)
 			return w.Run(ctx)
@@ -498,7 +506,10 @@ the post-fix cluster state.`,
 	c.Flags().StringVar(&kubeconfig, "kubeconfig", "", "Path to kubeconfig (default: in-cluster, then $KUBECONFIG, then ~/.kube/config)")
 	c.Flags().DurationVar(&debounce, "debounce", 10*time.Second, "Debounce window after a Kubernetes event before re-running diagnostics")
 	c.Flags().DurationVar(&resyncPeriod, "resync-period", 10*time.Minute, "Full re-diagnose interval regardless of events (catches non-event drift)")
-	c.Flags().StringVar(&slackWebhook, "slack-webhook", "", "Slack incoming-webhook URL — posts new/changed/resolved diagnostics only")
+	c.Flags().StringVar(&alertmanagerURL, "alertmanager-url", os.Getenv("ALERTMANAGER_URL"), "Alertmanager base URL (e.g. http://alertmanager.pg:9093). When set, CHA posts all active issues as Prometheus alerts each cycle; AM handles routing to Slack/PagerDuty/etc.")
+	c.Flags().StringVar(&clusterName, "cluster-name", envOrDefault("CLUSTER_NAME", "cluster"), "Cluster name stamped on Alertmanager alert labels (default: $CLUSTER_NAME or 'cluster')")
+	c.Flags().StringVar(&slackAlerts, "slack-alerts", "", "Slack webhook for #ceph-alerts — CHA acted (auto-fixed issues); used as fallback when --alertmanager-url is not set")
+	c.Flags().StringVar(&slackCritical, "slack-critical", "", "Slack webhook for #ceph-critical — human action required; used as fallback when --alertmanager-url is not set")
 	c.Flags().BoolVar(&postOnResolved, "slack-post-on-resolved", true, "Post to Slack when a diagnostic resolves")
 	c.Flags().DurationVar(&repeatInterval, "slack-repeat-interval", 4*time.Hour, "Re-post still-active diagnostics at this interval (0 = never repeat)")
 	c.Flags().BoolVar(&writeDriftReports, "write-driftreports", true, "Upsert DriftReport CRs on every cycle (live mode only)")
@@ -517,6 +528,7 @@ func diagnoseCmd() *cobra.Command {
 		kubeconfig        string
 		outputFormat      string
 		slackWebhook      string
+		slackHealthinfo   string
 		writeDriftReports bool
 		vaultAddr         string
 		vaultMount        string
@@ -567,15 +579,6 @@ func diagnoseCmd() *cobra.Command {
 				diagnostics = append(diagnostics, a.Run(ctx, src)...)
 			}
 
-			// Slack post is fire-and-forget — failures are logged but the
-			// command's primary output (text/JSON to stdout) still runs.
-			if slackWebhook != "" {
-				payload := report.FormatSlack(results, diagnostics, nil, false)
-				if err := report.PostSlack(nil, slackWebhook, payload); err != nil {
-					fmt.Fprintln(os.Stderr, "warning: slack post failed:", err)
-				}
-			}
-
 			// DriftReport reconcile — only when running live + the CRD-write
 			// is opted in. Snapshot mode skips silently since fixers' Mutator
 			// requirement is the same gate.
@@ -591,13 +594,40 @@ func diagnoseCmd() *cobra.Command {
 				}
 			}
 
+			// Daily digest — reads DriftReports for the 24h history window,
+			// formats for #healthinfo, and optionally posts to Slack.
+			if outputFormat == "daily" {
+				var drList *report.DriftReportList
+				if live {
+					if list, err := src.List(ctx, snapshot.GVRDriftReport, ""); err == nil && list != nil {
+						drList = &report.DriftReportList{Items: list.Items}
+					}
+				}
+				payload := report.FormatDailyDigest(results, diagnostics, drList)
+				if slackHealthinfo != "" {
+					if err := report.PostSlack(nil, slackHealthinfo, payload); err != nil {
+						fmt.Fprintln(os.Stderr, "warning: slack healthinfo post failed:", err)
+					}
+				}
+				// Render text to stdout for log visibility.
+				return printText(results, diagnostics, src.Mode())
+			}
+
+			// Standard Slack post (legacy --slack-webhook, used for non-daily cronjobs).
+			if slackWebhook != "" {
+				payload := report.FormatSlack(results, diagnostics, nil, false)
+				if err := report.PostSlack(nil, slackWebhook, payload); err != nil {
+					fmt.Fprintln(os.Stderr, "warning: slack post failed:", err)
+				}
+			}
+
 			switch outputFormat {
 			case "json":
 				return printJSON(results, diagnostics)
 			case "text", "":
 				return printText(results, diagnostics, src.Mode())
 			default:
-				return fmt.Errorf("unknown --format %q (want json or text)", outputFormat)
+				return fmt.Errorf("unknown --format %q (want json, text, or daily)", outputFormat)
 			}
 		},
 	}
@@ -605,7 +635,8 @@ func diagnoseCmd() *cobra.Command {
 	c.Flags().BoolVar(&live, "live", false, "Run against the live cluster")
 	c.Flags().StringVar(&kubeconfig, "kubeconfig", "", "Path to kubeconfig (default: in-cluster, then $KUBECONFIG, then ~/.kube/config)")
 	c.Flags().StringVar(&outputFormat, "format", "text", "Output format: text|json")
-	c.Flags().StringVar(&slackWebhook, "slack-webhook", "", "Optional Slack incoming-webhook URL — posts a formatted summary of the run (works with both --snapshot and --live)")
+	c.Flags().StringVar(&slackWebhook, "slack-webhook", "", "Slack webhook — posts full FormatSlack summary (legacy; use --slack-healthinfo + --format=daily for the daily digest)")
+	c.Flags().StringVar(&slackHealthinfo, "slack-healthinfo", "", "Slack webhook for #healthinfo — posts the daily digest (requires --format=daily)")
 	c.Flags().BoolVar(&writeDriftReports, "write-driftreports", true, "Upsert DriftReport CRs into the cluster (live mode only; ignored on --snapshot)")
 	c.Flags().StringVar(&vaultAddr, "vault-addr", os.Getenv("VAULT_ADDR"), "Vault HTTP endpoint (default: $VAULT_ADDR). Empty disables the VaultPathMissing analyzer.")
 	c.Flags().StringVar(&vaultMount, "vault-kv-mount", envOrDefault("VAULT_KV_MOUNT", "secret"), "Vault KV-v2 mount path (default: $VAULT_KV_MOUNT or 'secret')")

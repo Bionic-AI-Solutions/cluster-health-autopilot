@@ -1,16 +1,18 @@
 # Does Cluster Health Autopilot use AI?
 
-**No, not in the v0.1.0 hot path.** This is a deliberate design choice and a positioning statement, not an oversight.
+**No, not in the hot path.** This is a deliberate design choice and a positioning statement, not an oversight. Holds for every release shipped so far, up to and including the current v0.9.5.
 
-## What's deterministic (everything in v0.1.0)
+## What's deterministic (everything that ships)
 
 | Component | Mechanism | Source |
 |---|---|---|
-| Probes (Ceph, Postgres, Nodes, PVCs, Services) | Read CRD `.status` fields, count Ready conditions, compute simple ratios | [`internal/probe/`](../internal/probe/) |
-| `SecretKeyMissing` analyzer | Regex on kubelet event messages, owner-chain walk, ESO target matching | [`internal/diagnose/secret_key_missing.go`](../internal/diagnose/secret_key_missing.go) |
-| `FailingExternalSecrets` analyzer | Walk ESO `status.conditions`, filter `Ready=False`, fetch `UpdateFailed` event | [`internal/diagnose/failing_externalsecrets.go`](../internal/diagnose/failing_externalsecrets.go) |
-| Three fixers | Pattern-match conditions → call API verbs (`pods/delete`, `jobs/delete`, `deployments/patch`) | [`internal/fix/`](../internal/fix/) |
-| Slack output | Go string formatting | [`internal/report/slack.go`](../internal/report/slack.go) |
+| Probes (Ceph, Nodes, Postgres, PVCs, Services, Endpoints) | Read CRD `.status` fields, count Ready conditions, compute simple ratios; HTTP(S) GET against canonical hostnames | [`internal/probe/`](../internal/probe/) |
+| 8 analyzers (`SecretKeyMissing`, `FailingExternalSecrets`, `ProactiveSecretKeyCheck`, `UnprovisionedSecret`, `VaultPathMissing`, `CertExpiry`, `ImagePullAuth`, `IngressCoverage`) | Regex on kubelet event messages, owner-chain walks, ESO target matching, direct Vault key-name lookups, cert-manager status reads, ingress-vs-endpoint set diff | [`internal/diagnose/`](../internal/diagnose/) |
+| 4 fixers (`StaleErrorPods`, `StuckJobsWithBadSecretRef`, `StuckRSPods`, `StuckCertificateRequests`) | Pattern-match conditions → call API verbs (`pods/delete`, `jobs/delete`, `deployments/patch`, `certificaterequests/delete`, `orders/delete`) | [`internal/fix/`](../internal/fix/) |
+| Watcher event loop | Kubernetes watch on resource set, 10s debounce, run full probe+analyzer stack, fingerprint dedup against DriftReport seen-map | [`internal/watcher/`](../internal/watcher/) |
+| Three-channel Slack routing | Subject-prefix dispatch: post-fix CHA-acted set → `#ceph-alerts`; unfixed set → `#ceph-critical`; daily digest → `#healthinfo` | [`internal/report/routing.go`](../internal/report/routing.go) |
+| Alertmanager hub integration | POST `/api/v2/alerts` every cycle with label scheme `alertname=cha_issue`/`cha_fixer_acted`; AM handles dedup/silencing/fan-out | [`internal/report/alertmanager.go`](../internal/report/alertmanager.go) |
+| Daily digest | Read DriftReport CR history, classify new (firstObserved < 24h) vs persistent vs auto-fixed, format Slack attachment | [`internal/report/daily.go`](../internal/report/daily.go) |
 
 Same input → same output, every time, **auditable from source**. The fix catalog IS the Go source — readable in an afternoon.
 
@@ -23,7 +25,7 @@ Same input → same output, every time, **auditable from source**. The fix catal
 
 ## Where AI could enter later (not today)
 
-The plan from `v0.1` to `v1.0` does not put AI on the critical path. There are three places it could plausibly land in `v2+`, **none of which are in the hot path of the in-cluster install**:
+The roadmap to v1.0 does not put AI on the critical path. There are three places it could plausibly land in `v2+`, **none of which are in the hot path of the in-cluster install**:
 
 1. **Verified Signature Library curation (offline, asynchronous).** As the OSS catalog grows from customer contributions, an LLM-assisted review pipeline could cluster similar incident reports and propose new fixer signatures. The *signatures themselves* still ship as deterministic Go. The LLM is in the lab, not the customer cluster.
 2. **Diagnostic narration (optional, opt-in).** Today's diagnostics are precise structured strings. Some operators may want a narrative ("3 of your 47 services are wedged because Vault path X has no `stripe_api_key` property; here's the kubectl runbook"). That could be a separate `cha narrate --diagnostics-json …` subcommand that hits an LLM on demand and is **never** in the cron path. Customer chooses whether to enable it; the data sent to the LLM is the structured diagnostic output, not raw cluster state.

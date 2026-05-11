@@ -53,11 +53,7 @@ spec:
                 {{- if .Values.remediation.dryRun }}
                 - --dry-run
                 {{- end }}
-                {{- if and .Values.slack.enabled .Values.slack.webhookSecretName }}
-                - --slack-webhook=$(SLACK_WEBHOOK_URL)
-                {{- end }}
               env:
-                {{- include "cha.slackEnv" . | nindent 16 }}
               resources:
                 {{- toYaml .Values.resources | nindent 16 }}
               securityContext:

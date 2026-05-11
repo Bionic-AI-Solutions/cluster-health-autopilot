@@ -75,17 +75,37 @@ Image reference: <repo>:<tag>. Defaults tag to .Chart.AppVersion.
 {{- end -}}
 
 {{/*
-Slack-webhook env block. Empty when slack disabled.
-Returns a list of env entries (NOT wrapped in `env:` block) so callers
+Slack env blocks — one helper per channel.
+Each returns a list of env entries (NOT wrapped in `env:` block) so callers
 can compose with their own env definitions.
 */}}
-{{- define "cha.slackEnv" -}}
-{{- if and .Values.slack.enabled .Values.slack.webhookSecretName -}}
-- name: SLACK_WEBHOOK_URL
+{{- define "cha.slackAlertsEnv" -}}
+{{- if and .Values.slack.alerts.enabled .Values.slack.alerts.secretName -}}
+- name: SLACK_ALERTS_URL
   valueFrom:
     secretKeyRef:
-      name: {{ .Values.slack.webhookSecretName }}
-      key: {{ .Values.slack.webhookSecretKey | default "WEBHOOK_URL" }}
+      name: {{ .Values.slack.alerts.secretName }}
+      key: {{ .Values.slack.alerts.secretKey | default "WEBHOOK_URL" }}
+{{- end -}}
+{{- end -}}
+
+{{- define "cha.slackCriticalEnv" -}}
+{{- if and .Values.slack.critical.enabled .Values.slack.critical.secretName -}}
+- name: SLACK_CRITICAL_URL
+  valueFrom:
+    secretKeyRef:
+      name: {{ .Values.slack.critical.secretName }}
+      key: {{ .Values.slack.critical.secretKey | default "WEBHOOK_URL" }}
+{{- end -}}
+{{- end -}}
+
+{{- define "cha.slackHealthinfoEnv" -}}
+{{- if and .Values.slack.healthinfo.enabled .Values.slack.healthinfo.secretName -}}
+- name: SLACK_HEALTHINFO_URL
+  valueFrom:
+    secretKeyRef:
+      name: {{ .Values.slack.healthinfo.secretName }}
+      key: {{ .Values.slack.healthinfo.secretKey | default "WEBHOOK_URL" }}
 {{- end -}}
 {{- end -}}
 
