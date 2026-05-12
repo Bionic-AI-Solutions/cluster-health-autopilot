@@ -40,6 +40,7 @@ type Registry struct {
 	verifier        ai.Verifier
 	approver        ai.Approver
 	auditSink       ai.AuditSink
+	investigator    ai.Investigator
 }
 
 // New returns an empty Registry.
@@ -85,6 +86,12 @@ func (r *Registry) RegisterApprover(a ai.Approver) { r.approver = a }
 // RegisterAuditSink sets the audit log sink.
 func (r *Registry) RegisterAuditSink(s ai.AuditSink) { r.auditSink = s }
 
+// RegisterInvestigator sets the Layer-2 read-only investigator. Passing nil
+// disables investigation (findings surface unchanged). The OSS catalog
+// registers a deterministic rule-based investigator by default; the paid
+// binary may replace it with an LLM-backed implementation.
+func (r *Registry) RegisterInvestigator(i ai.Investigator) { r.investigator = i }
+
 // Analyzers returns registered analyzers in registration order.
 func (r *Registry) Analyzers() []diagnose.Analyzer { return r.analyzers }
 
@@ -118,3 +125,7 @@ func (r *Registry) Approver() ai.Approver { return r.approver }
 // AuditSink returns the registered audit sink or nil. Callers should
 // fall back to a no-op when nil; pkg/ai/noop.go provides one.
 func (r *Registry) AuditSink() ai.AuditSink { return r.auditSink }
+
+// Investigator returns the registered Layer-2 investigator or nil when
+// investigation is disabled.
+func (r *Registry) Investigator() ai.Investigator { return r.investigator }

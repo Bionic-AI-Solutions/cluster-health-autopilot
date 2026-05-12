@@ -48,6 +48,12 @@ type Diagnostic struct {
 	// Renderers surface this as a separate "🤖" block when present.
 	Enrichment string `json:"enrichment,omitempty"`
 
+	// Investigation is the Layer-2 investigator's summary addendum.
+	// Populated by the OSS RuleBased investigator or any pkg/ai.Investigator
+	// the registry exposes. Renderers surface this as a separate "🔎" block
+	// when present, distinct from the LLM-generated Enrichment.
+	Investigation string `json:"investigation,omitempty"`
+
 	// ProposedActionID links this diagnostic to an AIProposedAction
 	// (T1+). Renderers use the ID to look up the proposal and render the
 	// Apply Fix button. Empty when no proposal is attached.

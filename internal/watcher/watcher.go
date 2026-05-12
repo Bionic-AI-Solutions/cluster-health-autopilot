@@ -115,6 +115,9 @@ type seenEntry struct {
 	message     string
 	remediation string
 
+	// Layer-2 investigator summary (OSS rule-based or paid LLM).
+	investigation string
+
 	// AI tier fields — optional, populated only when the registry has
 	// an Enricher / FixProposer / Approver registered. OSS users never
 	// see these set.
@@ -263,6 +266,12 @@ func (w *Watcher) runCycle(ctx context.Context) {
 
 	probeResults, diagnostics := w.runDiagnose(ctx)
 
+	// Layer-2: investigate critical findings before reporting so the alert
+	// carries root-cause context. No-op when no Investigator is registered.
+	// Soft-fails per item; never blocks the diagnostic flow.
+	probeResults = w.investigateProbeResults(ctx, probeResults)
+	diagnostics = w.investigateDiagnostics(ctx, diagnostics)
+
 	// AI tier: enrich diagnostics with narrative + (when T1+) approval URLs.
 	// No-op when the registry has no Enricher/FixProposer registered, so OSS
 	// behavior is unchanged. Enrichment is best-effort — failures here must
@@ -319,6 +328,7 @@ func (w *Watcher) runCycle(ctx context.Context) {
 				Severity:         e.severity,
 				Message:          e.message,
 				Remediation:      e.remediation,
+				Investigation:    e.investigation,
 				Enrichment:       e.enrichment,
 				ProposedActionID: e.proposedActionID,
 				ApprovalURL:      e.approvalURL,
@@ -339,10 +349,12 @@ func (w *Watcher) runCycle(ctx context.Context) {
 		toPostDiags := make([]report.DeltaDiag, 0, len(toPost))
 		for _, e := range toPost {
 			toPostDiags = append(toPostDiags, report.DeltaDiag{
-				Subject:     e.subject,
-				Severity:    e.severity,
-				Message:     e.message,
-				Remediation: e.remediation,
+				Subject:       e.subject,
+				Severity:      e.severity,
+				Message:       e.message,
+				Remediation:   e.remediation,
+				Investigation: e.investigation,
+				Enrichment:    e.enrichment,
 			})
 		}
 		toResolveDiags := make([]report.ResolvedDiag, 0, len(toResolve))
@@ -388,11 +400,12 @@ func buildCurrentState(results []probe.Result, diags []diagnose.Diagnostic) map[
 			sev := string(f.Severity)
 			subject := "Probe/" + r.Component.Component + "/" + f.Component
 			m[subject] = &seenEntry{
-				fp:          fingerprint(subject, sev, f.Message),
-				subject:     subject,
-				severity:    sev,
-				message:     f.Message,
-				remediation: f.Remediation,
+				fp:            fingerprint(subject, sev, f.Message),
+				subject:       subject,
+				severity:      sev,
+				message:       f.Message,
+				remediation:   f.Remediation,
+				investigation: f.Investigation,
 			}
 		}
 	}
@@ -410,6 +423,7 @@ func buildCurrentState(results []probe.Result, diags []diagnose.Diagnostic) map[
 			severity:         sev,
 			message:          d.Message,
 			remediation:      d.Remediation,
+			investigation:    d.Investigation,
 			enrichment:       d.Enrichment,
 			proposedActionID: d.ProposedActionID,
 		}

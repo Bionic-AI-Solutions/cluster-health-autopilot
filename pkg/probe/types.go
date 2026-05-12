@@ -30,6 +30,12 @@ type Finding struct {
 	Severity    Severity `json:"severity"`
 	Message     string   `json:"message"`
 	Remediation string   `json:"remediation,omitempty"`
+
+	// Investigation is the Layer-2 investigator's summary addendum.
+	// Populated by the watcher between probe execution and DriftReport
+	// creation when a pkg/ai.Investigator is registered. Free-form text
+	// bounded by pkg/ai.MaxInvestigationSummaryChars.
+	Investigation string `json:"investigation,omitempty"`
 }
 
 // ComponentResult is the per-component status block in the Slack report.

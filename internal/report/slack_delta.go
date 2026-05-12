@@ -18,6 +18,10 @@ type DeltaDiag struct {
 	Message     string
 	Remediation string
 
+	// Investigation is the Layer-2 investigator's summary. Populated by
+	// the OSS rule-based investigator or any registered pkg/ai.Investigator.
+	Investigation string
+
 	// AI tier fields — optional, populated only when CHA-com's AI tier
 	// is active. OSS deployments never see these set.
 
@@ -60,6 +64,9 @@ func FormatSlackDelta(
 			fmt.Fprintf(&b, "• %s *%s*\n  %s\n", icon, d.Subject, d.Message)
 			if d.Remediation != "" {
 				fmt.Fprintf(&b, "  _→ %s_\n", d.Remediation)
+			}
+			if d.Investigation != "" {
+				fmt.Fprintf(&b, "  🔬 _%s_\n", d.Investigation)
 			}
 			if d.Enrichment != "" {
 				fmt.Fprintf(&b, "  🤖 _%s_\n", d.Enrichment)
