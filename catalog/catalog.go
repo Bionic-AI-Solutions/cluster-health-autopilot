@@ -27,6 +27,8 @@
 package catalog
 
 import (
+	"os"
+
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/diagnose"
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/fix"
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/probe"
@@ -53,6 +55,7 @@ func RegisterOSS(r *registry.Registry) {
 		diagnose.UnprovisionedSecret{},
 		diagnose.ImagePullAuth{},
 		diagnose.CertExpiry{},
+		diagnose.TLSSecretMismatch{},
 	)
 	r.RegisterFixer(
 		fix.StaleErrorPods{},
@@ -60,6 +63,11 @@ func RegisterOSS(r *registry.Registry) {
 		fix.StuckRSPods{},
 		fix.StuckCertificateRequests{},
 	)
+	// Opt-in fixers — registered only when explicitly enabled. The matching
+	// Helm value flips the env var and adds the required RBAC verbs.
+	if os.Getenv("CHA_FIXER_TLS_SECRET_MISMATCH") == "true" {
+		r.RegisterFixer(fix.TLSSecretMismatch{})
+	}
 }
 
 // Default returns a Registry pre-loaded with the OSS pattern set.

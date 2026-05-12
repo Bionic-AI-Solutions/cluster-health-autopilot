@@ -54,6 +54,7 @@ spec:
                 - --dry-run
                 {{- end }}
               env:
+                {{- include "cha.optionalFixerEnv" . | nindent 16 }}
               resources:
                 {{- toYaml .Values.resources | nindent 16 }}
               securityContext:

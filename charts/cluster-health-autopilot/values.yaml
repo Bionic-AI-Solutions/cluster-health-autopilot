@@ -270,3 +270,14 @@ gatekeeper:
       - vault
       - external-secrets
       - cnpg-system
+
+# Optional fixers — off by default. Each entry adds RBAC verbs and exposes
+# an env var the binary reads to enable the matching Fixer registration.
+fixers:
+  tlsSecretMismatch:
+    # Patches Ingress.spec.tls[].secretName when CHA detects a stale Secret
+    # plus a healthy cert-manager Certificate in the same namespace targeting
+    # a different Secret for the same host. GitOps-managed Ingresses
+    # (ArgoCD / Flux / Helm release labels) are SKIPPED automatically — the
+    # patch would just be reverted on the next reconcile.
+    enabled: false
