@@ -266,16 +266,13 @@ func (w *Watcher) runCycle(ctx context.Context) {
 
 	probeResults, diagnostics := w.runDiagnose(ctx)
 
-	// Layer-2: investigate critical findings before reporting so the alert
-	// carries root-cause context. No-op when no Investigator is registered.
-	// Soft-fails per item; never blocks the diagnostic flow.
-	probeResults = w.investigateProbeResults(ctx, probeResults)
+	// Layer-2 investigation + AI enrichment are applied AFTER the post-fix
+	// re-diagnose below (when remediation is on) — otherwise the post-fix
+	// re-diagnose overwrites the annotated probeResults and the investigation
+	// summary is lost. We still run the pre-fix pass on diagnostics for the
+	// preFix Slack-diff baseline; probe findings are handled exclusively
+	// after fixers run.
 	diagnostics = w.investigateDiagnostics(ctx, diagnostics)
-
-	// AI tier: enrich diagnostics with narrative + (when T1+) approval URLs.
-	// No-op when the registry has no Enricher/FixProposer registered, so OSS
-	// behavior is unchanged. Enrichment is best-effort — failures here must
-	// never block the deterministic diagnostic flow.
 	diagnostics = w.enrichDiagnostics(ctx, diagnostics)
 
 	// Capture pre-fix state for the Slack diff so that issues fixed in this
@@ -295,6 +292,16 @@ func (w *Watcher) runCycle(ctx context.Context) {
 		}
 		// Re-diagnose post-fix so DriftReports reflect actual cluster state.
 		probeResults, diagnostics = w.runDiagnose(ctx)
+	}
+
+	// Investigation must run on the FINAL probeResults — whether that's the
+	// pre-fix set (remediation off) or the post-fix set (remediation on).
+	// Same applies to diagnostic-side investigation/enrichment, which is
+	// re-applied to the post-fix diagnostics here.
+	probeResults = w.investigateProbeResults(ctx, probeResults)
+	if w.cfg.RunRemediation && w.mut != nil {
+		diagnostics = w.investigateDiagnostics(ctx, diagnostics)
+		diagnostics = w.enrichDiagnostics(ctx, diagnostics)
 	}
 
 	// Use post-fix state for DriftReport persistence; use pre-fix state for
