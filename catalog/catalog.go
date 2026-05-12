@@ -31,6 +31,7 @@ import (
 
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/diagnose"
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/fix"
+	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/investigator"
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/probe"
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/registry"
 )
@@ -67,6 +68,13 @@ func RegisterOSS(r *registry.Registry) {
 	// Helm value flips the env var and adds the required RBAC verbs.
 	if os.Getenv("CHA_FIXER_TLS_SECRET_MISMATCH") == "true" {
 		r.RegisterFixer(fix.TLSSecretMismatch{})
+	}
+
+	// Layer-2 investigator: deterministic, rule-based, ships in OSS.
+	// Disable with CHA_INVESTIGATOR=off; the paid binary may replace it with
+	// an LLM-backed implementation after this registration runs.
+	if os.Getenv("CHA_INVESTIGATOR") != "off" {
+		r.RegisterInvestigator(investigator.RuleBased{})
 	}
 }
 

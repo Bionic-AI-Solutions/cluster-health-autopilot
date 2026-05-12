@@ -113,6 +113,9 @@ func FormatSlack(results []probe.Result, diagnostics []diagnose.Diagnostic, fixR
 		fmt.Fprintf(&b, "\n*🔴 Critical Issues (%d) — needs human:*\n", len(criticals))
 		for _, f := range criticals {
 			fmt.Fprintf(&b, "• *%s:* %s\n", f.Component, f.Message)
+			if f.Investigation != "" {
+				fmt.Fprintf(&b, "   🔬 _%s_\n", f.Investigation)
+			}
 			if f.Remediation != "" {
 				fmt.Fprintf(&b, "   _Remediation:_ %s\n", f.Remediation)
 			}
@@ -132,6 +135,10 @@ func FormatSlack(results []probe.Result, diagnostics []diagnose.Diagnostic, fixR
 			fmt.Fprintf(&b, "• 🔎 %s\n", d.Message)
 			if d.Remediation != "" {
 				fmt.Fprintf(&b, "  _→ %s_\n", d.Remediation)
+			}
+			// Layer-2 investigation summary (OSS rule-based or paid LLM).
+			if d.Investigation != "" {
+				fmt.Fprintf(&b, "  🔬 _%s_\n", d.Investigation)
 			}
 			// AI enrichment block — only rendered when CHA-com has populated
 			// it. OSS-only deployments never see this branch fire.
