@@ -24,6 +24,21 @@ runbooks add `ai.runbook.created` and `ai.runbook.approval_recorded`
 (twice: slot 1, slot 2). All events share a `correlation_id` =
 ActionID/PlanID/RunbookID for trace linkage.
 
+**Layer-2 Investigator audit events** (paid LLM-backed implementation
+only; the OSS rule-based investigator deliberately emits no audit
+events to keep its zero-dependency posture):
+
+```
+ai.investigator.started      (investigation entered the cycle)
+  ├─ ai.investigator.tool_call    (one per Environment method invoked)
+  ├─ ai.investigator.tool_call    ...
+  └─ ai.investigator.completed    (or ai.investigator.budget_exceeded)
+```
+
+These events share a `correlation_id` = the DriftReport name being
+investigated, so a full per-report trace links cleanly to the enrichment,
+proposal, approval, and action chains that may follow.
+
 ---
 
 ## Event types
@@ -53,6 +68,14 @@ ActionID/PlanID/RunbookID for trace linkage.
 | `ai.rate_limited` | T1+ | Normal | Rate limiter denied a proposal |
 | `ai.circuit_breaker.tripped` | T1+ | Warning | Auto-disable after N failures |
 | `ai.circuit_breaker.reset` | T1+ | Normal | Counter reset (success or manual) |
+| `ai.investigator.started` | L2 (paid) | Normal | LLM-backed investigation began for a DriftReport |
+| `ai.investigator.tool_call` | L2 (paid) | Normal | One `Environment` method invoked; `details.tool` names which |
+| `ai.investigator.completed` | L2 (paid) | Normal | Summary attached to DriftReport |
+| `ai.investigator.budget_exceeded` | L2 (paid) | Warning | Per-cycle 20s cap or per-investigation token budget exhausted |
+
+The OSS rule-based investigator emits no audit events. To audit it,
+read the DriftReport CR's `spec.investigation` field directly (the
+investigator's only externally observable output).
 
 ---
 
@@ -108,6 +131,22 @@ CID=act-a3f0b1c2d3e4
 kubectl -n cluster-health-autopilot get events -o json | \
   jq --arg cid "$CID" '.items[] | select(.metadata.annotations."cha.bionicaisolutions.com/audit-correlation-id" == $cid)
                                   | {time: .lastTimestamp, reason: .reason, message: .message}'
+```
+
+### Trace a single Layer-2 investigation
+
+```sh
+# Paid LLM-backed investigator only — rule-based emits none.
+# correlation_id is the DriftReport name.
+CID=tls-mismatch-prod-shop-2026-05-12
+kubectl -n cluster-health-autopilot get events -o json | \
+  jq --arg cid "$CID" '.items[] | select(.reason | startswith("AIInvestigator"))
+                                  | select(.metadata.annotations."cha.bionicaisolutions.com/audit-correlation-id" == $cid)
+                                  | {time: .lastTimestamp, reason: .reason, message: .message}'
+
+# OSS rule-based investigator audit — read the DriftReport directly
+kubectl -n cluster-health-autopilot get driftreport "$CID" \
+  -o jsonpath='{.spec.investigation}' && echo
 ```
 
 ### Loki LogQL (when LokiSink configured)

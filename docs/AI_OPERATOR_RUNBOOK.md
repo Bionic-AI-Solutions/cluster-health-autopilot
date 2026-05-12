@@ -120,7 +120,7 @@ If the same source diagnostic keeps producing invalid proposals,
 add the analyzer's name to a temporary FixProposer exclusion list:
 ```sh
 helm upgrade cha cha/cluster-health-autopilot --reuse-values \
-  --set 'ai.fixProposer.excludeSources={IngressCoverage}'
+  --set 'ai.fixProposer.excludeSources={TLSSecretMismatch}'
 ```
 
 ---
@@ -141,7 +141,54 @@ shows ImagePullBackOff or CrashLoopBackOff.
 
 ---
 
-## Scenario 7 — Click-to-fix URL gives 401 Unauthorized
+## Scenario 7 — Layer-2 Investigator misbehaves or is noisy
+
+**Symptom**: `🔬` blocks appear under findings in Slack with summaries
+that look wrong, stale, or repeatedly say `insufficient_data`; or you
+need to compare investigator output against the bare deterministic
+diagnostic for a postmortem.
+
+**Check** (OSS rule-based, no audit events by design — read the
+DriftReport CR or Slack thread directly):
+```sh
+# What the investigator concluded on a specific report
+kubectl -n cluster-health-autopilot get driftreport <name> \
+  -o jsonpath='{.spec.investigation}' && echo
+
+# Cycle-wide view — how many findings carry investigation summaries
+kubectl -n cluster-health-autopilot get driftreports.cha.bionicaisolutions.com \
+  -o json | jq '[.items[] | select(.spec.investigation != "")] | length'
+```
+
+**Check** (paid LLM-backed investigator, which emits audit events):
+```sh
+kubectl -n cluster-health-autopilot get events --sort-by=lastTimestamp \
+  | grep -E "AIInvestigator(Started|ToolCall|Completed|BudgetExceeded)"
+```
+
+**Remediation — disable the investigator entirely**:
+```sh
+kubectl -n cluster-health-autopilot set env deployment/cha-cluster-health-autopilot \
+  CHA_INVESTIGATOR=off
+```
+Restart picks up the new env. DriftReports continue to be emitted with
+`spec.investigation` empty; Slack/AM rendering drops the `🔬` block.
+
+**Remediation — override with the paid LLM-backed implementation**:
+This is automatic when CHA-com is installed and `ai.enabled=true`. The
+paid binary's catalog runs after `catalog.RegisterOSS` and re-calls
+`RegisterInvestigator` to replace the rule-based one. No env-var change
+required; downshift via `ai.enabled=false` reverts to the rule-based
+investigator.
+
+**When the investigator is correct but the finding is the real problem**:
+investigation is additive — the underlying Finding / Diagnostic is
+unchanged. Fixers, T1 buttons, and alerting all behave identically with
+or without the `🔬` block.
+
+---
+
+## Scenario 8 — Click-to-fix URL gives 401 Unauthorized
 
 **Symptom**: SRE clicks the Apply Fix URL, sees:
 > No approver identity. Configure OIDC at the Ingress layer.

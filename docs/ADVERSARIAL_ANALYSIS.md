@@ -1,7 +1,7 @@
 # Adversarial Analysis — Cluster Health Autopilot
 
 This document is the cha team's red-team writeup of the **current shipping
-release (v0.9.5)**. It is deliberately written from the *attacker / paranoid
+release (v1.5.2)**. It is deliberately written from the *attacker / paranoid
 SRE* point of view. Each finding is rated **Severity** (impact if true) ×
 **Likelihood** (how hard it is to provoke) and resolved as one of:
 
@@ -11,15 +11,21 @@ SRE* point of view. Each finding is rated **Severity** (impact if true) ×
 
 **Scope reviewed:**
 
-- `internal/diagnose/` — 8 analyzers (secret_key_missing, failing_externalsecrets,
+- `internal/diagnose/` — 7 analyzers (secret_key_missing, failing_externalsecrets,
   proactive_secret_key_check, unprovisioned_secret, vault_path_missing,
-  cert_expiry, image_pull_auth, ingress_coverage)
-- `internal/probe/` — 6 probes (Ceph, Nodes, Postgres, PVCs, Services, Endpoints)
-- `internal/fix/` — 4 fixers (stale_error_pods, stuck_jobs, stuck_rs_pods,
-  stuck_cert_requests)
+  cert_expiry, image_pull_auth, tls_secret_mismatch). The v0.9 `ingress_coverage`
+  analyzer was removed in v1.2 (pattern-matched on hostnames; superseded by
+  Ingress auto-discovery in the endpoint probe).
+- `internal/probe/` — 6 probes (Ceph, Nodes, Postgres, PVCs, Services, Endpoints).
+  The Endpoints probe gained Ingress auto-discovery in v1.2 and Layer-1 flake
+  suppression (in-cycle retry + N-of-M streak counter) in v1.4.
+- `internal/fix/` — 4 default fixers (stale_error_pods, stuck_jobs, stuck_rs_pods,
+  stuck_cert_requests) + 1 opt-in fixer (tls_secret_mismatch, default off)
 - `internal/watcher/` — long-running event-driven engine
 - `internal/report/` — `routing.go` (three-channel Slack), `daily.go`
   (DriftReport-history digest), `alertmanager.go` (direct AM API hub)
+- `pkg/ai/` — `Investigator` interface, closed-enum `Environment`, rule-based
+  investigator (OSS). Reviewed in §9.
 - `charts/cluster-health-autopilot/` — Helm chart shape, RBAC, secret wiring
 - Self-hosted GitHub Actions runner Deployment (WS-C publish pipeline)
 
@@ -64,22 +70,56 @@ spot the flap. `lastObserved` timestamps differentiate stable issues
 from flapping ones. Status-only patches are cheap.
 
 ### 1.5 IngressCoverage emits findings for legitimately uncovered hosts
-**Severity: low · Likelihood: high · Resolution: DOCUMENT (NEW in v0.9.x)**
+**Severity: low · Likelihood: high · Resolution: ✅ REMOVED in v1.2**
 
-`IngressCoverage` walks every `networking.k8s.io/v1` Ingress and flags
-each `spec.rules[].host` that is NOT in `probe.DefaultEndpointTargets()`.
-On a cluster with many internal-only hosts (admin UIs, dev tools), this
-fires per-host until an operator either (a) adds the host to the
-endpoint list or (b) adds the ingress to an explicit ignore list.
+The `IngressCoverage` analyzer walked every `networking.k8s.io/v1`
+Ingress and flagged each `spec.rules[].host` that was NOT in
+`probe.DefaultEndpointTargets()`. It was removed in v1.2 because its
+replacement — Ingress auto-discovery in the endpoint probe — closes
+the same blind spot without pattern-matching on hostnames.
 
-**Mitigation in v0.9.5**: the diagnostic explicitly tells operators
-which Go file to edit (`internal/probe/endpoints.go`) and notes that
-removal requires explicit operator action — never auto-removed. There
-is intentionally no chart-level ignore list (would mask probe gaps).
+The endpoint probe now enumerates every Ingress host in the cluster
+on each cycle and probes it directly. Operators opt out per-Ingress
+via the annotation `cha.bionicaisolutions.com/probe-disable: "true"`;
+protected namespaces are skipped by the same list used by fixers. No
+new RBAC was added — the probe reuses the watcher's existing read-only
+Ingress access. Egress surface widens; see §4.5.
 
-**Why we accept it**: every uncovered host is a real TLS/DNS/Kong-route
-blind spot. The pattern is "you actively decided not to probe X" and
-that decision is best made in code review, not Helm values.
+**Security implication of the deletion**: none. The removed analyzer
+was read-only and pattern-matched on hostnames; no attacker surface
+was attached to it.
+
+### 1.6 Ingress auto-discovery probes attacker-controlled hostnames
+**Severity: low · Likelihood: low · Resolution: DOCUMENT (NEW in v1.2)**
+
+A user with permission to create Ingress objects in any non-protected
+namespace can publish a host that the watcher will then probe over
+HTTPS on its next cycle. The probe is a single GET with a short
+timeout (default 10s); it follows up to 10 redirects (Go default) and
+will not skip TLS verification. An attacker who can plant an Ingress
+host pointed at an attacker-controlled DNS record can:
+
+- Cause the watcher to issue one HTTPS GET per cycle to a host of
+  their choice (outbound, from the watcher's egress identity).
+- Generate diagnostics that mention their hostname (low-fidelity
+  signal channel).
+
+**Mitigation**:
+- Protected namespaces are skipped at discovery time.
+- Per-Ingress opt-out via `cha.bionicaisolutions.com/probe-disable: "true"`
+  for the legitimate cases where operators do not want the probe.
+- The cluster's egress firewall / NetworkPolicy on the cha namespace
+  bounds where probe traffic can land. This control is unchanged from
+  v0.9.x (see §4.5).
+- The probe never reads the response body — only status, TLS
+  outcome, headers, and timing — so a malicious payload at the
+  target URL cannot be exfiltrated through the diagnostic.
+
+**Why we accept it**: the attack requires `ingresses create` in a
+non-protected namespace. Anyone with that verb can already configure
+the in-cluster ingress controller to make the cluster issue arbitrary
+egress for free. The watcher's probe is a smaller, slower copy of
+that pre-existing capability.
 
 ---
 
@@ -112,6 +152,15 @@ iterates names. But the API token has the permission.
 
 **Future**: split the secret-name iteration into a separate Pod with its
 own ServiceAccount + restricted ClusterRole.
+
+**RBAC-creep tracking through v1.5.2**: the only new conditional verb
+since v0.9.5 is `networking.k8s.io/ingresses [patch]`, added to the
+remediator ClusterRole *only* when the TLSSecretMismatch fixer is
+explicitly enabled (default off, v1.3). The verb scope is narrow —
+the fixer mutates `spec.tls[].secretName` and nothing else. The
+Layer-2 Investigator added in v1.5 adds **zero** new RBAC verbs: its
+`Describe` and `GetEvents` tools read through the existing
+`snapshot.Source` and inherit the watcher's read-only ceiling.
 
 ### 2.2 Vault role scope is operator's responsibility
 **Severity: MEDIUM · Likelihood: medium · Resolution: DOCUMENT**
@@ -307,10 +356,10 @@ inherits both credentials.
 investigate `actions/runner-controller` (ARC) which supports rootless.
 
 ### 4.5 Endpoint probe — egress, redirects, TLS
-**Severity: low · Likelihood: low · Resolution: ✅ DOCUMENTED IN CODE (NEW in v0.9.x)**
+**Severity: low · Likelihood: low · Resolution: ✅ DOCUMENTED IN CODE (NEW in v0.9.x; expanded in v1.2 / v1.4 / v1.5)**
 
-The endpoint probe issues HTTP GET against each `DefaultEndpointTargets`
-URL. Probe failure modes considered:
+The endpoint probe issues HTTP GET against each target URL. Probe
+failure modes considered:
 
 - **Redirects**: follows up to 10 by default (Go `http.Client` behavior).
   Accepted — Kong commonly issues 308 → HTTPS.
@@ -318,9 +367,33 @@ URL. Probe failure modes considered:
   produces a "TLS handshake error" probe failure — desirable.
 - **Timeout**: 10 seconds per target. Probe failure surfaces as
   diagnostic; does not block other probes.
-- **Outbound from cluster**: targets are public hostnames; probe
-  traffic exits via the cluster's default egress (NAT/SNAT). Network
-  Policy operators can rate-limit if needed.
+- **Outbound from cluster**: targets exit via the cluster's default
+  egress (NAT/SNAT). Network Policy operators can rate-limit if
+  needed.
+
+**Surface widened in v1.2 (Ingress auto-discovery)**: the target list
+is no longer a fixed compile-time slice. The probe enumerates every
+Ingress host in the cluster on each cycle and probes each one. The
+read-only RBAC ceiling is unchanged; the watcher's egress identity
+is unchanged; but the set of *destinations* now tracks cluster state.
+See §1.6 for the threat surface from attacker-published Ingress hosts.
+
+**Surface widened in v1.4 (retry)**: a single in-cycle retry runs on
+flake-class errors with 1.5× the original timeout. Worst case: two
+HTTP requests per target per cycle instead of one. Bounded by design.
+
+**Streak state is in-memory only**: the N-of-M streak counter that
+gates Critical-severity escalation lives only in the watcher pod. A
+restart resets the streak. This is intentional (no persistence
+dependency); the security implication is that the underlying outage
+must continue to be visible to the next watcher generation for the
+streak to re-accrue — there is no covert channel here.
+
+**Surface widened in v1.5 (Layer-2 Investigator)**: on a CRITICAL
+finding only, the watcher's egress identity may also issue DNS, one
+or more HTTPS probes, and one TCP+TLS handshake against the target
+named by the finding. Reviewed in §9. Bounded by a hard 20-second
+wall-clock cap per cycle.
 
 ### 4.6 Two cha pods concurrent → racy reconcile
 **Severity: low · Likelihood: very low · Resolution: ACCEPT**
@@ -375,39 +448,51 @@ PAT scope is `repo` only, limiting blast radius of compromise.
 
 ## 6. Threat model — net assessment
 
-| Threat | v0.1 | v0.9.5 | Comment |
+| Threat | v0.1 | v1.5.2 | Comment |
 |---|---|---|---|
 | Reactive-only secret-drift detection | ⚠️ | ✅ | Closed by ProactiveSecretKeyCheck (v0.2) |
 | L1 stale-Ready window invisible | ⚠️ | ✅ | Closed by VaultPathMissing (v0.2) |
 | No kubectl-queryable diagnostic surface | ⚠️ | ✅ | DriftReport CRD (v0.2) |
 | Detection latency (CronJob = minutes) | ⚠️ | ✅ | Closed by Watcher mode (v0.9.0) — seconds |
-| Slack noise on stable cluster | ⚠️ | ✅ | Closed by fingerprint dedup + DriftReport seed (v0.9.0) |
+| Slack noise on stable cluster | ⚠️ | ✅ | Closed by fingerprint dedup + DriftReport seed (v0.9.0); further reduced by Layer-1 streak suppression (v1.4) |
 | Auto-remediation requires manual trigger | ⚠️ | ✅ | Watcher --remedy runs fixers each cycle (v0.9.0) |
 | Single-channel alert routing | ⚠️ | ✅ | Three-channel routing (v0.9.4) |
 | Alert dedup/silencing not supported | ⚠️ | ✅ | Alertmanager-as-hub integration (v0.9.5) |
-| Ingress hosts have no reachability monitor | ⚠️ | ✅ | IngressCoverage + Endpoints probe (v0.9.x) |
+| Ingress hosts have no reachability monitor | ⚠️ | ✅ | Ingress auto-discovery on the endpoint probe (v1.2) replaced the v0.9.x IngressCoverage analyzer |
 | Stuck cert-manager renewal | ⚠️ | ✅ | StuckCertificateRequests fixer + CertExpiry analyzer |
+| Ingress TLS secret pointing at wrong cert | ⚠️ | ✅ | TLSSecretMismatch analyzer (v1.3) + opt-in fixer |
+| Transient flakes producing noisy criticals | ⚠️ | ✅ | Layer-1 in-cycle retry + N-of-M streak counter (v1.4) |
+| Underspecified probe failures (one bit per cycle) | ⚠️ | ✅ | Layer-2 Investigator attaches root-cause hint (v1.5) |
 | Cluster-wide Secret read | n/a | ⚠️ | Code-level privacy contract; documented (§2.1) |
 | Vault key-name leak via diagnostic | n/a | ⚠️ | Operator scopes Vault role (§2.2) |
 | CRD schema instability | n/a | ⚠️ | v1alpha1 documented (§4.1) |
-| Alertmanager API unauthenticated | n/a | ⚠️ NEW | NetworkPolicy recommendation (§2.4) |
-| Watcher continuous fix blast radius | n/a | ⚠️ NEW | dryRun-first posture documented (§4.3) |
-| GH Actions runner root + PAT | n/a | ⚠️ NEW | Opt-in only; scoped PAT (§4.4) |
+| Alertmanager API unauthenticated | n/a | ⚠️ | NetworkPolicy recommendation (§2.4) |
+| Watcher continuous fix blast radius | n/a | ⚠️ | dryRun-first posture documented (§4.3) |
+| GH Actions runner root + PAT | n/a | ⚠️ | Opt-in only; scoped PAT (§4.4) |
+| Attacker-published Ingress drives outbound probe | n/a | ⚠️ NEW (v1.2) | Bounded — see §1.6 |
+| Opt-in `ingresses [patch]` verb (TLSSecretMismatch fixer) | n/a | ⚠️ NEW (v1.3) | Default off; narrow patch scope; skips GitOps + protected NS |
+| Layer-2 Investigator egress + tool surface | n/a | ⚠️ NEW (v1.5) | Read-only by interface; 20s cap; see §9 |
 
-**Net**: v0.9.5 closes every functional gap from v0.1 through v0.9.4 with
-zero **MUST-FIX** items. Six **DOCUMENT** items (three carried forward
-from v0.2, three new in v0.9.x), one **WILL-FIX** (Secret list bandwidth).
+**Net**: v1.5.2 closes every functional gap from v0.1 through v0.9.x
+plus four new ones added since v1.0 (TLS secret mismatch, flake
+suppression, underspecified-failure triage, Ingress reachability
+auto-discovery) with zero **MUST-FIX** items. Nine **DOCUMENT** items
+total (three carried forward from v0.2, three from v0.9.x, three new
+in v1.2–v1.5), one **WILL-FIX** (Secret list bandwidth).
 
-The new surface added in v0.5–v0.9.5 (watcher Deployment, Alertmanager
-integration, three-channel Slack, self-hosted runner) does not introduce
-novel privilege escalation paths — all new code reuses existing RBAC and
-the privacy contracts established in v0.2.
+The new surface added in v1.2–v1.5 (Ingress auto-discovery, opt-in
+TLSSecretMismatch fixer, Layer-1 retry+streak, Layer-2 Investigator)
+does not introduce novel privilege-escalation paths. The opt-in fixer
+adds exactly one narrow verb (`networking.k8s.io/ingresses [patch]`).
+The investigator adds zero verbs. The privacy contracts established
+in v0.2 (analyzer iterates `for k := range secret.Data` only; Vault
+client returns only key names) remain in force.
 
 ---
 
 ## 7. Pre-release checklist (per tag)
 
-- [ ] All MUST-FIX items resolved (none in v0.9.5).
+- [ ] All MUST-FIX items resolved (none in v1.5.2).
 - [ ] All DOCUMENT items captured in SECURITY.md / SETUP_GUIDE.md / values.yaml comments.
 - [ ] `helm template --set …` rendered against a real production cluster smoke-test.
 - [ ] `kubectl get driftreports -A` round-trips on the production cluster.
@@ -415,7 +500,6 @@ the privacy contracts established in v0.2.
 - [ ] Alertmanager `/api/v2/alerts` shows `cha_issue` alerts within 1 cycle.
 - [ ] Three-channel Slack — at least #healthinfo receives a daily digest.
 - [ ] Image size budget: distroless+static, multi-arch, <20 MB compressed.
-  Current v0.9.5: 13 MB.
 
 ---
 
@@ -432,18 +516,37 @@ Findings introduced in v0.9.0 (watcher mode), v0.9.4 (three-channel Slack)
 and v0.9.5 (Alertmanager hub) are explicitly marked **NEW in v0.X.Y** to
 distinguish them from carried-forward analysis.
 
+Findings introduced in v1.0 (AI tier, §8), v1.2 (Ingress auto-discovery,
+§1.5/§1.6/§4.5), v1.3 (TLSSecretMismatch analyzer + opt-in fixer; new
+conditional verb tracked in §2.1), v1.4 (Layer-1 retry + streak,
+§4.5) and v1.5 (Layer-2 Investigator, §9) are marked with their
+introducing version.
+
 ---
 
 ## 8. AI-tier attack surface (NEW in v1.0.0 — CHA-com)
 
-This section reviews the attack surface introduced by the AI tier
-shipped in the commercial CHA-com binary. The OSS `cha` binary remains
-AI-free; findings here apply only when an operator opts into
-`ai.enabled=true`.
+This section reviews the attack surface introduced by the **mutation
+AI tier** (T0–T3) shipped in the commercial CHA-com binary. The OSS
+`cha` binary remains AI-free in this tier; findings here apply only
+when an operator opts into `ai.enabled=true`. The Layer-2 read-only
+**Investigator** introduced in v1.5 is a separate sibling surface
+reviewed in §9 — it is not gated by `ai.enabled` because the rule-
+based investigator ships in OSS and is not an LLM (the LLM-backed
+investigator in CHA-com is gated the same way as T0–T3).
+
+The fundamental difference between this tier and the Layer-2
+Investigator: the T0–T3 tier exists to *propose mutations* (which
+humans then approve and the deterministic engine applies), so its
+safety surface is dominated by approval/JWT/replay/admission. The
+Layer-2 Investigator never produces a mutation proposal; it produces
+a read-only root-cause hint attached to the existing finding. Its
+safety surface is dominated by the closed-enum `Environment`.
 
 Full OWASP LLM Top 10 / NIST AI RMF / ISO 42001 mapping in
 [THREAT_MODEL_AI.md](THREAT_MODEL_AI.md). Tier specifications in
-[AI_TIERS.md](AI_TIERS.md).
+[AI_TIERS.md](AI_TIERS.md). Architectural rationale for the
+Investigator in [docs/design/2026-05-investigator-agent.md](design/2026-05-investigator-agent.md).
 
 ### 8.1 LLM autonomous mutation (LLM08 — Excessive Agency)
 **Severity: HIGH · Likelihood: low (architecture refuses it) · Resolution: ✅ ARCHITECTURALLY REFUSED**
@@ -545,3 +648,159 @@ Top 10, NIST AI RMF, ISO/IEC 42001). The fundamental safety invariant —
 AI proposes, humans approve, deterministic Go code applies — closes
 the largest single class of AI-SRE risk (LLM08) at the architectural
 level.
+
+---
+
+## 9. Layer-2 Investigator attack surface (NEW in v1.5.0)
+
+This section reviews the attack surface introduced by the Layer-2
+read-only Investigator. The rule-based investigator ships in the OSS
+`cha` binary and is wired to the watcher by default for CRITICAL
+findings; an LLM-backed investigator with the same Environment surface
+ships in the CHA-com paid binary and is operator-gated.
+
+The fundamental safety claim of this layer is that **the Investigator
+interface cannot escape the `Environment` interface**, and `Environment`
+exposes ZERO mutation methods. Every method on `Environment` is
+read-only and bounded. The same surface is reviewed in
+[docs/design/2026-05-investigator-agent.md](design/2026-05-investigator-agent.md).
+
+### 9.1 Closed-enum tool surface — what an attacker can drive
+**Severity: low · Likelihood: low · Resolution: ✅ ARCHITECTURALLY BOUNDED**
+
+The `pkg/ai.Environment` interface exposes exactly five tools:
+
+| Tool | Underlying | Egress / read scope | Attacker leverage |
+|---|---|---|---|
+| `DNSLookup` | `net.DefaultResolver` | DNS request to cluster resolver, host parameter | Drive one DNS query per call to a name in the finding's subject; resolver is shared with every other workload |
+| `HTTPProbe` | `net/http` | One outbound HTTP request; body not read; status, headers, TLS outcome, timing returned | Drive one HTTP request to a URL related to the finding |
+| `TLSInspect` | `crypto/tls` | One outbound TCP+TLS handshake; certificate chain inspected | Drive one TLS handshake to a host:port pair |
+| `Describe` | `snapshot.Source` (existing watcher RBAC) | Read one Kubernetes resource the watcher already has access to | Cause one extra GET against an object the watcher could already list |
+| `GetEvents` | `snapshot.Source` (existing watcher RBAC) | Read recent events involving one object | Cause one extra event-list against an object the watcher could already list |
+
+The set is closed at the interface level. For the LLM-backed
+investigator, the proposed tool name is parsed against this closed
+enum at decode time; an unrecognized tool is dropped, not invoked.
+There is **no `kubectl apply`, no shell, no file write**, no method
+that mutates anything in the cluster. The interface contract is the
+load-bearing control.
+
+### 9.2 Outbound probe surface widens with the cluster's finding shape
+**Severity: low · Likelihood: medium · Resolution: DOCUMENT**
+
+`DNSLookup`, `HTTPProbe`, and `TLSInspect` all issue outbound network
+traffic from the watcher pod's identity. The destination is derived
+from the finding's subject (typically the hostname that the original
+probe failed against). On a cluster with many distinct CRITICAL
+findings against external hostnames, this multiplies the watcher's
+egress surface by the number of investigations.
+
+**Bounds**:
+- Hard 20-second wall-clock cap per cycle. The Investigator MUST
+  honor `ctx.Done()` (`Investigate` returns whatever was gathered).
+- LLM-backed investigator: max 6 tool calls per investigation.
+- Rule-based investigator has no token cost but is bounded by the
+  same 20-second cap.
+- Cluster egress firewall / NetworkPolicy on the watcher pod
+  continues to bound *where* the traffic can land. This is unchanged
+  from v0.9.x.
+
+**Why we accept it**: every destination probed is already named in a
+CRITICAL DriftReport that the watcher chose to emit. The Investigator
+issues the same checks a human SRE would type into a terminal. The
+incremental egress is a small constant multiple of what the existing
+endpoint probe already does on the same target.
+
+### 9.3 Prompt injection in observed cluster data (LLM-backed only)
+**Severity: medium · Likelihood: medium · Resolution: DEFENSE IN DEPTH (CHA-com)**
+
+For the LLM-backed investigator, tool outputs feed back into the LLM
+prompt. An attacker who can influence the *contents* of cluster
+events or resource descriptions (e.g., by naming a workload with a
+crafted string, or by triggering an event with a custom message) can
+attempt prompt injection.
+
+**Controls (inherited from the T0–T3 mitigations in §8.2 and
+THREAT_MODEL_AI.md)**:
+- All tool outputs are wrapped in `<observed_data>` structural
+  markers in the prompt.
+- The tool-selection schema is a closed enum at parse time — the
+  model cannot invent a new tool, and a hallucinated kubectl-style
+  command is dropped silently.
+- Pre-output scrubber (`pkg/ai.ContainsSecretLike`, base64≥40 / hex
+  ≥32 patterns per `pkg/ai/redact.go`) strips secret-like substrings
+  from tool outputs before they reach the LLM.
+- The investigation summary is **additive** — the original Critical
+  finding still surfaces. An injection that managed to change the
+  summary cannot suppress the original alert.
+
+The rule-based investigator has no prompt and is immune to this
+class of attack by construction.
+
+### 9.4 Sensitive information disclosure via investigation output
+**Severity: low · Likelihood: low · Resolution: ✅ MITIGATED**
+
+The Investigator reads via `snapshot.Source`, which inherits the
+watcher's existing RBAC ceiling. It **never reads `Secret.Data`
+byte values** — the privacy contract from v0.2 (`for k := range
+secret.Data`) is preserved end-to-end. Vault is not touched. For
+the LLM-backed investigator, every tool output is passed through
+`pkg/ai.ContainsSecretLike` before reaching the model, and the
+investigation summary itself is scrubbed before it is written into
+the DriftReport.
+
+### 9.5 Excessive agency — the headline failure mode, refuted by interface
+**Severity: HIGH · Likelihood: very low · Resolution: ✅ ARCHITECTURALLY REFUSED**
+
+The headline AI-SRE failure mode is an LLM that escapes its
+read-only sandbox and applies an unsupervised mutation. The Layer-2
+Investigator refuses this at the interface level: `Environment`
+exposes no mutation methods. The Investigator cannot construct a
+Mutator, cannot call `kubectl apply`, cannot patch any resource. A
+hostile or hallucinated tool name is parsed against a closed enum
+and dropped.
+
+The DriftReport produced by the Investigator carries the original
+finding's severity and message; the investigation result is attached
+as an additional field. The operator continues to make the decision.
+If the LLM-backed investigator's classification is wrong, the
+original finding still fires.
+
+### 9.6 Denial of service via repeated investigations
+**Severity: low · Likelihood: low · Resolution: ✅ MITIGATED**
+
+An attacker who can drive the cluster into producing many CRITICAL
+findings could in principle drive a large number of investigations,
+each consuming up to 20 seconds of wall-clock and (for LLM-backed) up
+to 6 tool calls plus LLM cost.
+
+**Bounds**:
+- The streak counter (v1.4) gates Critical-severity escalation; only
+  findings that pass the N-of-M streak threshold get investigated.
+  An attacker who can drive transient noise is not amplified into
+  investigations.
+- The 20-second per-cycle wall-clock cap is hard.
+- For the LLM-backed investigator, the existing AI-tier rate
+  limiter (see §8.6) applies to investigations as well; the LLM
+  budget is shared across enrichment, fix-proposal, and investigation.
+- Soft-fail per investigation: a failed Investigate call does NOT
+  block the rest of the cycle.
+
+### 9.7 Net assessment for Layer-2 Investigator (v1.5.0)
+
+| Threat | Severity | Status |
+|---|---|---|
+| Mutation outside the read-only contract | HIGH | ✅ Architecturally refused (closed-enum `Environment`) |
+| Sensitive info disclosure to LLM (CHA-com) | medium | ✅ Snapshot RBAC ceiling + scrubber + no Secret reads |
+| Prompt injection from observed cluster data (CHA-com) | medium | ✅ Defense in depth (closed-enum + `<observed_data>` + scrubber) |
+| Outbound egress amplification | low | ⚠️ Documented; bounded by 20s cap and cluster egress NetPol |
+| DoS via repeated investigations | low | ✅ Streak gate + wall-clock cap + rate limit (CHA-com) |
+| Wrong classification (LLM09 / misinformation) | low | ✅ Additive — original finding still surfaces |
+| Supply chain (LLM provider compromise, CHA-com) | medium | ✅ BYOM defaults; rule-based path stays deterministic |
+
+Zero MUST-FIX items for the Layer-2 surface. Zero new RBAC verbs.
+The Investigator's read-only contract is enforced at the interface
+level — adding a mutation tool would require a versioned interface
+change, a corresponding RBAC verb, a prompt-schema change, and test
+coverage. This is the same architectural pattern as the closed-enum
+`ActionKind` in the T0–T3 tier (see §8.1).

@@ -1,14 +1,18 @@
-# Readiness Assessment — Cluster Health Autopilot v0.9.5
+# Readiness Assessment — Cluster Health Autopilot v1.5.2
 
 This document is the cha team's readiness assessment of the **current
-shipping release (v0.9.5)** for design-partner deployment and pilot
+shipping release (v1.5.2)** for design-partner deployment and pilot
 customer use. Read alongside [ADVERSARIAL_ANALYSIS.md](./ADVERSARIAL_ANALYSIS.md).
 
 The original [Vault → Pod Drift solution brief](./vault_pod_drift_solution_brief.docx.pdf)
 defined a five-layer detection stack (L1–L5). v0.2 closed all five gaps; v0.3
 through v0.9.5 hardened those layers and added the operational features (real-
 time mode, multi-channel routing, alert hub integration, auto-remediation)
-needed for production deployment.
+needed for production deployment. v1.0 introduced the AI tier (CHA-com).
+v1.2–v1.5 added auto-discovery of Ingress hosts, a TLS cert/secret-mismatch
+analyzer with opt-in fixer, Layer-1 flake suppression on probe failures,
+and a Layer-2 read-only Investigator that attaches root-cause hints to
+CRITICAL findings.
 
 ## 1. Brief's five-layer stack — coverage matrix
 
@@ -21,14 +25,17 @@ needed for production deployment.
 | **L5** kubectl-queryable diagnostic objects | Each diagnostic visible as a CR with status + history | ✅ | `DriftReport` CRD + reconciler |
 
 All five layers closed. Tightened in v0.3 (mixed-provider filter,
-outage dedup, envFrom walk) and operationalized in v0.9.x.
+outage dedup, envFrom walk) and operationalized in v0.9.x. v1.4 added
+in-cycle retry + N-of-M streak suppression on top of the L1 surface
+to reduce transient-flake noise; v1.5 added a Layer-2 read-only
+Investigator that runs on CRITICAL findings only.
 
 ---
 
-## 2. Capabilities beyond the original brief (v0.5 – v0.9.5)
+## 2. Capabilities beyond the original brief (v0.5 – v1.5.2)
 
 The brief targeted detection. Production deployment requires operational
-features the brief did not specify. These shipped in v0.5 – v0.9.5:
+features the brief did not specify. These shipped in v0.5 – v1.5.2:
 
 | Capability | First in | What it does |
 |---|---|---|
@@ -42,11 +49,17 @@ features the brief did not specify. These shipped in v0.5 – v0.9.5:
 | **DriftReport seeding for Slack dedup** | v0.9.0 | Watcher seeds its seen-map from existing DriftReport CRs on pod startup — no Slack flood after rolling update |
 | **Watcher `--remedy`** | v0.9.0 | Fixers run after every diagnose cycle, post-fix state reported |
 | **Endpoint reachability probe** | v0.9.x | HTTP(S) GET against canonical hostnames — catches TLS faults, missing Kong routes, DNS failures |
-| **IngressCoverage analyzer** | v0.9.x | Walks every Ingress; flags hosts not in the endpoint probe target list — closes the "ingress exists but unmonitored" blind spot |
 | **Three-channel Slack routing** | v0.9.4 | `#ceph-alerts` (CHA-fixed) · `#ceph-critical` (needs human) · `#healthinfo` (daily digest) |
 | **Daily digest** | v0.9.4 | `--format=daily` reads DriftReport history; reports new/persistent/resolved with age annotations |
 | **Alertmanager-as-hub** | v0.9.5 | Direct POST to `/api/v2/alerts` every cycle; AM handles dedup/silencing/fan-out to all configured receivers |
 | **Fixed Alertmanager dispatch** | v0.9.5 | `fsGroup` patch on AM pod resolves 3-month-old `permission denied` on nflog/silences |
+| **AI tier (CHA-com)** | v1.0.0 | Recommendation-only LLM enrichment + signed JWT approval-server; OSS engine remains AI-free |
+| **Ingress auto-discovery** | v1.2.0 | Endpoint probe enumerates every Ingress host (read-only RBAC), opt-out via `cha.bionicaisolutions.com/probe-disable: "true"`; protected namespaces skipped; legacy `IngressCoverage` analyzer removed (pattern-matched on hostnames) |
+| **TLSSecretMismatch analyzer** | v1.3.0 | Compares the x509 cert in `Secret.tls.crt` against the target name of the owning `Certificate` CR; read-only |
+| **TLSSecretMismatch fixer (opt-in)** | v1.3.0 | Patches `Ingress.spec.tls[].secretName` to the correct Secret; default off; adds the narrow verb `networking.k8s.io/ingresses [patch]` only when enabled; skips protected namespaces AND GitOps-managed Ingresses |
+| **Layer-1 flake suppression** | v1.4.0 | Single in-cycle retry (1.5× timeout) on flake-class errors + N-of-M in-memory streak counter — sub-threshold streaks surface as Warning, ≥ threshold escalates to Critical; restart loses the streak by design |
+| **Layer-2 Investigator (rule-based, OSS)** | v1.5.0 | `pkg/ai.Investigator` runs on CRITICAL findings against a closed-enum `pkg/ai.Environment` of read-only tools (`DNSLookup`, `HTTPProbe`, `TLSInspect`, `Describe`, `GetEvents`); 20s hard wall-clock cap per cycle; soft-fail per investigation; attaches a root-cause hint to the DriftReport (additive, never replaces the original finding) |
+| **Layer-2 Investigator (LLM-backed)** | v1.5.x (CHA-com) | Same closed-enum `Environment` surface; max 6 tool calls/investigation; same wall-clock cap; rate-limited per the existing AI-tier limiter |
 
 ---
 
@@ -54,22 +67,24 @@ features the brief did not specify. These shipped in v0.5 – v0.9.5:
 
 | Surface | Tests | Risk |
 |---|---|---|
-| `internal/diagnose/` — 8 analyzers (vs 2 in v0.1) | 30+ | low — pure read-only; privacy contract enforced by code shape |
-| `internal/probe/` — 6 probes (added Endpoints in v0.9.x) | 15+ | low — read-only; HTTPS GETs respect cluster egress controls |
-| `internal/fix/` — 4 fixers (added StuckCertificateRequests in v0.9.1) | 20+ | medium — type-system gated to live mode; whitelist-only |
+| `internal/diagnose/` — 7 analyzers (`cert_expiry`, `failing_externalsecrets`, `image_pull_auth`, `proactive_secret_key_check`, `secret_key_missing`, `tls_secret_mismatch`, `unprovisioned_secret`, `vault_path_missing`); the v0.9 `ingress_coverage` analyzer was removed in v1.2 | 35+ | low — pure read-only; privacy contract enforced by code shape |
+| `internal/probe/` — 6 probes (Endpoints probe gained Ingress auto-discovery in v1.2, in-cycle retry + streak counter in v1.4) | 18+ | low — read-only; HTTPS GETs respect cluster egress controls; egress surface widened in v1.2 but bounded by existing read-only RBAC |
+| `internal/fix/` — 4 default fixers + 1 opt-in (`stale_error_pods`, `stuck_jobs`, `stuck_rs_pods`, `stuck_cert_requests` default; `tls_secret_mismatch` opt-in) | 22+ | medium — type-system gated to live mode; whitelist-only; opt-in fixer adds `networking.k8s.io/ingresses [patch]` only when enabled |
 | `internal/watcher/` — long-running event-driven engine | 8 | medium — new persistent attack surface; reviewed in ADVERSARIAL §4.3 |
 | `internal/report/` — `routing.go` + `daily.go` + `alertmanager.go` | 12 | low — outbound HTTP only; no inbound listeners |
+| `pkg/ai/` — `Investigator` interface, closed-enum `Environment`, rule-based investigator (OSS) | 10+ | low — read-only by interface contract; no mutation methods exposed; reuses watcher RBAC; reviewed in ADVERSARIAL §9 |
 | `charts/.../crds/driftreports.yaml` (CRD) | n/a | low — v1alpha1, schema explicitly unstable |
 | `charts/.../clusterrole-{reader,remediator,driftreport-writer}.yaml` | n/a | medium — Reader includes cluster-wide `secrets get,list,watch`; documented |
 
-**Aggregate vs v0.1**: 85+ new tests, 1 new CRD, 3 ClusterRoles, 1 Deployment
-(watcher), 1 optional Deployment (self-hosted runner), 2 CronJobs.
+**Aggregate vs v0.1**: 100+ new tests, 1 new CRD, 3 ClusterRoles, 1 Deployment
+(watcher), 1 optional Deployment (self-hosted runner), 2 CronJobs, plus the
+optional CHA-com AI tier (approval-server Deployment + isolated SA).
 
 ---
 
 ## 4. Capability deltas vs. the original brief
 
-| Brief capability | v0.1 | v0.9.5 |
+| Brief capability | v0.1 | v1.5.2 |
 |---|---|---|
 | Detect Vault path deletion before pod restart | no | **yes** |
 | Detect Vault key removal before pod restart | no | **yes** |
@@ -94,7 +109,7 @@ features the brief did not specify. These shipped in v0.5 – v0.9.5:
 
 ## 5. Gaps that remain
 
-These are **not** addressed in v0.9.5 and are surfaced here so design
+These are **not** addressed in v1.5.2 and are surfaced here so design
 partners aren't surprised.
 
 | Gap | Rationale | Target |
@@ -115,9 +130,10 @@ partners aren't surprised.
 
 > **Are we ready to take CHA to a design-partner conversation?**
 
-**Yes.** v0.9.5 closes every L1–L5 gap from the original brief and adds
+**Yes.** v1.5.2 closes every L1–L5 gap from the original brief and adds
 the operational features (real-time mode, multi-channel routing,
-Alertmanager hub, auto-remediation) needed for production deployment.
+Alertmanager hub, auto-remediation, Layer-1 flake suppression, Layer-2
+read-only investigation) needed for production deployment.
 
 The [adversarial analysis](./ADVERSARIAL_ANALYSIS.md) flagged zero
 must-fix items, one will-fix item (Secret list bandwidth on very large
@@ -143,18 +159,31 @@ The honest disclosures we'd make to a design partner:
 5. **Watcher continuous remediation widens blast radius vs cron.**
    Recommended posture: `watcher.remedy.dryRun=true` for the first
    week, then enable live remediation.
+6. **TLSSecretMismatch fixer is opt-in and adds one verb.** Enabling
+   it grants the watcher `networking.k8s.io/ingresses [patch]`. The
+   patch surface is narrow (only `spec.tls[].secretName`), and the
+   fixer skips protected namespaces and GitOps-managed Ingresses. The
+   verb is not in the default Reader/Remediator ClusterRoles.
+7. **Layer-2 Investigator widens egress surface modestly.** The OSS
+   rule-based investigator can issue outbound DNS, HTTPS, and TCP+TLS
+   handshakes from the watcher pod when a CRITICAL finding fires. No
+   new RBAC verbs. Existing cluster egress firewall posture applies.
+   Hard 20-second wall-clock cap per cycle.
 
 ---
 
 ## 7. Pre-launch checklist (per release)
 
-- [x] v0.9.5 tag pushed
+- [x] v1.5.2 tag pushed
 - [x] GoReleaser workflow green (multi-arch binaries + container images
       on `ghcr.io` and `docker4zerocool`)
-- [x] Helm chart `0.9.5` install clean against a production cluster
-- [x] Smoke test on production cluster — watcher running, 28 active
-      diagnostics flowing to DriftReport CRs + Alertmanager + Slack
-- [x] CHA-com paid binary tracks v0.9.5 OSS dep
+- [x] Helm chart `1.5.2` install clean against a production cluster
+- [x] Smoke test on production cluster — watcher running, active
+      diagnostics flowing to DriftReport CRs + Alertmanager + Slack;
+      Ingress auto-discovery enumerates the cluster's hosts; Layer-1
+      streak suppression observed on flaky targets; rule-based
+      Investigator attaches root-cause hints to CRITICAL findings
+- [x] CHA-com paid binary tracks v1.5.2 OSS dep
 
 ## 8. What "ready" does NOT mean
 
@@ -164,6 +193,8 @@ The honest disclosures we'd make to a design partner:
 - It does **not** mean we are SOC 2 ready. SOC 2 is post-fundraise scope.
 - It does **not** mean we have a paying customer. Design-partner outreach
   is current scope.
-- It does **not** mean v0.9.5 is feature-complete. The operator
+- It does **not** mean v1.5.2 is feature-complete. The operator
   architecture (controller-runtime) is the next major shape change;
-  v0.9.5 is the smallest cha that can credibly run in production.
+  v1.5.2 is the smallest cha that can credibly run in production
+  while shipping flake-tolerant probing and read-only root-cause
+  investigation.
