@@ -76,6 +76,14 @@ spec:
                     can paste). Probes set this; analyzers usually embed
                     the hint into `message` instead.
                   maxLength: 1024
+                investigation:
+                  type: string
+                  description: |
+                    Layer-2 investigator summary attached when a registered
+                    pkg/ai.Investigator (OSS rule-based or paid LLM) produces
+                    a root-cause narrative for this finding. Surfaced as a
+                    🔬 block in Slack and Alertmanager payloads.
+                  maxLength: 1024
                 category:
                   type: string
                   description: |

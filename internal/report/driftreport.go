@@ -24,12 +24,13 @@ import (
 // DriftReportEntry is the abstract input the writer consumes — assembled
 // from probe findings, diagnose diagnostics, and fixer actions/skips.
 type DriftReportEntry struct {
-	Subject     string // stable identity for dedup across ticks
-	Severity    string // info|warning|critical
-	Source      string // probe name, analyzer name, fixer name
-	Category    string // probe|analyzer|fixer-action|fixer-skipped
-	Message     string
-	Remediation string
+	Subject       string // stable identity for dedup across ticks
+	Severity      string // info|warning|critical
+	Source        string // probe name, analyzer name, fixer name
+	Category      string // probe|analyzer|fixer-action|fixer-skipped
+	Message       string
+	Remediation   string
+	Investigation string // Layer-2 investigator summary (empty when none)
 }
 
 // AssembleEntries flattens probe Results + Diagnostics + fix Results into
@@ -51,22 +52,24 @@ func AssembleEntries(
 				sev = "warning"
 			}
 			out = append(out, DriftReportEntry{
-				Subject:     "Probe/" + r.Component.Component + "/" + f.Component,
-				Severity:    sev,
-				Source:      r.Component.Component,
-				Category:    "probe",
-				Message:     f.Message,
-				Remediation: f.Remediation,
+				Subject:       "Probe/" + r.Component.Component + "/" + f.Component,
+				Severity:      sev,
+				Source:        r.Component.Component,
+				Category:      "probe",
+				Message:       f.Message,
+				Remediation:   f.Remediation,
+				Investigation: f.Investigation,
 			})
 		}
 	}
 	for _, d := range diagnostics {
 		out = append(out, DriftReportEntry{
-			Subject:  d.Subject,
-			Severity: "warning",
-			Source:   "analyzer",
-			Category: "analyzer",
-			Message:  d.Message,
+			Subject:       d.Subject,
+			Severity:      "warning",
+			Source:        "analyzer",
+			Category:      "analyzer",
+			Message:       d.Message,
+			Investigation: d.Investigation,
 		})
 	}
 	for _, fr := range fixResults {
@@ -147,9 +150,13 @@ func Reconcile(
 				}
 			}
 			newCount := oldCount + 1
+			// Patch status + the investigation field (so a new investigation
+			// summary appears on an already-known subject without recreating
+			// the CR). Other spec fields are intentionally not patched on
+			// update — the canonical subject/severity/message are stable.
 			patch := []byte(fmt.Sprintf(
-				`{"status":{"lastObserved":%q,"observationCount":%d,"runID":%q}}`,
-				now, newCount, runID,
+				`{"spec":{"investigation":%q},"status":{"lastObserved":%q,"observationCount":%d,"runID":%q}}`,
+				truncateAt(entry.Investigation, 1024), now, newCount, runID,
 			))
 			if pErr := mut.Patch(ctx, snapshot.GVRDriftReport, "", crName, types.MergePatchType, patch); pErr != nil {
 				err = pErr
@@ -174,12 +181,13 @@ func Reconcile(
 					},
 				},
 				"spec": map[string]any{
-					"subject":     entry.Subject,
-					"severity":    entry.Severity,
-					"source":      entry.Source,
-					"category":    entry.Category,
-					"message":     truncateAt(entry.Message, 4096),
-					"remediation": truncateAt(entry.Remediation, 1024),
+					"subject":       entry.Subject,
+					"severity":      entry.Severity,
+					"source":        entry.Source,
+					"category":      entry.Category,
+					"message":       truncateAt(entry.Message, 4096),
+					"remediation":   truncateAt(entry.Remediation, 1024),
+					"investigation": truncateAt(entry.Investigation, 1024),
 				},
 			},
 		}
