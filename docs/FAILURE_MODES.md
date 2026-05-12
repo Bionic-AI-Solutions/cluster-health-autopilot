@@ -1,15 +1,21 @@
 # Failure-Mode Catalog
 
-The default catalog (v0.9.5) covers **four auto-fixers** and **eight analyzers**.
+The default catalog (v1.5.2) covers **four default auto-fixers + one opt-in**
+and **seven OSS analyzers** (plus `VaultPathMissing` in the paid catalog).
 Each is a separate Go function with a published unit-test corpus under
 [`internal/`](../internal/). The "real example" column is a real incident from
 the cluster the product was built on.
+
+Since v1.5, every CRITICAL finding also passes through a **Layer-2 Investigator**
+(rule-based in OSS, optional LLM-backed in CHA-com) that attaches a root-cause
+summary before the alert reaches Slack / Alertmanager / DriftReport. See §C
+at the bottom of this document.
 
 ---
 
 ## A. Auto-fixers (whitelist; default-OFF; opt-in via `remediation.enabled=true`)
 
-Each fixer is gated by the **Mutator interface** at the type-system level: `snapshot.File` doesn't implement `Mutator`, so fixers physically cannot run against a captured snapshot. Live mode only. The remediator ClusterRole grants five narrow verbs (`pods/delete`, `jobs/delete`, `deployments/patch`, `certificaterequests/delete`, `orders/delete`); no Secret, ConfigMap, or generic CRD writes are possible regardless of how the binary is called.
+Each fixer is gated by the **Mutator interface** at the type-system level: `snapshot.File` doesn't implement `Mutator`, so fixers physically cannot run against a captured snapshot. Live mode only. The remediator ClusterRole grants five narrow verbs (`pods/delete`, `jobs/delete`, `deployments/patch`, `certificaterequests/delete`, `orders/delete`); no Secret, ConfigMap, or generic CRD writes are possible regardless of how the binary is called. The opt-in `TLSSecretMismatch` fixer (§5) conditionally adds `ingresses/patch` to that role.
 
 ### 1. `StaleErrorPods`
 
@@ -54,6 +60,18 @@ Each fixer is gated by the **Mutator interface** at the type-system level: `snap
 | **Why it's safe** | The fixer only touches **terminally-failed** CRs — never pending or in-progress issuance. cert-manager's recovery model is "delete the failed CR; I'll make a new one" — this fixer just automates that step. No private-key material is touched (Secrets are untouched). |
 | **Real example** | `dashboard-baisoln-com-tls` Certificate showed `Ready=False` for 11 hours because a CertificateRequest from the previous renewal hit an ACME rate-limit and never cleared. Once deleted, cert-manager issued a fresh CR and renewed within 90 seconds. |
 | **Source** | [`internal/fix/stuck_cert_requests.go`](../internal/fix/stuck_cert_requests.go) |
+
+### 5. `TLSSecretMismatch` (opt-in, added in v1.3)
+
+| | |
+|---|---|
+| **Symptom** | An `Ingress.spec.tls[].secretName` points at a TLS Secret whose cert is expired or expiring soon, while a healthy cert-manager `Certificate` exists in the same namespace targeting a *different* Secret name with the same host in `dnsNames`. The wires were crossed at install time — cert-manager is renewing into a Secret nobody uses; Kong serves the stale cert from the Secret the Ingress points at. |
+| **Root cause class** | Two-Secret naming drift. A hand-crafted Secret (`foo-secret`) gets the Ingress wired to it early; later cert-manager is added with a Certificate targeting a different name (`foo-tls`). The Ingress is never updated. Operator sees "cert-manager works" + "Ingress works" — both true in isolation. Discovery of the issue typically waits until the original cert expires and traffic breaks. |
+| **What it does** | Patches `Ingress.spec.tls[N].secretName` from the stale Secret to the cert-manager-managed Secret via JSON patch. Verifies the candidate is `Ready=True` and has the matching host in `dnsNames`. **Skips** protected namespaces. **Skips** GitOps-managed Ingresses (annotations: `argocd.argoproj.io/instance`, `argocd.argoproj.io/tracking-id`, `kustomize.toolkit.fluxcd.io/{name,namespace}`, `meta.helm.sh/release-{name,namespace}`; label `app.kubernetes.io/managed-by` ∈ {helm, argocd, flux, fluxcd}) — patching those would fight the reconcile loop. |
+| **Why it's safe** | The patch is narrow (one field, one Ingress), reversible (operator can patch it back), and only fires when there is independent evidence (a healthy Certificate CR) that the destination Secret is the right one. GitOps-managed Ingresses are refused because the right fix for those lives in the source repo. |
+| **Why opt-in** | Default off because GitOps adoption varies. Enable with Helm value `fixers.tlsSecretMismatch.enabled=true`, which: flips env var `CHA_FIXER_TLS_SECRET_MISMATCH=true`, registers the fixer in the catalog, and conditionally adds `networking.k8s.io/ingresses [patch]` to the remediator ClusterRole. |
+| **Real example** | `pg.bionicaisolutions.com` Ingress was wired to `pg-bionicaisolutions-com-secret` (hand-crafted, expired 2026-01-07). cert-manager Certificate `pg-bionicaisolutions-com` had been dutifully renewing into `pg-bionicaisolutions-com-tls` (the `-tls` suffix) for months. Once the cert expired, traffic broke. With this fixer enabled, the next reconcile would have repointed the Ingress before the cert went stale. |
+| **Source** | [`internal/fix/tls_secret_mismatch.go`](../internal/fix/tls_secret_mismatch.go) |
 
 ---
 
@@ -131,15 +149,65 @@ Analyzers run in both `cha diagnose` and `cha remediate`. They produce structure
 | **Output (verbatim)** | `🔎 Pod monitoring/metrics-exporter container "exporter" cannot pull image 'ghcr.io/myorg/metrics-exporter:v2.1.0': auth failure — 401 unauthorized: authentication required.` |
 | **Source** | [`internal/diagnose/image_pull_auth.go`](../internal/diagnose/image_pull_auth.go) |
 
-### 8. `IngressCoverage` (added in v0.9.x)
+### 8. `TLSSecretMismatch` (added in v1.3)
 
 | | |
 |---|---|
-| **Symptom** | An `Ingress` exposes a public hostname for which CHA has no endpoint probe target — so TLS faults, missing Kong routes, and DNS failures go undetected. This is a **probe coverage gap**, not a runtime failure. |
-| **What it produces** | Walks every `networking.k8s.io/v1` Ingress and computes the set difference: `{ingress hosts} − {probe.DefaultEndpointTargets()}`. Emits one Diagnostic per uncovered host with the exact Go file + function to edit. |
-| **Why no auto-fix** | Adding a new probe target is a code change with operator intent — it requires choosing a canonical display name and confirming the host is meant to be monitored. Auto-adding everything would hide intentional ingress-only-not-monitored decisions. |
-| **Output (verbatim)** | `🔎 Ingress nextcloud/nextcloud exposes host 'nextcloud.baisoln.com' with no endpoint probe — TLS faults, missing Kong routes, and DNS failures will go undetected. Add '{URL: "https://nextcloud.baisoln.com", Name: "<display name>"}' to probe.DefaultEndpointTargets() in internal/probe/endpoints.go (removal requires explicit operator action — never auto-removed).` |
-| **Source** | [`internal/diagnose/ingress_coverage.go`](../internal/diagnose/ingress_coverage.go) |
+| **Symptom** | Kong serves an expired (or soon-expiring) cert on a host even though cert-manager has been renewing a fresh cert in the same namespace. Both states look healthy in isolation — the Secret exists with a cert; the Certificate CR is `Ready=True`. The bug is that the Ingress points at the wrong Secret name. |
+| **What it produces** | Walks every `networking.k8s.io/v1` Ingress, parses x509 from `Secret.data.tls.crt` for each `tls[].secretName`, and when the served cert is expired or within 14 days of expiry, checks for a Certificate CR in the same namespace whose `spec.dnsNames` covers the host AND whose `spec.secretName` is a different name AND that is `Ready=True`. Emits a Diagnostic with the exact `kubectl patch` command. |
+| **Why no auto-fix in the analyzer** | The matching `TLSSecretMismatch` fixer (§A.5) IS the auto-fix path — opt-in, with a GitOps escape hatch. The analyzer always runs; the fixer is gated. |
+| **Output (verbatim)** | `🔎 Ingress pg/kong-pgadmin-ingress host pg.bionicaisolutions.com serves expired cert from Secret pg-bionicaisolutions-com-secret while cert-manager is renewing a healthy cert for the same host into Secret pg-bionicaisolutions-com-tls in the same namespace. Wires crossed — Kong is serving the wrong Secret. Remediation: kubectl -n pg patch ingress kong-pgadmin-ingress --type=json -p '[{"op":"replace","path":"/spec/tls/0/secretName","value":"pg-bionicaisolutions-com-tls"}]'` |
+| **Source** | [`internal/diagnose/tls_secret_mismatch.go`](../internal/diagnose/tls_secret_mismatch.go) |
+
+> **Note**: an earlier `IngressCoverage` analyzer (v0.9.x) was REMOVED in v1.2.
+> It warned about Ingress hosts not present in `probe.DefaultEndpointTargets()`.
+> v1.2 added auto-discovery — every Ingress host is now probed automatically
+> (with per-Ingress opt-out via `cha.bionicaisolutions.com/probe-disable=true`),
+> so the gap that analyzer warned about no longer exists.
+
+---
+
+## C. Layer-2 Investigator (added in v1.5; runs on CRITICAL findings)
+
+When a Finding or Diagnostic reaches `SeverityCritical`, a registered Investigator
+runs a read-only deep-dive and attaches a one-line root-cause Summary to the
+record before it surfaces. Renderers display the Summary as a 🔬 block in Slack
+and Alertmanager; the `DriftReport` CR persists it under `spec.investigation`.
+
+The OSS catalog registers a deterministic **rule-based Investigator**
+([`internal/investigator/rules.go`](../internal/investigator/rules.go)) by
+default. The paid CHA-com binary may replace it with an LLM-backed
+implementation that uses the same closed-enum `Environment` surface:
+
+| Tool | What it sees | Used by which rule |
+|---|---|---|
+| `DNSLookup` | A / AAAA records, resolve latency | Connection-failure, slow-DNS classification |
+| `HTTPProbe` | One follow-up request with optional `InsecureSkipVerify` | Transient-recovery confirmation, status-mismatch reproduction |
+| `TLSInspect` | Cert chain, SANs, validity, issuer | TLS-failure root-cause classification |
+| `Describe` | Read-only Kubernetes resource snapshot (no Secret values) | ExternalSecret / Secret / Certificate diagnostic enrichment |
+| `GetEvents` | Recent events involving a specific object | Backing-context for failing controllers |
+
+**Rule coverage today:**
+
+| Pattern | Tools | Conclusion |
+|---|---|---|
+| `TLS verification failed` | `TLSInspect` + `DNSLookup` | Classifies expired / SAN-mismatch / fallback-cert |
+| `connection failed — no such host` | `DNSLookup` | Surfaces DNS root cause |
+| `connection failed — context deadline / EOF` | `DNSLookup` + `HTTPProbe` (strict & insecure) | Likely-transient (if retry succeeds), or backend-down |
+| Slow DNS (>1.5s on follow-up) | `DNSLookup` | CoreDNS contention root cause |
+| `HTTP <X> (expected <Y>)` | `HTTPProbe` | Confirms cleared / 5xx / auth-walled |
+| `ExternalSecret/<ns>/<name>` not Ready | `Describe` + `GetEvents` | Vault path / property hint |
+| `missing-secret`, `missing-key` patterns | `Describe` | Confirms absence / case-mismatch |
+| `cert-expiry/<ns>/<name>` | `Describe` + `GetEvents` | Surfaces issuer/order state |
+
+Hard contract:
+- **Read-only by interface.** `Environment` exposes no mutation methods.
+- **No new RBAC.** Reuses the watcher's existing read access.
+- **20-second wall-clock cap** across all critical findings in one cycle.
+- **Soft-fail per item.** Investigation is additive; the original finding always surfaces.
+- **Disable with `CHA_INVESTIGATOR=off`** (env var on the watcher Deployment).
+
+Design rationale in [`docs/design/2026-05-investigator-agent.md`](design/2026-05-investigator-agent.md).
 
 ---
 

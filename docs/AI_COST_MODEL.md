@@ -15,16 +15,58 @@ diagnostics, ~1KB redacted Diagnostic JSON per LLM call):
 | Tier | Calls/cycle | Avg input tokens | Avg output tokens | Per-cycle total | Per-hour (6 cycles) |
 |---|---|---|---|---|---|
 | T0 narration | 100 (one per diag) | ~400 | ~150 | ~55K | ~330K |
+| L2 investigator — rule-based (OSS) | up to ~5 (critical only) | 0 | 0 | 0 | 0 |
+| L2 investigator — LLM-backed (paid) | up to ~5 (critical only) | ~500 (~2 KB) | ~125 (~500 B) | ~3.1K | ~18.75K |
 | T1 single fix | up to 5 (rate-limited) | ~500 | ~250 | ~3.75K | ~22.5K |
 | T2 multi-step | up to 5 plans/hour | ~700 | ~750 | n/a | ~7.25K |
 | T3 vault runbook | up to 5 runbooks/hour | ~700 | ~500 | n/a | ~6K |
 
-**Default rate-limit budget**: `ai.rateLimit.actionsPerHour=5`.
+**Default rate-limit budget**: `ai.rateLimit.actionsPerHour=5`. The
+LLM-backed Layer-2 investigator shares this budget under the
+investigation key; the rule-based investigator is unrate-limited
+because it consumes no tokens.
 **Default token budget**: `ai.rateLimit.tokensPerHour=1000000`.
 
 Round-trip latency budget per call: 30 seconds (`enrichmentTimeout`).
 At ~50ms per token on a well-provisioned LLM endpoint, that's ample
 for both prompt and response of typical size.
+
+---
+
+## Layer-2 Investigator: wall-time and token profile
+
+The Layer-2 Investigator is a sibling of T0–T3, not a step on the
+T-tier ladder. It runs only on critical findings, after post-fix
+re-diagnose, and its cost profile depends entirely on which
+implementation is registered.
+
+**Rule-based (OSS, default)**:
+- **Token cost**: zero — no LLM is consulted.
+- **Wall-time**: ~50–500 ms per investigation, depending on which
+  rules fire (TLS handshake + DNS lookup dominates the high end).
+- **Per-cycle ceiling**: 20 s of wall-clock for the whole cycle's
+  worth of investigations (`investigationTimeout` in
+  `internal/watcher/investigate.go`). Excess items are skipped, not
+  retried.
+- **Network egress**: the same DNS/TCP/TLS traffic the Endpoints
+  probe was already issuing; no new outbound destinations.
+
+**LLM-backed (paid, opt-in)**:
+- **Input**: ~2 KB per investigation (redacted Finding/Diagnostic +
+  tool transcripts accumulated so far). Roughly 500 input tokens.
+- **Output**: ~500 B (tool selection JSON or final summary). Roughly
+  125 output tokens.
+- **Calls per cycle**: bounded by the rate limit (default 5/hr) and
+  the per-cycle 20s wall-clock ceiling. Typical real-world load on a
+  healthy cluster is <5 investigations per cycle.
+- **Default rate-limit**: 5 investigations per hour, shared with the
+  T1+ proposal budget. Investigations exceeding this emit
+  `ai.investigator.budget_exceeded` and fall back to whatever the
+  finding looked like before investigation.
+
+Either implementation lands on the same DriftReport
+`spec.investigation` field and the same `🔬` rendering — only the
+cost line changes when you swap.
 
 ---
 
@@ -68,6 +110,9 @@ hardening), the following metrics are exposed:
 | `cha_ai_circuit_breaker_state` | Gauge | (none) | 0=closed, 1=open |
 | `cha_ai_cache_hits_total` | Counter | (none) | Response-cache hits |
 | `cha_ai_cache_misses_total` | Counter | (none) | Response-cache misses |
+| `cha_ai_investigations_total` | Counter | `implementation`, `conclusion` | Investigations completed; `implementation ∈ {rule_based, llm}` |
+| `cha_ai_investigation_duration_seconds` | Histogram | `implementation` | Per-investigation wall-time |
+| `cha_ai_investigation_tool_calls_total` | Counter | `implementation`, `tool` | `Environment` method invocations |
 
 ---
 

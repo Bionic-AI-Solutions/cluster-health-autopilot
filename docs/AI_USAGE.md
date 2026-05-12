@@ -1,47 +1,67 @@
 # AI in Cluster Health Autopilot
 
-The OSS `cha` binary has **zero AI in the hot path**. This is a positioning
-commitment, not a transient state. AI capability ships in the **commercial
-CHA-com binary** as an opt-in layered tier system. Both binaries share the
-same OSS engine; the AI layer is purely additive.
+The OSS `cha` binary keeps **LLMs off the hot path**. This is a positioning
+commitment, not a transient state. LLM-driven enrichment, proposal, and
+runbook generation ship in the **commercial CHA-com binary** as an opt-in
+layered tier system.
+
+As of v1.5, the OSS engine ships one *deterministic* read-only agent —
+the rule-based **Layer-2 Investigator**. It uses no LLM; it pattern-
+matches critical findings and runs a fixed set of read-only follow-up
+probes (DNS / HTTP / TLS / describe / events). It is auditable line by
+line, registered through the same `pkg/ai.Investigator` interface the
+paid LLM-backed implementation uses, and replaceable by the paid binary
+when CHA-com is installed. The OSS and paid implementations share the
+same closed `Environment` action surface, so the read-only safety
+property holds either way.
+
+Both binaries share the same OSS engine; the LLM layer is purely additive
+on top of it.
 
 This document explains:
-1. What stays AI-free in OSS, forever
-2. What AI adds on top in CHA-com, and how it's gated
+1. What stays LLM-free in OSS, forever (including the rule-based investigator)
+2. What LLMs add on top in CHA-com, and how it's gated
 3. Why we built it this way
 
 ---
 
-## 1. The OSS engine is and stays AI-free
+## 1. The OSS engine is and stays LLM-free
 
 | Component | Mechanism | Source |
 |---|---|---|
-| 6 probes (Ceph, Nodes, Postgres, PVCs, Services, Endpoints) | CRD `.status` field reads, HTTP(S) GET against canonical hostnames | [`internal/probe/`](../internal/probe/) |
-| 8 analyzers (`SecretKeyMissing`, `FailingExternalSecrets`, `ProactiveSecretKeyCheck`, `UnprovisionedSecret`, `VaultPathMissing`, `CertExpiry`, `ImagePullAuth`, `IngressCoverage`) | Regex on kubelet events, owner-chain walks, ESO target matching, direct Vault key-name lookups, cert-manager status reads, ingress-vs-endpoint set diff | [`internal/diagnose/`](../internal/diagnose/) |
-| 4 fixers (`StaleErrorPods`, `StuckJobsWithBadSecretRef`, `StuckRSPods`, `StuckCertificateRequests`) | Pattern-match conditions → call API verbs from a closed 5-verb whitelist | [`internal/fix/`](../internal/fix/) |
-| Watcher event loop | Kubernetes watch + 10s debounce + full probe/analyze cycle + fingerprint dedup | [`internal/watcher/`](../internal/watcher/) |
+| 6 probes (Ceph, Nodes, Postgres, PVCs, Services, Endpoints) | CRD `.status` field reads, HTTP(S) GET against canonical hostnames. The `Endpoints` probe auto-discovers Ingress hosts (v1.2+) and applies retry / N-of-M streak suppression (v1.4+). | [`internal/probe/`](../internal/probe/) |
+| 7 analyzers (`SecretKeyMissing`, `FailingExternalSecrets`, `ProactiveSecretKeyCheck`, `UnprovisionedSecret`, `VaultPathMissing`, `CertExpiry`, `ImagePullAuth`, `TLSSecretMismatch`) | Regex on kubelet events, owner-chain walks, ESO target matching, direct Vault key-name lookups, cert-manager status reads, Ingress↔Certificate secret-name cross-check | [`internal/diagnose/`](../internal/diagnose/) |
+| 4 default + 1 opt-in fixer (`StaleErrorPods`, `StuckJobsWithBadSecretRef`, `StuckRSPods`, `StuckCertificateRequests`; opt-in: `TLSSecretMismatch`) | Pattern-match conditions → call API verbs from a closed whitelist. The opt-in TLS fixer JSON-patches Ingress `spec.tls[].secretName`; skips GitOps-managed Ingresses (ArgoCD / Flux / Helm) and protected namespaces. | [`internal/fix/`](../internal/fix/) |
+| Layer-2 Investigator (rule-based, v1.5+) | Pattern-match critical Findings / Diagnostics → run a closed set of read-only tools (DNS lookup, HTTP probe, TLS inspect, describe, events) → attach a `🔬` summary and structured observations to the alert and DriftReport CR. No LLM, no new RBAC. | [`internal/investigator/rules.go`](../internal/investigator/rules.go) |
+| Watcher event loop | Kubernetes watch + 10s debounce + full probe/analyze cycle + fingerprint dedup. Investigation runs **after** post-fix re-diagnose so fixers can resolve issues before they are investigated. | [`internal/watcher/`](../internal/watcher/) |
 | Three-channel Slack routing | Subject-prefix dispatch — post-fix CHA-acted set → `#ceph-alerts`, unfixed → `#ceph-critical`, daily digest → `#healthinfo` | [`internal/report/routing.go`](../internal/report/routing.go) |
 | Alertmanager hub integration | POST `/api/v2/alerts` every cycle; AM handles dedup, silencing, fan-out | [`internal/report/alertmanager.go`](../internal/report/alertmanager.go) |
 | Daily digest | Reads DriftReport CR history; classifies new/persistent/auto-fixed | [`internal/report/daily.go`](../internal/report/daily.go) |
 | JWT signing primitives | Ed25519 (EdDSA) via crypto/ed25519; minimal deps | [`pkg/ai/jwt.go`](../pkg/ai/jwt.go) |
 
 Same input → same diagnosis, every time, **auditable from source**. An
-SRE can read the entire fix list in an afternoon.
+SRE can read the entire fix list and the investigator rules in an
+afternoon.
 
 **Even when CHA-com is installed**, the OSS engine code paths are
 unchanged. If `ai.enabled=false` (the default), CHA-com behaves
-bit-for-bit identically to the OSS `cha` binary. There is no hidden
-AI path that activates without operator opt-in.
+identically to the OSS `cha` binary at the LLM boundary: no LLM calls,
+no `🤖` enrichment, no Apply Fix buttons, no `ai.*` audit events. The
+rule-based investigator still runs (it's part of OSS), and CHA-com can
+override it with an LLM-backed implementation via the same
+`Registry.RegisterInvestigator` hook — but the OSS path is the default
+and the override is opt-in.
 
 ---
 
-## 2. CHA-com adds AI as four opt-in tiers
+## 2. CHA-com adds LLM tiers on top of the OSS engine
 
 Each tier is documented in [AI_TIERS.md](AI_TIERS.md). Quick overview:
 
 | Tier | What it adds | What it does **NOT** add |
 |---|---|---|
 | **T0 Narration** | LLM-generated 2–4 sentence root-cause narrative under each diagnostic | Any mutation capability. Tier 0 is read-only enrichment. |
+| **L2 Investigator (LLM-backed)** | Replaces the OSS rule-based investigator with an LLM that picks read-only tools dynamically from the same closed `Environment` enum. Renders under the same `🔬` block. | Any new tool, any mutation capability, any new RBAC. The action surface is unchanged. |
 | **T1 Single fix** | One-click signed URLs that apply an existing OSS fixer to a specific target | New verbs, new RBAC, autonomous execution |
 | **T2 Multi-step plan** | Sequential multi-action plans with per-step approval | Bypass of step-by-step approval; plans cannot self-modify |
 | **T3 Vault runbook** | Generated `vault kv patch` runbook + dual-approval recording | CHA-com NEVER writes to Vault. Runbook is human-run. |
@@ -113,10 +133,13 @@ no raw identifier leaks into constructed prompts.
 
 ---
 
-## Future: where AI could enter the OSS engine (and where it won't)
+## Future: where LLMs could enter the OSS engine (and where they won't)
 
-Three places AI could plausibly land in OSS `v2+`, *none of which are
-in the hot path of the in-cluster install*:
+The rule-based Layer-2 investigator ships in OSS today. It pattern-
+matches failures and runs a fixed set of read-only tools; the LLM
+versions of the same interface live in CHA-com. Three additional
+places LLMs could plausibly land in OSS `v2+`, *none of which are in
+the hot path of the in-cluster install*:
 
 1. **Verified Signature Library curation** (offline, asynchronous):
    LLM-assisted clustering of customer-contributed incident reports to
@@ -133,9 +156,12 @@ in the hot path of the in-cluster install*:
    should I fix today" is a ranking problem where light ML helps.
    This is a separate product, not the OSS engine.
 
-When AI does enter OSS, it will be:
+When new LLM capability does enter OSS, it will follow the same shape
+as today's rule-based Layer-2 investigator:
 - **Off by default** in any path that touches cluster state
-- **Outside the cron loop** that runs on every customer cluster
+- **Read-only by construction** — closed action enum, no shell-out
+- **Outside the cron loop** that runs on every customer cluster, or
+  trivially disabled with a single env var if it lives inside the loop
 - **Auditable** — LLM-assisted output goes through the same
   deterministic safety gates as a hand-written signature
 - **Privacy-respecting** — customer cluster state never leaves the

@@ -320,7 +320,7 @@ This deploys:
 helm install cha cha/cluster-health-autopilot \
   --namespace cluster-health-autopilot \
   --create-namespace \
-  --set image.tag=v0.9.5 \
+  --set image.tag=v1.5.2 \
   --set watcher.enabled=true \
   --set alertmanager.enabled=true \
   --set alertmanager.url=http://alertmanager.<your-ns>.svc.cluster.local:9093 \
@@ -344,7 +344,7 @@ kubectl create secret generic cha-slack-healthinfo \
 helm install cha cha/cluster-health-autopilot \
   --namespace cluster-health-autopilot \
   --create-namespace \
-  --set image.tag=v0.9.5 \
+  --set image.tag=v1.5.2 \
   --set watcher.enabled=true \
   --set slack.alerts.enabled=true --set slack.alerts.secretName=cha-slack-ceph-alerts \
   --set slack.critical.enabled=true --set slack.critical.secretName=cha-slack-ceph-critical \
@@ -389,7 +389,7 @@ DriftReports are Kubernetes objects — they integrate with any existing alertin
 
 ### 3.4 — Alerting and reporting
 
-CHA v0.9.5 offers two complementary delivery modes — pick one or both:
+CHA v1.5.2 offers two complementary delivery modes — pick one or both:
 
 **Mode A: Alertmanager-as-hub (recommended)**. CHA posts active issues to
 `/api/v2/alerts` every cycle. Alertmanager handles dedup, silencing, and
@@ -496,14 +496,17 @@ kubectl create job --from=cronjob/cha-cluster-health-autopilot-remediate cha-rem
 kubectl logs -f job/cha-remediate-dryrun -n cluster-health-autopilot
 ```
 
-### 4.2 — The three whitelisted fixers
+### 4.2 — The whitelisted fixers
 
-| Fixer | What it fixes | Safety constraint |
-|---|---|---|
-| **StaleErrorPods** | Pods in `Error`/`OOMKilled` state that are owned by a completed `Job` | Only deletes if the owning Job is already complete — never touches live Job pods |
-| **StuckJobsWithBadSecretRef** | A `Job` frozen due to `CreateContainerConfigError` on a bad Secret ref, when a newer CronJob run is already pending | Only deletes if: (1) Job is CronJob-owned, (2) Job is frozen (no active pods, no succeeded pods), (3) a newer run exists |
-| **StuckRSPods** | Pods owned by an old `ReplicaSet` that the `Deployment` has already moved past | Only restarts if the RS's revision is behind the current Deployment revision |
-| **StuckCertificateRequests** | `CertificateRequest` CRs with `Ready=False/reason=Failed` or `failureTime` set; ACME `Order` CRs in state `errored` or `invalid` | Only deletes terminally-failed CRs — never touches pending/in-progress issuance; cert-manager recreates the CR immediately and retries |
+Four are on by default; one (TLSSecretMismatch, v1.3) is opt-in:
+
+| Fixer | What it fixes | Safety constraint | Default |
+|---|---|---|---|
+| **StaleErrorPods** | Pods in `Error`/`OOMKilled` state that are owned by a completed `Job` | Only deletes if the owning Job is already complete — never touches live Job pods | on |
+| **StuckJobsWithBadSecretRef** | A `Job` frozen due to `CreateContainerConfigError` on a bad Secret ref, when a newer CronJob run is already pending | Only deletes if: (1) Job is CronJob-owned, (2) Job is frozen (no active pods, no succeeded pods), (3) a newer run exists | on |
+| **StuckRSPods** | Pods owned by an old `ReplicaSet` that the `Deployment` has already moved past | Only restarts if the RS's revision is behind the current Deployment revision | on |
+| **StuckCertificateRequests** | `CertificateRequest` CRs with `Ready=False/reason=Failed` or `failureTime` set; ACME `Order` CRs in state `errored` or `invalid` | Only deletes terminally-failed CRs — never touches pending/in-progress issuance; cert-manager recreates the CR immediately and retries | on |
+| **TLSSecretMismatch** (v1.3) | Patches `Ingress.spec.tls[].secretName` when the analyzer's matching diagnostic fires (wrong name, missing Secret, wrong type) | Skips protected namespaces AND any Ingress carrying ArgoCD / Flux / Helm ownership annotations or the `app.kubernetes.io/managed-by` label; the analyzer still emits the diagnostic regardless | **off** (`--set fixers.tlsSecretMismatch.enabled=true`) |
 
 **Safety properties** (explain to the audience):
 1. All fixers are **snapshot-mode-refused at compile time** via Go's type system — they cannot be called in `--snapshot` mode, only `--live`.
@@ -668,7 +671,17 @@ EOF
 
 Within ~10–15 seconds (debounce + one diagnose cycle), the alert flows
 either via Alertmanager (if enabled) → its configured Slack receiver, OR
-directly to `#ceph-critical` (since CHA cannot auto-fix an ESO):
+directly to `#ceph-critical` (since CHA cannot auto-fix an ESO).
+
+> **Note on endpoint-probe flake suppression (v1.4+).** When the failure mode
+> is a transient endpoint error (connection reset, EOF, `no such host`,
+> i/o timeout, context deadline), the first cycle posts a `[transient, 1/2]`
+> SeverityWarning rather than a critical. If the issue persists, the second
+> consecutive cycle escalates to SeverityCritical. Deterministic failures
+> (TLS handshake error, wrong HTTP status, invalid URL) bypass the streak
+> counter and fire critical on the first cycle. For the FailingExternalSecrets
+> demo above, the diagnostic fires on cycle 1 because the ESO failure is
+> deterministic; for a network-flake demo, expect a warning first.
 
 ```
 🔴 CHA Issues | <cluster-name>
@@ -698,7 +711,7 @@ helm upgrade cha cha/cluster-health-autopilot \
 ```
 
 Now on each cycle, after the diagnose pass the watcher:
-1. Runs the whitelisted fixers (`StaleErrorPods`, `StuckJobsWithBadSecretRef`, `StuckRSPods`, `StuckCertificateRequests`)
+1. Runs the whitelisted fixers (`StaleErrorPods`, `StuckJobsWithBadSecretRef`, `StuckRSPods`, `StuckCertificateRequests`, and — if `fixers.tlsSecretMismatch.enabled=true` — `TLSSecretMismatch`)
 2. Re-diagnoses post-fix to capture the accurate cluster state
 3. Posts a combined Slack message: what was fixed + remaining active issues
 
@@ -707,6 +720,202 @@ Now on each cycle, after the diagnose pass the watcher:
 - Slack remains quiet for stable clusters — no alert fatigue.
 - Remediation is the same whitelist as `cha remediate --live`; no new risk surface.
 - Pod restart does not re-flood Slack — DriftReport CRs serve as the durable state.
+
+### 5.5 — TLSSecretMismatch demo (v1.3, analyzer always on, fixer opt-in)
+
+This scenario shows: (a) the analyzer surfaces a precise `kubectl patch` command for a
+typo in `spec.tls[].secretName`, (b) optionally the opt-in fixer applies that patch
+itself, and (c) the GitOps escape hatch suppresses the fixer for ArgoCD/Flux/Helm-owned
+Ingresses.
+
+**Inject a deliberately mismatched Ingress**:
+
+```bash
+# Create a valid TLS secret in a test namespace
+kubectl create namespace tls-demo
+kubectl create secret tls demo-tls -n tls-demo \
+  --cert=/path/to/cert.pem --key=/path/to/key.pem
+
+# Create an Ingress referencing the WRONG secretName (typo)
+kubectl apply -f - <<EOF
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: tls-mismatch-demo
+  namespace: tls-demo
+spec:
+  ingressClassName: kong
+  tls:
+    - hosts: ["demo.example.com"]
+      secretName: demo-tls-typo   # the real secret is "demo-tls"
+  rules:
+    - host: demo.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: nonexistent
+                port: { number: 80 }
+EOF
+```
+
+Within one watcher cycle, the analyzer emits a diagnostic to `#ceph-critical`:
+
+```
+⚠️ Ingress/tls-demo/tls-mismatch-demo
+spec.tls[0].secretName "demo-tls-typo" not found in namespace tls-demo
+(closest match: demo-tls).
+
+Remediation:
+  kubectl patch ingress tls-mismatch-demo -n tls-demo --type=json \
+    -p='[{"op":"replace","path":"/spec/tls/0/secretName","value":"demo-tls"}]'
+```
+
+**Show the fixer escape hatch (recommended before enabling)** — annotate the Ingress as
+GitOps-managed; the analyzer still fires, but the fixer will refuse to mutate:
+
+```bash
+kubectl annotate ingress tls-mismatch-demo -n tls-demo \
+  argocd.argoproj.io/instance="demo-app"
+```
+
+Now enable the opt-in fixer:
+
+```bash
+helm upgrade cha cha/cluster-health-autopilot \
+  --namespace cluster-health-autopilot --reuse-values \
+  --set fixers.tlsSecretMismatch.enabled=true
+```
+
+Watch the logs:
+
+```bash
+kubectl logs -f deployment/cha-cluster-health-autopilot-watcher \
+  -n cluster-health-autopilot | grep -i tls
+# Expected:
+#   analyzer:TLSSecretMismatch emitted diagnostic for tls-demo/tls-mismatch-demo
+#   fixer:TLSSecretMismatch SKIPPED (gitops-managed: argocd.argoproj.io/instance)
+```
+
+Remove the GitOps annotation to let the fixer act:
+
+```bash
+kubectl annotate ingress tls-mismatch-demo -n tls-demo \
+  argocd.argoproj.io/instance-
+```
+
+The next cycle patches the Ingress; the diagnostic resolves; `#ceph-alerts` posts a
+`cha_fixer_acted` confirmation.
+
+```bash
+kubectl get ingress tls-mismatch-demo -n tls-demo \
+  -o jsonpath='{.spec.tls[0].secretName}'
+# demo-tls
+```
+
+**Talking points**:
+- The analyzer is *always on* — operators see the precise patch command immediately even
+  without enabling the fixer. Many teams will stay on this posture.
+- The fixer is *opt-in* and the Helm flag is also what mints the
+  `networking.k8s.io/ingresses [patch]` verb on the remediator ClusterRole. With the
+  flag off, nothing in the chart can patch any Ingress — auditable from the rendered
+  RBAC alone.
+- The GitOps escape hatch is automatic for ArgoCD / Flux / Helm and for any
+  `app.kubernetes.io/managed-by` label — CHA never fights another reconciler.
+
+Clean up:
+
+```bash
+kubectl delete namespace tls-demo
+```
+
+### 5.6 — Layer-2 Investigator demo (v1.5, OSS rule-based)
+
+This scenario shows the `🔬` Investigator block on a deliberately broken Ingress whose
+host does not resolve in DNS. The rule-based Investigator pattern-matches the
+"connection failure" finding, runs `DNSLookup` against the host, classifies it as a DNS
+issue, and attaches a Summary to the Slack/AM message and the DriftReport.
+
+**Inject an Ingress with a non-resolving host**:
+
+```bash
+kubectl apply -f - <<EOF
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: investigator-demo
+  namespace: default
+spec:
+  ingressClassName: kong
+  rules:
+    - host: definitely-not-a-real-host.invalid.example
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: nonexistent
+                port: { number: 80 }
+EOF
+```
+
+Wait two watcher cycles (~20–25 s). The first cycle posts a `[transient, 1/2]` warning
+(see §5.3); the second cycle escalates and the Investigator runs.
+
+Slack `#ceph-critical` output:
+
+```
+🔴 Endpoints/definitely-not-a-real-host.invalid.example
+GET https://definitely-not-a-real-host.invalid.example/ failed:
+  dial tcp: lookup definitely-not-a-real-host.invalid.example: no such host
+
+🔬 Investigation
+  DNS lookup for `definitely-not-a-real-host.invalid.example` failed with NXDOMAIN.
+  Resolver responded (12 ms) — this is an upstream/zone problem, not a slow-DNS
+  symptom. Verify the Ingress host has an A/AAAA/CNAME record in the cluster's
+  upstream DNS, or remove the host from the Ingress.
+```
+
+The same Summary is persisted on the DriftReport:
+
+```bash
+kubectl get driftreport -A -o json \
+  | jq '.items[] | select(.spec.subject | test("investigator-demo"))
+         | {subject:.spec.subject, investigation:.spec.investigation}'
+```
+
+**Show the kill switch** (CHA-com runs the same demo but swaps in the LLM-backed
+implementation — same `🔬` block, richer prose):
+
+```bash
+# Disable cluster-wide
+kubectl set env deployment/cha-cluster-health-autopilot-watcher \
+  -n cluster-health-autopilot CHA_INVESTIGATOR=off
+
+# Next cycle: the diagnostic fires normally, but with no 🔬 block.
+# Re-enable by removing the env var or setting it to empty:
+kubectl set env deployment/cha-cluster-health-autopilot-watcher \
+  -n cluster-health-autopilot CHA_INVESTIGATOR-
+```
+
+Clean up:
+
+```bash
+kubectl delete ingress investigator-demo -n default
+```
+
+**Talking points**:
+- Zero new RBAC. The Investigator uses verbs already on the reader ClusterRole.
+- Deterministic and reproducible — rule-based output for the same finding is byte-for-byte
+  identical, which matters for audit reviews.
+- The CHA-com binary plugs an LLM-backed implementation into the same interface and
+  respects the same `CHA_INVESTIGATOR=off` kill switch; design rationale at
+  [`docs/design/2026-05-investigator-agent.md`](design/2026-05-investigator-agent.md).
+- Operators can scan `DriftReport.spec.investigation` cluster-wide with one `kubectl get
+  driftreports -o json | jq`; the field is durable and survives watcher restarts.
 
 ---
 
@@ -799,7 +1008,7 @@ The ask: "Let us deploy the Helm chart to one non-prod namespace with the watche
 | Watcher posts Slack on every resync | `--slack-repeat-interval` defaults to 4 h; reduce alert volume with `watcher.slack.repeatInterval: 0` to disable repeats |
 | Watcher not firing on CRD resources (e.g. ExternalSecrets) | Normal if the CRD is not installed in this cluster — the watcher skips the watch silently. Check logs for `watch … no matches for kind` |
 
-## Appendix B — Full Analyzer + Probe + Fixer Catalog (v0.9.5)
+## Appendix B — Full Analyzer + Probe + Fixer Catalog (v1.5.2)
 
 **Probes** (read cluster state, report findings):
 | Probe | What it checks |
@@ -809,9 +1018,9 @@ The ask: "Let us deploy the Helm chart to one non-prod namespace with the watche
 | CNPG / Spilo | CloudNativePG `Cluster` CRD; falls back to Spilo pods if CNPG absent |
 | PVCs | Pending PVCs, Lost PVCs |
 | Services | Pods in CrashLoopBackOff, OOMKilled, Error with no restart budget |
-| **Endpoints** (v0.9.x) | HTTP(S) GET against canonical hostnames (TLS handshake, redirect handling, 2xx/3xx accepted); 10s timeout per target |
+| **Endpoints** (v1.2+) | HTTP(S) GET against canonical hostnames AND auto-discovered Ingress hosts (TLS handshake, redirect handling, 2xx/3xx accepted); 10 s timeout per target; v1.4 adds in-cycle retry on transient errors and a 2-of-2 streak counter before SeverityCritical |
 
-**Analyzers** (cross-resource correlation, emit diagnostics):
+**Analyzers** (cross-resource correlation, emit diagnostics — 7 in OSS):
 | Analyzer | What it detects |
 |---|---|
 | SecretKeyMissing | Pod `envFrom`/`env.valueFrom.secretKeyRef` references a key absent from the Secret object |
@@ -821,15 +1030,26 @@ The ask: "Let us deploy the Helm chart to one non-prod namespace with the watche
 | VaultPathMissing | Queries Vault directly for every path referenced by ExternalSecrets — closes the L1 stale-Ready window; groups outage errors |
 | ImagePullAuth | ImagePullBackOff with auth-signal event messages (401, unauthorized, denied, pull access denied) |
 | CertExpiry | cert-manager `Certificate`: not-Ready, expired, or expiring within 14 days |
-| **IngressCoverage** (v0.9.x) | Walks every Ingress; flags hosts not covered by the endpoint probe — closes "ingress exists but unmonitored" blind spots |
+| **TLSSecretMismatch** (v1.3) | Ingress `spec.tls[].secretName` references a missing Secret, wrong type, or unusable cert/key data; emits exact `kubectl patch` to correct |
 
-**Fixers** (mutation, whitelist-only, refused in snapshot mode):
-| Fixer | What it does |
+> **Removed in v1.2:** the `IngressCoverage` analyzer. The endpoint probe now
+> auto-discovers Ingress hosts cluster-wide, so the "ingress exists but unmonitored"
+> blind spot it warned about no longer exists.
+
+**Fixers** (mutation, whitelist-only, refused in snapshot mode — 4 default + 1 opt-in):
+| Fixer | What it does | Default |
+|---|---|---|
+| StaleErrorPods | Deletes Error/Failed-state pods owned by a completed Job (or unowned); skips controller-owned pods | on |
+| StuckJobsWithBadSecretRef | Deletes frozen CronJob-owned Jobs in CCE so the next scheduled tick spawns a fresh Job | on |
+| StuckRSPods | Rollout-restarts Deployments with pods stuck on old ReplicaSets; refuses when the failure is "couldn't find key" (would reproduce the same error) | on |
+| **StuckCertificateRequests** (v0.9.1) | Deletes terminally-failed `CertificateRequest` + ACME `Order` CRs; cert-manager recreates the CR and retries | on |
+| **TLSSecretMismatch** (v1.3, opt-in) | Patches Ingress `spec.tls[].secretName` to a valid Secret. Skips protected namespaces AND GitOps-managed Ingresses (ArgoCD/Flux/Helm/managed-by). Enable with `--set fixers.tlsSecretMismatch.enabled=true` — this also adds the `networking.k8s.io/ingresses [patch]` verb to the remediator ClusterRole | **off** |
+
+**Layer-2 root-cause classifier**:
+| Component | What it does |
 |---|---|
-| StaleErrorPods | Deletes Error/Failed-state pods owned by a completed Job (or unowned); skips controller-owned pods |
-| StuckJobsWithBadSecretRef | Deletes frozen CronJob-owned Jobs in CCE so the next scheduled tick spawns a fresh Job |
-| StuckRSPods | Rollout-restarts Deployments with pods stuck on old ReplicaSets; refuses when the failure is "couldn't find key" (would reproduce the same error) |
-| **StuckCertificateRequests** (v0.9.1) | Deletes terminally-failed `CertificateRequest` + ACME `Order` CRs; cert-manager recreates the CR and retries |
+| **Rule-based Investigator** (v1.5, OSS, default-on) | Pattern-matches each finding (TLS expiry, SAN mismatch, connection failure with transient detection, HTTP status, slow DNS, ExternalSecret, Secret missing/missing-key, Certificate expiry) and runs read-only tools (`DNSLookup`, `HTTPProbe`, `TLSInspect`, `Describe`, `GetEvents`). Attaches a `🔬` Summary to Slack/AM/DriftReport. No new RBAC. Disable with `CHA_INVESTIGATOR=off` |
+| **LLM-backed Investigator** (CHA-com only) | Same interface; consults rule-based first, falls back to LLM for richer free-form writeups on rule-misses |
 
 **Routing & reporting**:
 | Component | What it does |
@@ -838,3 +1058,4 @@ The ask: "Let us deploy the Helm chart to one non-prod namespace with the watche
 | **Three-channel Slack** (v0.9.4) | `#ceph-alerts` (CHA-fixed) · `#ceph-critical` (needs human) · `#healthinfo` (daily digest) |
 | **Daily digest** (v0.9.4) | `cha diagnose --format=daily` reads DriftReport CR history; categorizes new (firstObserved < 24h) / persistent / auto-fixed |
 | **DriftReport seeding** (v0.9.0) | Watcher seeds its seen-map from existing DriftReport CRs on pod startup — no Slack flood after rolling update |
+| **DriftReport `spec.investigation`** (v1.5) | Investigator Summary persisted on every Create AND Update path; maxLength 1024 |

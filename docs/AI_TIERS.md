@@ -1,14 +1,18 @@
-# AI Tiers — Definitive Specification (v1.0.0)
+# AI Tiers — Definitive Specification (v1.5.x)
 
-This document is the single source of truth for the four AI tiers shipped
-in CHA-com v1.0.0. Operators reference this when sizing budgets, picking
-a deployment posture, or reasoning about blast radius.
+This document is the single source of truth for the AI tiers shipped in
+CHA-com. The tier family is **T0 → T1 → T2 → T3**, with a sibling
+**Layer-2 Investigator** tier that ships in OSS as a deterministic
+rule-based implementation and in CHA-com as an LLM-backed override.
+Operators reference this when sizing budgets, picking a deployment
+posture, or reasoning about blast radius.
 
 **Companion docs**:
 - [AI_USAGE.md](AI_USAGE.md) — why we have AI tiers (positioning)
 - [THREAT_MODEL_AI.md](THREAT_MODEL_AI.md) — OWASP LLM Top 10 mapping
 - [ADVERSARIAL_ANALYSIS.md §8](ADVERSARIAL_ANALYSIS.md#8-ai-tier-attack-surface) — security review of the AI surface
 - [SETUP_GUIDE.md §14](SETUP_GUIDE.md#14-ai-tier-setup) — installation walkthrough
+- [design/2026-05-investigator-agent.md](design/2026-05-investigator-agent.md) — Layer-2 design document
 
 ---
 
@@ -37,26 +41,32 @@ response. Every mutation passes through:
 Higher tiers grow *coverage* (what kinds of issues the AI can analyze
 and propose), not *autonomy*.
 
+Layer-2 is a special case: it is **read-only by construction** (the
+Environment interface is a closed set of read-only tools) and therefore
+sits outside the proposal/approval/execution chain. It runs whether or
+not any other tier is enabled, and the rule-based implementation that
+ships in OSS uses no LLM at all.
+
 ---
 
 ## Tier matrix
 
-| Property | T0 Narration | T1 Single fix | T2 Multi-step | T3 Vault runbook |
-|---|---|---|---|---|
-| **What ships** | Slack/AM `🤖` enrichment block | "Apply Fix" button | Step-by-step approval | Dual-approval runbook |
-| **LLM input** | Diagnostic (redacted) | + matching fixer name | + cross-resource context | + ESO refs |
-| **LLM output** | EnrichedDiagnostic JSON | AIProposedAction | up to 5 sequential actions | VaultRunbook |
-| **Mutation surface** | None | OSS whitelist (5 verbs) | Same as T1 | Zero — runbook is human-run |
-| **Approval gate** | n/a — read-only | One-click signed URL | One-click per step | **Dual** (2 distinct approvers, 30-min audit window) |
-| **Click TTL** | n/a | 15 min | 15 min | 90 min |
-| **Replay protection** | n/a | JTI one-time-use | JTI one-time-use | JTI one-time-use |
-| **Protected NS blocked** | n/a | LLM + validator + admission | Per-step | n/a — Vault path allowlist |
-| **Rollback required** | n/a | Yes | Per-step | Manual runbook step |
-| **Post-apply verify** | n/a | 60s window | Per-step gate to next | n/a |
-| **Audit events** | `ai.enrichment.*` | + `ai.proposal.*`, `ai.approval.*`, `ai.action.*` | + `ai.plan.*` | + `ai.runbook.*` |
-| **New RBAC** | none | none (reuses remediator) | none | none |
-| **Default** | off | off | off | off |
-| **Risk class** | Privacy (sends diagnostic JSON to LLM) | Mutation (with approval) | Mutation × N | Vault knowledge leak (key NAMES only) |
+| Property | T0 Narration | **L2 Investigator** | T1 Single fix | T2 Multi-step | T3 Vault runbook |
+|---|---|---|---|---|---|
+| **What ships** | Slack/AM `🤖` enrichment block | Slack/AM `🔬` investigation block | "Apply Fix" button | Step-by-step approval | Dual-approval runbook |
+| **LLM input** | Diagnostic (redacted) | OSS: none. Paid: Finding/Diagnostic + tool transcripts (redacted) | + matching fixer name | + cross-resource context | + ESO refs |
+| **LLM output** | EnrichedDiagnostic JSON | OSS: none (rule-driven). Paid: tool selections → InvestigationResult | AIProposedAction | up to 5 sequential actions | VaultRunbook |
+| **Mutation surface** | None | **None** (Environment is closed read-only enum) | OSS whitelist (5 verbs) | Same as T1 | Zero — runbook is human-run |
+| **Approval gate** | n/a — read-only | n/a — read-only | One-click signed URL | One-click per step | **Dual** (2 distinct approvers, 30-min audit window) |
+| **Click TTL** | n/a | n/a | 15 min | 15 min | 90 min |
+| **Replay protection** | n/a | n/a | JTI one-time-use | JTI one-time-use | JTI one-time-use |
+| **Protected NS blocked** | n/a | n/a (read-only) | LLM + validator + admission | Per-step | n/a — Vault path allowlist |
+| **Rollback required** | n/a | n/a | Yes | Per-step | Manual runbook step |
+| **Post-apply verify** | n/a | n/a | 60s window | Per-step gate to next | n/a |
+| **Audit events** | `ai.enrichment.*` | OSS: none. Paid: `ai.investigator.*` | + `ai.proposal.*`, `ai.approval.*`, `ai.action.*` | + `ai.plan.*` | + `ai.runbook.*` |
+| **New RBAC** | none | **none** (reuses watcher's existing snapshot read-access) | none (reuses remediator) | none | none |
+| **Default** | off | **on in OSS (rule-based)**; paid override off by default | off | off | off |
+| **Risk class** | Privacy (sends diagnostic JSON to LLM) | OSS: none. Paid: same as T0 (redacted diagnostic + tool transcripts) | Mutation (with approval) | Mutation × N | Vault knowledge leak (key NAMES only) |
 
 ---
 
@@ -102,6 +112,110 @@ budget: 1M tokens/hour.
 **Operator decision**: T0 is the lowest-risk tier. It can be enabled
 in any cluster that has an LLM endpoint reachable and doesn't have
 strict data-residency constraints on the redacted Diagnostic payload.
+
+### Layer-2 — Read-only Investigator
+
+**Capability**: When a Finding or Diagnostic escalates to
+`SeverityCritical`, run a follow-up investigation that exercises a
+fixed set of read-only tools (DNS lookup, HTTP probe, TLS inspection,
+resource describe, recent events) and attach a one-to-four-sentence
+narrative summary plus the tool transcripts to the alert. Renders as a
+`🔬 _{summary}_` block under each issue in Slack/Alertmanager,
+populates the DriftReport CR's `spec.investigation` field, and feeds
+downstream T1 prompts when those tiers are enabled.
+
+Layer-2 is the sibling of T0: both are read-only and additive. The
+difference is that T0 asks an LLM to *narrate* what the diagnostic
+already says; Layer-2 *gathers fresh evidence* via deterministic tools
+and synthesizes a conclusion. The OSS implementation is rule-based
+(no LLM); the paid CHA-com binary may override it with an LLM-backed
+implementation that picks tools dynamically from the same closed
+Environment surface.
+
+Full design rationale: [design/2026-05-investigator-agent.md](design/2026-05-investigator-agent.md).
+
+**Cardinal rule**: the Environment interface is closed. An Investigator
+cannot exec arbitrary commands, write to the cluster, or escape the
+read-only tool set. This holds equally for the rule-based and the
+LLM-backed implementations.
+
+**Environment** (`pkg/ai.Environment`):
+```go
+type Environment interface {
+    DNSLookup(ctx, host) (DNSResult, error)
+    HTTPProbe(ctx, url, opts) (HTTPProbeResult, error)
+    TLSInspect(ctx, host, port) (TLSResult, error)
+    Describe(ctx, kind, namespace, name) (DescribeResult, error)
+    GetEvents(ctx, namespace, kind, name, since) ([]EventInfo, error)
+}
+```
+
+The concrete `LiveEnvironment` in `internal/investigator/env_live.go`
+uses the net stdlib and the watcher's existing `snapshot.Source` —
+**no new RBAC is required**; investigation reuses the watcher's
+existing read access.
+
+**Inputs** to a rule-based Investigator (no LLM):
+- A `probe.Finding` (component, severity, message) **or** a
+  `diagnose.Diagnostic` (subject, source, severity, message,
+  remediation).
+- The `Environment` instance the watcher constructed for this cycle.
+
+**Inputs** to an LLM-backed Investigator (paid):
+- Same as above, redacted identically to T0.
+- Tool transcripts accumulated during the investigation (also redacted).
+- The closed `Environment` action enum, advertised via the prompt
+  schema so the model cannot fabricate tool names.
+
+**Output schema** (`pkg/ai.InvestigationResult`):
+```json
+{
+  "summary": "<≤800 chars; capped at MaxInvestigationSummaryChars>",
+  "observations": [
+    {"tool": "TLSInspect", "args": "...", "result": "...", "elapsed_ms": "..."}
+  ],
+  "conclusion": "confirmed_outage" | "likely_transient" | "root_cause_identified" | "insufficient_data" | "",
+  "cost": {"wall_ms": "...", "tool_calls": "...", "tokens_in": "...", "tokens_out": "..."}
+}
+```
+
+**Rule coverage** (OSS `internal/investigator/rules.go`):
+- TLS verification (cert expiry, SAN mismatch).
+- Connection failure (DNS lookup + HTTP probe + insecure-skip-verify
+  fallback to distinguish TLS errors from outright unreachability).
+- HTTP status mismatch (probe + recent events on the backend).
+- Slow-DNS classification (DNS roundtrip > 1.5s flagged as a likely
+  resolver issue).
+- Diagnostic patterns: `ExternalSecret`, `Secret` missing /
+  missing-key, `Certificate` expiry — each calls `Describe` and
+  `GetEvents` on the named resource.
+
+**Failure modes (handled gracefully)**:
+- Pattern not matched → returns the zero `InvestigationResult`; the
+  finding flows through unchanged (no `🔬` block emitted).
+- Per-cycle wall-clock cap (default 20s) reached → remaining items
+  skipped, completed items still attached.
+- Single-item failure → soft-fails for that item only; the rest of
+  the cycle proceeds.
+- Re-diagnose after fixers runs **before** investigation, so a fixer
+  that resolves the underlying issue cleans up the investigation
+  surface naturally.
+
+**Rate-limit profile**:
+- Rule-based: zero token spend; ~50–500 ms wall-time per item;
+  bounded by the 20s per-cycle ceiling.
+- LLM-backed (paid): ~2 KB input, ~500 B output per investigation;
+  runs only on critical findings (typically <5/cycle). Default budget
+  of 5 investigations/hour aligns with the paid-tier rate limit.
+
+**Operator decision**: Layer-2 (rule-based) is on by default in OSS
+and is safe in every environment — there is no new RBAC, no network
+egress beyond the existing probes, and no token cost. Disable with
+`CHA_INVESTIGATOR=off` only if you want bit-identical output to the
+pre-v1.5 binary. The paid LLM-backed Investigator is opt-in and lands
+on the same DriftReport field, the same Slack block, and the same
+audit-event taxonomy as the rule-based version — so swapping is a
+configuration change, not a re-integration.
 
 ### T1 — Approved deterministic fix
 
@@ -248,20 +362,26 @@ recovery action.
 
 ## Tier ↔ Helm value mapping
 
-| Helm value | T0 | T1 | T2 | T3 |
-|---|---|---|---|---|
-| `ai.enabled` | true | true | true | true |
-| `ai.tier` | t0 | t1 | t2 | t3 |
-| `ai.endpoint` | required | required | required | required |
-| `approval.enabled` | false (n/a) | true | true | true |
-| `approval.ingress.enabled` | false | true | true | true |
-| `approval.ingress.host` | — | required | required | required |
-| `approval.approvers.minDistinctApprovers` | n/a | 1 | 1 | **2** (auto) |
-| `gatekeeper.install` | optional | recommended | recommended | required |
+| Helm value / env | T0 | L2 (rule-based) | L2 (LLM-backed, paid) | T1 | T2 | T3 |
+|---|---|---|---|---|---|---|
+| `ai.enabled` | true | n/a (separate switch) | true | true | true | true |
+| `ai.tier` | t0 | n/a | t0+ | t1 | t2 | t3 |
+| `ai.endpoint` | required | n/a | required | required | required | required |
+| `CHA_INVESTIGATOR` env | unchanged | (default on) | overridden by paid binary | unchanged | unchanged | unchanged |
+| `approval.enabled` | false (n/a) | false (n/a) | false (n/a) | true | true | true |
+| `approval.ingress.enabled` | false | false | false | true | true | true |
+| `approval.ingress.host` | — | — | — | required | required | required |
+| `approval.approvers.minDistinctApprovers` | n/a | n/a | n/a | 1 | 1 | **2** (auto) |
+| `gatekeeper.install` | optional | optional | optional | recommended | recommended | required |
 
-Higher tiers strictly require the prerequisites of all lower tiers
+Layer-2 is orthogonal to the T0–T3 escalation ladder: it can be on with
+all paid tiers off, and it stays on through downshift. The proposal /
+approval / execution chain only applies to T1+.
+
+Higher T-tiers strictly require the prerequisites of all lower T-tiers
 (installation order: T0 → T1 infrastructure → T2 plan state → T3
-dual-approval RBAC).
+dual-approval RBAC). Layer-2 has no prerequisites beyond the OSS
+watcher itself.
 
 ---
 
@@ -274,7 +394,13 @@ helm upgrade cha cha/cluster-health-autopilot --reuse-values --set ai.tier=t0
 The watcher reads the value each cycle; downshift takes effect within
 one watcher resync (default 10 min). In-flight plans (T2) and runbooks
 (T3) remain valid until their TTL expires, so downshift never strands
-pending approvals.
+pending approvals. Layer-2 investigation continues unchanged through
+T-tier downshifts.
 
-Full disable: `--set ai.enabled=false`. Returns the cluster to OSS
-behavior bit-for-bit.
+Full T-tier disable: `--set ai.enabled=false`. The rule-based Layer-2
+investigator keeps running — its output is part of OSS behavior, not
+the paid AI surface.
+
+To return the cluster to bit-identical pre-v1.5 OSS behavior (no
+investigator at all), additionally set `CHA_INVESTIGATOR=off` on the
+watcher Deployment.

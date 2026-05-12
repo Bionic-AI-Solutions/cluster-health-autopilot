@@ -21,6 +21,8 @@ CHA on a **brand-new cluster** — from first prerequisites to live Alertmanager
 11. [Retiring old bash health CronJobs](#11-retiring-old-bash-health-cronjobs)
 12. [Verification checklist](#12-verification-checklist)
 13. [Troubleshooting](#13-troubleshooting)
+14. [TLSSecretMismatch fixer (opt-in)](#14-tlssecretmismatch-fixer)
+15. [Endpoint probe: auto-discovery, flake suppression, Investigator](#15-endpoint-probe-features)
 
 ---
 
@@ -96,7 +98,7 @@ go build -o cha ./cmd/cha   # requires Go 1.22+
 ```sh
 docker pull docker4zerocool/cluster-health-autopilot:latest
 # Pin to a specific version:
-docker pull docker4zerocool/cluster-health-autopilot:v0.9.5
+docker pull docker4zerocool/cluster-health-autopilot:v1.5.2
 ```
 
 > **Image registry**: `docker4zerocool/cluster-health-autopilot` on Docker Hub.
@@ -118,7 +120,11 @@ cha snapshot capture --tar my-cluster.tgz
 
 Runs `kubectl get -o json` for each supported GVR (pods, events, deployments, replicasets,
 statefulsets, jobs, cronjobs, nodes, pvcs, externalsecrets, clusters.postgresql.cnpg.io,
-cephclusters.ceph.rook.io, secrets — read-only, never writes). Output is a tarball.
+cephclusters.ceph.rook.io, ingresses, secrets — read-only, never writes). Output is a tarball.
+
+> v1.2 added `Ingress` to the snapshot loader's kind map; previously the loader silently
+> dropped Ingresses, so older snapshots may not exercise the `TLSSecretMismatch` analyzer
+> or the auto-discovered endpoint targets. Recapture with v1.2+ for full coverage.
 
 ### Step 2 — diagnose offline
 
@@ -195,7 +201,7 @@ Minimal install (diagnose CronJob only, no Slack):
 ```sh
 helm install cha cha/cluster-health-autopilot \
   --namespace cluster-health-autopilot \
-  --set image.tag=v0.9.5
+  --set image.tag=v1.5.2
 ```
 
 With Alertmanager as hub (recommended):
@@ -203,7 +209,7 @@ With Alertmanager as hub (recommended):
 ```sh
 helm install cha cha/cluster-health-autopilot \
   --namespace cluster-health-autopilot \
-  --set image.tag=v0.9.5 \
+  --set image.tag=v1.5.2 \
   --set alertmanager.enabled=true \
   --set alertmanager.url=http://alertmanager.pg.svc.cluster.local:9093 \
   --set alertmanager.clusterName=my-cluster \
@@ -216,7 +222,7 @@ Full install with Alertmanager + three-channel Slack + watcher:
 ```sh
 helm install cha cha/cluster-health-autopilot \
   --namespace cluster-health-autopilot \
-  --set image.tag=v0.9.5 \
+  --set image.tag=v1.5.2 \
   --set alertmanager.enabled=true \
   --set alertmanager.url=http://alertmanager.pg.svc.cluster.local:9093 \
   --set "alertmanager.clusterName=my-cluster" \
@@ -235,7 +241,7 @@ Or use a `values.yaml` file (recommended for production):
 ```yaml
 # cha-values.yaml
 image:
-  tag: v0.9.5
+  tag: v1.5.2
 
 alertmanager:
   enabled: true
@@ -286,7 +292,9 @@ helm install cha cha/cluster-health-autopilot \
   secretstores, clustersecretstores, secrets, clusters (CNPG), cephclusters, certificates,
   certificaterequests, orders (ACME), driftreports, ingresses, services, endpoints
 - `ClusterRole/cha-cluster-health-autopilot-remediator` — narrow write: delete pods/jobs,
-  patch deployment annotations, delete cert-manager CertificateRequests and Orders
+  patch deployment annotations, delete cert-manager CertificateRequests and Orders. When
+  `fixers.tlsSecretMismatch.enabled=true`, the chart additionally grants
+  `networking.k8s.io/ingresses [patch]` on this role; otherwise the verb is omitted
 - `ClusterRole/cha-cluster-health-autopilot-driftreport-writer` — create/patch/delete DriftReports
 - `CronJob/cha-cluster-health-autopilot-diagnose` — daily `cha diagnose --live` (default: `0 9 * * *`)
 - `CronJob/cha-cluster-health-autopilot-remediate` — opt-in auto-fixers (off by default)
@@ -961,6 +969,206 @@ helm upgrade cha cha/cluster-health-autopilot \
 An ESO has `remoteRef.key` containing `..` or `.` path segments. Fix the ExternalSecret
 spec to use a clean path.
 
+### Endpoint probe reports `[transient, 1/2]` warning, then escalates next cycle
+
+This is the v1.4 default. The endpoint probe applies a two-strikes streak counter to
+**transient** failures (context deadline, connection reset, EOF, `no such host`, i/o
+timeout). The first cycle emits SeverityWarning with a `[transient, 1/2]` tag; a second
+consecutive transient on the same target escalates to SeverityCritical. **Deterministic**
+failures (TLS error, HTTP status mismatch, invalid URL) bypass the counter and fire as
+critical on the first cycle. See §15.2 for the rationale.
+
+### Investigator block (🔬) missing from Slack/Alertmanager output
+
+The OSS rule-based Investigator is on by default. It is silently skipped if:
+- `CHA_INVESTIGATOR=off` is set on the watcher Deployment (intentional disable)
+- No Investigator rule matches the finding (no DNS/TLS/HTTP/secret/cert pattern)
+
+To force-enable for diagnosis, ensure the env var is not set to `off`, then `kubectl
+rollout restart deployment/cha-cluster-health-autopilot-watcher`. No RBAC change is
+required — the Investigator only uses verbs the reader role already grants.
+
+### TLSSecretMismatch fixer refuses to patch a GitOps-managed Ingress
+
+By design. The fixer skips any Ingress carrying ArgoCD
+(`argocd.argoproj.io/instance` or `tracking-id`), Flux
+(`kustomize.toolkit.fluxcd.io/name|namespace`), or Helm
+(`meta.helm.sh/release-name|namespace`) ownership annotations, as well as any object
+labeled `app.kubernetes.io/managed-by` ∈ `{helm, argocd, flux, fluxcd}`. The analyzer
+still emits the diagnostic; only the in-cluster patch is suppressed. Fix the desired
+state in the GitOps source of truth instead.
+
+---
+
+## 14. TLSSecretMismatch fixer
+
+CHA v1.3.0 introduced the `TLSSecretMismatch` analyzer (always on in OSS) and a matching
+opt-in fixer. The analyzer scans every Ingress with `spec.tls[].secretName` and verifies
+the referenced Secret exists in the same namespace, is type
+`kubernetes.io/tls`, and contains usable cert+key data. When the analyzer finds a
+mismatch — wrong name, missing object, or wrong type — it emits a diagnostic with the
+precise `kubectl patch` command to correct `spec.tls[].secretName`.
+
+The fixer is **disabled by default**. Enable it with:
+
+```sh
+helm upgrade cha cha/cluster-health-autopilot \
+  --namespace cluster-health-autopilot --reuse-values \
+  --set fixers.tlsSecretMismatch.enabled=true
+```
+
+What this flag does, mechanically:
+
+1. Flips the env var `CHA_FIXER_TLS_SECRET_MISMATCH=true` on the watcher and remediate
+   pods, activating the fixer at runtime.
+2. Conditionally renders the `networking.k8s.io/ingresses [patch]` verb into the
+   remediator ClusterRole. With the flag disabled, the verb is absent — even a
+   compromised watcher pod cannot patch any Ingress.
+
+### Safety constraints
+
+- **Protected namespaces** (`kube-system`, `kube-public`, the chart's own namespace, and
+  anything matching `cha.bionicaisolutions.com/protected: "true"`) are skipped.
+- **GitOps-managed Ingresses are skipped** so the fixer never fights ArgoCD, Flux, or
+  Helm. Detected via:
+  - ArgoCD: `argocd.argoproj.io/instance` or `argocd.argoproj.io/tracking-id` annotation
+  - Flux: `kustomize.toolkit.fluxcd.io/name` or `…/namespace` annotation
+  - Helm: `meta.helm.sh/release-name` or `…/release-namespace` annotation
+  - Label `app.kubernetes.io/managed-by` ∈ `{helm, argocd, flux, fluxcd}`
+- The analyzer always emits the diagnostic regardless. The escape hatch only suppresses
+  the in-cluster mutation.
+
+### Verify the fixer is loaded
+
+```sh
+kubectl -n cluster-health-autopilot get deploy \
+  cha-cluster-health-autopilot-watcher -o jsonpath='{.spec.template.spec.containers[0].env}' \
+  | jq '.[] | select(.name=="CHA_FIXER_TLS_SECRET_MISMATCH")'
+# → {"name":"CHA_FIXER_TLS_SECRET_MISMATCH","value":"true"}
+
+kubectl get clusterrole cha-cluster-health-autopilot-remediator -o yaml \
+  | grep -A2 '"ingresses"'
+# → verbs: ["patch"]   (only if the fixer is enabled)
+```
+
+---
+
+## 15. Endpoint probe features
+
+The `Endpoints` probe gained three operator-visible behaviors across v1.2–v1.5. None
+require new RBAC; all are surfaced as separate sections here because they change what
+operators should expect to see in their alerts.
+
+### 15.1 Auto-discovery of Ingress hosts (v1.2)
+
+The endpoint probe now auto-discovers every Ingress host in the cluster at Run time —
+operators no longer need to maintain a static target list. Each discovered host becomes
+a probe target with default settings (HTTP GET, 10 s timeout, 2xx/3xx accepted).
+
+- Protected namespaces are skipped.
+- Opt-out per-Ingress is supported via the annotation
+  `cha.bionicaisolutions.com/probe-disable: "true"` on the Ingress object. Useful for
+  Ingresses that intentionally return non-2xx (e.g. webhook receivers) or for hosts not
+  reachable from inside the cluster.
+- The OSS `IngressCoverage` analyzer (which used to warn "this Ingress is not in the
+  probe target list") was removed in v1.2 — the gap it warned about no longer exists.
+- Latent bug fix in the same release: the snapshot loader's kind map was missing
+  `Ingress`, so `cha diagnose --snapshot` had been silently dropping Ingresses on
+  load. Snapshot mode now sees the same Ingress set as `--live`.
+
+Disable a noisy or intentionally-unreachable Ingress:
+
+```sh
+kubectl annotate ingress <name> -n <ns> \
+  cha.bionicaisolutions.com/probe-disable="true"
+```
+
+### 15.2 Layer-1 flake suppression (v1.4)
+
+The endpoint probe applies two layers of network-flake suppression so transient
+upstream blips do not page operators:
+
+1. **In-cycle retry.** When the first probe returns a transient error
+   (context deadline, connection reset, EOF, `no such host`, i/o timeout), the probe
+   retries once in the same cycle with `1.5 × timeout`. Only the retry result is
+   surfaced for that cycle.
+2. **N-of-M consecutive failures before SeverityCritical.** The first transient failure
+   (after retry) is tagged `[transient, 1/2]` at SeverityWarning. A second consecutive
+   transient on the **same target** escalates to SeverityCritical. The default threshold
+   is 2; success at any point resets the counter.
+
+**Deterministic** failures (TLS handshake error, HTTP status outside the accepted set,
+invalid URL) bypass the streak counter — these fire as critical on the first cycle
+because they are not flakes and waiting buys nothing.
+
+There is no Helm value to tune the threshold in this release. The 2-of-2 default was
+chosen because each cycle is already a debounced full diagnose pass (default 10 m
+resync), so the warning-then-critical pattern adds at most one cycle of latency for a
+real outage while suppressing virtually all single-cycle flakes seen in production. If
+your traffic profile demands a different threshold, file an issue with the use case.
+
+Operators should expect: the first time a new endpoint goes down, Slack/AM shows a
+`[transient, 1/2]` SeverityWarning. If the issue is real, the next cycle escalates. If
+it was a flake, the warning resolves and never returns. This is the new normal — do not
+treat the warning as a regression.
+
+New programmatic constructor for embedders:
+
+```go
+endpoints := probe.NewEndpoints(targets, discovery)  // use this, not bare struct literal
+```
+
+### 15.3 Layer-2 Investigator (v1.5)
+
+The Investigator is a deterministic, read-only root-cause classifier that runs after a
+probe or analyzer emits a Finding/Diagnostic. It pattern-matches the failure mode and
+invokes a small set of read-only tools (`DNSLookup`, `HTTPProbe`, `TLSInspect`,
+`Describe`, `GetEvents`), then attaches a one-paragraph Summary to the diagnostic. The
+Summary surfaces in Slack and Alertmanager as a `🔬` block beneath the regular finding,
+and in `DriftReport.spec.investigation` (maxLength 1024).
+
+**OSS ships the rule-based implementation** in
+`internal/investigator/rules.go` and it is **on by default**. Rule coverage:
+
+- TLS certificate expiry
+- TLS SAN/hostname mismatch
+- Connection failure (with transient vs. persistent classification)
+- HTTP status mismatch
+- Slow-DNS root-cause classification (resolver vs. upstream)
+- ExternalSecret diagnostic enrichment
+- Secret missing / missing-key
+- cert-manager Certificate expiry
+
+The Investigator requires **no new RBAC** — it only uses verbs already on the reader
+ClusterRole.
+
+To disable:
+
+```sh
+helm upgrade cha cha/cluster-health-autopilot \
+  --namespace cluster-health-autopilot --reuse-values \
+  --set 'env.CHA_INVESTIGATOR=off'
+```
+
+Or set the env var directly via `extraEnv` if your values schema uses that key. The
+binary checks `CHA_INVESTIGATOR=off` (case-sensitive) at startup; any other value, or
+unset, leaves the Investigator enabled.
+
+**LLM-backed Investigator (CHA-com).** The same `Investigator` interface is implemented
+by an LLM-backed engine in the commercial CHA-com binary; it consults the rule-based
+implementation first, falls back to the LLM only when the rules return no Summary, and
+respects the same `CHA_INVESTIGATOR=off` kill switch. Operators running CHA-com see
+richer free-form root-cause writeups for failure modes the rule-based version does not
+cover. Design and rollout details: see
+[`docs/design/2026-05-investigator-agent.md`](design/2026-05-investigator-agent.md).
+
+### DriftReport CR change
+
+`DriftReport.spec.investigation` (string, maxLength 1024) carries the Investigator
+Summary. Both Create and Update reconcile paths now refresh severity, message,
+remediation, **and investigation** — older CRs created before v1.5 will pick up the
+field on the next watcher cycle.
+
 ---
 
 ## Appendix — Key Helm values reference
@@ -968,7 +1176,7 @@ spec to use a clean path.
 ```yaml
 image:
   repository: docker4zerocool/cluster-health-autopilot   # Docker Hub
-  tag: ""         # defaults to Chart.appVersion (e.g. v0.9.5)
+  tag: ""         # defaults to Chart.appVersion (e.g. v1.5.2)
   pullPolicy: IfNotPresent
   pullSecrets: [] # [{name: dockerhub-pull-secret}]
 
@@ -981,6 +1189,15 @@ remediation:
   enabled: false
   schedule: "*/30 * * * *"
   dryRun: false
+
+fixers:
+  # Opt-in OSS fixer added in v1.3. When true:
+  #   - sets CHA_FIXER_TLS_SECRET_MISMATCH=true on watcher + remediate pods
+  #   - adds `networking.k8s.io/ingresses [patch]` to the remediator ClusterRole
+  # Skips protected namespaces and GitOps-managed Ingresses (ArgoCD/Flux/Helm/
+  # managed-by label). The analyzer always emits the diagnostic regardless.
+  tlsSecretMismatch:
+    enabled: false
 
 slack:
   alerts:
@@ -1025,6 +1242,13 @@ vaultProbe:
 
 driftReport:
   enabled: true
+
+# Layer-2 Investigator (v1.5). On by default in OSS (rule-based).
+# Set CHA_INVESTIGATOR=off to disable cluster-wide. No new RBAC required.
+# The CHA-com binary swaps in the LLM-backed implementation behind the
+# same interface and respects the same kill switch.
+env:
+  CHA_INVESTIGATOR: ""   # "" = on (default), "off" = disabled
 
 rbac:
   create: true

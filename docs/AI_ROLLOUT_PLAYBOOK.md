@@ -1,11 +1,13 @@
 # AI Rollout Playbook — W1 → W4 Customer Onboarding
 
-CHA-com v1.0.0 ships all four AI tiers day one. This playbook covers
-how to introduce them to customers in waves.
+CHA-com v1.0.0 shipped all four LLM tiers day one. v1.4 and v1.5 added
+the Layer-1 flake-suppression upgrade to the Endpoints probe and the
+Layer-2 Investigator (rule-based in OSS, LLM-backed in CHA-com). This
+playbook covers how to introduce them to customers in waves.
 
-**Build vs deploy posture**: Build is single-pass (v1.0.0 has all
-tiers). Deploy is staged — tier escalation is a config decision per
-customer, not a release cadence.
+**Build vs deploy posture**: Build is single-pass (v1.5.x has all
+tiers and both layers). Deploy is staged — tier escalation is a config
+decision per customer, not a release cadence.
 
 ---
 
@@ -13,7 +15,11 @@ customer, not a release cadence.
 
 | Wave | Default tier offered | Trigger | Customer commitment |
 |---|---|---|---|
+| **W0a: Flake suppression** | Layer-1 (on by default, OSS) | v1.4.0 upgrade | None — auto-engaged on upgrade |
+| **W0b: Rule-based investigation** | Layer-2 (on by default, OSS) | v1.5.0 upgrade | None — auto-engaged on upgrade |
+| **W0c: Opt-in TLS-secret-mismatch fixer** | OSS fixer (off by default) | v1.3.0+, customer-requested | "Allow CHA to JSON-patch Ingress.spec.tls[].secretName on non-GitOps Ingresses" |
 | **W1: Narration** | T0 read-only | v1.0.0 release | "Add LLM enrichment to your Slack/AM alerts" |
+| **W1b: LLM-backed investigation** | Layer-2 paid override | After T0 pilot | "Let CHA-com pick investigation tools dynamically instead of by rule" |
 | **W2: Click-to-fix** | T1 (opt-in) | First design partner accepts T0 | "Sign off on one-click approved fixes" |
 | **W3: Multi-step plans** | T2 (opt-in) | Cascading drift patterns observed | "Step-by-step approved plans" |
 | **W4: Break-glass** | T3 (opt-in) | SOC2 + Vault-heavy fleet | "Dual-approval Vault recovery runbooks" |
@@ -21,6 +27,106 @@ customer, not a release cadence.
 ---
 
 ## Per-wave checklists
+
+### W0a — Layer-1 flake suppression (v1.4)
+
+**Default**: On. No customer action required.
+
+**What it does**: The `Endpoints` probe retries transient-class
+failures once with a 1.5× timeout, then requires N consecutive failures
+(default 2) before escalating to `SeverityCritical`. Deterministic
+failures (TLS error, HTTP status mismatch, invalid URL) bypass the
+streak counter and emit Critical immediately.
+
+**Acceptance test on upgrade**:
+- [ ] Confirm probe results still emit. Look for `[transient, 1/2]` in
+      a `SeverityWarning` Finding within the first cycle that follows a
+      transient blip — this is the new "first-flake" signature.
+- [ ] Confirm that a sustained outage still escalates to Critical
+      after the configured streak threshold (default: one extra cycle
+      of latency, typically ~10–20 s).
+
+**Tuning** (rare):
+- Raise `MinConsecutiveFailures` on `probe.NewEndpoints(...)` if the
+  customer's network is consistently flakier than expected.
+- Set `RetryOnFlake: false` to disable in-cycle retry entirely (not
+  recommended; defeats the purpose).
+
+**Downshift**: Pin to the v1.3 image. There is no Helm value to
+disable Layer-1 inside v1.4+ — it is part of the OSS probe contract.
+
+### W0b — Layer-2 rule-based Investigator (v1.5)
+
+**Default**: On. No customer action required. No new RBAC; reuses
+the watcher's existing read access to the cluster snapshot.
+
+**What it does**: For every Finding or Diagnostic that escalates to
+`SeverityCritical`, the watcher runs the rule-based investigator
+after post-fix re-diagnose. The investigator pattern-matches the
+failure mode and runs a fixed set of read-only tools (DNS / HTTP /
+TLS / describe / events) to produce a one-to-four-sentence summary
+and a structured list of observations. The summary is attached to
+the DriftReport CR (`spec.investigation`) and rendered under each
+finding as a `🔬` block in Slack and Alertmanager.
+
+**Acceptance test on upgrade**:
+- [ ] Confirm `🔬` blocks appear on at least one critical finding
+      within the first cycle that produces one.
+- [ ] Confirm `kubectl get driftreport <name> -o jsonpath='{.spec.investigation}'`
+      returns a non-empty summary for that report.
+- [ ] Confirm no new audit events of class `ai.*` are emitted by the
+      OSS investigator (this is intentional — the rule-based path
+      keeps zero-dependency posture).
+
+**Pilot duration**: Two weeks. Success criteria:
+- Investigator conclusions are accurate on the customer's known
+  failure modes (TLS expiry, ESO target mismatch, slow DNS, etc.).
+- No degraded probe latency from the per-cycle 20s investigation cap.
+
+**Downshift**: Set `CHA_INVESTIGATOR=off` on the watcher Deployment
+env. The investigator stops running; DriftReports continue without
+`spec.investigation`. Behavior matches pre-v1.5 OSS bit-for-bit.
+
+### W0c — Opt-in TLS-secret-mismatch fixer (v1.3)
+
+**Default**: Off. Customer must explicitly opt in.
+
+**Pre-wave**:
+- [ ] Customer cluster has at least one `TLSSecretMismatch` analyzer
+      finding (otherwise there is no signal to act on).
+- [ ] Customer has reviewed the GitOps-skip behavior: Ingresses
+      annotated by ArgoCD (`argocd.argoproj.io/instance|tracking-id`),
+      Flux (`kustomize.toolkit.fluxcd.io/name|namespace`), or Helm
+      (`meta.helm.sh/release-name|namespace`), or carrying
+      `app.kubernetes.io/managed-by ∈ {helm, argocd, flux, fluxcd}`,
+      are **skipped automatically** — the fixer never patches them.
+- [ ] Customer accepts the protected-namespace skip list still applies.
+
+**Activation**:
+- [ ] `helm upgrade --set fixers.tlsSecretMismatch.enabled=true`. The
+      chart sets `CHA_FIXER_TLS_SECRET_MISMATCH=true` on the watcher
+      and adds the `networking.k8s.io/ingresses [patch]` verb to the
+      remediator ClusterRole.
+- [ ] Verify the fixer registers: `kubectl logs deploy/cha-cluster-health-autopilot`
+      should show the fixer in the catalog list at startup.
+
+**Acceptance test**:
+- [ ] Inject a synthetic mismatch (Certificate targets `foo-tls-new`,
+      Ingress still references `foo-tls-old`). Verify the fixer
+      issues exactly one JSON patch and the diagnostic clears in
+      the next cycle.
+- [ ] Repeat the synthetic case with an `argocd.argoproj.io/instance`
+      annotation on the Ingress. Verify the fixer skips and the
+      diagnostic remains, with `Reason: GitOps-managed: ...`.
+
+**Pilot duration**: Two weeks. Most clusters see fewer than one
+TLS-mismatch incident per week; the value is measured by the
+absence of manual `kubectl patch` follow-up rather than by raw
+fix count.
+
+**Downshift**: `helm upgrade --set fixers.tlsSecretMismatch.enabled=false`.
+The fixer un-registers; the analyzer continues to surface the
+mismatch with the suggested `kubectl patch` command.
 
 ### W1 — T0 narration (first pilot)
 
@@ -49,6 +155,38 @@ customer, not a release cadence.
 - Were narratives too verbose / too sparse?
 - Any false-leading enrichments that masked the deterministic
   remediation?
+
+### W1b — LLM-backed Layer-2 Investigator (paid override)
+
+**Pre-wave**:
+- [ ] T0 pilot complete (the customer has accepted a redacted
+      Diagnostic payload leaving the cluster).
+- [ ] Customer has reviewed how the LLM-backed Investigator differs
+      from the rule-based one: same `pkg/ai.Investigator` interface,
+      same closed `Environment` action surface, same `🔬` rendering —
+      only the *tool selection* moves from pattern-match to LLM.
+
+**Activation**:
+- [ ] CHA-com image installed; `ai.enabled=true`; `ai.tier=t0` (or
+      higher). The paid catalog re-calls `RegisterInvestigator` after
+      `catalog.RegisterOSS`, replacing the rule-based one.
+- [ ] Verify the override took effect: at least one DriftReport in
+      the next cycle should have `spec.investigation` populated with
+      output that the rule-based version would not have produced
+      (more nuanced summary; tool sequence varies per finding).
+- [ ] Verify the new audit events emit:
+      `kubectl -n cluster-health-autopilot get events --sort-by=lastTimestamp \
+        | grep -E "AIInvestigator(Started|ToolCall|Completed|BudgetExceeded)"`.
+
+**Pilot duration**: 2 weeks. Success criteria:
+- Investigator stays within the default 5/hr rate limit.
+- Token spend matches the AI_COST_MODEL.md L2 line item within ±50%.
+- No `ai.investigator.budget_exceeded` events sustained.
+
+**Downshift**: `--set ai.enabled=false` reverts to the rule-based
+investigator. There is no separate `ai.tier` value for L2 — it tracks
+whether `ai.enabled=true` and whether the paid binary is the one
+running.
 
 ### W2 — T1 click-to-fix
 

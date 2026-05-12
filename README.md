@@ -81,18 +81,38 @@ Full Helm chart at [`charts/cluster-health-autopilot/`](charts/cluster-health-au
 - PVC binding state
 - API connectivity sanity (so transient API problems become a reported `PROBE_FAILED`, not a silent green light)
 
-## What it diagnoses (analyzers — read-only)
+## What it diagnoses (7 OSS analyzers — read-only)
 
-- **Missing-Secret-key** — when a pod is stuck in `CreateContainerConfigError`, names the missing key, the consuming Deployment, and the owning ExternalSecret.
-- **Failing-ExternalSecret** — walks every ExternalSecret cluster-wide whose `Ready=False`, surfaces the controller's specific error message (the missing Vault property name).
+- **SecretKeyMissing** — pod stuck in `CreateContainerConfigError`; names the missing key + consuming Deployment + owning ExternalSecret.
+- **FailingExternalSecrets** — walks every ExternalSecret with `Ready=False`, surfaces the controller's specific error message (the missing Vault property name).
+- **ProactiveSecretKeyCheck** — walks workload env references; flags Secret keys that don't exist yet so the next pod restart won't hit ConfigError silently.
+- **UnprovisionedSecret** — workload references a Secret with no ExternalSecret provisioning it; suggests the canonical Vault path.
+- **ImagePullAuth** — pod in `ImagePullBackOff` with kubelet event auth signals (401, denied, unauthorized).
+- **CertExpiry** — cert-manager Certificate not Ready, expiring within 14 days, or already expired.
+- **TLSSecretMismatch** — Ingress points at an expired Secret while cert-manager is renewing a healthy cert into a different Secret in the same namespace. (Two-Secret naming drift.)
+
+Plus **VaultPathMissing** in the paid catalog — queries Vault directly to catch drift before ESO's next refresh marks `Ready=False`.
 
 ## What it auto-fixes (whitelisted)
 
-- Stale `Error`/`Failed` pods owned by a Job or unowned (debug leftovers).
-- Frozen `Job` whose pod template references a Secret key that no longer exists; the parent CronJob's template has been corrected — the fixer deletes the Job so the CronJob respawns clean.
-- ReplicaSet pods stuck on a stale revision when the Deployment has rolled forward — `kubectl rollout restart`.
+- **StaleErrorPods** — `Error`/`Failed` pods owned by a Job or unowned (debug leftovers).
+- **StuckJobsWithBadSecretRef** — frozen Jobs whose pod template references a renamed Secret key; CronJob template is corrected — fixer deletes the Job so the CronJob respawns clean.
+- **StuckRSPods** — ReplicaSet pods stuck on a stale revision when the Deployment has rolled forward (`kubectl rollout restart`).
+- **StuckCertificateRequests** — cert-manager CRs in terminal `Ready=False`/`Failed`; deletion lets cert-manager re-issue.
+- **TLSSecretMismatch** (opt-in) — repoints `Ingress.spec.tls[].secretName` to the cert-manager-managed Secret when the analyzer detects a mismatch. Skips GitOps-managed Ingresses (Argo/Flux/Helm labels) so it doesn't fight a reconcile loop. Enable with `--set fixers.tlsSecretMismatch.enabled=true`.
 
-**Never auto-applied:** edits to Secrets, ConfigMaps, or CRDs (those changes need a human + git).
+**Never auto-applied:** edits to Secrets, ConfigMaps, or generic CRDs (those changes need a human + git).
+
+## Probe behavior (v1.2 / v1.4)
+
+- **Auto-discovery** — every Ingress host in the cluster is auto-probed externally. Per-Ingress opt-out via annotation `cha.bionicaisolutions.com/probe-disable: "true"`. Protected namespaces always skipped.
+- **Flake suppression** — first failed probe of a target is tagged `[transient, 1/2]` and emits at warning; only a second consecutive failure escalates to CRITICAL. Deterministic failures (TLS error, status mismatch, invalid URL) bypass the streak counter and alert immediately.
+
+## Layer-2 Investigator (v1.5)
+
+When a Finding or Diagnostic reaches CRITICAL, a read-only Investigator runs a deep-dive (DNS, HTTP probe, TLS inspect, kubectl describe, recent events) and attaches a one-line root-cause Summary to the alert. Renders as a 🔬 block in Slack/Alertmanager and persists on `DriftReport.spec.investigation`.
+
+The OSS catalog ships a deterministic, rule-based Investigator covering TLS expiry, TLS SAN mismatch, DNS failure, slow-DNS classification, transient-recovery detection, status mismatch, ExternalSecret diagnostics, and Certificate state. No new RBAC; reuses the watcher's existing read access. Disable with `CHA_INVESTIGATOR=off`. The paid CHA-com binary replaces it with an LLM-backed Investigator using the same closed-enum `Environment` surface.
 
 ## Architecture
 
@@ -103,9 +123,14 @@ Full Helm chart at [`charts/cluster-health-autopilot/`](charts/cluster-health-au
 
 ## Docs
 
+- **[docs/CHA_OVERVIEW.md](docs/CHA_OVERVIEW.md)** — **two-pager**: what CHA is, OSS vs Paid, what it does/doesn't do, what AI does/doesn't do (and why). Start here.
 - **[docs/ONE_PAGER.md](docs/ONE_PAGER.md)** — design-partner brief; the elevator-pitch version of this README with pricing and validation.
 - **[docs/FAILURE_MODES.md](docs/FAILURE_MODES.md)** — every fixer + analyzer in the catalog: symptom, root cause, why it's safe, real-world example, source link.
-- **[docs/AI_USAGE.md](docs/AI_USAGE.md)** — what AI is and isn't used for, and where it could plausibly enter later. Short answer: zero AI in the hot path; deliberate.
+- **[docs/AI_TIERS.md](docs/AI_TIERS.md)** — definitive spec for Layer-2 + T0–T3 (capabilities, inputs, output schemas, safety contracts).
+- **[docs/AI_USAGE.md](docs/AI_USAGE.md)** — positioning: LLM-free hot path; rule-based Layer-2 investigator in OSS; LLM AI is paid + opt-in.
+- **[docs/SETUP_GUIDE.md](docs/SETUP_GUIDE.md)** — install reference, Helm value catalog, RBAC, troubleshooting.
+- **[docs/DEMO_GUIDE.md](docs/DEMO_GUIDE.md)** — storyboarded demo flow with deliberate-failure scenarios.
+- **[docs/design/2026-05-investigator-agent.md](docs/design/2026-05-investigator-agent.md)** — architecture rationale for Layer-2.
 
 ## License
 
