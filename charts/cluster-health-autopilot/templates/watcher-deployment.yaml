@@ -78,6 +78,7 @@ spec:
             {{- include "cha.slackAlertsEnv" . | nindent 12 }}
             {{- include "cha.slackCriticalEnv" . | nindent 12 }}
             {{- include "cha.vaultEnv" . | nindent 12 }}
+            {{- include "cha.optionalFixerEnv" . | nindent 12 }}
           resources:
             {{- toYaml .Values.watcher.resources | nindent 12 }}
           securityContext:

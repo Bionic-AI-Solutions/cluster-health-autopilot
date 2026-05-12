@@ -139,3 +139,16 @@ inject $VAULT_ADDR and $VAULT_KV_MOUNT.
 {{- end }}
 {{- end -}}
 {{- end -}}
+
+{{- /*
+cha.optionalFixerEnv — env-var toggles for opt-in fixers. Off by default.
+Keep additive — never break existing installs by changing default semantics.
+*/ -}}
+{{- define "cha.optionalFixerEnv" -}}
+{{- if (.Values.fixers).tlsSecretMismatch }}
+{{- if .Values.fixers.tlsSecretMismatch.enabled }}
+- name: CHA_FIXER_TLS_SECRET_MISMATCH
+  value: "true"
+{{- end }}
+{{- end }}
+{{- end -}}
