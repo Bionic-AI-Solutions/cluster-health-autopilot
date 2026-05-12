@@ -33,8 +33,16 @@ type EndpointTarget struct {
 //
 // This probe is network-active. It returns SKIPPED automatically when running
 // against a captured snapshot — no config change required.
+//
+// When Discovery.Enabled is true (the default in the OSS catalog), every
+// public Ingress host in the cluster is auto-added to the probe set at Run
+// time. Hosts in protected namespaces and Ingresses carrying the opt-out
+// annotation are excluded. Discovered targets succeed on any HTTP response
+// (TCP+TLS reachability is the contract); strict status expectations live in
+// the explicit Targets slice and are checked separately.
 type Endpoints struct {
-	Targets []EndpointTarget
+	Targets   []EndpointTarget
+	Discovery DiscoveryOptions
 	// Timeout is the per-request deadline. Zero defaults to 10 seconds.
 	Timeout time.Duration
 }
@@ -51,9 +59,15 @@ func (e Endpoints) Run(ctx context.Context, src snapshot.Source) Result {
 		r.Component.Detail = "network probes skipped in snapshot mode"
 		return r
 	}
-	if len(e.Targets) == 0 {
+
+	// Merge static targets with any auto-discovered Ingress hosts.
+	allTargets := append([]EndpointTarget{}, e.Targets...)
+	discovered := DiscoverIngressTargets(ctx, src, e.Discovery, hostnamesOf(e.Targets))
+	allTargets = append(allTargets, discovered...)
+
+	if len(allTargets) == 0 {
 		r.Component.Status = "SKIPPED"
-		r.Component.Detail = "no targets configured"
+		r.Component.Detail = "no targets configured and auto-discovery returned no hosts"
 		return r
 	}
 
@@ -73,7 +87,7 @@ func (e Endpoints) Run(ctx context.Context, src snapshot.Source) Result {
 	issues := 0
 	healthy := 0
 
-	for _, t := range e.Targets {
+	for _, t := range allTargets {
 		reqCtx, cancel := context.WithTimeout(ctx, timeout)
 		finding, ok := checkEndpoint(reqCtx, client, t)
 		cancel()
@@ -87,10 +101,10 @@ func (e Endpoints) Run(ctx context.Context, src snapshot.Source) Result {
 
 	if issues == 0 {
 		r.Component.Status = "HEALTHY"
-		r.Component.Detail = fmt.Sprintf("All %d endpoints reachable", healthy)
+		r.Component.Detail = fmt.Sprintf("All %d endpoints reachable (%d auto-discovered)", healthy, len(discovered))
 	} else {
 		r.Component.Status = "CRITICAL"
-		r.Component.Detail = fmt.Sprintf("%d/%d endpoints failing", issues, len(e.Targets))
+		r.Component.Detail = fmt.Sprintf("%d/%d endpoints failing (%d auto-discovered)", issues, len(allTargets), len(discovered))
 	}
 	return r
 }
@@ -154,12 +168,16 @@ func unwrapErr(err error) string {
 }
 
 // DefaultEndpointTargets returns the canonical set of public-facing endpoints
-// for this cluster. These URLs represent the observable "life of the system":
-// if any of them is unreachable, has a TLS issue, or returns an unexpected
-// status, the cluster health report fires a CRITICAL finding.
+// for this cluster — apex domains with strict status-code contracts, plus any
+// host whose probe identity benefits from an explicit display name.
+//
+// Ingress-exposed hosts not listed here are picked up automatically by
+// DiscoverIngressTargets at Run time. Add a host to this set when you need a
+// strict ExpectStatus contract or an externally-hosted endpoint that has no
+// matching Ingress in the cluster (e.g. apex domains served via Cloudflare).
 //
 // Extend: Endpoints{Targets: append(DefaultEndpointTargets(), myExtra...)}
-// Replace: Endpoints{Targets: myTargets}
+// Replace: Endpoints{Targets: myTargets, Discovery: probe.DiscoveryOptions{}}
 func DefaultEndpointTargets() []EndpointTarget {
 	return []EndpointTarget{
 		{URL: "https://bionicaisolutions.com", Name: "Bionic AI Solutions (apex)", ExpectStatus: 200},
@@ -170,9 +188,6 @@ func DefaultEndpointTargets() []EndpointTarget {
 		{URL: "https://langfuse.bionicaisolutions.com", Name: "Langfuse Observability"},
 		{URL: "https://platform.baisoln.com", Name: "Bionic Platform"},
 		{URL: "https://mail.bionicaisolutions.com", Name: "Mail Service"},
-		{URL: "https://livekit.bionicaisolutions.com", Name: "LiveKit Realtime"},
-		{URL: "https://pg.bionicaisolutions.com", Name: "pgAdmin"},
-		{URL: "https://letta.bionicaisolutions.com", Name: "Letta Server"},
 	}
 }
 
