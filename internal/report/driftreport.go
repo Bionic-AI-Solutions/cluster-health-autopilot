@@ -150,13 +150,19 @@ func Reconcile(
 				}
 			}
 			newCount := oldCount + 1
-			// Patch status + the investigation field (so a new investigation
-			// summary appears on an already-known subject without recreating
-			// the CR). Other spec fields are intentionally not patched on
-			// update — the canonical subject/severity/message are stable.
+			// Patch spec + status. We refresh severity / message /
+			// remediation / investigation on every cycle so the CR reflects
+			// the latest observed state (e.g. flake suppression escalating
+			// warning → critical between cycles, or a new investigation
+			// summary attaching after the streak counter trips). The subject
+			// is the dedup key and is never patched here.
 			patch := []byte(fmt.Sprintf(
-				`{"spec":{"investigation":%q},"status":{"lastObserved":%q,"observationCount":%d,"runID":%q}}`,
-				truncateAt(entry.Investigation, 1024), now, newCount, runID,
+				`{"spec":{"severity":%q,"message":%q,"remediation":%q,"investigation":%q},"status":{"lastObserved":%q,"observationCount":%d,"runID":%q}}`,
+				entry.Severity,
+				truncateAt(entry.Message, 4096),
+				truncateAt(entry.Remediation, 1024),
+				truncateAt(entry.Investigation, 1024),
+				now, newCount, runID,
 			))
 			if pErr := mut.Patch(ctx, snapshot.GVRDriftReport, "", crName, types.MergePatchType, patch); pErr != nil {
 				err = pErr
