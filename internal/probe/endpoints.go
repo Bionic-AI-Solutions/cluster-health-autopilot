@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/snapshot"
@@ -40,11 +41,85 @@ type EndpointTarget struct {
 // annotation are excluded. Discovered targets succeed on any HTTP response
 // (TCP+TLS reachability is the contract); strict status expectations live in
 // the explicit Targets slice and are checked separately.
+//
+// # Flake suppression (v1.4+)
+//
+// A single failed request does NOT immediately produce a CRITICAL finding.
+// The probe retries flake-class failures (context deadline, connection reset)
+// once with a longer timeout. If the retry also fails, a consecutive-failure
+// counter is incremented per target; the finding is suppressed until the
+// counter reaches MinConsecutiveFailures (default 2). Successful probes reset
+// the counter.
+//
+// This eliminates the "alert → 3s later resolved" Slack noise that dominates
+// transient cloud / DNS / proxy blips, while preserving fast detection
+// (≈ one extra cycle of latency, ~10–20 s) for sustained outages.
+//
+// Findings emitted for the FIRST failure of a streak are tagged with severity
+// SeverityWarning, and the watcher routes them at non-critical urgency. Only
+// once the streak hits the threshold does the same subject re-emit at
+// SeverityCritical.
 type Endpoints struct {
 	Targets   []EndpointTarget
 	Discovery DiscoveryOptions
 	// Timeout is the per-request deadline. Zero defaults to 10 seconds.
 	Timeout time.Duration
+
+	// MinConsecutiveFailures is the number of consecutive failed probe cycles
+	// for the same target required before a Finding is escalated to
+	// SeverityCritical. The first failure emits at SeverityWarning so the
+	// signal isn't lost — the watcher just doesn't page on it. Default 2.
+	MinConsecutiveFailures int
+
+	// RetryOnFlake controls whether transient-class failures (context deadline,
+	// connection reset, EOF) trigger one in-cycle retry with a 1.5× timeout
+	// before being recorded as a failure. Default true.
+	RetryOnFlake bool
+
+	// streaks tracks consecutive failures per target URL. Required to be
+	// non-nil for failure suppression to work — initialized by NewEndpoints
+	// or lazily by Run on first use. Pointer is shared across Probe-interface
+	// copies of this struct.
+	streaks *streakTracker
+}
+
+// NewEndpoints returns an Endpoints probe with sensible defaults and a
+// fully-initialized internal streak tracker. Prefer this over bare struct
+// literals when registering the probe; raw literals work too but rely on
+// lazy init inside Run.
+func NewEndpoints(targets []EndpointTarget, disc DiscoveryOptions) Endpoints {
+	return Endpoints{
+		Targets:                targets,
+		Discovery:              disc,
+		MinConsecutiveFailures: 2,
+		RetryOnFlake:           true,
+		streaks:                newStreakTracker(),
+	}
+}
+
+// streakTracker is the per-target consecutive-failure counter. Must be
+// referenced via pointer from the Endpoints struct so the count survives
+// the value-receiver Run method and any Probe-interface copies.
+type streakTracker struct {
+	mu     sync.Mutex
+	counts map[string]int
+}
+
+func newStreakTracker() *streakTracker {
+	return &streakTracker{counts: make(map[string]int)}
+}
+
+// record updates the streak for one target. If failed is true, the counter
+// increments. If false, the counter resets to zero. Returns the new value.
+func (s *streakTracker) record(target string, failed bool) int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if failed {
+		s.counts[target]++
+	} else {
+		delete(s.counts, target)
+	}
+	return s.counts[target]
 }
 
 // Name returns the component label for the report.
@@ -75,10 +150,20 @@ func (e Endpoints) Run(ctx context.Context, src snapshot.Source) Result {
 	if timeout == 0 {
 		timeout = 10 * time.Second
 	}
+	minStreak := e.MinConsecutiveFailures
+	if minStreak < 1 {
+		minStreak = 2
+	}
+	streaks := e.streaks
+	if streaks == nil {
+		// Bare-literal Endpoints fell through registration. Use a per-Run
+		// tracker so the probe still works — but streak suppression won't
+		// persist across cycles. The default-OSS path uses NewEndpoints.
+		streaks = newStreakTracker()
+	}
 
 	client := &http.Client{
 		Timeout: timeout,
-		// TLS verification is ON by default; InsecureSkipVerify stays false.
 		Transport: &http.Transport{
 			TLSClientConfig: &tls.Config{InsecureSkipVerify: false},
 		},
@@ -86,27 +171,82 @@ func (e Endpoints) Run(ctx context.Context, src snapshot.Source) Result {
 
 	issues := 0
 	healthy := 0
+	suppressed := 0
 
 	for _, t := range allTargets {
-		reqCtx, cancel := context.WithTimeout(ctx, timeout)
-		finding, ok := checkEndpoint(reqCtx, client, t)
-		cancel()
-		if !ok {
+		finding, ok := probeWithRetry(ctx, client, t, timeout, e.RetryOnFlake)
+
+		if ok {
+			streaks.record(t.URL, false)
+			healthy++
+			continue
+		}
+
+		// Failure-class findings (invalid URL, TLS errors, status mismatches)
+		// are deterministic and emit immediately regardless of streak.
+		if isDeterministicFailure(finding) {
 			r.Findings = append(r.Findings, finding)
 			issues++
-		} else {
-			healthy++
+			streaks.record(t.URL, true) // still track for completeness
+			continue
 		}
+
+		streak := streaks.record(t.URL, true)
+		if streak < minStreak {
+			// Suppress at non-critical severity so the signal exists in logs
+			// / observability but doesn't page anyone.
+			finding.Severity = SeverityWarning
+			finding.Message = fmt.Sprintf("[transient, %d/%d] %s", streak, minStreak, finding.Message)
+			r.Findings = append(r.Findings, finding)
+			suppressed++
+			continue
+		}
+
+		// Streak reached threshold — escalate.
+		finding.Severity = SeverityCritical
+		r.Findings = append(r.Findings, finding)
+		issues++
 	}
 
-	if issues == 0 {
+	switch {
+	case issues == 0 && suppressed == 0:
 		r.Component.Status = "HEALTHY"
 		r.Component.Detail = fmt.Sprintf("All %d endpoints reachable (%d auto-discovered)", healthy, len(discovered))
-	} else {
+	case issues == 0:
+		r.Component.Status = "HEALTHY"
+		r.Component.Detail = fmt.Sprintf("All %d endpoints reachable (%d auto-discovered, %d transient under threshold)", healthy, len(discovered), suppressed)
+	default:
 		r.Component.Status = "CRITICAL"
-		r.Component.Detail = fmt.Sprintf("%d/%d endpoints failing (%d auto-discovered)", issues, len(allTargets), len(discovered))
+		r.Component.Detail = fmt.Sprintf("%d/%d endpoints failing (%d auto-discovered, %d transient suppressed)", issues, len(allTargets), len(discovered), suppressed)
 	}
 	return r
+}
+
+// probeWithRetry executes one probe with an optional in-cycle retry for
+// transient-class failures. Returns the Finding and ok=true when the (possibly
+// retried) probe succeeded.
+func probeWithRetry(ctx context.Context, client *http.Client, t EndpointTarget, baseTimeout time.Duration, retryOnFlake bool) (Finding, bool) {
+	reqCtx, cancel := context.WithTimeout(ctx, baseTimeout)
+	finding, ok := checkEndpoint(reqCtx, client, t)
+	cancel()
+	if ok || !retryOnFlake || !isTransientFailure(finding) {
+		return finding, ok
+	}
+
+	// Brief backoff before retry — long enough to let momentary contention clear.
+	select {
+	case <-ctx.Done():
+		return finding, false
+	case <-time.After(1500 * time.Millisecond):
+	}
+	retryTimeout := baseTimeout + baseTimeout/2 // 1.5×
+	retryCtx, cancel2 := context.WithTimeout(ctx, retryTimeout)
+	retryFinding, retryOK := checkEndpoint(retryCtx, client, t)
+	cancel2()
+	if retryOK {
+		return Finding{}, true
+	}
+	return retryFinding, false
 }
 
 // checkEndpoint probes one target. Returns (finding, ok=true) when healthy.
@@ -149,6 +289,46 @@ func checkEndpoint(ctx context.Context, client *http.Client, t EndpointTarget) (
 		}, false
 	}
 	return Finding{}, true
+}
+
+// isTransientFailure reports whether a finding's failure mode is the kind
+// that warrants an in-cycle retry. Hardcoded markers — keep aligned with
+// checkEndpoint's error message construction.
+func isTransientFailure(f Finding) bool {
+	m := f.Message
+	if m == "" {
+		return false
+	}
+	if strings.Contains(m, "connection failed") &&
+		(strings.Contains(m, "context deadline exceeded") ||
+			strings.Contains(m, "connection reset by peer") ||
+			strings.Contains(m, "EOF") ||
+			strings.Contains(m, "no such host") || // DNS hiccup can be transient
+			strings.Contains(m, "i/o timeout")) {
+		return true
+	}
+	return false
+}
+
+// isDeterministicFailure reports whether a finding represents a failure mode
+// that is reproducible across retries — TLS validation errors, status-code
+// mismatches, and invalid URLs. These bypass the streak counter entirely
+// because suppressing them just delays a real alert.
+func isDeterministicFailure(f Finding) bool {
+	m := f.Message
+	if m == "" {
+		return false
+	}
+	if strings.Contains(m, "TLS verification failed") {
+		return true
+	}
+	if strings.Contains(m, "expected ") && strings.Contains(m, "HTTP ") {
+		return true
+	}
+	if strings.Contains(m, "invalid URL") {
+		return true
+	}
+	return false
 }
 
 func isTLSError(err error) bool {

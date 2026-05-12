@@ -43,10 +43,10 @@ func RegisterOSS(r *registry.Registry) {
 		probe.Postgres{},
 		probe.PVCs{},
 		probe.Services{Targets: probe.DefaultTargets()},
-		probe.Endpoints{
-			Targets:   probe.DefaultEndpointTargets(),
-			Discovery: probe.DefaultDiscoveryOptions(),
-		},
+		probe.NewEndpoints(
+			probe.DefaultEndpointTargets(),
+			probe.DefaultDiscoveryOptions(),
+		),
 	)
 	r.RegisterAnalyzer(
 		diagnose.SecretKeyMissing{},
