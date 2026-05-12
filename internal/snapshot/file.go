@@ -194,6 +194,7 @@ var kindToResource = map[string]string{
 	"CertificateRequest":    "certificaterequests",
 	"Order":                 "orders",
 	"Secret":                "secrets",
+	"Ingress":               "ingresses",
 }
 
 func indexKey(gvr schema.GroupVersionResource) string {

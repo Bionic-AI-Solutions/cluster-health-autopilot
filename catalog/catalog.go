@@ -41,7 +41,10 @@ func RegisterOSS(r *registry.Registry) {
 		probe.Postgres{},
 		probe.PVCs{},
 		probe.Services{Targets: probe.DefaultTargets()},
-		probe.Endpoints{Targets: probe.DefaultEndpointTargets()},
+		probe.Endpoints{
+			Targets:   probe.DefaultEndpointTargets(),
+			Discovery: probe.DefaultDiscoveryOptions(),
+		},
 	)
 	r.RegisterAnalyzer(
 		diagnose.SecretKeyMissing{},
@@ -50,7 +53,6 @@ func RegisterOSS(r *registry.Registry) {
 		diagnose.UnprovisionedSecret{},
 		diagnose.ImagePullAuth{},
 		diagnose.CertExpiry{},
-		diagnose.IngressCoverage{KnownHosts: probe.DefaultEndpointHostnames()},
 	)
 	r.RegisterFixer(
 		fix.StaleErrorPods{},
