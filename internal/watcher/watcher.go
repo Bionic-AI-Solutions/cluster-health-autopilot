@@ -72,6 +72,13 @@ type Config struct {
 	// Defaults to "cluster" when empty.
 	ClusterName string
 
+	// ApprovalBaseURL is the external base URL of the approval-server
+	// (e.g. https://cha-approve.example.com). When set together with a
+	// registered FixProposer and Signer, the watcher emits Apply Fix
+	// links pointing at <base>/approve?token=<JWT>. When empty, no
+	// approval URLs are emitted regardless of registered AI components.
+	ApprovalBaseURL string
+
 	WriteDriftReports bool
 
 	// RunRemediation runs fixers after each diagnose cycle and re-diagnoses
@@ -107,6 +114,13 @@ type seenEntry struct {
 	severity    string
 	message     string
 	remediation string
+
+	// AI tier fields — optional, populated only when the registry has
+	// an Enricher / FixProposer / Approver registered. OSS users never
+	// see these set.
+	enrichment       string
+	proposedActionID string
+	approvalURL      string
 }
 
 // Watcher runs an event-driven diagnose loop against a live cluster.
@@ -116,8 +130,9 @@ type Watcher struct {
 	mut snapshot.Mutator // nil when remediation is disabled
 	cfg Config
 
-	mu   sync.Mutex
-	seen map[string]*seenEntry
+	mu          sync.Mutex
+	seen        map[string]*seenEntry
+	pendingURLs map[string]pendingURL // ai-tier approval URLs by ActionID
 }
 
 // New returns a configured Watcher. mut may be nil when remediation is disabled.
@@ -248,6 +263,12 @@ func (w *Watcher) runCycle(ctx context.Context) {
 
 	probeResults, diagnostics := w.runDiagnose(ctx)
 
+	// AI tier: enrich diagnostics with narrative + (when T1+) approval URLs.
+	// No-op when the registry has no Enricher/FixProposer registered, so OSS
+	// behavior is unchanged. Enrichment is best-effort — failures here must
+	// never block the deterministic diagnostic flow.
+	diagnostics = w.enrichDiagnostics(ctx, diagnostics)
+
 	// Capture pre-fix state for the Slack diff so that issues fixed in this
 	// same cycle still appear in the "Active Issues" section of the alert.
 	// Without this, fixers delete the pods/resources before buildCurrentState
@@ -270,9 +291,11 @@ func (w *Watcher) runCycle(ctx context.Context) {
 	// Use post-fix state for DriftReport persistence; use pre-fix state for
 	// the Slack diff so immediately-fixed issues still generate an alert.
 	postFix := buildCurrentState(probeResults, diagnostics)
+	w.attachApprovalURLs(postFix)
 	diffState := postFix
 	if hasActions(fixResults) {
 		diffState = preFix
+		w.attachApprovalURLs(preFix)
 	}
 
 	w.mu.Lock()
@@ -292,10 +315,13 @@ func (w *Watcher) runCycle(ctx context.Context) {
 		allActive := make([]report.DeltaDiag, 0, len(postFix))
 		for _, e := range postFix {
 			allActive = append(allActive, report.DeltaDiag{
-				Subject:     e.subject,
-				Severity:    e.severity,
-				Message:     e.message,
-				Remediation: e.remediation,
+				Subject:          e.subject,
+				Severity:         e.severity,
+				Message:          e.message,
+				Remediation:      e.remediation,
+				Enrichment:       e.enrichment,
+				ProposedActionID: e.proposedActionID,
+				ApprovalURL:      e.approvalURL,
 			})
 		}
 		report.PostActiveStateToAM(nil, w.cfg.AlertmanagerURL, allActive, fixResults, clusterName, ttl)
@@ -371,15 +397,39 @@ func buildCurrentState(results []probe.Result, diags []diagnose.Diagnostic) map[
 		}
 	}
 	for _, d := range diags {
+		// Severity defaults to "warning" when the analyzer doesn't set it.
+		// Source is also carried through so AI tier can attribute analyzer
+		// context in the prompt.
+		sev := d.Severity
+		if sev == "" {
+			sev = "warning"
+		}
 		m[d.Subject] = &seenEntry{
-			fp:          fingerprint(d.Subject, "warning", d.Message),
-			subject:     d.Subject,
-			severity:    "warning",
-			message:     d.Message,
-			remediation: d.Remediation,
+			fp:               fingerprint(d.Subject, sev, d.Message),
+			subject:          d.Subject,
+			severity:         sev,
+			message:          d.Message,
+			remediation:      d.Remediation,
+			enrichment:       d.Enrichment,
+			proposedActionID: d.ProposedActionID,
 		}
 	}
 	return m
+}
+
+// attachApprovalURLs walks state and fills approvalURL from the watcher's
+// pendingURLs map for any seenEntry whose ProposedActionID is set.
+// Called between buildCurrentState and the Slack/AM emission so that the
+// rendered DeltaDiag carries the URL.
+func (w *Watcher) attachApprovalURLs(state map[string]*seenEntry) {
+	for _, e := range state {
+		if e.proposedActionID == "" {
+			continue
+		}
+		if url := w.approvalURLFor(e.proposedActionID); url != "" {
+			e.approvalURL = url
+		}
+	}
 }
 
 // diff computes which subjects need a Slack post (new/changed/repeat) and which

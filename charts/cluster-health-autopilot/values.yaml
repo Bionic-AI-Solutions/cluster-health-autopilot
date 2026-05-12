@@ -203,3 +203,70 @@ securityContext:
   readOnlyRootFilesystem: true
   capabilities:
     drop: ["ALL"]
+
+# AI tier (commercial / CHA-com only) — recommendation-only AI for narration,
+# fix proposals, multi-step plans, and Vault recovery runbooks. Every tier
+# gates mutation behind human one-click approval. See docs/AI_TIERS.md.
+#
+# OSS deployments leave ai.enabled=false; this entire block is then inert.
+ai:
+  enabled: false
+  tier: t0                # t0 | t1 | t2 | t3
+  endpoint: ""            # REQUIRED if enabled; e.g. "https://gpu-ai.svc:8000/v1"
+  allowSaas: false        # set true to allow api.openai.com / api.anthropic.com endpoints
+  apiKey:
+    secretName: ""        # K8s secret holding the LLM API key (if any)
+    secretKey: "API_KEY"
+  rateLimit:
+    actionsPerHour: 5     # AI-proposed actions/hour budget
+    tokensPerHour: 1000000
+  circuitBreaker:
+    consecutiveFailures: 3
+  audit:
+    destination: events   # events | loki | otlp
+    lokiURL: ""
+    otlpEndpoint: ""
+
+# Approval-server sidecar — holds the JWT signing key, terminates click-to-fix
+# URLs. Automatically required (and chart-level validation should ensure) when
+# ai.tier ∈ {t1, t2, t3}. For ai.tier=t0 (narration only) approval is unused.
+approval:
+  enabled: false
+  replicas: 1
+  image:
+    repository: docker4zerocool/cha-com
+    tag: ""               # default = .Chart.AppVersion
+    pullPolicy: IfNotPresent
+  signingKey:
+    secretName: cha-approval-signing-key
+  ingress:
+    enabled: false
+    host: ""               # REQUIRED if approval.ingress.enabled; e.g. cha-approve.example.com
+    ingressClassName: ""
+    annotations: {}
+    tls:
+      enabled: true
+      secretName: ""       # default: <release>-approval-server-tls
+  resources:               # defaults to top-level resources if unset
+    limits:
+      cpu: 200m
+      memory: 128Mi
+    requests:
+      cpu: 20m
+      memory: 32Mi
+  nodeSelector: {}
+
+# Gatekeeper ConstraintTemplate — third-layer admission policy that rejects
+# mutations against protected namespaces even if a signed approval somehow
+# requested one. Requires OPA Gatekeeper to be installed in the cluster.
+gatekeeper:
+  install: false           # set true if Gatekeeper is installed in the cluster
+  constraints:
+    protectedNamespaces:
+      - kube-system
+      - kube-public
+      - kube-node-lease
+      - rook-ceph
+      - vault
+      - external-secrets
+      - cnpg-system

@@ -1,0 +1,91 @@
+{{- if .Values.approval.enabled }}
+# approval-server-rbac.yaml
+#
+# The approval-server SA needs:
+#   1. CLUSTER-WIDE: same Mutator verbs as the watcher's remediator role
+#      (pods/delete, jobs/delete, deployments/patch, certificaterequests/delete,
+#      orders/delete). It applies AI-approved fixes once an SRE clicks.
+#   2. NAMESPACE-LOCAL: read access to the approval signing-key Secret.
+#      The watcher SA explicitly does NOT have this access.
+#   3. NAMESPACE-LOCAL: create events for audit-trail emission.
+#
+# The watcher's existing remediator ClusterRole is REUSED for the
+# Mutator verbs — no new RBAC verbs are introduced by AI tiers. The
+# approval-server is bound to the same ClusterRole via a separate
+# ClusterRoleBinding.
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "cha.fullname" . }}-approval-server-remediator
+  labels:
+    {{- include "cha.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ default (printf "%s-remediator" (include "cha.fullname" .)) .Values.rbac.remediator.name }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "cha.fullname" . }}-approval-server
+    namespace: {{ .Release.Namespace }}
+---
+# Read-only on the signing key Secret (namespace-local).
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "cha.fullname" . }}-approval-signing-reader
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "cha.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    resourceNames:
+      - {{ .Values.approval.signingKey.secretName | default "cha-approval-signing-key" }}
+    verbs: ["get", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "cha.fullname" . }}-approval-signing-reader
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "cha.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "cha.fullname" . }}-approval-signing-reader
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "cha.fullname" . }}-approval-server
+    namespace: {{ .Release.Namespace }}
+---
+# Audit Events emission.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "cha.fullname" . }}-approval-events
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "cha.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["create", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "cha.fullname" . }}-approval-events
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "cha.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "cha.fullname" . }}-approval-events
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "cha.fullname" . }}-approval-server
+    namespace: {{ .Release.Namespace }}
+{{- end }}

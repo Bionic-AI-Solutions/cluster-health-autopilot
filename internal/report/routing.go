@@ -24,6 +24,18 @@ type SlackChannels struct {
 	Critical string // #ceph-critical — event-driven, needs human
 }
 
+// renderAIBlocks appends optional AI-tier blocks (enrichment, approval URL)
+// to a Slack message builder. Renders nothing when no AI fields are populated
+// — OSS deployments produce identical output to today.
+func renderAIBlocks(b *strings.Builder, d DeltaDiag) {
+	if d.Enrichment != "" {
+		fmt.Fprintf(b, "  🤖 _%s_\n", d.Enrichment)
+	}
+	if d.ApprovalURL != "" {
+		fmt.Fprintf(b, "  <%s|Apply Fix> · <%s&action=info|Details>\n", d.ApprovalURL, d.ApprovalURL)
+	}
+}
+
 // FormatAlertsPayload renders the #ceph-alerts message for a watcher cycle
 // where CHA auto-remediation fired. Shows what triggered the fix and what
 // actions were taken.
@@ -37,6 +49,7 @@ func FormatAlertsPayload(fixedIssues []DeltaDiag, fixResults []fix.Result) Slack
 		fmt.Fprintf(&b, "\n*⚡ Triggered by (%d):*\n", len(fixedIssues))
 		for _, d := range fixedIssues {
 			fmt.Fprintf(&b, "• %s *%s*\n  %s\n", severityWatchIcon(d.Severity), d.Subject, d.Message)
+			renderAIBlocks(&b, d)
 		}
 	}
 
@@ -95,6 +108,7 @@ func FormatCriticalPayload(unfixable []DeltaDiag, resolved []ResolvedDiag) Slack
 			if d.Remediation != "" {
 				fmt.Fprintf(&b, "  _→ %s_\n", d.Remediation)
 			}
+			renderAIBlocks(&b, d)
 		}
 	}
 
@@ -108,6 +122,7 @@ func FormatCriticalPayload(unfixable []DeltaDiag, resolved []ResolvedDiag) Slack
 			if d.Remediation != "" {
 				fmt.Fprintf(&b, "  _→ %s_\n", d.Remediation)
 			}
+			renderAIBlocks(&b, d)
 		}
 	}
 

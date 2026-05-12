@@ -133,6 +133,11 @@ func FormatSlack(results []probe.Result, diagnostics []diagnose.Diagnostic, fixR
 			if d.Remediation != "" {
 				fmt.Fprintf(&b, "  _→ %s_\n", d.Remediation)
 			}
+			// AI enrichment block — only rendered when CHA-com has populated
+			// it. OSS-only deployments never see this branch fire.
+			if d.Enrichment != "" {
+				fmt.Fprintf(&b, "  🤖 _%s_\n", d.Enrichment)
+			}
 		}
 	}
 

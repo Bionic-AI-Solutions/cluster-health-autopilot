@@ -431,3 +431,117 @@ reviewers can see the resolution arc.
 Findings introduced in v0.9.0 (watcher mode), v0.9.4 (three-channel Slack)
 and v0.9.5 (Alertmanager hub) are explicitly marked **NEW in v0.X.Y** to
 distinguish them from carried-forward analysis.
+
+---
+
+## 8. AI-tier attack surface (NEW in v1.0.0 — CHA-com)
+
+This section reviews the attack surface introduced by the AI tier
+shipped in the commercial CHA-com binary. The OSS `cha` binary remains
+AI-free; findings here apply only when an operator opts into
+`ai.enabled=true`.
+
+Full OWASP LLM Top 10 / NIST AI RMF / ISO 42001 mapping in
+[THREAT_MODEL_AI.md](THREAT_MODEL_AI.md). Tier specifications in
+[AI_TIERS.md](AI_TIERS.md).
+
+### 8.1 LLM autonomous mutation (LLM08 — Excessive Agency)
+**Severity: HIGH · Likelihood: low (architecture refuses it) · Resolution: ✅ ARCHITECTURALLY REFUSED**
+
+The architecture is recommendation-only at every tier. The Mutator
+interface is never invoked from an LLM response path. Every mutation
+passes through: LLM proposal → validator → signed short-lived JWT →
+human click → approval-server verify (signature, expiry, one-time-use,
+OIDC identity) → admission re-check → optional OPA/Gatekeeper third
+gate → Mutator. Blast radius identical to today's `cha remediate --live`
+plus a human approval gate.
+
+T3 (most powerful tier) is a runbook generator with dual approval —
+CHA-com NEVER writes to Vault.
+
+### 8.2 Prompt injection in event messages (LLM01)
+**Severity: medium · Likelihood: medium · Resolution: DEFENSE IN DEPTH**
+
+Three independent layers: (1) `ScrubInjection()` regex strip pre-prompt,
+(2) `<observed_data>` structural delimiters in system prompts, (3)
+output schema enforcement (closed-enum `action_kind`, protected-NS
+rejection at validate + admission).
+
+### 8.3 LLM endpoint sees cluster data (LLM06)
+**Severity: medium · Likelihood: high (this is the LLM's job) · Resolution: REDACT + BYOM**
+
+`RedactDiagnostic` SHA-256-hashes namespace/name, redacts IPs/UUIDs/
+internal hostnames. Secret bytes never read by OSS engine, so never
+available to send. Vault values never read; only key NAMES.
+BYOM default: operators must set `--ai-endpoint`; SaaS requires
+`--ai-allow-saas` opt-in with audit-logged acknowledgment. Privacy
+round-trip test asserts no raw identifier leaks.
+
+### 8.4 Approval token replay / forgery (NEW in v1.0.0)
+**Severity: HIGH · Likelihood: low · Resolution: ✅ MITIGATED**
+
+JWT signed with Ed25519, 15-min default TTL. Signing key Secret
+accessible ONLY to approval-server SA (separate from watcher SA).
+JTI replay store rejects subsequent verifications with `ErrTokenReplay`.
+Tests: TestApprove_TokenReplay, TestApprove_ExpiredToken, TestApprove_TamperedToken.
+
+### 8.5 T3 single-approver bypass attempt (NEW in v1.0.0)
+**Severity: high · Likelihood: low · Resolution: ✅ MITIGATED**
+
+`RecordApproval` enforces distinct approvers (`ErrSameApprover`) and
+30-min audit window (`ErrTooEarly`). Approver identity from OIDC at
+Ingress, not from a CHA-controlled field. Tests:
+TestRunbookStore_SameApproverRejected, TestRunbookStore_TooEarlyRejected.
+
+### 8.6 LLM denial-of-service via diagnostic flood (LLM04)
+**Severity: medium · Likelihood: medium · Resolution: ✅ MITIGATED**
+
+Token-bucket rate limiter per tier (default 5 actions/hour). Response
+cache by (prompt + message + model). Cycle-wide enrichment timeout
+30s. Circuit breaker trips on 3 consecutive post-apply failures and
+routes to Alertmanager via Warning Events.
+
+### 8.7 Approval-server compromise widens blast radius (NEW in v1.0.0)
+**Severity: HIGH · Likelihood: low · Resolution: ISOLATION + DOCUMENT**
+
+Separate Deployment + ServiceAccount from watcher. Watcher SA has no
+access to signing-key Secret. Distroless+nonroot image. Only inbound
+surface is HTTPS Ingress with OIDC enforcement. Audit log records
+every approval click (who, when, source IP). Future hardening:
+NetworkPolicy restricting egress.
+
+### 8.8 GH PAT / LLM API key exfiltration via approval-server (NEW in v1.0.0)
+**Severity: medium · Likelihood: low · Resolution: ✅ MITIGATED**
+
+Approval-server pod mounts ONLY the signing-key Secret — never the
+LLM API key or GH PAT Secrets. RBAC scopes secret-read to the single
+named Secret in the install namespace.
+
+### 8.9 Audit log gap (NEW in v1.0.0)
+**Severity: low · Likelihood: medium · Resolution: DOCUMENT**
+
+Default Kubernetes Events sink is GC'd by kubelet at 1h. Long-term
+audit retention (SOC 2 CC7.2, ISO 27001 A.12.4) requires external
+sink. SETUP_GUIDE.md §14.9 recommends Loki/OTLP for production. The
+`ai/audit/` package scaffolding is in place; concrete Loki/OTLP
+implementations deferred to P7-Redis follow-up.
+
+### 8.10 Net assessment for v1.0.0
+
+| Threat | Severity | Status |
+|---|---|---|
+| LLM autonomous mutation (LLM08) | HIGH | ✅ Architecturally refused |
+| Prompt injection (LLM01) | medium | ✅ Defense in depth (3 layers) |
+| LLM sees cluster data (LLM06) | medium | ✅ Redactor + BYOM defaults |
+| Token replay / forgery | HIGH | ✅ JWT + JTI store + tests |
+| T3 single-approver bypass | high | ✅ Distinct-approver + 30-min delay |
+| LLM DoS via flood (LLM04) | medium | ✅ Rate limiter + cache + circuit breaker |
+| Approval-server compromise | HIGH | ✅ Isolated SA + RBAC, distroless image |
+| Audit log gap (Events GC) | low | ⚠️ Documented; Loki/OTLP sink in P7 follow-up |
+
+Zero MUST-FIX items for v1.0.0. Every expansion of attack surface is
+countered by a control mapped to a recognized framework (OWASP LLM
+Top 10, NIST AI RMF, ISO/IEC 42001). The fundamental safety invariant —
+AI proposes, humans approve, deterministic Go code applies — closes
+the largest single class of AI-SRE risk (LLM08) at the architectural
+level.

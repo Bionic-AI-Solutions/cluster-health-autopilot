@@ -17,6 +17,20 @@ type DeltaDiag struct {
 	Severity    string // info | warning | critical
 	Message     string
 	Remediation string
+
+	// AI tier fields — optional, populated only when CHA-com's AI tier
+	// is active. OSS deployments never see these set.
+
+	// Enrichment is the LLM-generated narrative addendum (T0+).
+	Enrichment string
+
+	// ProposedActionID links to a T1 single-action proposal. When set,
+	// the renderer emits an Apply Fix button alongside this entry.
+	ProposedActionID string
+
+	// ApprovalURL is the signed click-to-fix URL. Only set in tandem
+	// with ProposedActionID.
+	ApprovalURL string
 }
 
 // ResolvedDiag is a diagnostic that no longer appears in the current cycle.
@@ -46,6 +60,12 @@ func FormatSlackDelta(
 			fmt.Fprintf(&b, "• %s *%s*\n  %s\n", icon, d.Subject, d.Message)
 			if d.Remediation != "" {
 				fmt.Fprintf(&b, "  _→ %s_\n", d.Remediation)
+			}
+			if d.Enrichment != "" {
+				fmt.Fprintf(&b, "  🤖 _%s_\n", d.Enrichment)
+			}
+			if d.ApprovalURL != "" {
+				fmt.Fprintf(&b, "  <%s|Apply Fix> · <%s&action=info|Details>\n", d.ApprovalURL, d.ApprovalURL)
 			}
 		}
 	}

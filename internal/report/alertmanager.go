@@ -82,6 +82,22 @@ func BuildActiveAlerts(active []DeltaDiag, clusterName string, ttl time.Duration
 		if d.Severity == "info" {
 			continue // don't fire info-level issues
 		}
+		annotations := map[string]string{
+			"summary":     d.Message,
+			"remediation": d.Remediation,
+		}
+		// AI tier annotations — populated only when CHA-com active.
+		// Alertmanager templates can reference {{ .Annotations.ai_enrichment }}
+		// to render the narrative in receiver-specific formatting.
+		if d.Enrichment != "" {
+			annotations["ai_enrichment"] = d.Enrichment
+		}
+		if d.ApprovalURL != "" {
+			annotations["proposed_fix_url"] = d.ApprovalURL
+		}
+		if d.ProposedActionID != "" {
+			annotations["proposed_action_id"] = d.ProposedActionID
+		}
 		out = append(out, AMAlert{
 			Labels: map[string]string{
 				"alertname": "cha_issue",
@@ -90,12 +106,9 @@ func BuildActiveAlerts(active []DeltaDiag, clusterName string, ttl time.Duration
 				"source":    truncateLabel(d.Severity), // overridden below if Source available
 				"cluster":   clusterName,
 			},
-			Annotations: map[string]string{
-				"summary":     d.Message,
-				"remediation": d.Remediation,
-			},
-			StartsAt: now,
-			EndsAt:   endsAt,
+			Annotations: annotations,
+			StartsAt:    now,
+			EndsAt:      endsAt,
 		})
 		// Fill source from Subject prefix (Probe/<name>/... or analyzer/<name>/...)
 		if src := subjectSource(d.Subject); src != "" {

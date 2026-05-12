@@ -1045,3 +1045,154 @@ securityContext:
   capabilities:
     drop: ["ALL"]
 ```
+
+---
+
+## 14. AI tier setup (CHA-com only)
+
+AI tiers (T0 narration through T3 break-glass Vault runbook) ship in
+the **commercial CHA-com binary**. The OSS `cha` binary remains AI-free
+regardless of these settings. See [AI_USAGE.md](AI_USAGE.md) for the
+positioning rationale and [AI_TIERS.md](AI_TIERS.md) for the tier
+capability specification.
+
+### 14.1 Prerequisites
+
+In addition to the base prerequisites (§1):
+
+| Tier | Additional prerequisite |
+|---|---|
+| **T0** | LLM endpoint reachable from inside the cluster (in-cluster vLLM/Ollama, or operator-approved SaaS with `--ai-allow-saas`) |
+| **T1** | T0 + Ingress with HTTPS + OIDC-aware reverse proxy (oauth2-proxy or Kong key-auth + jwt) sitting in front of the approval-server |
+| **T2** | T1 + SREs trained on multi-step approval workflow |
+| **T3** | T2 + RBAC group `cha.io/approver` with ≥2 distinct members + Vault path allowlist defined |
+| **All** | Optional but recommended: OPA Gatekeeper installed for defense-in-depth admission |
+
+### 14.2 Container image
+
+```sh
+docker pull docker4zerocool/cha-com:v1.0.0
+```
+
+### 14.3 T0 install (narration only) — start here
+
+```sh
+# Optional: API key Secret (skip if your LLM endpoint has no auth)
+kubectl create secret generic cha-ai-llm-key \
+  --namespace cluster-health-autopilot \
+  --from-literal=API_KEY=<your-key>
+
+helm upgrade cha cha/cluster-health-autopilot \
+  --namespace cluster-health-autopilot --reuse-values \
+  --set image.repository=docker4zerocool/cha-com \
+  --set image.tag=v1.0.0 \
+  --set ai.enabled=true \
+  --set ai.tier=t0 \
+  --set ai.endpoint=http://your-llm-endpoint:8000/v1 \
+  --set ai.apiKey.secretName=cha-ai-llm-key
+```
+
+Verify Slack/AM messages now include `🤖 _<narrative>_` blocks under
+each diagnostic. Kubernetes Events: look for `AIEnrichmentApplied`.
+
+### 14.4 T1 install (one-click fixes)
+
+```sh
+helm upgrade cha cha/cluster-health-autopilot \
+  --namespace cluster-health-autopilot --reuse-values \
+  --set ai.tier=t1 \
+  --set approval.enabled=true \
+  --set approval.image.repository=docker4zerocool/cha-com \
+  --set approval.image.tag=v1.0.0 \
+  --set approval.ingress.enabled=true \
+  --set approval.ingress.host=cha-approve.your-domain.com \
+  --set approval.ingress.ingressClassName=kong
+```
+
+The chart's pre-install hook runs `cha-com gen-signing-key` to create
+the `cha-approval-signing-key` Secret (Ed25519 keypair, signing-key
+mounted to approval-server only — watcher SA cannot read it).
+
+Configure your Ingress controller to require OIDC for `/approve` paths
+(verified `X-Forwarded-User` header is read by the approval-server).
+
+Optional defense-in-depth — install OPA Gatekeeper:
+
+```sh
+helm install gatekeeper gatekeeper/gatekeeper -n gatekeeper-system --create-namespace
+helm upgrade cha cha/cluster-health-autopilot --reuse-values --set gatekeeper.install=true
+```
+
+### 14.5 T2 / T3 install
+
+```sh
+# T2 — multi-step plans (per-step approval state machine)
+helm upgrade cha cha/cluster-health-autopilot --reuse-values --set ai.tier=t2
+
+# T3 — Vault recovery runbooks (dual-approval, 30-min audit window)
+helm upgrade cha cha/cluster-health-autopilot --reuse-values \
+  --set ai.tier=t3 \
+  --set 'ai.t3.allowedPathPrefixes={secret/t6-apps/,secret/shared/}'
+```
+
+### 14.6 End-to-end verification
+
+```sh
+# Inject a stale Error pod
+kubectl create job crash-demo --from=cronjob/cha-cluster-health-autopilot-diagnose -n default 2>/dev/null
+# (or use the demo job from DEMO_GUIDE Part 9)
+
+# Within ~15s: Slack #ceph-critical shows an Apply Fix button.
+# Click the URL — approval-server logs ai.approval.granted, then
+# ai.action.applied with post_apply_verified=true.
+```
+
+Negative tests:
+- Click same URL twice → 409 Conflict (replay rejected)
+- Wait 16 min, then try in a fresh tab → 410 Gone (expired)
+- Trigger Error pod in `kube-system` → no Apply Fix button emitted (proposer refuses protected NS)
+
+### 14.7 Disabling AI tiers (downshift)
+
+```sh
+# Downshift to T0 — keeps narration, disables Apply Fix buttons
+helm upgrade cha cha/cluster-health-autopilot --reuse-values --set ai.tier=t0
+
+# Full disable — returns the cluster to OSS behavior
+helm upgrade cha cha/cluster-health-autopilot --reuse-values --set ai.enabled=false
+```
+
+In-flight T2 plans and T3 runbooks remain valid until their TTL
+expires; downshift never strands pending approvals.
+
+### 14.8 Operational runbooks
+
+- **LLM endpoint down**: deterministic diagnostics continue, `🤖` block
+  omitted, `AIEnrichmentFailed` events recorded. No operator action
+  required; enrichment resumes when the endpoint comes back.
+- **Circuit breaker tripped**: `ai.circuit_breaker.tripped` (Warning)
+  Event routed to oncall via Alertmanager. Investigate the
+  consecutive post-apply failures; reset via operator endpoint when
+  confident.
+- **Approver out of office (T3)**: T3 runbooks expire after 60 min
+  awaiting second approval. A new runbook is generated on the next
+  cycle. Update the `cha.io/approver` group membership to include
+  more approvers.
+- **Rate limit hit**: `ai.rate_limited` Events expose `retry_after_ms`.
+  Raise `ai.rateLimit.actionsPerHour` if sustained limits indicate
+  the budget is too tight.
+
+### 14.9 Audit-trail review
+
+```sh
+# Recent AI events (Kubernetes Events sink, default)
+kubectl -n cluster-health-autopilot get events --sort-by=lastTimestamp | grep -E "AI(Enrichment|Proposal|Approval|Action|Runbook)"
+
+# Filter by tier via annotation
+kubectl -n cluster-health-autopilot get events -o json | \
+  jq '.items[] | select(.metadata.annotations."cha.bionicaisolutions.com/audit-tier" == "t1")'
+```
+
+For production retention (Kubernetes Events GC at 1h), configure a
+Loki or OTLP sink — see [AI_AUDIT_TRAIL.md](AI_AUDIT_TRAIL.md) for the
+event schema and production sink wiring.

@@ -13,16 +13,33 @@
 package registry
 
 import (
+	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/ai"
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/diagnose"
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/fix"
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/probe"
 )
 
 // Registry holds the active pattern set.
+//
+// The AI fields default to nil; OSS users never see them populated.
+// The CHA-com paid binary registers Enricher/FixProposer/etc. at
+// process start. The watcher and reporters check for nil before using
+// any AI component, so an empty registry produces today's behavior
+// bit-for-bit.
 type Registry struct {
 	analyzers []diagnose.Analyzer
 	fixers    []fix.Fixer
 	probes    []probe.Probe
+
+	// AI components — all optional.
+	enricher        ai.Enricher
+	fixProposer     ai.FixProposer
+	planner         ai.MultiStepPlanner
+	runbookProposer ai.VaultRunbookProposer
+	signer          ai.Signer
+	verifier        ai.Verifier
+	approver        ai.Approver
+	auditSink       ai.AuditSink
 }
 
 // New returns an empty Registry.
@@ -43,6 +60,31 @@ func (r *Registry) RegisterProbe(p ...probe.Probe) {
 	r.probes = append(r.probes, p...)
 }
 
+// RegisterEnricher sets the AI enricher (T0+). Only one may be active.
+// Passing nil clears it.
+func (r *Registry) RegisterEnricher(e ai.Enricher) { r.enricher = e }
+
+// RegisterFixProposer sets the T1 single-action proposer.
+func (r *Registry) RegisterFixProposer(p ai.FixProposer) { r.fixProposer = p }
+
+// RegisterPlanner sets the T2 multi-step planner.
+func (r *Registry) RegisterPlanner(p ai.MultiStepPlanner) { r.planner = p }
+
+// RegisterRunbookProposer sets the T3 Vault runbook generator.
+func (r *Registry) RegisterRunbookProposer(p ai.VaultRunbookProposer) { r.runbookProposer = p }
+
+// RegisterSigner sets the JWT signer (approval-server).
+func (r *Registry) RegisterSigner(s ai.Signer) { r.signer = s }
+
+// RegisterVerifier sets the JWT verifier (approval-server).
+func (r *Registry) RegisterVerifier(v ai.Verifier) { r.verifier = v }
+
+// RegisterApprover sets the approval coordinator.
+func (r *Registry) RegisterApprover(a ai.Approver) { r.approver = a }
+
+// RegisterAuditSink sets the audit log sink.
+func (r *Registry) RegisterAuditSink(s ai.AuditSink) { r.auditSink = s }
+
 // Analyzers returns registered analyzers in registration order.
 func (r *Registry) Analyzers() []diagnose.Analyzer { return r.analyzers }
 
@@ -51,3 +93,28 @@ func (r *Registry) Fixers() []fix.Fixer { return r.fixers }
 
 // Probes returns registered probes in registration order.
 func (r *Registry) Probes() []probe.Probe { return r.probes }
+
+// Enricher returns the registered enricher or nil if AI is off.
+func (r *Registry) Enricher() ai.Enricher { return r.enricher }
+
+// FixProposer returns the registered T1 proposer or nil.
+func (r *Registry) FixProposer() ai.FixProposer { return r.fixProposer }
+
+// Planner returns the registered T2 planner or nil.
+func (r *Registry) Planner() ai.MultiStepPlanner { return r.planner }
+
+// RunbookProposer returns the registered T3 runbook proposer or nil.
+func (r *Registry) RunbookProposer() ai.VaultRunbookProposer { return r.runbookProposer }
+
+// Signer returns the registered JWT signer or nil.
+func (r *Registry) Signer() ai.Signer { return r.signer }
+
+// Verifier returns the registered JWT verifier or nil.
+func (r *Registry) Verifier() ai.Verifier { return r.verifier }
+
+// Approver returns the registered approval coordinator or nil.
+func (r *Registry) Approver() ai.Approver { return r.approver }
+
+// AuditSink returns the registered audit sink or nil. Callers should
+// fall back to a no-op when nil; pkg/ai/noop.go provides one.
+func (r *Registry) AuditSink() ai.AuditSink { return r.auditSink }

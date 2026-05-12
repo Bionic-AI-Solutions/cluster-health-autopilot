@@ -1,0 +1,86 @@
+{{- if .Values.approval.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "cha.fullname" . }}-approval-server
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "cha.labels" . | nindent 4 }}
+    cha.bionicaisolutions.com/role: approval-server
+spec:
+  replicas: {{ .Values.approval.replicas | default 1 }}
+  strategy:
+    # Recreate avoids two approval-servers racing on the in-memory
+    # replay store. P7 introduces a Redis-backed store that supports
+    # rolling updates and replicas > 1.
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "cha.selectorLabels" . | nindent 6 }}
+      cha.bionicaisolutions.com/role: approval-server
+  template:
+    metadata:
+      labels:
+        {{- include "cha.selectorLabels" . | nindent 8 }}
+        cha.bionicaisolutions.com/role: approval-server
+    spec:
+      serviceAccountName: {{ include "cha.fullname" . }}-approval-server
+      {{- with .Values.image.pullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.approval.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: approval-server
+          image: {{ .Values.approval.image.repository }}:{{ .Values.approval.image.tag | default .Chart.AppVersion }}
+          imagePullPolicy: {{ .Values.approval.image.pullPolicy | default "IfNotPresent" }}
+          args:
+            - approval-server
+            - --listen=:8443
+            - --signing-key-path=/etc/cha/keys/signing.key
+            - --audit-namespace={{ .Release.Namespace }}
+          ports:
+            - name: http
+              containerPort: 8443
+              protocol: TCP
+          env:
+            - name: CHA_SIGNING_KEY_PATH
+              value: /etc/cha/keys/signing.key
+          volumeMounts:
+            - name: signing-key
+              mountPath: /etc/cha/keys
+              readOnly: true
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            initialDelaySeconds: 2
+            periodSeconds: 10
+          resources:
+            {{- toYaml (.Values.approval.resources | default .Values.resources) | nindent 12 }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+      volumes:
+        - name: signing-key
+          secret:
+            secretName: {{ .Values.approval.signingKey.secretName | default "cha-approval-signing-key" }}
+            items:
+              - key: signing.key
+                path: signing.key
+                mode: 0400
+              - key: signing.pub
+                path: signing.pub
+                mode: 0444
+            optional: false
+{{- end }}
