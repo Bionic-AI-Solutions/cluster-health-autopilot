@@ -45,7 +45,7 @@ type TokenClaims struct {
 	ActionKind   string    `json:"action_kind,omitempty"`
 	Target       ObjectRef `json:"target,omitempty"`
 	RunbookID    string    `json:"runbook_id,omitempty"`
-	ApprovalSlot int       `json:"slot,omitempty"`           // 1 or 2 for T3
+	ApprovalSlot int       `json:"slot,omitempty"` // 1 or 2 for T3
 	DiagSubject  string    `json:"diag_subject,omitempty"`
 }
 

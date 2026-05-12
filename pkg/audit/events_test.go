@@ -84,12 +84,12 @@ func TestEventsSink_Write_Warning(t *testing.T) {
 
 func TestEventReason(t *testing.T) {
 	cases := map[string]string{
-		"ai.proposal.created":          "AIProposalCreated",
-		"ai.approval.granted":          "AIApprovalGranted",
-		"ai.action.applied":            "AIActionApplied",
-		"ai.runbook.dual_approval":     "AIRunbookDualApproval",
-		"ai.llm.call":                  "AILLMCall",
-		"":                             "AIEvent",
+		"ai.proposal.created":      "AIProposalCreated",
+		"ai.approval.granted":      "AIApprovalGranted",
+		"ai.action.applied":        "AIActionApplied",
+		"ai.runbook.dual_approval": "AIRunbookDualApproval",
+		"ai.llm.call":              "AILLMCall",
+		"":                         "AIEvent",
 	}
 	for in, want := range cases {
 		if got := eventReason(in); got != want {

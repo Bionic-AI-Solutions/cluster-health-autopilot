@@ -12,15 +12,15 @@ import (
 
 func TestActionKindIsValid(t *testing.T) {
 	cases := map[ActionKind]bool{
-		ActionDeletePod:         true,
-		ActionDeleteJob:         true,
-		ActionPatchDeployment:   true,
-		ActionDeleteCertRequest: true,
-		ActionDeleteACMEOrder:   true,
-		ActionKind(""):          false,
-		ActionKind("DeleteSecret"):  false,
-		ActionKind("ExecPod"):       false,
-		ActionKind("CreateBucket"):  false,
+		ActionDeletePod:            true,
+		ActionDeleteJob:            true,
+		ActionPatchDeployment:      true,
+		ActionDeleteCertRequest:    true,
+		ActionDeleteACMEOrder:      true,
+		ActionKind(""):             false,
+		ActionKind("DeleteSecret"): false,
+		ActionKind("ExecPod"):      false,
+		ActionKind("CreateBucket"): false,
 	}
 	for k, want := range cases {
 		if got := k.IsValid(); got != want {
@@ -165,12 +165,12 @@ func TestContainsSecretLike(t *testing.T) {
 	slackTok := "xox" + "b-1234567890-abcdefghijklmnop"
 
 	positives := []string{
-		vaultTok,                          // Vault token
-		jwtTok,                            // JWT-shape
-		ghPAT,                             // GH PAT
-		awsKey,                            // AWS key
-		slackTok,                          // Slack bot token
-		strings.Repeat("a", 64),           // 64-char hex looks like a hash
+		vaultTok,                // Vault token
+		jwtTok,                  // JWT-shape
+		ghPAT,                   // GH PAT
+		awsKey,                  // AWS key
+		slackTok,                // Slack bot token
+		strings.Repeat("a", 64), // 64-char hex looks like a hash
 		"YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXowMTIzNDU2Nzg5ZGVm", // long base64
 	}
 	for _, s := range positives {
@@ -180,10 +180,10 @@ func TestContainsSecretLike(t *testing.T) {
 	}
 	negatives := []string{
 		"normal text",
-		"secret/t6-apps/billing/config",       // Vault path — legit
-		"STRIPE_API_KEY",                       // key name — legit
-		"https://hooks.slack.com/services/X",   // generic URL
-		"openproject-cron-environment",         // a Kubernetes Secret name
+		"secret/t6-apps/billing/config",      // Vault path — legit
+		"STRIPE_API_KEY",                     // key name — legit
+		"https://hooks.slack.com/services/X", // generic URL
+		"openproject-cron-environment",       // a Kubernetes Secret name
 	}
 	for _, s := range negatives {
 		if ContainsSecretLike(s) {

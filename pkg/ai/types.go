@@ -64,6 +64,9 @@ func (t Tier) AllowsProposals() bool {
 // the AI tier can never request a mutation outside this set.
 type ActionKind string
 
+// ActionKind values — the closed enum of mutations the AI tier may
+// propose. Each entry corresponds to a specific snapshot.Mutator call
+// dispatched by the approval-server's executor.
 const (
 	ActionDeletePod         ActionKind = "DeletePod"
 	ActionDeleteJob         ActionKind = "DeleteJob"
@@ -118,6 +121,13 @@ const MaxRelatedSignals = 5
 // AIProposedAction is a single proposal awaiting human approval.
 // It is NEVER executed without a valid ApprovedAction returned from an
 // Approver.Verify call.
+//
+// The "AI" prefix is intentional: it disambiguates from the existing
+// fix.Action type (which records a mutation that has already been
+// applied). External callers reference these side-by-side, so the
+// extra qualifier earns its keep.
+//
+//revive:disable-next-line:exported
 type AIProposedAction struct {
 	// ActionID uniquely identifies this proposal. Used as the JWT `jti`
 	// claim and as the audit log correlation key.
