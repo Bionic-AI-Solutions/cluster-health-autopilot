@@ -140,7 +140,6 @@ func Reconcile(
 		}
 
 		if _, exists := existingByName[crName]; exists {
-			// Patch only the status (firstObserved stays unchanged).
 			obj := existingByName[crName]
 			oldStatus, _, _ := unstructured.NestedMap(obj.Object, "status")
 			oldCount, _ := oldStatus["observationCount"].(int64)
@@ -150,23 +149,38 @@ func Reconcile(
 				}
 			}
 			newCount := oldCount + 1
-			// Patch spec + status. We refresh severity / message /
-			// remediation / investigation on every cycle so the CR reflects
-			// the latest observed state (e.g. flake suppression escalating
-			// warning → critical between cycles, or a new investigation
-			// summary attaching after the streak counter trips). The subject
-			// is the dedup key and is never patched here.
-			patch := []byte(fmt.Sprintf(
-				`{"spec":{"severity":%q,"message":%q,"remediation":%q,"investigation":%q},"status":{"lastObserved":%q,"observationCount":%d,"runID":%q}}`,
+
+			// Two patches because the CRD declares subresources.status:{}.
+			// Patches sent to the main resource endpoint silently drop any
+			// status fields in the request body; status changes must go
+			// through /status.
+			//
+			// Spec patch refreshes severity/message/remediation/investigation
+			// on every cycle so the CR reflects current state (e.g. flake
+			// suppression escalating warning→critical, or an investigation
+			// summary attaching after the streak counter trips). Subject is
+			// the dedup key and never changes.
+			specPatch := []byte(fmt.Sprintf(
+				`{"spec":{"severity":%q,"message":%q,"remediation":%q,"investigation":%q}}`,
 				entry.Severity,
 				truncateAt(entry.Message, 4096),
 				truncateAt(entry.Remediation, 1024),
 				truncateAt(entry.Investigation, 1024),
-				now, newCount, runID,
 			))
-			if pErr := mut.Patch(ctx, snapshot.GVRDriftReport, "", crName, types.MergePatchType, patch); pErr != nil {
+			if pErr := mut.Patch(ctx, snapshot.GVRDriftReport, "", crName, types.MergePatchType, specPatch); pErr != nil {
 				err = pErr
 				continue
+			}
+			// Status patch: lastObserved + observationCount + runID. If this
+			// fails the spec is still current; we record the error but still
+			// count the CR as updated (matches today's accounting, where the
+			// status portion was always silently dropped).
+			statusPatch := []byte(fmt.Sprintf(
+				`{"status":{"lastObserved":%q,"observationCount":%d,"runID":%q}}`,
+				now, newCount, runID,
+			))
+			if pErr := mut.PatchStatus(ctx, snapshot.GVRDriftReport, "", crName, types.MergePatchType, statusPatch); pErr != nil {
+				err = pErr
 			}
 			updated++
 			delete(existingByName, crName)
@@ -201,12 +215,14 @@ func Reconcile(
 			err = cErr
 			continue
 		}
-		// Stamp first/last observed via a status patch.
+		// Stamp first/last observed via /status. The CRD declares
+		// subresources.status:{} so this MUST hit the status subresource —
+		// a plain Patch with a status body would be silently dropped.
 		patch := []byte(fmt.Sprintf(
 			`{"status":{"firstObserved":%q,"lastObserved":%q,"observationCount":1,"runID":%q}}`,
 			now, now, runID,
 		))
-		if pErr := mut.Patch(ctx, snapshot.GVRDriftReport, "", crName, types.MergePatchType, patch); pErr != nil {
+		if pErr := mut.PatchStatus(ctx, snapshot.GVRDriftReport, "", crName, types.MergePatchType, patch); pErr != nil {
 			err = pErr
 		}
 		created++
