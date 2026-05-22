@@ -81,6 +81,13 @@ type Config struct {
 
 	WriteDriftReports bool
 
+	// Ticketing wires an optional issue-tracker sink (OpenProject via MCP
+	// in OSS; Jira / ServiceNow in CHA-com). When Sink is nil the
+	// ticketing path is a no-op and the watcher behaves exactly as
+	// before. Ticketing runs after DriftReport reconcile so the resulting
+	// TicketRef can be persisted onto status.ticket.
+	Ticketing report.TicketingConfig
+
 	// RunRemediation runs fixers after each diagnose cycle and re-diagnoses
 	// post-fix to report accurate state.
 	RunRemediation bool
@@ -344,33 +351,34 @@ func (w *Watcher) runCycle(ctx context.Context) {
 		report.PostActiveStateToAM(nil, w.cfg.AlertmanagerURL, allActive, fixResults, clusterName, ttl)
 	}
 
+	// Shared by RouteAndPost (Slack) and RouteTickets (issue tracker) below.
+	postFixSubjects := make(map[string]bool, len(postFix))
+	for subj := range postFix {
+		postFixSubjects[subj] = true
+	}
+	toPostDiags := make([]report.DeltaDiag, 0, len(toPost))
+	for _, e := range toPost {
+		toPostDiags = append(toPostDiags, report.DeltaDiag{
+			Subject:       e.subject,
+			Severity:      e.severity,
+			Message:       e.message,
+			Remediation:   e.remediation,
+			Investigation: e.investigation,
+			Enrichment:    e.enrichment,
+		})
+	}
+	toResolveDiags := make([]report.ResolvedDiag, 0, len(toResolve))
+	for _, e := range toResolve {
+		toResolveDiags = append(toResolveDiags, report.ResolvedDiag{
+			Subject: e.subject,
+			Message: e.message,
+		})
+	}
+
 	needsSlack := len(toPost) > 0 || len(toResolve) > 0 ||
 		(w.cfg.RunRemediation && !w.cfg.DryRun && hasActions(fixResults))
 
 	if needsSlack && (w.cfg.SlackChannels.Alerts != "" || w.cfg.SlackChannels.Critical != "") {
-		postFixSubjects := make(map[string]bool, len(postFix))
-		for subj := range postFix {
-			postFixSubjects[subj] = true
-		}
-
-		toPostDiags := make([]report.DeltaDiag, 0, len(toPost))
-		for _, e := range toPost {
-			toPostDiags = append(toPostDiags, report.DeltaDiag{
-				Subject:       e.subject,
-				Severity:      e.severity,
-				Message:       e.message,
-				Remediation:   e.remediation,
-				Investigation: e.investigation,
-				Enrichment:    e.enrichment,
-			})
-		}
-		toResolveDiags := make([]report.ResolvedDiag, 0, len(toResolve))
-		for _, e := range toResolve {
-			toResolveDiags = append(toResolveDiags, report.ResolvedDiag{
-				Subject: e.subject,
-				Message: e.message,
-			})
-		}
 		report.RouteAndPost(nil, w.cfg.SlackChannels, postFixSubjects, toPostDiags, toResolveDiags, fixResults)
 	}
 
@@ -382,6 +390,12 @@ func (w *Watcher) runCycle(ctx context.Context) {
 				log.Printf("watcher: driftreport reconcile: %v", err)
 			}
 			log.Printf("watcher: driftreports: %d created, %d updated, %d deleted", c, u, d)
+
+			// Ticketing runs after Reconcile so newly-upserted DriftReports
+			// are visible. Sink == nil makes this a no-op.
+			if w.cfg.Ticketing.Sink != nil {
+				report.RouteTickets(ctx, w.cfg.Ticketing, w.lv, mut, postFixSubjects, toPostDiags, runID)
+			}
 		}
 	}
 }

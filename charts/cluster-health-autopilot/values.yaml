@@ -95,6 +95,57 @@ alertmanager:
   url: ""                        # e.g. "http://alertmanager.pg.svc.cluster.local:9093"
   clusterName: "cluster"         # identifies this cluster in alert labels
 
+# Ticketing — open issue-tracker tickets for diagnostics CHA cannot
+# auto-remediate. Runs after each watcher cycle's DriftReport reconcile;
+# the resulting ticket key is persisted onto DriftReport.status.ticket
+# so subsequent cycles know not to re-open the same ticket.
+#
+# Sink failures NEVER abort the cycle — logged and skipped, same posture
+# as Slack/Alertmanager.
+#
+# OSS ships the OpenProject sink (provider: openproject) talking to an
+# in-cluster MCP server. Jira and ServiceNow live in CHA-com.
+#
+# Auth: when MCP traffic goes through Kong (provider URL on
+# mcp.baisoln.com) you must supply auth.apiKey via ESO. For in-cluster
+# traffic (mcp-openproject-server.mcp.svc), Kong is bypassed and
+# auth.apiKey can stay empty.
+ticketing:
+  enabled: false
+  provider: openproject                  # openproject | jira | servicenow
+  cluster: "cluster"                     # identifies this cluster in ticket bodies; matches alertmanager.clusterName
+  labels:                                # merged into every ticket
+    - cha
+    - auto-filed
+  openproject:
+    # MCP endpoint speaking Streamable-HTTP (single POST endpoint).
+    # In-cluster default — bypasses Kong, no API key required.
+    mcpURL: "http://mcp-openproject-server.mcp.svc:8006/mcp"
+    # All ID fields below are numeric strings matching what the MCP
+    # server's list_projects / list_types / list_priorities /
+    # list_statuses tools return. Discover with:
+    #   curl -fsSL -X POST $MCP_URL -H 'Content-Type: application/json' \
+    #     -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"list_projects","arguments":{}}}'
+    projectID: ""                        # e.g. "6" for the Demo project
+    typeID: ""                           # e.g. "36" for Task — REQUIRED
+    closedStatusID: ""                   # e.g. "82" for Closed status — needed for resolve-on-clear (M2)
+    webURLPrefix: ""                     # e.g. "https://op.bionicaisolutions.com" — used to build operator-clickable URLs
+    # Map CHA severities → OpenProject priority IDs. Empty values let
+    # OpenProject use the project default priority for that severity.
+    severityPriority:
+      critical: ""                       # e.g. "75" for Immediate
+      warning:  ""                       # e.g. "74" for High
+      info:     ""                       # e.g. "73" for Normal
+  # Optional API key when talking to the MCP server through Kong
+  # (provider URL on mcp.baisoln.com). For in-cluster traffic leave
+  # auth.enabled=false. When enabled, the secret is expected to be
+  # synced by ExternalSecret from Vault.
+  auth:
+    enabled: false
+    secretName: cha-ticketing-mcp        # K8s Secret with the API key
+    secretKey: api-key                   # Key inside the Secret
+  dryRun: false                          # Log intended ops without calling the MCP server
+
 # Watcher — event-driven, long-running Deployment (Phase 1).
 # Replaces polling latency (CronJob tick) with near-instant reaction to
 # Kubernetes watch events. Debounces burst updates before re-running the

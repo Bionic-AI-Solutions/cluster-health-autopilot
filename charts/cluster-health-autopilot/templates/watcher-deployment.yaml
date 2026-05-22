@@ -74,11 +74,50 @@ spec:
             - --dry-run
             {{- end }}
             {{- end }}
+            {{- if .Values.ticketing.enabled }}
+            {{- $pcfg := index .Values.ticketing (.Values.ticketing.provider) }}
+            - --ticketing-provider={{ .Values.ticketing.provider }}
+            - --ticketing-mcp-url={{ $pcfg.mcpURL }}
+            {{- with $pcfg.projectID }}
+            - --ticketing-project={{ . }}
+            {{- end }}
+            {{- with $pcfg.typeID }}
+            - --ticketing-type-id={{ . }}
+            {{- end }}
+            {{- with $pcfg.closedStatusID }}
+            - --ticketing-closed-status-id={{ . }}
+            {{- end }}
+            {{- with $pcfg.severityPriority.critical }}
+            - --ticketing-priority-critical={{ . }}
+            {{- end }}
+            {{- with $pcfg.severityPriority.warning }}
+            - --ticketing-priority-warning={{ . }}
+            {{- end }}
+            {{- with $pcfg.severityPriority.info }}
+            - --ticketing-priority-info={{ . }}
+            {{- end }}
+            {{- with $pcfg.webURLPrefix }}
+            - --ticketing-web-url-prefix={{ . }}
+            {{- end }}
+            {{- range .Values.ticketing.labels }}
+            - --ticketing-labels={{ . }}
+            {{- end }}
+            {{- if .Values.ticketing.dryRun }}
+            - --ticketing-dry-run
+            {{- end }}
+            {{- end }}
           env:
             {{- include "cha.slackAlertsEnv" . | nindent 12 }}
             {{- include "cha.slackCriticalEnv" . | nindent 12 }}
             {{- include "cha.vaultEnv" . | nindent 12 }}
             {{- include "cha.optionalFixerEnv" . | nindent 12 }}
+            {{- if and .Values.ticketing.enabled .Values.ticketing.auth.enabled }}
+            - name: TICKETING_MCP_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.ticketing.auth.secretName }}
+                  key: {{ .Values.ticketing.auth.secretKey }}
+            {{- end }}
           resources:
             {{- toYaml .Values.watcher.resources | nindent 12 }}
           securityContext:

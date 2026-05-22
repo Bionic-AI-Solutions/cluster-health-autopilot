@@ -124,6 +124,39 @@ spec:
                   type: string
                   description: ID of the most recent cha run that observed this drift.
                   maxLength: 64
+                ticket:
+                  type: object
+                  description: |
+                    Reference to the external issue-tracker ticket CHA filed for
+                    this unfixable diagnostic. Populated by pkg/ticketing sinks
+                    (OpenProject in OSS; Jira / ServiceNow in CHA-com).
+                    Presence means a ticket already exists — CHA will not
+                    open another one on subsequent cycles.
+                  properties:
+                    provider:
+                      type: string
+                      description: |
+                        Sink identifier. One of: "openproject", "jira",
+                        "servicenow".
+                      maxLength: 32
+                    key:
+                      type: string
+                      description: |
+                        Provider-native ticket key (e.g. "WP-1287",
+                        "OPS-42", "INC0012345").
+                      maxLength: 64
+                    url:
+                      type: string
+                      description: |
+                        Canonical URL an operator clicks through to view
+                        the ticket in the provider UI.
+                      maxLength: 1024
+                    openedAt:
+                      type: string
+                      format: date-time
+                      description: |
+                        Timestamp when CHA first filed this ticket.
+                        Stable across subsequent cycles.
       additionalPrinterColumns:
         - name: Severity
           type: string
@@ -140,6 +173,9 @@ spec:
         - name: Count
           type: integer
           jsonPath: .status.observationCount
+        - name: Ticket
+          type: string
+          jsonPath: .status.ticket.key
       subresources:
         status: {}
 {{- end }}

@@ -33,6 +33,7 @@ import (
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/summarize"
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/vault"
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/watcher"
+	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/ticketing/openproject"
 	"github.com/spf13/cobra"
 )
 
@@ -422,6 +423,17 @@ func watchCmd() *cobra.Command {
 		vaultAddr         string
 		vaultMount        string
 		vaultRole         string
+		ticketingProvider       string
+		ticketingMCPURL         string
+		ticketingProject        string
+		ticketingTypeID         string
+		ticketingClosedStatusID string
+		ticketingPriorityCrit   string
+		ticketingPriorityWarn   string
+		ticketingPriorityInfo   string
+		ticketingWebURLPrefix   string
+		ticketingLabels         []string
+		ticketingDryRun         bool
 	)
 	c := &cobra.Command{
 		Use:   "watch",
@@ -483,6 +495,24 @@ the post-fix cluster state.`,
 				}
 			}
 
+			ticketingCfg, terr := buildTicketingConfig(ticketingOpts{
+				Provider:       ticketingProvider,
+				MCPURL:         ticketingMCPURL,
+				ProjectID:      ticketingProject,
+				TypeID:         ticketingTypeID,
+				ClosedStatusID: ticketingClosedStatusID,
+				PriorityCrit:   ticketingPriorityCrit,
+				PriorityWarn:   ticketingPriorityWarn,
+				PriorityInfo:   ticketingPriorityInfo,
+				WebURLPrefix:   ticketingWebURLPrefix,
+				Cluster:        clusterName,
+				Labels:         ticketingLabels,
+				DryRun:         ticketingDryRun,
+			})
+			if terr != nil {
+				return terr
+			}
+
 			cfg := watcher.Config{
 				Debounce:     debounce,
 				ResyncPeriod: resyncPeriod,
@@ -497,6 +527,7 @@ the post-fix cluster state.`,
 				DryRun:            dryRun,
 				AlertmanagerURL:   alertmanagerURL,
 				ClusterName:       clusterName,
+				Ticketing:         ticketingCfg,
 			}
 			w := watcher.New(lv, reg, mut, cfg)
 			return w.Run(ctx)
@@ -518,7 +549,70 @@ the post-fix cluster state.`,
 	c.Flags().StringVar(&vaultAddr, "vault-addr", os.Getenv("VAULT_ADDR"), "Vault HTTP endpoint (default: $VAULT_ADDR)")
 	c.Flags().StringVar(&vaultMount, "vault-kv-mount", envOrDefault("VAULT_KV_MOUNT", "secret"), "Vault KV-v2 mount path")
 	c.Flags().StringVar(&vaultRole, "vault-k8s-role", os.Getenv("VAULT_K8S_ROLE"), "Vault kubernetes-auth role (default: $VAULT_K8S_ROLE)")
+	c.Flags().StringVar(&ticketingProvider, "ticketing-provider", os.Getenv("TICKETING_PROVIDER"), "Issue tracker sink: 'openproject' (OSS). Empty disables ticketing. Jira/ServiceNow live in CHA-com.")
+	c.Flags().StringVar(&ticketingMCPURL, "ticketing-mcp-url", envOrDefault("TICKETING_MCP_URL", "http://mcp-openproject-server.mcp.svc:8006/mcp"), "MCP server URL for the ticketing sink (Streamable-HTTP transport)")
+	c.Flags().StringVar(&ticketingProject, "ticketing-project", os.Getenv("TICKETING_PROJECT"), "OpenProject project ID (numeric string, e.g. '6' for Demo project — look up via list_projects)")
+	c.Flags().StringVar(&ticketingTypeID, "ticketing-type-id", os.Getenv("TICKETING_TYPE_ID"), "OpenProject work-package type ID (numeric string, e.g. '36' for Task — look up via list_types)")
+	c.Flags().StringVar(&ticketingClosedStatusID, "ticketing-closed-status-id", os.Getenv("TICKETING_CLOSED_STATUS_ID"), "OpenProject status ID for resolved tickets (e.g. '82' for Closed — look up via list_statuses)")
+	c.Flags().StringVar(&ticketingPriorityCrit, "ticketing-priority-critical", os.Getenv("TICKETING_PRIORITY_CRITICAL"), "OpenProject priority ID for CHA severity=critical (e.g. '75' for Immediate)")
+	c.Flags().StringVar(&ticketingPriorityWarn, "ticketing-priority-warning", os.Getenv("TICKETING_PRIORITY_WARNING"), "OpenProject priority ID for CHA severity=warning (e.g. '74' for High)")
+	c.Flags().StringVar(&ticketingPriorityInfo, "ticketing-priority-info", os.Getenv("TICKETING_PRIORITY_INFO"), "OpenProject priority ID for CHA severity=info (e.g. '73' for Normal)")
+	c.Flags().StringVar(&ticketingWebURLPrefix, "ticketing-web-url-prefix", os.Getenv("TICKETING_WEB_URL_PREFIX"), "OpenProject web base URL (e.g. https://op.example.com) — used to build operator-clickable TicketRef.URL")
+	c.Flags().StringSliceVar(&ticketingLabels, "ticketing-labels", []string{"cha", "auto-filed"}, "Labels appended to ticket descriptions for filtering")
+	c.Flags().BoolVar(&ticketingDryRun, "ticketing-dry-run", false, "Log intended ticketing operations without calling the MCP server")
 	return c
+}
+
+type ticketingOpts struct {
+	Provider, MCPURL, ProjectID, TypeID, ClosedStatusID string
+	PriorityCrit, PriorityWarn, PriorityInfo            string
+	WebURLPrefix                                        string
+	Cluster                                             string
+	Labels                                              []string
+	DryRun                                              bool
+}
+
+// buildTicketingConfig assembles a report.TicketingConfig from CLI flags.
+// Returns an empty config (Sink == nil) when --ticketing-provider is empty —
+// the watcher then no-ops the ticketing path. Currently supports
+// "openproject"; Jira and ServiceNow plug in here in CHA-com.
+func buildTicketingConfig(o ticketingOpts) (report.TicketingConfig, error) {
+	if o.Provider == "" {
+		return report.TicketingConfig{}, nil
+	}
+	switch o.Provider {
+	case "openproject":
+		client := &openproject.HTTPClient{
+			Endpoint: o.MCPURL,
+			APIKey:   os.Getenv("TICKETING_MCP_API_KEY"),
+		}
+		sevMap := map[string]string{}
+		if o.PriorityCrit != "" {
+			sevMap["critical"] = o.PriorityCrit
+		}
+		if o.PriorityWarn != "" {
+			sevMap["warning"] = o.PriorityWarn
+		}
+		if o.PriorityInfo != "" {
+			sevMap["info"] = o.PriorityInfo
+		}
+		sink := openproject.New(openproject.Config{
+			ProjectID:        o.ProjectID,
+			TypeID:           o.TypeID,
+			ClosedStatusID:   o.ClosedStatusID,
+			SeverityPriority: sevMap,
+			Labels:           o.Labels,
+			WebURLPrefix:     o.WebURLPrefix,
+			DryRun:           o.DryRun,
+		}, client)
+		return report.TicketingConfig{
+			Sink:    sink,
+			Cluster: o.Cluster,
+			Labels:  o.Labels,
+		}, nil
+	default:
+		return report.TicketingConfig{}, fmt.Errorf("unsupported ticketing provider %q (OSS supports: openproject)", o.Provider)
+	}
 }
 
 func diagnoseCmd() *cobra.Command {
