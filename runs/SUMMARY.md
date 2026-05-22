@@ -1,6 +1,6 @@
 # Cluster Health Autopilot — Run Summary
 
-_Auto-generated 2026-05-21 06:09 UTC · 17 run(s) · 2026-05-04 → 2026-05-20_
+_Auto-generated 2026-05-22 06:06 UTC · 18 run(s) · 2026-05-04 → 2026-05-21_
 
 ## Health trend
 
@@ -23,6 +23,7 @@ _Auto-generated 2026-05-21 06:09 UTC · 17 run(s) · 2026-05-04 → 2026-05-20_
 | 2026-05-18 | run-2026-05-18 | 6 | 6 | 0 | 0 | 0 | 0 |
 | 2026-05-19 | run-2026-05-19 | 6 | 6 | 0 | 0 | 0 | 0 |
 | 2026-05-20 | run-2026-05-20 | 6 | 6 | 0 | 0 | 0 | 0 |
+| 2026-05-21 | run-2026-05-21 | 6 | 6 | 0 | 0 | 0 | 1 |
 
 ## Diagnostic patterns (top categories, anonymized)
 
@@ -33,6 +34,7 @@ _Auto-generated 2026-05-21 06:09 UTC · 17 run(s) · 2026-05-04 → 2026-05-20_
 | `ExternalSecret` | 7 |
 | `cert-expiry` | 7 |
 | `missing-key` | 7 |
+| `image-pull-auth` | 1 |
 
 ## Component findings (top, anonymized)
 
@@ -394,6 +396,28 @@ _Auto-generated 2026-05-21 06:09 UTC · 17 run(s) · 2026-05-04 → 2026-05-20_
 | Storage Claims | HEALTHY | All 75 PVCs bound |
 | Critical Services | HEALTHY | All 32 critical services operational |
 | component-a733dc9e | HEALTHY | All 28 endpoints reachable (20 auto-discovered) |
+
+</details>
+
+<details>
+<summary><strong>2026-05-21</strong> — 6 component(s) · 1 diagnostic(s)</summary>
+
+### Probes
+
+| Component | Status | Detail |
+|---|---|---|
+| Ceph Storage | HEALTHY | 1 cluster(s): rook-ceph@rook-ceph OK (12.1% used) |
+| Cluster Nodes | HEALTHY | All 6 nodes ready |
+| PostgreSQL | HEALTHY | 1 CNPG cluster(s): pg-ceph@pg (2/2 ready, primary=pg-ceph-5) |
+| Storage Claims | HEALTHY | All 75 PVCs bound |
+| Critical Services | HEALTHY | All 32 critical services operational |
+| component-a733dc9e | HEALTHY | All 28 endpoints reachable (20 auto-discovered) |
+
+### Diagnostics
+
+| # | Category | Message |
+|---|---|---|
+| 1 | `image-pull-auth` | Pod `ad3c600e/bd9424fe` container "seed-model-cache" cannot pull image "img-482cf9d7:tag": auth failure. Check imagePullSecret in pod spec or ServiceAccount. Event: Failed to pull image "img-482cf9d7:tag": failed to pull and unpack image "img-5a01fadf:tag": failed to resolve r |
 
 </details>
 
