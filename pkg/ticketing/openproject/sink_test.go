@@ -52,7 +52,7 @@ func TestUpsertSendsCorrectMCPSchema(t *testing.T) {
 	cli := &recordingClient{
 		Response: map[string]any{
 			"work_package": map[string]any{
-				"id":       float64(1287),
+				"id":        float64(1287),
 				"self_link": "https://op.example/work_packages/1287",
 			},
 		},

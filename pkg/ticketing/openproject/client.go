@@ -126,7 +126,7 @@ func (c *HTTPClient) CallTool(ctx context.Context, name string, args map[string]
 	if err != nil {
 		return nil, fmt.Errorf("call mcp tool %q: %w", name, err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	raw, err := io.ReadAll(resp.Body)
 	if err != nil {

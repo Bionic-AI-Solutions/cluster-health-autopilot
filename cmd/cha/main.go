@@ -407,22 +407,22 @@ func versionCmd() *cobra.Command {
 
 func watchCmd() *cobra.Command {
 	var (
-		live              bool
-		kubeconfig        string
-		debounce          time.Duration
-		resyncPeriod      time.Duration
-		slackAlerts       string
-		slackCritical     string
-		postOnResolved    bool
-		repeatInterval    time.Duration
-		writeDriftReports bool
-		remedy            bool
-		dryRun            bool
-		alertmanagerURL   string
-		clusterName       string
-		vaultAddr         string
-		vaultMount        string
-		vaultRole         string
+		live                    bool
+		kubeconfig              string
+		debounce                time.Duration
+		resyncPeriod            time.Duration
+		slackAlerts             string
+		slackCritical           string
+		postOnResolved          bool
+		repeatInterval          time.Duration
+		writeDriftReports       bool
+		remedy                  bool
+		dryRun                  bool
+		alertmanagerURL         string
+		clusterName             string
+		vaultAddr               string
+		vaultMount              string
+		vaultRole               string
 		ticketingProvider       string
 		ticketingMCPURL         string
 		ticketingProject        string
