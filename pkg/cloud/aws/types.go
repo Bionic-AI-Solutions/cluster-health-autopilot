@@ -9,16 +9,20 @@ import "time"
 // probe needs. We deliberately do NOT pass the SDK type through — it
 // would force every probe consumer to depend on aws-sdk-go-v2.
 //
+// JSON tags are the snapshot-file wire format. Changing a tag is a
+// snapshot-file backward-compat break; add new fields with new tags
+// instead.
+//
 // Fields cover only what the M1 RDS probe asserts on. Extend
 // deliberately as analyzers / fixers ask for more.
 type DBInstance struct {
 	// Identifier is the DB instance identifier (e.g. "prod-db-1").
 	// Used in the DriftReport subject.
-	Identifier string
+	Identifier string `json:"identifier"`
 
 	// Engine is the database engine (e.g. "postgres", "mysql",
 	// "aurora-postgresql"). Surfaced in the diagnostic for context.
-	Engine string
+	Engine string `json:"engine"`
 
 	// Status is the lifecycle state. Values include: available,
 	// backing-up, creating, deleting, failed, incompatible-network,
@@ -27,33 +31,34 @@ type DBInstance struct {
 	// resetting-master-credentials, restore-error, starting, stopped,
 	// stopping, storage-full, storage-optimization. The probe flags
 	// any status that is not "available".
-	Status string
+	Status string `json:"status"`
 
 	// AllocatedStorageGB is the requested storage size in GB.
-	AllocatedStorageGB int32
+	AllocatedStorageGB int32 `json:"allocatedStorageGB"`
 
 	// StorageUsedPercent is the percentage of allocated storage
 	// currently consumed. SDK reports this via CloudWatch's
 	// FreeStorageSpace metric divided by AllocatedStorageGB; the Live
 	// wrapper computes this from the metric. Snapshot mode captures
-	// the computed percentage directly. 0 means "unknown" (probe
-	// emits warning to surface unknown-state pods).
-	StorageUsedPercent int
+	// the computed percentage directly. 0 means "unknown" — the probe
+	// does not emit storage findings for 0 since the threshold check
+	// is `>= warn`, and 0 < warn always.
+	StorageUsedPercent int `json:"storageUsedPercent"`
 
 	// MultiAZ indicates whether the instance is configured for
 	// Multi-AZ failover. Probe uses this to scope severity of
 	// failover events.
-	MultiAZ bool
+	MultiAZ bool `json:"multiAZ,omitempty"`
 
 	// Endpoint is the connection endpoint (host:port). Surfaced in
 	// the diagnostic so operators can correlate to client errors.
-	Endpoint string
+	Endpoint string `json:"endpoint,omitempty"`
 
 	// ARN is the full Amazon Resource Name. Stamped into
 	// DriftReport.spec.resourceRef.cloud for unambiguous reference.
-	ARN string
+	ARN string `json:"arn,omitempty"`
 
 	// CreatedAt is the instance creation time. Provided for age-aware
 	// analyzers (not used by M1 RDS probe).
-	CreatedAt time.Time
+	CreatedAt time.Time `json:"createdAt,omitempty"`
 }

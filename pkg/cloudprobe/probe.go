@@ -24,26 +24,29 @@ import (
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/probe"
 )
 
-// Probe is the cloud-resource counterpart to pkg/probe.Probe.
+// Probe is the cloud-resource counterpart to pkg/probe.Probe. Shape
+// matches Probe (Name + Run) so the catalog can register and iterate
+// K8s and cloud probes uniformly.
 //
 // Implementations:
 //   - Inspect a single resource type (e.g., AWS RDS instances, GCP
 //     Cloud SQL instances, Azure Disk attachments)
 //   - Return probe.Result; findings flow through the existing
 //     report.AssembleEntries path unchanged
-//   - Refuse cleanly (mark themselves SKIPPED) when their required
-//     cloud sub-client is nil — never panic on nil clients
+//   - Refuse cleanly (return Result with Component.Status="SKIPPED")
+//     when their required cloud sub-client is nil — never panic on nil
 //   - Are SAFE to call concurrently with other probes; per-cycle
 //     rate limiting is applied at the catalog level, not per-probe
 //   - Must NEVER mutate cloud resources — that lands in a separate
 //     design with its own safety envelope (M4)
 type Probe interface {
-	// Component returns the static metadata (name, description) the
-	// renderer uses to label this probe in reports.
-	Component() probe.ComponentResult
+	// Name returns the component label rendered in Slack, DriftReport,
+	// Alertmanager. Convention: "aws-rds", "gcp-cloudsql", "azure-sql"
+	// — kebab-case, provider-prefixed.
+	Name() string
 
 	// Run inspects the cloud Source and returns zero or more findings.
 	// Must not mutate. Must handle nil sub-client by returning a
-	// probe.Result with status SKIPPED.
+	// probe.Result with Component.Status="SKIPPED".
 	Run(ctx context.Context, src cloud.Source) probe.Result
 }

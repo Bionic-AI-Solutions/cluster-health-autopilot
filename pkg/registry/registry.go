@@ -14,6 +14,7 @@ package registry
 
 import (
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/ai"
+	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/cloudprobe"
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/diagnose"
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/fix"
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/probe"
@@ -27,9 +28,10 @@ import (
 // any AI component, so an empty registry produces today's behavior
 // bit-for-bit.
 type Registry struct {
-	analyzers []diagnose.Analyzer
-	fixers    []fix.Fixer
-	probes    []probe.Probe
+	analyzers   []diagnose.Analyzer
+	fixers      []fix.Fixer
+	probes      []probe.Probe
+	cloudProbes []cloudprobe.Probe
 
 	// AI components — all optional.
 	enricher        ai.Enricher
@@ -59,6 +61,12 @@ func (r *Registry) RegisterFixer(f ...fix.Fixer) {
 // RegisterProbe adds one or more probes in registration order.
 func (r *Registry) RegisterProbe(p ...probe.Probe) {
 	r.probes = append(r.probes, p...)
+}
+
+// RegisterCloudProbe adds one or more cloud-resource probes. Catalog
+// wiring (catalog/cloud.go) registers AWS/GCP/Azure probes here.
+func (r *Registry) RegisterCloudProbe(p ...cloudprobe.Probe) {
+	r.cloudProbes = append(r.cloudProbes, p...)
 }
 
 // RegisterEnricher sets the AI enricher (T0+). Only one may be active.
@@ -100,6 +108,10 @@ func (r *Registry) Fixers() []fix.Fixer { return r.fixers }
 
 // Probes returns registered probes in registration order.
 func (r *Registry) Probes() []probe.Probe { return r.probes }
+
+// CloudProbes returns registered cloud-resource probes in registration
+// order. Empty slice when no cloud providers are configured.
+func (r *Registry) CloudProbes() []cloudprobe.Probe { return r.cloudProbes }
 
 // Enricher returns the registered enricher or nil if AI is off.
 func (r *Registry) Enricher() ai.Enricher { return r.enricher }
