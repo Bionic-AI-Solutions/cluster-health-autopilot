@@ -19,34 +19,18 @@ import "context"
 // genuinely empty (e.g., no RDS instances in the account/region);
 // they return (nil, err) when the API call failed. Probes distinguish.
 //
-// This interface is INTENTIONALLY incomplete — only M1 probes are
-// represented. M2+ resource types extend the interface here as they
-// land. Keep the surface narrow; add deliberately.
+// This interface is INTENTIONALLY incomplete — only the M1 RDS probe
+// is wired today. Methods for the other M1 resource types (EBS, EKS,
+// IAM, ALB, ACM, KMS, S3, VPC) land as their probes are implemented.
+// Keep the surface narrow; add deliberately.
 type Client interface {
 	// Region returns the AWS region this client is bound to. Probes
 	// use it to stamp DriftReport subjects like
 	// "aws-rds/us-east-1/prod-db-1".
 	Region() string
 
-	// (Per-resource methods land here as probes are implemented.
-	// See docs/design/2026-05-cloud-probe-framework.md §4 for the
-	// M1 probe set: RDS, EBS, EKS, IAM, ALB, ACM, KMS, S3, VPC.
-	//
-	// Stub:
-	//   DescribeDBInstances(ctx context.Context) ([]DBInstance, error)
-	//   DescribeVolumes(ctx context.Context) ([]Volume, error)
-	//   DescribeCluster(ctx context.Context, name string) (*Cluster, error)
-	//   GetRole(ctx context.Context, name string) (*Role, error)
-	//   DescribeTargetGroups(ctx context.Context) ([]TargetGroup, error)
-	//   DescribeTargetHealth(ctx context.Context, tgArn string) ([]TargetHealth, error)
-	//   DescribeCertificates(ctx context.Context) ([]Certificate, error)
-	//   ListKMSKeys(ctx context.Context) ([]KMSKey, error)
-	//   GetBucketPublicAccessBlock(ctx context.Context, bucket string) (*PABConfig, error)
-	//   DescribeSubnets(ctx context.Context) ([]Subnet, error)
-	// )
+	// DescribeDBInstances lists all RDS DBInstances visible to the
+	// caller in the bound region. Returns (nil, nil) when the
+	// account has zero RDS instances; (nil, err) on API failure.
+	DescribeDBInstances(ctx context.Context) ([]DBInstance, error)
 }
-
-// Ensure the context import isn't pruned by tooling while the
-// per-resource methods are commented stubs. Removed in M1 commits
-// that add the first real method.
-var _ = context.Background
