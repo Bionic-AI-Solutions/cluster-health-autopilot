@@ -1,6 +1,6 @@
 # Cluster Health Autopilot — Run Summary
 
-_Auto-generated 2026-05-24 06:01 UTC · 20 run(s) · 2026-05-04 → 2026-05-23_
+_Auto-generated 2026-05-25 06:26 UTC · 21 run(s) · 2026-05-04 → 2026-05-24_
 
 ## Health trend
 
@@ -26,6 +26,7 @@ _Auto-generated 2026-05-24 06:01 UTC · 20 run(s) · 2026-05-04 → 2026-05-23_
 | 2026-05-21 | run-2026-05-21 | 6 | 6 | 0 | 0 | 0 | 1 |
 | 2026-05-22 | run-2026-05-22 | 6 | 6 | 0 | 0 | 0 | 0 |
 | 2026-05-23 | run-2026-05-23 | 6 | 6 | 0 | 0 | 0 | 1 |
+| 2026-05-24 | run-2026-05-24 | 6 | 6 | 0 | 0 | 0 | 2 |
 
 ## Diagnostic patterns (top categories, anonymized)
 
@@ -33,10 +34,10 @@ _Auto-generated 2026-05-24 06:01 UTC · 20 run(s) · 2026-05-04 → 2026-05-23_
 |---|---|
 | `missing-secret` | 14 |
 | `unprovisioned` | 14 |
-| `cert-expiry` | 8 |
+| `cert-expiry` | 9 |
 | `ExternalSecret` | 7 |
 | `missing-key` | 7 |
-| `image-pull-auth` | 1 |
+| `image-pull-auth` | 2 |
 
 ## Component findings (top, anonymized)
 
@@ -458,6 +459,29 @@ _Auto-generated 2026-05-24 06:01 UTC · 20 run(s) · 2026-05-04 → 2026-05-23_
 | # | Category | Message |
 |---|---|---|
 | 1 | `cert-expiry` | Certificate `649e263a/8532da75` is not Ready: Secret was issued for "asre-baisoln-com". If this message is not transient, you might have two conflicting Certificates pointing to the same secret.. Check Issuer/ClusterIssuer status and cert-manager controller logs. |
+
+</details>
+
+<details>
+<summary><strong>2026-05-24</strong> — 6 component(s) · 2 diagnostic(s)</summary>
+
+### Probes
+
+| Component | Status | Detail |
+|---|---|---|
+| Ceph Storage | HEALTHY | 1 cluster(s): rook-ceph@rook-ceph OK (12.1% used) |
+| Cluster Nodes | HEALTHY | All 6 nodes ready |
+| PostgreSQL | HEALTHY | 1 CNPG cluster(s): pg-ceph@pg (2/2 ready, primary=pg-ceph-5) |
+| Storage Claims | HEALTHY | All 75 PVCs bound |
+| Critical Services | HEALTHY | All 32 critical services operational |
+| component-a733dc9e | HEALTHY | All 29 endpoints reachable (21 auto-discovered) |
+
+### Diagnostics
+
+| # | Category | Message |
+|---|---|---|
+| 1 | `image-pull-auth` | Pod `37a8eec1/08071df7` container "cha-soak-pull-auth" cannot pull image "img-2207b6af:tag": auth failure. Check imagePullSecret in pod spec or ServiceAccount. Event: Failed to pull image "img-2207b6af:tag": failed to pull and unpack image "img-2207b6af:tag": failed to res |
+| 2 | `cert-expiry` | Certificate `649e263a/8532da75` is not Ready: Secret was issued for "asre-baisoln-com". If this message is not transient, you might have two conflicting Certificates pointing to the same secret.. Check Issuer/ClusterIssuer status and cert-manager controller logs. |
 
 </details>
 
