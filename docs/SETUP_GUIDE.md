@@ -1539,6 +1539,94 @@ securityContext:
 
 ---
 
+## 17. CHA-com paid binary — install on top of OSS
+
+The OSS chart templates an **approval-server** Deployment under
+`approval.enabled=true`. That Deployment runs the paid CHA-com binary
+(`cha-com approval-server`), which provides the AI-tier approval
+webhook + Ed25519 signing flow. The OSS engine continues to handle
+probes / analyzers / fixers; the paid binary is a *sidecar* that
+augments alerts with AI features.
+
+### Step 1 — Generate the approval signing key
+
+```sh
+# Run once, persists into a K8s Secret the chart references.
+kubectl create namespace cluster-health-autopilot --dry-run=client -o yaml | kubectl apply -f -
+kubectl run cha-com-keygen \
+  --namespace cluster-health-autopilot \
+  --image=docker4zerocool/cha-com:v1.0.0 \
+  --restart=Never \
+  --command -- /usr/local/bin/cha-com gen-signing-key \
+    --secret-namespace=cluster-health-autopilot \
+    --secret-name=cha-com-signing-key
+kubectl delete pod cha-com-keygen -n cluster-health-autopilot
+```
+
+### Step 2 — Enable approval-server in Helm values
+
+```yaml
+approval:
+  enabled: true
+  image:
+    repository: docker4zerocool/cha-com
+    tag: v1.0.0
+  signingKey:
+    secretName: cha-com-signing-key
+  baseURL: https://cha-approve.example.com   # external URL operators see
+ai:
+  enabled: true
+  tier: t0      # t0 / t1 / t2 / t3 / off
+  endpoint: https://gpu-ai.example.com/v1   # OpenAI-compatible
+  model: qwen3.6-35b-a3b-fp8                # in-cluster vLLM recommended
+  apiKey:
+    secretName: cha-com-llm-key
+    secretKey:  api-key
+```
+
+### Step 3 — Helm upgrade
+
+```sh
+helm upgrade cha cha/cluster-health-autopilot \
+  --namespace cluster-health-autopilot \
+  --reset-then-reuse-values \
+  -f cha-com-values.yaml
+```
+
+The watcher pod starts emitting AI-enriched DriftReports; the
+approval-server pod handles signed click-to-fix URLs.
+
+### What's shipped today vs roadmap
+
+CHA-com v1.0.0 ships:
+
+- **Approval-server with Ed25519 signing + JTI replay protection** (real)
+- **`gen-signing-key`** utility (real)
+- **Paid catalog plumbing** — `PaidBoundaryAnalyzer` boundary-check today;
+  real paid analyzers ship in G2 increments
+- **AI tier code** in `ai/` package (enricher, fix-proposer, planner, vault-runbook, audit hash-chain) — used by the approval-server; the `cha-com diagnose/watch` subcommands that drive T0–T4 enrichment in-process are G3 work, not yet wired into the binary's CLI surface
+
+See [`docs/design/2026-05-cha-com-publishing-gap.md`](design/2026-05-cha-com-publishing-gap.md) for the
+G1/G2/G3 work breakdown.
+
+---
+
+## Appendix — GHCR package visibility (one-time setup)
+
+OSS GoReleaser publishes to both Docker Hub and GHCR on every release.
+The first push to GHCR creates the package as **private** by default. To
+make it pullable by non-org-members:
+
+1. Open https://github.com/orgs/Bionic-AI-Solutions/packages/container/cluster-health-autopilot/settings
+2. Under "Danger Zone" → "Change package visibility" → **Public**
+3. Repeat for `cha-com` package once the first CHA-com release publishes
+
+This is a one-time step per package — subsequent releases inherit the
+visibility setting. Docker Hub images are public-by-default and don't
+need this step.
+
+---
+
 ## 14. AI tier setup (CHA-com only)
 
 AI tiers (T0 narration through T3 break-glass Vault runbook) ship in

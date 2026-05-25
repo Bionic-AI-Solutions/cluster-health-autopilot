@@ -17,7 +17,9 @@ A self-healing operational layer for Kubernetes clusters: **detect → remediate
 | Layer-2 rule-based Investigator (OSS) | ✅ shipped |
 | GCP cloud probes | ⏳ roadmap (M2 / v1.7+) — `--cloud-gcp-enabled` errors at startup today |
 | Azure cloud probes | ⏳ roadmap (M2 / v1.7+) — `--cloud-azure-enabled` errors at startup today |
-| Paid AI tiers (T0–T3) — LLM-backed enrichment, fix proposals, plans, runbooks | ⚠️ scaffolding shipped; AI orchestration wiring is in progress in [CHA-com](https://github.com/Bionic-AI-Solutions/CHA-com) (private) |
+| CHA-com paid binary v1.0.0 (approval-server, Ed25519 signing, gen-signing-key, paid catalog plumbing) — published at `docker4zerocool/cha-com:1.0.0` | ✅ shipped (G1 closed) |
+| Paid AI tiers (T0–T3) — code lives in `ai/` package; T0–T4 in-process enrichment wired into a `cha-com diagnose/watch` CLI surface | ⏳ G3 (next sprint) — see [`docs/design/2026-05-cha-com-publishing-gap.md`](docs/design/2026-05-cha-com-publishing-gap.md) |
+| Real paid analyzers (the "3-months-earlier patterns" claim) | ⏳ G2 (incremental) — only `PaidBoundaryAnalyzer` is wired today |
 | Operator port (controller-runtime / kubebuilder) | ⏳ roadmap (Sprint 5 / v1.7) |
 
 ---
