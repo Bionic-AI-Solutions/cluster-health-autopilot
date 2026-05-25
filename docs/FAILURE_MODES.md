@@ -1,10 +1,13 @@
 # Failure-Mode Catalog
 
 The default catalog (v1.5.2) covers **four default auto-fixers + one opt-in**
-and **seven OSS analyzers** (plus `VaultPathMissing` in the paid catalog).
-Each is a separate Go function with a published unit-test corpus under
-[`internal/`](../internal/). The "real example" column is a real incident from
-the cluster the product was built on.
+and **eight OSS analyzers**. All analyzer source code ships under Apache 2.0.
+`VaultPathMissing` requires a constructed Vault client to register — the OSS
+ships it unwired (you supply the client); the paid CHA Enterprise binary
+auto-wires it from your Vault configuration. Each is a separate Go function
+with a published unit-test corpus under [`internal/`](../internal/). The
+"real example" column is a real incident from the cluster the product was
+built on.
 
 Since v1.5, every CRITICAL finding also passes through a **Layer-2 Investigator**
 (rule-based in OSS, optional LLM-backed in CHA-com) that attaches a root-cause

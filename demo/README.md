@@ -56,7 +56,7 @@ chmod +x demo/simulate/*.sh demo/fix-scripts/*.sh demo/run-demo.sh
 ## Run the Full Demo (Scripted)
 
 ```bash
-cd /home/skadam/cluster-health-autopilot
+cd "$(git rev-parse --show-toplevel)"
 export KUBE_CONTEXT="arn:aws:eks:ap-south-1:ACCOUNT:cluster/test-cluster1"
 bash demo/run-demo.sh
 ```

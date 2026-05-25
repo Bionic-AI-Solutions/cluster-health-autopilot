@@ -81,7 +81,7 @@ Full Helm chart at [`charts/cluster-health-autopilot/`](charts/cluster-health-au
 - PVC binding state
 - API connectivity sanity (so transient API problems become a reported `PROBE_FAILED`, not a silent green light)
 
-## What it diagnoses (7 OSS analyzers — read-only)
+## What it diagnoses (8 OSS analyzers — read-only)
 
 - **SecretKeyMissing** — pod stuck in `CreateContainerConfigError`; names the missing key + consuming Deployment + owning ExternalSecret.
 - **FailingExternalSecrets** — walks every ExternalSecret with `Ready=False`, surfaces the controller's specific error message (the missing Vault property name).
@@ -90,8 +90,24 @@ Full Helm chart at [`charts/cluster-health-autopilot/`](charts/cluster-health-au
 - **ImagePullAuth** — pod in `ImagePullBackOff` with kubelet event auth signals (401, denied, unauthorized).
 - **CertExpiry** — cert-manager Certificate not Ready, expiring within 14 days, or already expired.
 - **TLSSecretMismatch** — Ingress points at an expired Secret while cert-manager is renewing a healthy cert into a different Secret in the same namespace. (Two-Secret naming drift.)
+- **VaultPathMissing** — Apache-2.0 source ships in OSS; requires you to construct a Vault client and register it explicitly (`reg.RegisterAnalyzer(diagnose.VaultPathMissing{Client: vc})`). Queries Vault directly to catch drift before ESO's next refresh marks `Ready=False`. The paid CHA Enterprise binary auto-wires this from your Vault configuration.
 
-Plus **VaultPathMissing** in the paid catalog — queries Vault directly to catch drift before ESO's next refresh marks `Ready=False`.
+## What it checks in your cloud account (AWS — opt-in)
+
+Enable with `--aws-enabled` (or `cloudProbes.aws.enabled: true` in Helm values). The probes use the standard AWS SDK credential chain (IRSA, instance profile, env vars). 10 probes ship today:
+
+- **RDS** — instance/cluster status, storage, multi-AZ, backup retention drift
+- **EBSVolumes** — orphan/unattached, snapshot age
+- **EKSControlPlane** — version skew vs. node groups, addon staleness
+- **EKSNodeGroups** — capacity, scaling activity, version drift
+- **IAMRoles** — trust policy drift on cluster service-account roles
+- **ALBTargetHealth** — unhealthy targets in Load Balancer Controller-managed TGs
+- **ACMCertExpiry** — certs expiring within 14 days
+- **KMSKeys** — pending-deletion keys still referenced by cluster resources
+- **S3BucketPublicAccess** — public-ACL drift on buckets referenced by cluster IAM
+- **VPCSubnets** — exhausted IP space affecting pod CIDR allocation
+
+GCP and Azure probes are scoped for the M2 milestone of the cloud-probe roadmap; see [`docs/design/2026-05-cloud-probe-framework.md`](docs/design/2026-05-cloud-probe-framework.md).
 
 ## What it auto-fixes (whitelisted)
 
@@ -116,10 +132,11 @@ The OSS catalog ships a deterministic, rule-based Investigator covering TLS expi
 
 ## Architecture
 
-- One CronJob, one ConfigMap (the script), one ServiceAccount, two ClusterRoles.
-- Container image: `kubectl + bash + jq + curl` (no proprietary registry).
-- Webhook: ExternalSecret from Vault — no plaintext credentials in any manifest.
-- <100 MB RAM, <100 ms CPU, <60 s wall-clock per run.
+- Two CronJobs (diagnose + remediate), one ServiceAccount, three ClusterRoles (reader, remediator, driftreport). An optional long-running Watcher Deployment and an Approval Server are deployed when their features are enabled.
+- Container image: a single `cha` Go binary (~30 MB) on `gcr.io/distroless/static:nonroot`. No shell, no package manager, no proprietary registry. Built via the [Dockerfile](Dockerfile) at the repo root.
+- Credentials: ExternalSecret from Vault wherever possible — no plaintext credentials baked into any manifest.
+- Footprint: ~30 MB RSS, sub-second CPU, <60 s wall-clock per probe-and-fix cycle.
+- See [`docs/READINESS.md`](docs/READINESS.md) for pilot-vs-production limits, RBAC blast-radius notes, and known operational caveats.
 
 ## Docs
 
@@ -136,7 +153,7 @@ The OSS catalog ships a deterministic, rule-based Investigator covering TLS expi
 
 [Apache License 2.0](LICENSE) for the engine and the default signature library.
 
-The **Verified Signature Library** (curated, regression-tested patterns added monthly) ships as a separate signed bundle under a commercial license. See [LICENSE-VERIFIED-LIBRARY.md] *(to be added before public launch)*.
+The **Verified Signature Library** (curated, regression-tested patterns added monthly) ships as a separate signed bundle under a commercial subscription license to CHA Enterprise customers. See [`LICENSE-VERIFIED-LIBRARY.md`](LICENSE-VERIFIED-LIBRARY.md) for the terms.
 
 ## Security
 
@@ -144,4 +161,10 @@ To report a vulnerability, email **cha-security@baisoln.com**. See [SECURITY.md]
 
 ## Roadmap
 
-See [/home/skadam/.claude/plans/i-have-been-adviced-hashed-lecun.md] for the WS-A → WS-D rollout plan.
+Active design docs live in [`docs/design/`](docs/design/):
+
+- [Hardening plan (Sprints 0–4)](docs/design/2026-05-hardening-plan.md) — TDD-driven punch-list closing the 2026-05 adversarial review
+- [Trigger expansion roadmap (v1.6 → v2.0)](docs/design/2026-05-trigger-expansion-roadmap.md) — Kong, GPU, HPA, ArgoCD, Velero, Vault, log-pattern probes
+- [Cloud probe framework](docs/design/2026-05-cloud-probe-framework.md) — AWS shipped, GCP/Azure in M2
+- [Investigator agent](docs/design/2026-05-investigator-agent.md) — Layer-2 architecture rationale
+- [Ticketing MCP integration](docs/design/2026-05-ticketing-mcp-integration.md) — OpenProject + MCP transport

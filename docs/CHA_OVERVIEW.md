@@ -55,7 +55,8 @@ infrastructure.
 | Capability | Free OSS (single cluster) | Paid (per cluster) | Enterprise |
 |---|---|---|---|
 | Zero-trust snapshot + live watcher | ✓ | ✓ | ✓ |
-| 6 probes · 7 analyzers · 4 default fixers + 1 opt-in (TLSSecretMismatch) | ✓ | ✓ | ✓ |
+| 6 probes · 8 analyzers · 4 default fixers + 1 opt-in (TLSSecretMismatch) | ✓ | ✓ | ✓ |
+| `VaultPathMissing` analyzer source (Apache-2.0; you supply the Vault client) | ✓ | ✓ | ✓ |
 | Ingress host auto-discovery (v1.2) | ✓ | ✓ | ✓ |
 | Layer-1 flake suppression — retry + 2-of-2 streak (v1.4) | ✓ | ✓ | ✓ |
 | **Layer-2 Investigator — rule-based, deterministic, read-only (v1.5)** | ✓ | ✓ | ✓ |
@@ -64,7 +65,7 @@ infrastructure.
 | Pattern registry — patterns 3 months EARLIER than OSS | — | ✓ | ✓ |
 | Dry-run pattern simulation against your captured snapshot | — | ✓ | ✓ |
 | 4-hour SLA on false-positive triage + state-change response | — | ✓ | ✓ |
-| `VaultPathMissing` analyzer (queries Vault directly) | — | ✓ | ✓ |
+| `VaultPathMissing` auto-wired from your Vault configuration (no glue code) | — | ✓ | ✓ |
 | **Layer-2 Investigator — LLM-backed swap of the OSS interface** | — | ✓ | ✓ |
 | AI T0 — diagnostic narrative (read-only LLM enrichment) | — | ✓ | ✓ |
 | AI T1 — fix proposals with one-click human approval | — | ✓ | ✓ |

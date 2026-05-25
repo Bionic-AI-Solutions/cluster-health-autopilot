@@ -143,3 +143,78 @@ hardening), the following metrics are exposed:
    `ai.rateLimit.tokensPerHour` to your tolerance. CHA-com auto-soft-
    fails when the bucket exhausts, so the worst case is degraded
    enrichment, not over-spend.
+
+---
+
+## Failure-mode amplification (Sprint 3 hardening)
+
+The token tables above assume **a clean cluster with stable diagnostics**. Real
+clusters amplify cost in three specific ways that the 2026-05-22 adversarial
+review flagged. Operators must model these before sizing the SaaS budget.
+
+### A1. Per-cycle cache miss on flapping workloads
+
+`pkg/ai.Cache` deduplicates by `(diagnostic_fingerprint, model)`. A workload
+that flaps (crash → recover → crash again every ~10 min) generates a **new
+fingerprint per occurrence** because the Finding timestamp is part of the
+fingerprint. Cache hit rate collapses to ~0.
+
+**Effect**: 1 flapping workload × 144 cycles/day × 1 investigator call =
+~144 investigator calls/day from a single resource. At Anthropic Sonnet rates
+(~$0.10 per investigation), this is ~$430/month from **one flapping pod**.
+
+### A2. Investigation rate limiter not gating Layer-2 calls (pre-Sprint-3)
+
+The current `ai/rate_limit.go::Take(tier)` gates **fix proposals**, not
+**investigations**. The Layer-2 LLM-backed investigator can be called once per
+CRITICAL finding per cycle with no separate budget — only the per-cycle
+wall-clock ceiling (`investigationTimeout = 20s`) and the implicit
+`actionsPerHour` ceiling (which the investigator doesn't consult) apply.
+
+**Closed by**: Sprint 3.2 — adds `TakeInvestigation(class)` keyed on
+`(approver_identity, diagnostic_class)`. Until that ships, **do not enable
+Layer-2 LLM-backed mode on a SaaS provider without an external monthly
+spend cap.**
+
+### A3. Post-apply failure amplification
+
+If a T1 fix applies and the 60-second re-probe still reports the same
+diagnostic, the proposer can be re-invoked. The circuit breaker trips after 3
+consecutive failures (see [`CHA-com/ai/circuit_breaker.go`](../../CHA-com/ai/circuit_breaker.go)),
+but those first 3 attempts each generate a fresh T0+T1 pair = **6 LLM calls
+per "stuck" incident** before the breaker closes.
+
+**Mitigation**: tune `circuit_breaker.failure_threshold` (default 3) downward
+on cost-sensitive deployments. Setting it to 1 means a single failed apply
+trips the breaker, which is over-aggressive for normal operations but
+protects against runaway cost during a misconfigured rollout.
+
+### Worst-case planning table
+
+For sizing the **monthly LLM budget ceiling** (not the average), use these
+multipliers on the steady-state token estimates above:
+
+| Cluster profile | Amplification multiplier | When |
+|---|---:|---|
+| Stable, no flapping, 10 CRITICAL/month | **1×** | Most production clusters after burn-in |
+| Routine deploys, occasional StuckRSPods | **3–5×** | Standard CI/CD pipeline noise |
+| Flapping workload(s), pre-Sprint-3 | **20–50×** | One flapping pod can dominate |
+| Pre-Sprint-3 + flapping + Layer-2 LLM on | **50–200×** | Genuine cost-blowup scenario |
+
+**Recommendation**: until Sprint 3 ships, treat the **steady-state cost × 20**
+as your budget ceiling, not the average. Set the provider-side monthly spend
+cap accordingly. See [docs/design/2026-05-hardening-plan.md](design/2026-05-hardening-plan.md)
+§3.2 for the investigation-rate-limiter design.
+
+---
+
+## Operator checklist before enabling AI tiers
+
+- [ ] Pick a provider (default: in-cluster vLLM on gpu-ai endpoint = $0 marginal)
+- [ ] Set a hard monthly spend cap in the provider console — at least 20× steady-state
+- [ ] Verify `ai.cache.ttl` ≥ 5 minutes (default) and Prometheus `cache_hit_ratio` > 0.5 after 1 week
+- [ ] Set `ai.rateLimit.actionsPerHour` and `ai.rateLimit.tokensPerHour` explicitly (do not rely on defaults if you customized cycle frequency)
+- [ ] Start with **T0 only** for 2 weeks; measure; then add T1
+- [ ] Wait for Sprint 3 before enabling Layer-2 LLM-backed mode on SaaS
+- [ ] Configure Slack/AM alerts on `ai.budget.warning` and `ai.budget.exceeded` audit events
+- [ ] Document who is authorized to raise the budget cap and the approval gate
