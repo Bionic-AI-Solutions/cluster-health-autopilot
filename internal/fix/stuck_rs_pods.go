@@ -96,6 +96,33 @@ func (StuckRSPods) Run(ctx context.Context, src snapshot.Source, m snapshot.Muta
 			})
 			continue
 		}
+		// Refuse to roll-restart a GitOps-managed Deployment — the controller
+		// would revert the restart annotation on its next reconcile, locking
+		// CHA and the GitOps controller into a fight loop. The fix belongs in
+		// the source repo. Dedup against deployKey so we don't emit the same
+		// skip for every sibling stuck pod.
+		if reason := GitOpsReason(*dep); reason != "" {
+			if _, dup := restarted[deployKey]; !dup {
+				r.Skipped = append(r.Skipped, SkipReason{
+					Object: "Deployment/" + deployKey,
+					Reason: "GitOps-managed: " + reason + " — edit the source repo instead",
+				})
+				restarted[deployKey] = struct{}{}
+			}
+			continue
+		}
+		// A paused rollout means an operator deliberately froze updates;
+		// forcing a restart violates that intent.
+		if IsPaused(*dep) {
+			if _, dup := restarted[deployKey]; !dup {
+				r.Skipped = append(r.Skipped, SkipReason{
+					Object: "Deployment/" + deployKey,
+					Reason: "rollout paused (spec.paused=true) — unpause before CHA may restart",
+				})
+				restarted[deployKey] = struct{}{}
+			}
+			continue
+		}
 		curRev := dep.GetAnnotations()["deployment.kubernetes.io/revision"]
 		rsRev := rs.GetAnnotations()["deployment.kubernetes.io/revision"]
 		if curRev == "" || rsRev == "" {
