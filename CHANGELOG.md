@@ -13,6 +13,18 @@ serves the latest tagged chart cut.
 
 ## [Unreleased]
 
+### Changed
+- **`internal/vault` → `pkg/vault` package promotion (v1.6.1 prep).** The
+  Vault `Client` interface, `HTTPClient` concrete implementation, `New()`
+  constructor, `Config`, and `KubernetesAuthConfig` were all promoted from
+  `internal/vault` to `pkg/vault`. `internal/vault` is now a thin alias
+  layer that re-exports the same names — existing OSS call sites
+  (`internal/diagnose`, `cmd/cha`) compile unchanged. This unblocks
+  CHA-com (and any future external module) from constructing a Vault
+  read client without writing its own HTTP layer. Privacy contract is
+  unchanged: `Client.ListKeys` still returns `[]string` (key names only),
+  byte values never read.
+
 ### Added
 - `LICENSE-VERIFIED-LIBRARY.md` — formal terms for the paid Verified Signature Library subscription, replacing the placeholder reference in README.
 - README section documenting the AWS cloud probes (RDS, EBS, EKS, IAM, ALB, ACM, KMS, S3, VPC) that were already shipping but undocumented.
