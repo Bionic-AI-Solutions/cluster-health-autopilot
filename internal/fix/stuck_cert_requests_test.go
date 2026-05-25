@@ -213,3 +213,81 @@ func TestStuckCertificateRequests_NothingToDo(t *testing.T) {
 		t.Errorf("expected no-op on empty cluster: actions=%d calls=%v", len(r.Actions), m.calls)
 	}
 }
+
+// certManagerHealthy is the standard installation Deployment with 2/2
+// replicas ready. Provided so the fixer's health gate sees a working
+// controller and proceeds with deletion.
+const certManagerHealthy = `{
+  "apiVersion": "apps/v1", "kind": "Deployment",
+  "metadata": {"name": "cert-manager", "namespace": "cert-manager"},
+  "spec": {"replicas": 2},
+  "status": {"replicas": 2, "readyReplicas": 2, "availableReplicas": 2}
+}`
+
+// certManagerDown has all replicas crashed. The fixer must NOT delete
+// failed CRs in this state — cert-manager can't recreate them, and the
+// deletion would simply nuke evidence of the failure without retry.
+const certManagerDown = `{
+  "apiVersion": "apps/v1", "kind": "Deployment",
+  "metadata": {"name": "cert-manager", "namespace": "cert-manager"},
+  "spec": {"replicas": 2},
+  "status": {"replicas": 2, "readyReplicas": 0, "availableReplicas": 0}
+}`
+
+func TestStuckCertificateRequests_SkipsWhenCertManagerUnhealthy(t *testing.T) {
+	src := loadSrc(t, map[string]string{
+		"cert-manager.io-certificaterequests.json": certRequestsFixture,
+		"deployments.json": certManagerDown,
+	})
+	m := newFakeMutator()
+	r := StuckCertificateRequests{}.Run(context.Background(), src, m)
+
+	if len(m.calls) != 0 {
+		t.Errorf("must NOT delete any CRs when cert-manager itself is down, got: %v", m.calls)
+	}
+	if len(r.Actions) != 0 {
+		t.Errorf("expected 0 Actions when cert-manager is unhealthy, got %d", len(r.Actions))
+	}
+	foundHealthGate := false
+	for _, s := range r.Skipped {
+		if contains(s.Reason, "cert-manager") && contains(s.Reason, "0 ready") {
+			foundHealthGate = true
+		}
+	}
+	if !foundHealthGate {
+		t.Errorf("expected a 'cert-manager … 0 ready' skip entry; got: %+v", r.Skipped)
+	}
+}
+
+func TestStuckCertificateRequests_ProceedsWhenCertManagerHealthy(t *testing.T) {
+	src := loadSrc(t, map[string]string{
+		"cert-manager.io-certificaterequests.json": certRequestsFixture,
+		"deployments.json": certManagerHealthy,
+	})
+	m := newFakeMutator()
+	r := StuckCertificateRequests{}.Run(context.Background(), src, m)
+
+	if len(r.Actions) == 0 {
+		t.Errorf("expected the failed CR in 'production' to be deleted; calls=%v skipped=%+v",
+			m.calls, r.Skipped)
+	}
+}
+
+// TestStuckCertRequests_ProceedsWhenCertManagerNotInSnapshot — defensive:
+// if cert-manager's Deployment isn't captured (incomplete snapshot, or a
+// non-standard installation namespace), the fixer cannot evaluate health.
+// Fall back to today's behavior (proceed) rather than over-blocking.
+// Operators who want strict gating can pin the cert-manager namespace
+// into the snapshot via Helm values.
+func TestStuckCertRequests_ProceedsWhenCertManagerNotInSnapshot(t *testing.T) {
+	src := loadSrc(t, map[string]string{
+		"cert-manager.io-certificaterequests.json": certRequestsFixture,
+	})
+	m := newFakeMutator()
+	r := StuckCertificateRequests{}.Run(context.Background(), src, m)
+
+	if len(r.Actions) == 0 {
+		t.Errorf("expected deletion to proceed when cert-manager Deployment is absent from snapshot; calls=%v skipped=%+v",
+			m.calls, r.Skipped)
+	}
+}
