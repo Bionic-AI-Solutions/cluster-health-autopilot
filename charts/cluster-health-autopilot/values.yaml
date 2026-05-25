@@ -18,6 +18,17 @@ diagnose:
   successfulJobsHistoryLimit: 3
   failedJobsHistoryLimit: 3
   concurrencyPolicy: Forbid
+  # backoffLimit caps how many times a failed pod within the Job is retried
+  # before the Job itself is marked Failed. K8s default is 6, which compounds
+  # with the per-pod default of 5 minutes of backoff — a hung run can keep
+  # spawning pods for over an hour. CHA's diagnose is read-only, so retry
+  # adds little value over the next daily tick.
+  backoffLimit: 1
+  # activeDeadlineSeconds caps the Job's total runtime (counted across pod
+  # restarts). A diagnose run that's stuck past 2 minutes is almost certainly
+  # blocked on an unresponsive cluster API, not making progress. Failing fast
+  # frees up the next scheduled tick to retry from a known-good start.
+  activeDeadlineSeconds: 120
   format: daily                   # daily | text | json — daily posts to #healthinfo; text/json for ad-hoc runs
 
 # Remediate CronJob — opt-in.
@@ -27,6 +38,13 @@ remediation:
   successfulJobsHistoryLimit: 3
   failedJobsHistoryLimit: 3
   concurrencyPolicy: Forbid
+  # See diagnose.backoffLimit comment. Remediation Jobs mutate cluster state
+  # so we especially do NOT want them retrying a hung-mid-mutation run.
+  backoffLimit: 1
+  # See diagnose.activeDeadlineSeconds comment. Remediation runs apply the
+  # whitelisted fixers and re-probe; 120s is well above the <60s wall-clock
+  # the engine targets per cycle.
+  activeDeadlineSeconds: 120
   dryRun: false                   # When true, fixers report Refused without mutating cluster state.
 
 # Slack three-channel routing.
