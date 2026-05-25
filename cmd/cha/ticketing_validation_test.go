@@ -46,16 +46,19 @@ func TestValidateTicketingOpts_OpenProjectRequiresProjectID(t *testing.T) {
 	}
 }
 
-func TestValidateTicketingOpts_OpenProjectRequiresAPIKey(t *testing.T) {
-	// Unset the env explicitly so the test is hermetic.
+func TestValidateTicketingOpts_OpenProjectAcceptsMissingAPIKey(t *testing.T) {
+	// In-cluster MCP traffic bypasses Kong key-auth (Kong only enforces
+	// auth on external ingress paths). A missing API key is therefore NOT
+	// a config error — auth, when needed, fails at the MCP request and
+	// surfaces a clear 401/403 in the watcher log.
 	_ = os.Unsetenv("TICKETING_MCP_API_KEY")
 	err := validateTicketingOpts(ticketingOpts{
 		Provider:  "openproject",
-		MCPURL:    "https://mcp.example.com",
+		MCPURL:    "http://mcp.svc.cluster.local",
 		ProjectID: "proj-1",
 	})
-	if err == nil || !strings.Contains(err.Error(), "TICKETING_MCP_API_KEY") {
-		t.Errorf("missing $TICKETING_MCP_API_KEY should be flagged; got %v", err)
+	if err != nil {
+		t.Errorf("missing API key should NOT block validation for in-cluster MCP; got %v", err)
 	}
 }
 

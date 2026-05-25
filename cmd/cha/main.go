@@ -753,6 +753,13 @@ func buildTicketingConfig(o ticketingOpts) (report.TicketingConfig, error) {
 // validateTicketingOpts enforces required-flag combinations per provider.
 // Returns a descriptive error naming the missing flag so an operator can
 // fix their args without going to the source.
+//
+// API-key presence is NOT required by this validator: in-cluster ClusterIP
+// traffic to an MCP server typically bypasses Kong key-auth (Kong enforces
+// auth only on external Ingress paths). Operators who do need auth can
+// either set $TICKETING_MCP_API_KEY explicitly or wire it via the Helm
+// chart's ticketing.auth.* block. A missing key only surfaces when the MCP
+// server rejects the request, with a clear 401/403 in the watcher log.
 func validateTicketingOpts(o ticketingOpts) error {
 	switch o.Provider {
 	case "openproject":
@@ -761,9 +768,6 @@ func validateTicketingOpts(o ticketingOpts) error {
 		}
 		if o.ProjectID == "" {
 			return fmt.Errorf("--ticketing-provider=openproject requires --ticketing-project")
-		}
-		if os.Getenv("TICKETING_MCP_API_KEY") == "" {
-			return fmt.Errorf("--ticketing-provider=openproject requires $TICKETING_MCP_API_KEY")
 		}
 		return nil
 	default:
