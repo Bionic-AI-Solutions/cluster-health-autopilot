@@ -1202,6 +1202,173 @@ field on the next watcher cycle.
 
 ---
 
+## 16. AWS cloud-probe setup (opt-in)
+
+CHA ships 10 AWS probes (RDS, EBS, EKS, IAM, ALB, ACM, KMS, S3, VPC) that
+authenticate via [IRSA](https://docs.aws.amazon.com/eks/latest/userguide/iam-roles-for-service-accounts.html)
+— the watcher ServiceAccount assumes a per-cluster IAM role. No long-lived
+AWS credentials in CHA.
+
+### Step 1 — Create the IAM policy
+
+Attach this minimum-permissions policy to a new IAM role (rename to match
+your tenant). The probes only read; no `*:Delete*`, `*:Put*`, `*:Create*`
+verbs are requested.
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "RDSRead",
+      "Effect": "Allow",
+      "Action": [
+        "rds:DescribeDBInstances",
+        "rds:DescribeDBClusters",
+        "rds:DescribeDBSnapshots"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "EC2EBSVPCRead",
+      "Effect": "Allow",
+      "Action": [
+        "ec2:DescribeVolumes",
+        "ec2:DescribeSnapshots",
+        "ec2:DescribeSubnets",
+        "ec2:DescribeVpcs",
+        "ec2:DescribeAvailabilityZones"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "EKSRead",
+      "Effect": "Allow",
+      "Action": [
+        "eks:DescribeCluster",
+        "eks:DescribeNodegroup",
+        "eks:ListNodegroups",
+        "eks:DescribeAddon",
+        "eks:ListAddons"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "IAMRead",
+      "Effect": "Allow",
+      "Action": [
+        "iam:GetRole",
+        "iam:ListRoles",
+        "iam:GetRolePolicy",
+        "iam:ListRolePolicies",
+        "iam:ListAttachedRolePolicies"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "ALBRead",
+      "Effect": "Allow",
+      "Action": [
+        "elasticloadbalancing:DescribeLoadBalancers",
+        "elasticloadbalancing:DescribeTargetGroups",
+        "elasticloadbalancing:DescribeTargetHealth"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "ACMRead",
+      "Effect": "Allow",
+      "Action": ["acm:ListCertificates", "acm:DescribeCertificate"],
+      "Resource": "*"
+    },
+    {
+      "Sid": "KMSRead",
+      "Effect": "Allow",
+      "Action": [
+        "kms:ListKeys",
+        "kms:DescribeKey",
+        "kms:GetKeyRotationStatus",
+        "kms:ListAliases"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "S3Read",
+      "Effect": "Allow",
+      "Action": [
+        "s3:ListAllMyBuckets",
+        "s3:GetBucketPolicyStatus",
+        "s3:GetBucketAcl",
+        "s3:GetBucketLocation"
+      ],
+      "Resource": "*"
+    }
+  ]
+}
+```
+
+### Step 2 — IRSA trust policy
+
+Bind the role to the cha ServiceAccount via the cluster's OIDC provider:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": {
+        "Federated": "arn:aws:iam::<ACCOUNT_ID>:oidc-provider/<OIDC_PROVIDER_HOST>"
+      },
+      "Action": "sts:AssumeRoleWithWebIdentity",
+      "Condition": {
+        "StringEquals": {
+          "<OIDC_PROVIDER_HOST>:sub": "system:serviceaccount:cluster-health-autopilot:cha-cluster-health-autopilot-sa",
+          "<OIDC_PROVIDER_HOST>:aud": "sts.amazonaws.com"
+        }
+      }
+    }
+  ]
+}
+```
+
+### Step 3 — Enable in the Helm chart
+
+```yaml
+cloud:
+  aws:
+    enabled: true
+    region: us-east-1
+    roleArn: arn:aws:iam::123456789012:role/cha-cloud-readonly  # IRSA role
+serviceAccount:
+  annotations:
+    eks.amazonaws.com/role-arn: arn:aws:iam::123456789012:role/cha-cloud-readonly
+```
+
+```sh
+helm upgrade cha cha/cluster-health-autopilot \
+  --namespace cluster-health-autopilot \
+  --reset-then-reuse-values \
+  -f aws-values.yaml
+```
+
+### Step 4 — Verify
+
+The watcher pod should log `cloud: aws enabled (region=us-east-1)` on startup,
+and the next diagnose cycle will include AWS sections in the report. If
+authentication fails, the AWS probes surface a single `cloud_aws/<service>/auth-failed`
+finding rather than crashing the diagnose cycle.
+
+### Non-AWS clusters
+
+CHA on GKE, AKS, bare-metal, k3s, etc. — leave `cloud.aws.enabled: false`
+(the chart's default). The cloud-probe layer is a complete no-op when no
+provider is enabled. **GCP and Azure equivalents are scoped for M2 (v1.7+);
+setting `--cloud-gcp-enabled` or `--cloud-azure-enabled` today errors at
+binary startup.**
+
+---
+
 ## Upgrading from v1.5.x → v1.6.0
 
 Two operational gotchas worth knowing about:
@@ -1258,9 +1425,10 @@ watcher: acquired lease cluster-health-autopilot/cha-watcher as "<pod-name>"
 
 ```yaml
 image:
-  # GitHub Container Registry is the canonical publish target as of v1.6.0.
-  # docker4zerocool/cluster-health-autopilot is mirrored on every release.
-  repository: ghcr.io/bionic-ai-solutions/cluster-health-autopilot
+  # Docker Hub is the canonical publish target. GHCR mirror at
+  # ghcr.io/bionic-ai-solutions/cluster-health-autopilot is published by
+  # GoReleaser on every release for operators who prefer it.
+  repository: docker4zerocool/cluster-health-autopilot
   tag: ""           # defaults to Chart.appVersion (e.g. v1.6.0)
   pullPolicy: ""    # auto: Always for mutable tags, IfNotPresent for semver
   pullSecrets: []   # [{name: dockerhub-pull-secret}]

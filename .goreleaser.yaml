@@ -46,17 +46,20 @@ checksum:
 snapshot:
   version_template: "{{ .Tag }}-next"
 
-# Container images: multi-arch, published to GitHub Container Registry.
-# The Helm chart's default image.tag matches Chart.appVersion, so a
-# release with tag v0.1.0 produces ghcr.io/<owner>/cluster-health-autopilot:v0.1.0
-# which the chart will then pull cleanly.
+# Container images: multi-arch, published to Docker Hub (canonical) and
+# GHCR (mirror). The Helm chart's default image.repository is
+# docker4zerocool/cluster-health-autopilot; operators who prefer GHCR
+# can flip the repository value. The chart's default image.tag matches
+# Chart.appVersion, so a release with tag v1.6.0 produces both
+# docker4zerocool/cluster-health-autopilot:1.6.0 and
+# ghcr.io/bionic-ai-solutions/cluster-health-autopilot:1.6.0.
 dockers:
   - id: amd64
     image_templates:
-      - "ghcr.io/bionic-ai-solutions/cluster-health-autopilot:{{ .Version }}-amd64"
-      - "ghcr.io/bionic-ai-solutions/cluster-health-autopilot:latest-amd64"
       - "docker4zerocool/cluster-health-autopilot:{{ .Version }}-amd64"
       - "docker4zerocool/cluster-health-autopilot:latest-amd64"
+      - "ghcr.io/bionic-ai-solutions/cluster-health-autopilot:{{ .Version }}-amd64"
+      - "ghcr.io/bionic-ai-solutions/cluster-health-autopilot:latest-amd64"
     use: buildx
     build_flag_templates:
       - "--platform=linux/amd64"
@@ -82,10 +85,10 @@ dockers:
 
   - id: arm64
     image_templates:
-      - "ghcr.io/bionic-ai-solutions/cluster-health-autopilot:{{ .Version }}-arm64"
-      - "ghcr.io/bionic-ai-solutions/cluster-health-autopilot:latest-arm64"
       - "docker4zerocool/cluster-health-autopilot:{{ .Version }}-arm64"
       - "docker4zerocool/cluster-health-autopilot:latest-arm64"
+      - "ghcr.io/bionic-ai-solutions/cluster-health-autopilot:{{ .Version }}-arm64"
+      - "ghcr.io/bionic-ai-solutions/cluster-health-autopilot:latest-arm64"
     use: buildx
     build_flag_templates:
       - "--platform=linux/arm64"
@@ -113,14 +116,7 @@ dockers:
 # single tag (and `latest`), so users pull `:v0.1.0` and Docker picks
 # the right arch for their platform automatically.
 docker_manifests:
-  - name_template: "ghcr.io/bionic-ai-solutions/cluster-health-autopilot:{{ .Version }}"
-    image_templates:
-      - "ghcr.io/bionic-ai-solutions/cluster-health-autopilot:{{ .Version }}-amd64"
-      - "ghcr.io/bionic-ai-solutions/cluster-health-autopilot:{{ .Version }}-arm64"
-  - name_template: "ghcr.io/bionic-ai-solutions/cluster-health-autopilot:latest"
-    image_templates:
-      - "ghcr.io/bionic-ai-solutions/cluster-health-autopilot:latest-amd64"
-      - "ghcr.io/bionic-ai-solutions/cluster-health-autopilot:latest-arm64"
+  # Canonical: Docker Hub
   - name_template: "docker4zerocool/cluster-health-autopilot:{{ .Version }}"
     image_templates:
       - "docker4zerocool/cluster-health-autopilot:{{ .Version }}-amd64"
@@ -129,6 +125,15 @@ docker_manifests:
     image_templates:
       - "docker4zerocool/cluster-health-autopilot:latest-amd64"
       - "docker4zerocool/cluster-health-autopilot:latest-arm64"
+  # Mirror: GHCR
+  - name_template: "ghcr.io/bionic-ai-solutions/cluster-health-autopilot:{{ .Version }}"
+    image_templates:
+      - "ghcr.io/bionic-ai-solutions/cluster-health-autopilot:{{ .Version }}-amd64"
+      - "ghcr.io/bionic-ai-solutions/cluster-health-autopilot:{{ .Version }}-arm64"
+  - name_template: "ghcr.io/bionic-ai-solutions/cluster-health-autopilot:latest"
+    image_templates:
+      - "ghcr.io/bionic-ai-solutions/cluster-health-autopilot:latest-amd64"
+      - "ghcr.io/bionic-ai-solutions/cluster-health-autopilot:latest-arm64"
 
 changelog:
   sort: asc

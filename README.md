@@ -4,6 +4,22 @@ A self-healing operational layer for Kubernetes clusters: **detect → remediate
 
 > **Pre-launch — engineering preview.** This README will be the public face on launch day; treat its current contents as draft.
 
+## Status (v1.6.0 — 2026-05-25)
+
+| Capability | Status |
+|---|---|
+| K8s probes (12) — Ceph, Postgres, Nodes, PVCs, Critical services, Endpoints, NodePressure, DaemonSets, PendingPods, CrashLoopBackOff, ETCD, FailedMounts | ✅ shipped |
+| Diagnose analyzers (8) — secret/cert/ESO/image-pull/TLS classes | ✅ shipped |
+| Fixers (4 default + 1 opt-in) with GitOps + paused + suspended + cert-mgr-health safety gates | ✅ shipped |
+| AWS cloud probes (10) — RDS, EBS, EKS, IAM, ALB, ACM, KMS, S3, VPC + IRSA | ✅ shipped |
+| Helm chart (v1.6.0) with leader election, configurable workloads, narrow RBAC | ✅ shipped |
+| OpenProject ticketing sink (OSS), Slack 3-channel routing, Alertmanager | ✅ shipped |
+| Layer-2 rule-based Investigator (OSS) | ✅ shipped |
+| GCP cloud probes | ⏳ roadmap (M2 / v1.7+) — `--cloud-gcp-enabled` errors at startup today |
+| Azure cloud probes | ⏳ roadmap (M2 / v1.7+) — `--cloud-azure-enabled` errors at startup today |
+| Paid AI tiers (T0–T3) — LLM-backed enrichment, fix proposals, plans, runbooks | ⚠️ scaffolding shipped; AI orchestration wiring is in progress in [CHA-com](https://github.com/Bionic-AI-Solutions/CHA-com) (private) |
+| Operator port (controller-runtime / kubebuilder) | ⏳ roadmap (Sprint 5 / v1.7) |
+
 ---
 
 ## What it does

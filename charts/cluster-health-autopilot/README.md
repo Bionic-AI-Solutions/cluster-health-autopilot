@@ -10,10 +10,16 @@ Deploys two CronJobs (one is opt-in):
 ## Install
 
 ```sh
-helm install cha oci://ghcr.io/bionic-ai-solutions/charts/cluster-health-autopilot \
-  --version 0.1.0 \
+helm repo add cha https://bionic-ai-solutions.github.io/cluster-health-autopilot
+helm repo update
+helm install cha cha/cluster-health-autopilot \
   --namespace cluster-health-autopilot --create-namespace
 ```
+
+The chart's default image pulls from Docker Hub:
+`docker4zerocool/cluster-health-autopilot`. Operators who prefer GHCR can
+switch via `--set image.repository=ghcr.io/bionic-ai-solutions/cluster-health-autopilot`
+— both registries receive every release from the same GoReleaser pipeline.
 
 Pre-launch / from local source:
 
@@ -69,7 +75,7 @@ kubectl logs -f -n cluster-health-autopilot job/cha-now
 
 | Key | Default | Notes |
 |---|---|---|
-| `image.repository` | `ghcr.io/bionic-ai-solutions/cluster-health-autopilot` | |
+| `image.repository` | `docker4zerocool/cluster-health-autopilot` | GHCR mirror at `ghcr.io/bionic-ai-solutions/cluster-health-autopilot` is published by GoReleaser on every release. |
 | `image.tag` | `""` (uses `Chart.appVersion`) | Override per-deployment |
 | `diagnose.enabled` | `true` | |
 | `diagnose.schedule` | `0 9 * * *` | Daily 09:00 UTC |

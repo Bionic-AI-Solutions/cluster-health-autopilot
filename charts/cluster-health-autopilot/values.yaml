@@ -6,11 +6,14 @@
 #                   OPT-IN via .Values.remediation.enabled. Off by default.
 
 image:
-  # GitHub Container Registry is the canonical publish target as of v1.6.0.
-  # docker4zerocool/cluster-health-autopilot remains a mirror (published by
-  # the same GoReleaser config) for backward-compat with v1.5.x installs.
-  # See .goreleaser.yaml — both registries get every release.
-  repository: ghcr.io/bionic-ai-solutions/cluster-health-autopilot
+  # Docker Hub is the canonical publish target. docker4zerocool is the org's
+  # operational registry (same account that hosts every ai-* and mcp-*
+  # image the platform depends on); no extra pull-secret config needed for
+  # operators who already use it. GHCR is published as a mirror by
+  # GoReleaser on every tag for operators who prefer it — flip the
+  # repository value below to `ghcr.io/bionic-ai-solutions/cluster-health-autopilot`
+  # to use it.
+  repository: docker4zerocool/cluster-health-autopilot
   tag: ""                         # default = .Chart.appVersion (e.g. v1.6.0)
   # pullPolicy is left empty so the `cha.pullPolicy` helper picks it
   # automatically: Always for mutable tags (latest / main / dev /
