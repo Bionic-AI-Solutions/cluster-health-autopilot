@@ -28,25 +28,22 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	pkgvault "github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/vault"
 )
 
-// Client reads key names from a Vault KV-v2 path.
+// Client is re-exported from pkg/vault so this internal package retains
+// import-compatibility (existing call sites reference internal/vault.Client
+// directly) while CHA-com and other external consumers implement the same
+// contract via pkg/vault.Client. The two names are identical types.
 //
-// Implementations must:
-//   - Return ErrPathNotFound when the path does not exist (404).
-//   - Return only metadata-level key names — never the byte values stored
-//     under them. This is enforced by the interface signature returning
-//     []string, not map[string][]byte.
-type Client interface {
-	// ListKeys returns the KEY NAMES present at the given KV-v2 path.
-	// Path is mount-relative (e.g. "team/app", not "secret/data/team/app").
-	ListKeys(ctx context.Context, path string) ([]string, error)
-}
+// Promoted to pkg/ in v1.6.1 to unblock paid-tier Vault analyzers in
+// CHA-com (which can't import this internal package per Go's `internal`
+// rule). See docs/design/2026-05-cha-com-publishing-gap.md G2.
+type Client = pkgvault.Client
 
-// ErrPathNotFound is returned by Client.ListKeys when Vault returns 404
-// for the path. Distinguished from transport / auth errors so the analyzer
-// can emit a precise "path missing in Vault" diagnostic.
-var ErrPathNotFound = fmt.Errorf("vault path not found")
+// ErrPathNotFound is re-exported from pkg/vault for the same reason.
+var ErrPathNotFound = pkgvault.ErrPathNotFound
 
 // HTTPClient is the live KV-v2 implementation. Construct via New.
 type HTTPClient struct {
