@@ -91,3 +91,15 @@ func IsPaused(u unstructured.Unstructured) bool {
 	}
 	return paused
 }
+
+// IsSuspended reports whether a CronJob has spec.suspend set to true.
+// Returns false when the field is absent or false. Semantically parallel to
+// IsPaused for Deployments — an operator's deliberate "freeze this resource"
+// signal that fixers must honor.
+func IsSuspended(u unstructured.Unstructured) bool {
+	suspended, found, err := unstructured.NestedBool(u.Object, "spec", "suspend")
+	if err != nil || !found {
+		return false
+	}
+	return suspended
+}

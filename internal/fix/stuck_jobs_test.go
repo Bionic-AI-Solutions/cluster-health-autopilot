@@ -200,3 +200,118 @@ func TestStuckJobs_ProtectedNamespace(t *testing.T) {
 		t.Errorf("expected protected-namespace skip entry, got: %+v", r.Skipped)
 	}
 }
+
+// suspendedCronJob is the parent CronJob marked spec.suspend=true. An
+// operator deliberately froze it; CHA must not restart the cycle by
+// deleting the broken Job.
+const suspendedCronJob = `{
+  "apiVersion": "batch/v1", "kind": "CronJob",
+  "metadata": {"name": "gpu-docker-monitor", "namespace": "gpu-monitor"},
+  "spec": {"suspend": true, "schedule": "*/5 * * * *"}
+}`
+
+// activeCronJob is the parent CronJob in normal state — used to satisfy
+// the GetCronJob call in tests that need the CronJob to exist but not be
+// suspended.
+const activeCronJob = `{
+  "apiVersion": "batch/v1", "kind": "CronJob",
+  "metadata": {"name": "gpu-docker-monitor", "namespace": "gpu-monitor"},
+  "spec": {"suspend": false, "schedule": "*/5 * * * *"}
+}`
+
+// argoManagedCronJob — same CronJob, but reconciled by ArgoCD. Deleting
+// the child Job would prompt a respawn whose template Argo controls; the
+// Argo-vs-CHA fight loop the GitOps guard exists to prevent.
+const argoManagedCronJob = `{
+  "apiVersion": "batch/v1", "kind": "CronJob",
+  "metadata": {
+    "name": "gpu-docker-monitor", "namespace": "gpu-monitor",
+    "annotations": {"argocd.argoproj.io/instance": "infra-apps"}
+  },
+  "spec": {"schedule": "*/5 * * * *"}
+}`
+
+func TestStuckJobs_SkipsSuspendedCronJob(t *testing.T) {
+	src := loadSrc(t, map[string]string{
+		"pods.json":    podsAndJobsForFixer,
+		"job.json":     cronOwnedJob,
+		"cronjob.json": suspendedCronJob,
+	})
+	m := newFakeMutator()
+	r := StuckJobsWithBadSecretRef{}.Run(context.Background(), src, m)
+
+	for _, c := range m.calls {
+		if c == "Delete jobs/gpu-monitor/gpu-docker-monitor-29622780" {
+			t.Errorf("suspended CronJob's child Job should NOT have been deleted")
+		}
+	}
+	foundSuspend := false
+	for _, s := range r.Skipped {
+		if s.Object == "Job/gpu-monitor/gpu-docker-monitor-29622780" {
+			if containsSubstr(s.Reason, "suspend") {
+				foundSuspend = true
+			}
+		}
+	}
+	if !foundSuspend {
+		t.Errorf("expected 'suspended' skip reason on the stuck Job; got: %+v", r.Skipped)
+	}
+}
+
+func TestStuckJobs_SkipsArgoManagedCronJob(t *testing.T) {
+	src := loadSrc(t, map[string]string{
+		"pods.json":    podsAndJobsForFixer,
+		"job.json":     cronOwnedJob,
+		"cronjob.json": argoManagedCronJob,
+	})
+	m := newFakeMutator()
+	r := StuckJobsWithBadSecretRef{}.Run(context.Background(), src, m)
+
+	for _, c := range m.calls {
+		if c == "Delete jobs/gpu-monitor/gpu-docker-monitor-29622780" {
+			t.Errorf("ArgoCD-managed CronJob's child Job should NOT have been deleted")
+		}
+	}
+	foundGitOps := false
+	for _, s := range r.Skipped {
+		if s.Object == "Job/gpu-monitor/gpu-docker-monitor-29622780" &&
+			containsSubstr(s.Reason, "GitOps-managed") &&
+			containsSubstr(s.Reason, "argocd") {
+			foundGitOps = true
+		}
+	}
+	if !foundGitOps {
+		t.Errorf("expected GitOps-managed skip naming argocd; got: %+v", r.Skipped)
+	}
+}
+
+// TestStuckJobs_DeletesWhenCronJobActive — make sure the new safety gates
+// don't break the happy path when the CronJob exists and is healthy.
+func TestStuckJobs_DeletesWhenCronJobActive(t *testing.T) {
+	src := loadSrc(t, map[string]string{
+		"pods.json":    podsAndJobsForFixer,
+		"job.json":     cronOwnedJob,
+		"cronjob.json": activeCronJob,
+	})
+	m := newFakeMutator()
+	r := StuckJobsWithBadSecretRef{}.Run(context.Background(), src, m)
+
+	wantCall := "Delete jobs/gpu-monitor/gpu-docker-monitor-29622780"
+	found := false
+	for _, c := range m.calls {
+		if c == wantCall {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("active CronJob's stuck Job SHOULD have been deleted; calls=%v actions=%+v",
+			m.calls, r.Actions)
+	}
+}
+
+// containsSubstr is a tiny indexOf-style helper to keep tests free of
+// strings imports already used by gitops_test.go (re-using the helper
+// declared there to avoid duplicating it across the package).
+func containsSubstr(s, sub string) bool {
+	return contains(s, sub)
+}

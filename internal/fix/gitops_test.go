@@ -182,6 +182,39 @@ func TestIsPaused_StatefulSetNoFalsePositive(t *testing.T) {
 	}
 }
 
+func TestIsSuspended_True(t *testing.T) {
+	u := gitopsResource("CronJob", nil, nil,
+		map[string]any{"suspend": true})
+	if !IsSuspended(u) {
+		t.Errorf("CronJob with spec.suspend=true should be suspended")
+	}
+}
+
+func TestIsSuspended_False(t *testing.T) {
+	u := gitopsResource("CronJob", nil, nil,
+		map[string]any{"suspend": false})
+	if IsSuspended(u) {
+		t.Errorf("CronJob with spec.suspend=false should not be suspended")
+	}
+}
+
+func TestIsSuspended_AbsentField(t *testing.T) {
+	u := gitopsResource("CronJob", nil, nil,
+		map[string]any{"schedule": "*/5 * * * *"})
+	if IsSuspended(u) {
+		t.Errorf("CronJob without spec.suspend should not be suspended")
+	}
+}
+
+func TestIsSuspended_NonCronJobNoFalsePositive(t *testing.T) {
+	// Deployment doesn't have spec.suspend; helper must not panic.
+	u := gitopsResource("Deployment", nil, nil,
+		map[string]any{"replicas": int64(3)})
+	if IsSuspended(u) {
+		t.Errorf("Deployment without spec.suspend should not be suspended")
+	}
+}
+
 // contains is a tiny helper to keep tests free of strings.Contains imports.
 func contains(s, sub string) bool {
 	return len(s) >= len(sub) && indexOf(s, sub) >= 0
