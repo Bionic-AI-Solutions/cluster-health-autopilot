@@ -83,7 +83,12 @@ func TestStuckJobs_RefusesOnSnapshot(t *testing.T) {
 
 // TestStuckJobs_DeletesCronOwnedJob — happy path.
 func TestStuckJobs_DeletesCronOwnedJob(t *testing.T) {
-	src := loadSrc(t, map[string]string{"pods.json": podsAndJobsForFixer, "cronjob.json": cronOwnedJob, "oneoff.json": oneOffJob})
+	src := loadSrc(t, map[string]string{
+		"pods.json":    podsAndJobsForFixer,
+		"job.json":     cronOwnedJob,
+		"cronjob.json": activeCronJob,
+		"oneoff.json":  oneOffJob,
+	})
 	m := newFakeMutator()
 	r := StuckJobsWithBadSecretRef{}.Run(context.Background(), src, m)
 
@@ -99,7 +104,12 @@ func TestStuckJobs_DeletesCronOwnedJob(t *testing.T) {
 
 // TestStuckJobs_SkipsOneOffJob — Job without CronJob parent must NOT be deleted.
 func TestStuckJobs_SkipsOneOffJob(t *testing.T) {
-	src := loadSrc(t, map[string]string{"pods.json": podsAndJobsForFixer, "cronjob.json": cronOwnedJob, "oneoff.json": oneOffJob})
+	src := loadSrc(t, map[string]string{
+		"pods.json":    podsAndJobsForFixer,
+		"job.json":     cronOwnedJob,
+		"cronjob.json": activeCronJob,
+		"oneoff.json":  oneOffJob,
+	})
 	m := newFakeMutator()
 	r := StuckJobsWithBadSecretRef{}.Run(context.Background(), src, m)
 
@@ -124,7 +134,11 @@ func TestStuckJobs_SkipsOneOffJob(t *testing.T) {
 
 // TestStuckJobs_SkipsHappyJobPod — running pod must not trigger anything.
 func TestStuckJobs_SkipsHappyJobPod(t *testing.T) {
-	src := loadSrc(t, map[string]string{"pods.json": podsAndJobsForFixer, "cronjob.json": cronOwnedJob})
+	src := loadSrc(t, map[string]string{
+		"pods.json":    podsAndJobsForFixer,
+		"job.json":     cronOwnedJob,
+		"cronjob.json": activeCronJob,
+	})
 	m := newFakeMutator()
 	StuckJobsWithBadSecretRef{}.Run(context.Background(), src, m)
 
@@ -158,7 +172,11 @@ func TestStuckJobs_DedupesAcrossSiblingPods(t *testing.T) {
     }
   ]
 }`
-	src := loadSrc(t, map[string]string{"pods.json": multiPod, "cronjob.json": cronOwnedJob})
+	src := loadSrc(t, map[string]string{
+		"pods.json":    multiPod,
+		"job.json":     cronOwnedJob,
+		"cronjob.json": activeCronJob,
+	})
 	m := newFakeMutator()
 	r := StuckJobsWithBadSecretRef{}.Run(context.Background(), src, m)
 

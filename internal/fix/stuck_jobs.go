@@ -89,6 +89,38 @@ func (StuckJobsWithBadSecretRef) Run(ctx context.Context, src snapshot.Source, m
 			continue
 		}
 
+		// Fetch the parent CronJob so we can inspect spec.suspend and
+		// GitOps annotations. Without this lookup the fixer would happily
+		// delete the broken Job, letting the CronJob's next tick respawn
+		// it — but if the operator has suspended the CronJob, or it's
+		// reconciled by Argo/Flux, we must defer.
+		cj, err := src.Get(ctx, snapshot.GVRCronJob, ns, cronJobName)
+		if err != nil {
+			r.Skipped = append(r.Skipped, SkipReason{
+				Object: "Job/" + jobKey,
+				Reason: "couldn't fetch parent CronJob " + ns + "/" + cronJobName + ": " + err.Error(),
+			})
+			continue
+		}
+		if IsSuspended(*cj) {
+			r.Skipped = append(r.Skipped, SkipReason{
+				Object: "Job/" + jobKey,
+				Reason: "parent CronJob " + ns + "/" + cronJobName +
+					" is suspended (spec.suspend=true); deletion would re-spawn the workload an operator deliberately froze",
+			})
+			deletedJobs[jobKey] = struct{}{}
+			continue
+		}
+		if reason := GitOpsReason(*cj); reason != "" {
+			r.Skipped = append(r.Skipped, SkipReason{
+				Object: "Job/" + jobKey,
+				Reason: "parent CronJob " + ns + "/" + cronJobName +
+					" is GitOps-managed: " + reason + " — edit the source repo instead",
+			})
+			deletedJobs[jobKey] = struct{}{}
+			continue
+		}
+
 		if err := m.Delete(ctx, snapshot.GVRJob, ns, jobName); err != nil {
 			r.Skipped = append(r.Skipped, SkipReason{
 				Object: "Job/" + jobKey,
