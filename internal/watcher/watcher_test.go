@@ -314,4 +314,3 @@ func TestHasActions_NilEmpty(t *testing.T) {
 		t.Error("hasActions(nil) should be false")
 	}
 }
-

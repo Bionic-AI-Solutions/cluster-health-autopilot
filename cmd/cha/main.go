@@ -525,11 +525,11 @@ the post-fix cluster state.`,
 				RepeatInterval:         repeatInterval,
 				CriticalRepeatInterval: criticalRepeatInterval,
 				WriteDriftReports:      writeDriftReports,
-				RunRemediation:    remedy,
-				DryRun:            dryRun,
-				AlertmanagerURL:   alertmanagerURL,
-				ClusterName:       clusterName,
-				Ticketing:         ticketingCfg,
+				RunRemediation:         remedy,
+				DryRun:                 dryRun,
+				AlertmanagerURL:        alertmanagerURL,
+				ClusterName:            clusterName,
+				Ticketing:              ticketingCfg,
 			}
 			w := watcher.New(lv, reg, mut, cfg)
 			return w.Run(ctx)
