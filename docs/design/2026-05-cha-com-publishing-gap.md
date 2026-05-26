@@ -32,31 +32,48 @@ repo's `Dockerfile`, but:
 **Estimate:** ~1 day. The OSS release.yml + .goreleaser.yaml already cover
 everything; just port them over with the binary name changed.
 
-### G2 — Paid catalog is empty
+### G2 — Paid catalog is empty ✅ CLOSED (2026-05-26)
 
-`CHA-com/catalog/paid.go::Register` has exactly one Analyzer registered —
-`PaidBoundaryAnalyzer`, a no-op that exists to fail the build when the
-OSS interface drifts. The marketing claim of "patterns 3 months earlier
-than OSS" is currently un-backed.
+All four planned paid analyzers shipped in CHA-com v1.0.1–v1.0.4:
 
-**What's needed:** a real first batch of paid-only analyzers. Candidates
-(ordered by leverage):
+- **`VaultPathDriftPro`** (v1.0.1, 8 tests) — OSS VaultPathMissing
+  source is Apache-2.0 but requires manual Vault-client construction;
+  the paid version auto-wires from env vars (VAULT_ADDR + token / K8s
+  auth) AND adds an **unused-keys-at-path** detection: when a Vault
+  payload has keys NO ExternalSecret references, surface them as a
+  warning (attack surface + orphaned-config risk).
+  Required promoting `internal/vault` → `pkg/vault` (OSS commit
+  a9e78a4) so CHA-com could construct a client.
+- **`CertificateChainAnomaly`** (v1.0.2, 9 tests) — static analysis
+  of cert-manager-issued TLS Secrets. For every Certificate
+  Ready=True, decodes the served `tls.crt` and surfaces weak keys
+  (RSA <2048, ECDSA <P-256), deprecated signature algorithms
+  (MD5/SHA1), SAN drift between spec.dnsNames and served cert's
+  DNSNames, imminent-expiry-while-cert-manager-says-Ready races,
+  and malformed Secret payloads. Test fixtures generate real x509
+  certs at runtime (no hand-pasted base64).
+- **`MultiClusterDrift`** (v1.0.3, 8 tests) — compares the current
+  cluster's ExternalSecret references against N configured peer
+  snapshots. Surfaces reference-differs (same ESO, different Vault
+  paths) as warning; only-in-peer and only-in-current as info.
+  Operator constructs peers in `cmd/cha-com` from snapshot directories.
+- **`StatefulSetReplicaPressure`** (v1.0.4, 9 tests) — cluster-state-
+  only (no external metrics) signals: replicas degraded (0/N critical,
+  partial warning), PVC bind lag past 5min window (provisioner jammed),
+  PVC resize stuck (spec.requests > status.capacity). Protected-
+  namespace PVC-bind-lag is deferred to OSS DaemonSets probe to avoid
+  double-flagging.
 
-- **`VaultPathDriftPro`** — OSS ships `VaultPathMissing` as Apache-2.0
-  source but requires manual Vault-client construction. The paid version
-  auto-wires the Vault client from the operator's existing config.
-  Already documented in `CHA_OVERVIEW.md` as paid-tier; just needs the
-  glue code.
-- **`CertificateChainAnomaly`** — paid analyzer that calls into the
-  Layer-2 LLM-backed investigator to triage TLS handshake failures with
-  more depth than the OSS rule-based investigator.
-- **`MultiClusterDrift`** — compares ESO/Vault state across N clusters
-  in the same fleet; flags one cluster diverging from the others.
-- **`StatefulSetReplicaPressure`** — early warning for StatefulSets
-  approaching their PVC class's IOPS or capacity limits.
+**Total**: 4 analyzers, 34 new tests, 4 paid-tier releases (v1.0.1
+through v1.0.4) all pushed to docker4zerocool/cha-com and
+ghcr.io/bionic-ai-solutions/cha-com. catalog.Config gained two new
+fields (Vault, Peers) — operator wires either, both, or neither.
 
-**Estimate:** ~1 sprint per analyzer. Minimum-viable shipping target =
-3 analyzers + their tests, ~2 weeks.
+The marketing claim of "paid patterns 3 months earlier than OSS"
+is now backed by concrete code; the G2 work also defined the
+contribution pattern future analyzers follow (in-memory `memSource`
+test fixture, single analyzer per file, RED-then-GREEN TDD, one
+release tag per analyzer for rollback safety).
 
 ### G3 — AI tiers (T0–T3) are designed but not wired
 
