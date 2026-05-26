@@ -61,8 +61,12 @@ spec:
             - --slack-critical=$(SLACK_CRITICAL_URL)
             {{- end }}
             {{- if or (and .Values.slack.alerts.enabled .Values.slack.alerts.secretName) (and .Values.slack.critical.enabled .Values.slack.critical.secretName) }}
-            - --slack-post-on-resolved={{ ((.Values.watcher.slack).postOnResolved) | default true }}
-            - --slack-repeat-interval={{ ((.Values.watcher.slack).repeatInterval) | default "4h" }}
+            {{- /* values.yaml provides defaults (postOnResolved: true,
+                  repeatInterval: 4h). We render the value directly because
+                  sprig `default` treats bool false as empty and would
+                  silently flip an explicit `false` back to `true`. */}}
+            - --slack-post-on-resolved={{ .Values.watcher.slack.postOnResolved }}
+            - --slack-repeat-interval={{ .Values.watcher.slack.repeatInterval }}
             {{- end }}
             {{- if and .Values.alertmanager.enabled .Values.alertmanager.url }}
             - --alertmanager-url={{ .Values.alertmanager.url }}
