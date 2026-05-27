@@ -71,6 +71,13 @@ rules:
   - apiGroups: [""]
     resources: ["serviceaccounts"]
     verbs: ["get", "list", "watch"]
+  # ConfigDrift analyzer (v1.8) — reads CustomResourceDefinitions
+  # cluster-wide to detect multi-storedVersions (storage migration
+  # pending). Deployments + ReplicaSets + Pods are already covered
+  # above for the rollout-stuck + checksum/config drift signals.
+  - apiGroups: ["apiextensions.k8s.io"]
+    resources: ["customresourcedefinitions"]
+    verbs: ["get", "list", "watch"]
   # IngressCoverage analyzer — reads all Ingress rules cluster-wide to detect
   # hostnames that have no endpoint probe. Read-only; no write verbs needed.
   - apiGroups: ["networking.k8s.io"]

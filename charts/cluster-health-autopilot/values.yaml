@@ -426,9 +426,10 @@ gatekeeper:
       - cnpg-system
 
 # Drift-class analyzers added in v1.7 (Workstreams B1+B2+B3 from the
-# AI SRE positioning plan). Default to ON so existing installs get
-# the new signal automatically; flip individual entries to false on
-# clusters that don't host the targeted asset class.
+# AI SRE positioning plan) + v1.8 (Workstream B4). Default to ON so
+# existing installs get the new signal automatically; flip individual
+# entries to false on clusters that don't host the targeted asset
+# class.
 analyzers:
   gitopsDrift:
     # GitOps drift — Argo CD Application + Flux Kustomization +
@@ -450,6 +451,16 @@ analyzers:
     # system:*) and the default SA in every namespace. Set to false
     # if your cluster's RBAC posture is managed entirely by an
     # upstream IaC system that wildcard-grants by design.
+    enabled: true
+  configDrift:
+    # Config drift (v1.8) — CRD multi-storedVersions (storage
+    # migration pending), Deployment rollouts stuck past the grace
+    # window (generation skew or updatedReplicas trailing
+    # spec.replicas), and Pods of the same Deployment carrying
+    # disagreeing checksum/config annotations (rolling update from
+    # the last config change never finished). 15-minute default
+    # grace period on rollouts to avoid flagging slow-starting
+    # images. Skips kube-system / kube-public / kube-node-lease.
     enabled: true
 
 # Optional fixers — off by default. Each entry adds RBAC verbs and exposes

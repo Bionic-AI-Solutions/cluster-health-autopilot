@@ -13,7 +13,20 @@ serves the latest tagged chart cut.
 
 ## [Unreleased]
 
-(Reserve for v1.8+ work — config / capacity / security drift classes, GCP+Azure cloud probes, operator port.)
+### Added — Workstream B4 (config drift)
+
+- **`ConfigDrift`** analyzer (B4) — three signals the basic resource-health probes miss:
+  - **CRD multi-storedVersions** — `apiextensions.k8s.io/v1` CRDs whose `status.storedVersions` lists more than one apiserver storage version. Storage migration is pending; future drops of the old version will fail. Critical.
+  - **Deployment rollout stuck** — `metadata.generation` ahead of `status.observedGeneration` past the grace window (the controller hasn't reconciled the latest spec; critical), or `status.updatedReplicas` < `spec.replicas` past the grace window (rollout stuck mid-flight; warning if some replicas still available, critical if zero). Default 15-minute grace.
+  - **`checksum/config` annotation drift** — Pods of the same Deployment carrying disagreeing `checksum/config` annotation values, indicating a rolling update from the last config change didn't propagate to all replicas. Warning. Skipped on workloads that don't carry the annotation.
+- Walks via owner-reference chain Pod → ReplicaSet → Deployment.
+- Skips system namespaces (kube-system, kube-public, kube-node-lease).
+- Reader ClusterRole extended with read on `apiextensions.k8s.io/customresourcedefinitions`.
+- Default ON; flip `analyzers.configDrift.enabled=false` to disable, or set `CHA_ANALYZER_CONFIG_DRIFT=off`. 16 unit tests.
+
+### Deferred (still on the v1.8 plan)
+
+Reserve for v1.8 — capacity / security drift classes, GCP+Azure cloud probes, M2 K8s probes (Kong, HPA, ArgoCD Application, Velero), operator port (controller-runtime Phase 1). See `docs/design/2026-05-v1.8-roadmap.md`.
 
 ---
 

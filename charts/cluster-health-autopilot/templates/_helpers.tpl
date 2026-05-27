@@ -176,8 +176,8 @@ Keep additive — never break existing installs by changing default semantics.
 {{- end -}}
 
 {{- /*
-cha.analyzerToggleEnv — env-var toggles for v1.7 drift-class
-expansion analyzers (Workstreams B1+B2+B3). Each defaults to ON;
+cha.analyzerToggleEnv — env-var toggles for the v1.7+ drift-class
+expansion analyzers (Workstreams B1+B2+B3+B4). Each defaults to ON;
 flip analyzers.<name>.enabled=false in values.yaml to silence the
 no-target list cycle on clusters that don't host the asset class.
 */ -}}
@@ -197,6 +197,12 @@ no-target list cycle on clusters that don't host the asset class.
 {{- if (.Values.analyzers).rbacDrift }}
 {{- if not .Values.analyzers.rbacDrift.enabled }}
 - name: CHA_ANALYZER_RBAC_DRIFT
+  value: "off"
+{{- end }}
+{{- end }}
+{{- if (.Values.analyzers).configDrift }}
+{{- if not .Values.analyzers.configDrift.enabled }}
+- name: CHA_ANALYZER_CONFIG_DRIFT
   value: "off"
 {{- end }}
 {{- end }}
