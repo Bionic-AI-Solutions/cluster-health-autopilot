@@ -72,11 +72,6 @@ var (
 		Version:  "v1",
 		Resource: "clusterrolebindings",
 	}
-	gvrServiceAccount = schema.GroupVersionResource{
-		Group:    "",
-		Version:  "v1",
-		Resource: "serviceaccounts",
-	}
 )
 
 // systemRBACNamespaces are namespaces whose RBAC is managed by the
