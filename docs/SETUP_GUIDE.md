@@ -792,7 +792,8 @@ cha watch --live \
 | `--slack-alerts` | — | Slack webhook for `#ceph-alerts` (CHA-fixed issues) |
 | `--slack-critical` | — | Slack webhook for `#ceph-critical` (unfixable issues) |
 | `--slack-post-on-resolved` | `true` | Post when a diagnostic resolves |
-| `--slack-repeat-interval` | `4h` | Re-post still-active diagnostics; `0` disables |
+| `--slack-repeat-interval` | `4h` | Re-post still-active warning/info diagnostics; `0` disables |
+| `--slack-critical-repeat-interval` | `0` (= use `--slack-repeat-interval`) | Per-severity override for **critical** diagnostics. Lets operators keep criticals loud (e.g. `4h`) while warnings calm down (e.g. `--slack-repeat-interval=24h`). New in v1.6.1. |
 | `--write-driftreports` | `true` | Upsert DriftReport CRs on every cycle |
 | `--remedy` | `false` | Run auto-fixers after each diagnose cycle |
 | `--dry-run` | `false` | With `--remedy`: evaluate without mutating |

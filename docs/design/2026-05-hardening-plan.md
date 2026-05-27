@@ -1,4 +1,13 @@
-# CHA Hardening Plan — TDD-driven
+# CHA Hardening Plan — TDD-driven  ✅ COMPLETED v1.6.0
+
+**Status:** ✅ CLOSED 2026-05-25. All Sprints 0–4 shipped in OSS v1.6.0 (deployed to development cluster) and now on `origin/main` as of v1.6.2. Sprint 5 (operator port to controller-runtime) was intentionally deferred to v1.7+.
+**Scope:** Closed 22/23 punch-list items from the 2026-05-22 adversarial review. The 23rd item — full M2–M7 trigger expansion — remains on the roadmap (see [2026-05-trigger-expansion-roadmap.md](2026-05-trigger-expansion-roadmap.md)).
+**Owner:** Closed by Sprint 1–4 execution.
+**Live verification:** Cluster running v1.6.2 with lease-based leader election active (lease transitions = 3+, renewing every 5s), all 12 K8s probes + 8 analyzers + 5 fixers loaded, OpenProject MCP ticketing wired, per-severity Slack repeat intervals applied.
+
+Original draft below preserved as historical reference.
+
+---
 
 **Status:** Draft, 2026-05-22
 **Scope:** Close the 23 punch-list items from the 2026-05-22 adversarial review

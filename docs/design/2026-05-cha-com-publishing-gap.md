@@ -1,8 +1,17 @@
 # CHA-com Publishing Gap — v1.6.0 + Next Steps
 
-**Status:** OPEN — closed-cluster pilots possible today; public paid sales blocked
-**Date:** 2026-05-25
-**Owner:** TBD (engineering + GTM)
+**Status:** ✅ CLOSED — all 3 gaps resolved as of 2026-05-27.
+**Date:** 2026-05-25 (closed 2026-05-27)
+**Owner:** Closed by 2026-05-26/27 release work.
+
+**Closure summary:**
+- **G1 — published CHA-com image:** ✅ Closed (2026-05-26). GoReleaser pipeline live; multi-arch images at `docker4zerocool/cha-com:1.0.0`–`1.6.0` on Docker Hub + `ghcr.io/bionic-ai-solutions/cha-com:*` mirror.
+- **G2 — paid catalog content:** ✅ Closed (2026-05-26). Four paid analyzers shipped as v1.0.1–v1.0.4 (`VaultPathDriftPro`, `CertificateChainAnomaly`, `MultiClusterDrift`, `StatefulSetReplicaPressure`).
+- **G3 — AI tiers wired into the CHA-com binary:** ✅ Closed (2026-05-27). T0–T3 shipped as CHA-com v1.1.0–v1.4.0; `cha-com watch` subcommand with `--ai-audit-log` JSONL sink shipped as v1.5.0; v1.6.0 polish release brought adversarial-review fixes (shared LLM client, hardened `isSaasEndpoint`, nil-Source defensive guards). Verified end-to-end against the in-cluster `gpu-ai` (Qwen 3.6 35B) endpoint on 2026-05-27 (live propose → validate → JWT-signable ActionID for T1; multi-step plan for T2; vault runbook with allowlisted path + key-names-only + `${VALUE_*}` placeholders for T3).
+
+This doc remains as a historical record of the gap analysis.
+
+---
 
 The 2026-05-25 clean-machine deploy audit revealed three publishing gaps in
 the paid (CHA-com) tier. This doc tracks them as a coherent piece of work

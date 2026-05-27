@@ -4,22 +4,23 @@ A self-healing operational layer for Kubernetes clusters: **detect → remediate
 
 > **Pre-launch — engineering preview.** This README will be the public face on launch day; treat its current contents as draft.
 
-## Status (v1.6.0 — 2026-05-25)
+## Status (v1.6.2 — 2026-05-27)
 
 | Capability | Status |
 |---|---|
 | K8s probes (12) — Ceph, Postgres, Nodes, PVCs, Critical services, Endpoints, NodePressure, DaemonSets, PendingPods, CrashLoopBackOff, ETCD, FailedMounts | ✅ shipped |
 | Diagnose analyzers (8) — secret/cert/ESO/image-pull/TLS classes | ✅ shipped |
 | Fixers (4 default + 1 opt-in) with GitOps + paused + suspended + cert-mgr-health safety gates | ✅ shipped |
-| AWS cloud probes (10) — RDS, EBS, EKS, IAM, ALB, ACM, KMS, S3, VPC + IRSA | ✅ shipped |
-| Helm chart (v1.6.0) with leader election, configurable workloads, narrow RBAC | ✅ shipped |
-| OpenProject ticketing sink (OSS), Slack 3-channel routing, Alertmanager | ✅ shipped |
-| Layer-2 rule-based Investigator (OSS) | ✅ shipped |
-| GCP cloud probes | ⏳ roadmap (M2 / v1.7+) — `--cloud-gcp-enabled` errors at startup today |
-| Azure cloud probes | ⏳ roadmap (M2 / v1.7+) — `--cloud-azure-enabled` errors at startup today |
-| CHA-com paid binary v1.0.0 (approval-server, Ed25519 signing, gen-signing-key, paid catalog plumbing) — published at `docker4zerocool/cha-com:1.0.0` | ✅ shipped (G1 closed) |
-| Four paid-tier analyzers (G2 closed): `VaultPathDriftPro` (1.0.1), `CertificateChainAnomaly` (1.0.2), `MultiClusterDrift` (1.0.3), `StatefulSetReplicaPressure` (1.0.4) | ✅ shipped |
-| Paid AI tiers (T0–T3) — code lives in `ai/` package; T0–T4 in-process enrichment wired into a `cha-com diagnose/watch` CLI surface | ⏳ G3 (next sprint) — see [`docs/design/2026-05-cha-com-publishing-gap.md`](docs/design/2026-05-cha-com-publishing-gap.md) |
+| AWS cloud probes (10) — RDS, EBS, EKS, IAM, ALB, ACM, KMS, S3, VPC + IRSA. Off by default (`cloud.enabled=false`) | ✅ shipped |
+| Helm chart (v1.6.2) with lease-based leader election (active in cluster), configurable workloads, narrow RBAC, per-severity Slack repeat intervals | ✅ shipped |
+| OpenProject ticketing sink (OSS) via MCP, Slack 3-channel routing with `--slack-critical-repeat-interval`, Alertmanager | ✅ shipped |
+| Layer-2 rule-based Investigator (OSS) with event scrubbing | ✅ shipped |
+| GCP cloud probes | ⏳ roadmap (M2 / v1.7+) — `pkg/cloud/gcp/client.go` is scaffold only |
+| Azure cloud probes | ⏳ roadmap (M2 / v1.7+) — `pkg/cloud/azure/client.go` is scaffold only |
+| CHA-com paid binary v1.6.0 (pinned to OSS v1.6.2): approval-server, Ed25519 signing, gen-signing-key, paid catalog | ✅ shipped at `docker4zerocool/cha-com:1.6.0` (multi-arch) |
+| Four paid-tier analyzers: `VaultPathDriftPro`, `CertificateChainAnomaly`, `MultiClusterDrift`, `StatefulSetReplicaPressure` | ✅ shipped (CHA-com v1.0.1–v1.0.4) |
+| Paid AI tiers — T0 narration, T1 fix proposer (5 whitelisted action_kinds), T2 multi-step planner, T3 vault break-glass runbook (dual-approval, JWT-signed, hash-chained audit) | ✅ shipped (CHA-com v1.1.0–v1.4.0) |
+| `cha-com watch` subcommand — AI-layered poll loop with fingerprint dedup, `--ai-audit-log` JSONL sink | ✅ shipped (CHA-com v1.5.0) |
 | Operator port (controller-runtime / kubebuilder) | ⏳ roadmap (Sprint 5 / v1.7) |
 
 ---

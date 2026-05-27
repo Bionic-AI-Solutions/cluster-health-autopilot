@@ -13,8 +13,33 @@ serves the latest tagged chart cut.
 
 ## [Unreleased]
 
+(Reserve for v1.7+ work — operator port, cloud probe GCP/Azure clients, M2 trigger expansion.)
+
+---
+
+## [1.6.2] — 2026-05-27
+
+Pinned chart + binary release reconciling the `feat/cloud-probes` lineage onto `main` (PR #63 + #64). The v1.6.0 binary was previously deployed but its source never landed on `main`; this is the source-of-truth cleanup. Live cluster upgraded from v1.6.1 → v1.6.2 with lease-based leader election now genuinely active (lease transitions = 3, renewing every 5s).
+
+### Added — content from `feat/cloud-probes` merged into main
+- All Sprint 1–4 hardening work (see [1.6.0] below) is now reflected on origin/main with file-level history preserved.
+- AWS cloud probe code (RDS / EBS / EKS-cluster / EKS-nodegroups / IAM-roles / ALB / ACM / KMS / S3-public-access / VPC-subnets) under `pkg/cloud/aws` + `internal/cloud/aws`. Default `cloud.enabled=false` — operators opt in.
+- Lease-based leader election (`internal/watcher/leader.go`), wired by the chart's downward-API env vars (`MY_POD_NAMESPACE`, `MY_POD_NAME`).
+- `pkg/ai/redact` Kubernetes Event message scrubbing (Sprint 3.4).
+- `internal/fix/gitops.go` shared GitOps detection helpers used by all 5 fixers (Sprint 1).
+- `pkg/vault` promotion (Client / HTTPClient / Config / KubernetesAuthConfig moved from `internal/vault`).
+
+### Fixed
+- CI helm-unittest setup: drop removed `--verify=false` flag and pin plugin to v1.0.3 so Helm 3.16 + plugin.yaml metadata stay compatible.
+
+---
+
+## [1.6.1] — 2026-05-26
+
+Operator-driven Slack-noise fixes after a stable warning was observed re-posting 6× per day at the default 4h cadence.
+
 ### Added
-- **Per-severity Slack repeat intervals (v1.6.1).** New `--slack-critical-repeat-interval`
+- **Per-severity Slack repeat intervals.** New `--slack-critical-repeat-interval`
   flag on `cha watch` lets operators keep critical alerts loud (e.g. `4h`)
   while letting warnings calm down (e.g. `--slack-repeat-interval=24h`).
   Zero (default) falls back to `--slack-repeat-interval` so pre-v1.6.1
@@ -35,17 +60,11 @@ serves the latest tagged chart cut.
   unsafe). values.yaml already provides sane defaults, so we now render
   the values directly. Chart version bumped 1.6.0 → 1.6.1.
 
-### Changed
-- **`internal/vault` → `pkg/vault` package promotion (v1.6.1 prep).** The
-  Vault `Client` interface, `HTTPClient` concrete implementation, `New()`
-  constructor, `Config`, and `KubernetesAuthConfig` were all promoted from
-  `internal/vault` to `pkg/vault`. `internal/vault` is now a thin alias
-  layer that re-exports the same names — existing OSS call sites
-  (`internal/diagnose`, `cmd/cha`) compile unchanged. This unblocks
-  CHA-com (and any future external module) from constructing a Vault
-  read client without writing its own HTTP layer. Privacy contract is
-  unchanged: `Client.ListKeys` still returns `[]string` (key names only),
-  byte values never read.
+---
+
+## [1.6.0] — 2026-05-25
+
+Sprint 1–4 hardening release. Closes 22/23 items from the 2026-05-22 adversarial review (one trigger-expansion roadmap item correctly deferred to v1.7+). Live-deployed to the development cluster on 2026-05-25 as image tag `v1.6.0-aeefa30`.
 
 ### Added
 - `LICENSE-VERIFIED-LIBRARY.md` — formal terms for the paid Verified Signature Library subscription, replacing the placeholder reference in README.
