@@ -206,4 +206,10 @@ no-target list cycle on clusters that don't host the asset class.
   value: "off"
 {{- end }}
 {{- end }}
+{{- if (.Values.analyzers).capacityDrift }}
+{{- if not .Values.analyzers.capacityDrift.enabled }}
+- name: CHA_ANALYZER_CAPACITY_DRIFT
+  value: "off"
+{{- end }}
+{{- end }}
 {{- end -}}

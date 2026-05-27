@@ -78,6 +78,14 @@ rules:
   - apiGroups: ["apiextensions.k8s.io"]
     resources: ["customresourcedefinitions"]
     verbs: ["get", "list", "watch"]
+  # CapacityDrift analyzer (v1.8) — reads HorizontalPodAutoscalers
+  # (autoscaling/v2) cluster-wide for pinned-max / pinned-min /
+  # AbleToScale=False / FailedGetResourceMetric signals. PVC
+  # expansion-stuck reads PVCs (already covered above by the core
+  # probe rule).
+  - apiGroups: ["autoscaling"]
+    resources: ["horizontalpodautoscalers"]
+    verbs: ["get", "list", "watch"]
   # IngressCoverage analyzer — reads all Ingress rules cluster-wide to detect
   # hostnames that have no endpoint probe. Read-only; no write verbs needed.
   - apiGroups: ["networking.k8s.io"]

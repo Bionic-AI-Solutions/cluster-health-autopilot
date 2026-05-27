@@ -99,9 +99,10 @@ func RegisterOSS(r *registry.Registry) {
 		diagnose.TLSSecretMismatch{},
 	)
 	// v1.7 drift-class expansion (Workstreams B1+B2+B3) +
-	// v1.8 config drift (Workstream B4). Each opt-out via env var
-	// on clusters that don't host the targeted asset class and the
-	// operator wants to silence the no-target list cycle.
+	// v1.8 config + capacity drift (Workstreams B4+B5). Each opt-out
+	// via env var on clusters that don't host the targeted asset
+	// class and the operator wants to silence the no-target list
+	// cycle.
 	if os.Getenv("CHA_ANALYZER_GITOPS_DRIFT") != "off" {
 		r.RegisterAnalyzer(diagnose.GitOpsDrift{})
 	}
@@ -113,6 +114,9 @@ func RegisterOSS(r *registry.Registry) {
 	}
 	if os.Getenv("CHA_ANALYZER_CONFIG_DRIFT") != "off" {
 		r.RegisterAnalyzer(diagnose.ConfigDrift{})
+	}
+	if os.Getenv("CHA_ANALYZER_CAPACITY_DRIFT") != "off" {
+		r.RegisterAnalyzer(diagnose.CapacityDrift{})
 	}
 	r.RegisterFixer(
 		fix.StaleErrorPods{},

@@ -30,9 +30,21 @@ serves the latest tagged chart cut.
 - **`internal/operator/builders.go`** — pure-function builders that translate `ClusterHealthAutopilotSpec` → `*appsv1.Deployment` (watcher) and `*batchv1.CronJob` (diagnose, remediate). Mirror the existing chart's CLI argument format so an operator-managed install behaves identically to a Helm-managed install. 19 unit tests cover defaults, overrides, image-policy inference, pull-secret round-trip, and alerting-flag emission.
 - **`charts/.../templates/crd-clusterhealthautopilot.yaml`** — CRD shipped via the chart, gated behind `operator.installCRD` (default `true`). Installing the CRD on a cluster without the operator binary is harmless: the resource is queryable state with no controller acting on it.
 
+### Added — Workstream B5 (capacity drift)
+
+- **`CapacityDrift`** analyzer (B5) — capacity-tier signals that the basic resource-health probes miss. Five signals across HPAs and PVCs, none requiring metrics-server (the metrics-dependent signals — pod request vs usage, PVC growth-trajectory — defer to a v1.8.x follow-up):
+  - **HPA pinned at maxReplicas** — `status.currentReplicas == spec.maxReplicas` past the saturation grace (24h default), excluding `min==max` static configurations. Workload is chronically under-provisioned. Critical.
+  - **HPA pinned at minReplicas, not load-driven** — current replicas held at `minReplicas` for > 30 days with `maxReplicas > minReplicas + 1`. HPA range is decorative; the workload could be a static Deployment. Warning.
+  - **HPA AbleToScale=False** — `status.conditions[type=AbleToScale,status=False]` past grace (15-min default). Typically a ResourceQuota cap or PDB blocking the controller. Critical.
+  - **HPA FailedGetResourceMetric** — `ScalingActive=False` with that reason. Metrics-server is missing or unreachable; the HPA can't decide. Warning. This is the v1.8 R1 risk-mitigation signal so operators notice without us depending on metrics-server.
+  - **PVC volume-expansion stuck** — `FileSystemResizePending=True` past grace, OR `spec.resources.requests.storage > status.capacity.storage` past grace. Volume-expansion got requested but the CSI driver didn't complete it. Critical.
+- Skips kube-system / kube-public / kube-node-lease.
+- Reader ClusterRole extended with read on `autoscaling/horizontalpodautoscalers`; PVC reads already covered by the core probe rule.
+- Default ON; flip `analyzers.capacityDrift.enabled=false` to disable, or set `CHA_ANALYZER_CAPACITY_DRIFT=off`. 17 unit tests.
+
 ### Deferred (still on the v1.8 plan)
 
-Reserve for v1.8 — capacity / security drift classes, GCP+Azure cloud probes, M2 K8s probes (Kong, HPA, ArgoCD Application, Velero), operator port Phase 1b (controller-runtime Reconcile + manager binary + envtest). See `docs/design/2026-05-v1.8-roadmap.md` and `docs/design/2026-05-v1.8-operator-phase-1.md`.
+Reserve for v1.8 — security drift class, GCP+Azure cloud probes, M2 K8s probes (Kong, HPA, ArgoCD Application, Velero), operator port Phase 1b (controller-runtime Reconcile + manager binary + envtest), plus the metrics-server-dependent capacity signals (pod request vs usage, PVC growth-trajectory). See `docs/design/2026-05-v1.8-roadmap.md` and `docs/design/2026-05-v1.8-operator-phase-1.md`.
 
 ---
 

@@ -475,6 +475,19 @@ analyzers:
     # grace period on rollouts to avoid flagging slow-starting
     # images. Skips kube-system / kube-public / kube-node-lease.
     enabled: true
+  capacityDrift:
+    # Capacity drift (v1.8) — HPA pinned at maxReplicas past the
+    # saturation grace (24h default; workload is chronically
+    # under-provisioned), HPA pinned at minReplicas past the idle
+    # grace (30d default; HPA is not load-driven), HPA
+    # AbleToScale=False past grace (typically ResourceQuota or PDB
+    # blocking), HPA FailedGetResourceMetric (metrics-server is
+    # missing or unreachable — this is the v1.8 R1 mitigation
+    # signal), and PVC volume-expansion stuck (FileSystemResizePending
+    # past grace, or spec.requests.storage > status.capacity.storage
+    # past grace). Set to false on clusters without HPAs or that
+    # don't use volume expansion.
+    enabled: true
 
 # Optional fixers — off by default. Each entry adds RBAC verbs and exposes
 # an env var the binary reads to enable the matching Fixer registration.
