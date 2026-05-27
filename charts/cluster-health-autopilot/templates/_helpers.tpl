@@ -174,3 +174,22 @@ Keep additive — never break existing installs by changing default semantics.
 {{- end }}
 {{- end }}
 {{- end -}}
+
+{{- /*
+cha.analyzerToggleEnv — env-var toggles for opt-in analyzers added in
+v1.7 drift-class expansion. Each analyzer defaults to ON if its CRDs
+are usually present, OFF otherwise.
+
+GitOps drift (Argo Application + Flux Kustomization/HelmRelease):
+operators on clusters without Argo/Flux installed can disable via
+analyzers.gitopsDrift.enabled=false to avoid log noise on the
+no-such-CRD list calls.
+*/ -}}
+{{- define "cha.analyzerToggleEnv" -}}
+{{- if (.Values.analyzers).gitopsDrift }}
+{{- if not .Values.analyzers.gitopsDrift.enabled }}
+- name: CHA_ANALYZER_GITOPS_DRIFT
+  value: "off"
+{{- end }}
+{{- end }}
+{{- end -}}

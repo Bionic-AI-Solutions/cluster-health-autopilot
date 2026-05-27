@@ -98,6 +98,15 @@ func RegisterOSS(r *registry.Registry) {
 		diagnose.CertExpiry{},
 		diagnose.TLSSecretMismatch{},
 	)
+	// v1.7 drift-class expansion (Workstream B1). Opt-in via env var
+	// because the CRDs aren't installed on every cluster; ESO/cert-mgr
+	// analyzers are unconditionally registered because their CRDs are
+	// near-ubiquitous in our pilot installs, but Argo/Flux is partial
+	// adoption and we don't want a noisy "no resources" lookup cycle
+	// on clusters that don't run a GitOps controller.
+	if os.Getenv("CHA_ANALYZER_GITOPS_DRIFT") != "off" {
+		r.RegisterAnalyzer(diagnose.GitOpsDrift{})
+	}
 	r.RegisterFixer(
 		fix.StaleErrorPods{},
 		fix.StuckJobsWithBadSecretRef{},

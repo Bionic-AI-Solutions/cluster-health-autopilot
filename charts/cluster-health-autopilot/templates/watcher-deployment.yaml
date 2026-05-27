@@ -150,6 +150,7 @@ spec:
             {{- include "cha.slackCriticalEnv" . | nindent 12 }}
             {{- include "cha.vaultEnv" . | nindent 12 }}
             {{- include "cha.optionalFixerEnv" . | nindent 12 }}
+            {{- include "cha.analyzerToggleEnv" . | nindent 12 }}
             {{- if and .Values.ticketing.enabled .Values.ticketing.auth.enabled }}
             - name: TICKETING_MCP_API_KEY
               valueFrom:

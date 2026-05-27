@@ -45,6 +45,19 @@ rules:
   - apiGroups: ["cert-manager.io"]
     resources: ["certificates", "certificaterequests"]
     verbs: ["get", "list", "watch"]
+  # GitOpsDrift analyzer (v1.7) — Argo CD + Flux Kustomization +
+  # Flux HelmRelease. Rules are no-ops when the CRDs aren't
+  # installed; the analyzer also gates on the env var
+  # CHA_ANALYZER_GITOPS_DRIFT=off via analyzers.gitopsDrift.enabled.
+  - apiGroups: ["argoproj.io"]
+    resources: ["applications"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["kustomize.toolkit.fluxcd.io"]
+    resources: ["kustomizations"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["helm.toolkit.fluxcd.io"]
+    resources: ["helmreleases"]
+    verbs: ["get", "list", "watch"]
   - apiGroups: ["acme.cert-manager.io"]
     resources: ["orders", "challenges"]
     verbs: ["get", "list", "watch"]
