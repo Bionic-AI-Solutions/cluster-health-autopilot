@@ -425,10 +425,10 @@ gatekeeper:
       - external-secrets
       - cnpg-system
 
-# Drift-class analyzers added in v1.7 (Workstream B from the AI SRE
-# positioning plan). Default to ON so existing installs get the new
-# signal automatically; flip to false to silence on clusters that
-# don't have the relevant CRDs installed.
+# Drift-class analyzers added in v1.7 (Workstreams B1+B2 from the
+# AI SRE positioning plan). Default to ON so existing installs get
+# the new signal automatically; flip individual entries to false on
+# clusters that don't host the targeted asset class.
 analyzers:
   gitopsDrift:
     # GitOps drift — Argo CD Application + Flux Kustomization +
@@ -437,6 +437,12 @@ analyzers:
     # 10-minute grace period (controllers are routinely
     # reconciling). Set to false on clusters without Argo/Flux to
     # skip the "no such CRD" list calls.
+    enabled: true
+  workloadStateDrift:
+    # State-tier drift — CNPG cluster phase / follower lag /
+    # primary switchover stuck; StatefulSet ordinal-zero stuck.
+    # Goes deeper than the basic "X/Y ready" probe. Set to false
+    # on clusters that don't host CNPG and don't run StatefulSets.
     enabled: true
 
 # Optional fixers — off by default. Each entry adds RBAC verbs and exposes
