@@ -42,9 +42,20 @@ serves the latest tagged chart cut.
 - Reader ClusterRole extended with read on `autoscaling/horizontalpodautoscalers`; PVC reads already covered by the core probe rule.
 - Default ON; flip `analyzers.capacityDrift.enabled=false` to disable, or set `CHA_ANALYZER_CAPACITY_DRIFT=off`. 17 unit tests.
 
+### Added — Workstream B6 (security drift)
+
+- **`SecurityDrift`** analyzer (B6) — three observational signals on security posture:
+  - **PSS posture gap** — user namespaces with no `pod-security.kubernetes.io/enforce` label (admission applies the cluster-wide default, typically `privileged`), or with `enforce=privileged` explicitly (the most-permissive PSS profile). Warning.
+  - **Mutable image tag** — Pods whose containers reference images by tag only (`<image>:<tag>`) rather than by digest (`<image>@sha256:<digest>`). Mutable tags break the image-attestation signature chain — the runtime image can be re-published behind the same tag. Warning. Skipped for `:latest` (other code paths already flag that).
+  - **NetworkPolicy coverage gap** — user namespaces running pods with zero NetworkPolicies. K8s default networking is fully permissive without at least one policy. Warning per namespace.
+- Skips kube-system / kube-public / kube-node-lease / cnpg-system / rook-ceph / vault / external-secrets — system namespaces whose security posture is controller-managed.
+- Reader ClusterRole extended with `networking.k8s.io/networkpolicies`; namespaces already covered by the core probe rule.
+- Default ON; flip `analyzers.securityDrift.enabled=false` to disable, or set `CHA_ANALYZER_SECURITY_DRIFT=off`. 16 unit tests.
+- Out of scope for v1.8 (deferred to a v1.8.x follow-up): true PSS-downgrade detection (requires label history) and active Cosign / Notation signature verification (admission-time concern; CHA is observational).
+
 ### Deferred (still on the v1.8 plan)
 
-Reserve for v1.8 — security drift class, GCP+Azure cloud probes, M2 K8s probes (Kong, HPA, ArgoCD Application, Velero), operator port Phase 1b (controller-runtime Reconcile + manager binary + envtest), plus the metrics-server-dependent capacity signals (pod request vs usage, PVC growth-trajectory). See `docs/design/2026-05-v1.8-roadmap.md` and `docs/design/2026-05-v1.8-operator-phase-1.md`.
+Reserve for v1.8 — GCP+Azure cloud probes, M2 K8s probes (Kong, HPA, ArgoCD Application, Velero), operator port Phase 1b (controller-runtime Reconcile + manager binary + envtest), plus the metrics-server-dependent capacity signals (pod request vs usage, PVC growth-trajectory). See `docs/design/2026-05-v1.8-roadmap.md` and `docs/design/2026-05-v1.8-operator-phase-1.md`.
 
 ---
 

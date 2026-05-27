@@ -488,6 +488,23 @@ analyzers:
     # past grace). Set to false on clusters without HPAs or that
     # don't use volume expansion.
     enabled: true
+  securityDrift:
+    # Security drift (v1.8) — three observational signals: user
+    # namespaces with no pod-security.kubernetes.io/enforce label
+    # (apiserver applies the cluster-wide default, typically
+    # privileged) or with enforce=privileged explicitly (most-
+    # permissive PSS profile); Pods whose containers use mutable
+    # :tag references rather than @sha256:digest pins (breaks the
+    # image-attestation signature chain); user namespaces running
+    # pods with zero NetworkPolicies (any pod can reach any other
+    # pod cluster-wide). Skips kube-system / kube-public /
+    # kube-node-lease / cnpg-system / rook-ceph / vault /
+    # external-secrets. Set to false to silence security-posture
+    # signals on clusters where PSPs / NetworkPolicies / image
+    # attestation are managed by external policy controllers
+    # (Kyverno, Gatekeeper, Sigstore) that already produce these
+    # alerts independently.
+    enabled: true
 
 # Optional fixers — off by default. Each entry adds RBAC verbs and exposes
 # an env var the binary reads to enable the matching Fixer registration.

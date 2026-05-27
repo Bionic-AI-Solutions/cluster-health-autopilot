@@ -212,4 +212,10 @@ no-target list cycle on clusters that don't host the asset class.
   value: "off"
 {{- end }}
 {{- end }}
+{{- if (.Values.analyzers).securityDrift }}
+{{- if not .Values.analyzers.securityDrift.enabled }}
+- name: CHA_ANALYZER_SECURITY_DRIFT
+  value: "off"
+{{- end }}
+{{- end }}
 {{- end -}}
