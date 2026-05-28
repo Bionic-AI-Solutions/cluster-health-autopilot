@@ -57,4 +57,21 @@ type Client interface {
 	// ListSubnets lists VNet subnets in the bound subscription.
 	// Returns (nil, nil) when there are none.
 	ListSubnets(ctx context.Context) ([]Subnet, error)
+
+	// ListAppGatewayBackends lists Application Gateway backend pools
+	// with their health summary inlined. Returns (nil, nil) when
+	// there are none.
+	ListAppGatewayBackends(ctx context.Context) ([]AppGatewayBackend, error)
+
+	// ListAppServiceCertificates lists App Service / managed
+	// certificates in the bound subscription.
+	ListAppServiceCertificates(ctx context.Context) ([]Certificate, error)
+
+	// ListStorageAccounts lists Storage accounts with their
+	// public-access posture.
+	ListStorageAccounts(ctx context.Context) ([]StorageAccount, error)
+
+	// ListKeyVaults lists Key Vaults with their soft-delete /
+	// purge-protection posture.
+	ListKeyVaults(ctx context.Context) ([]KeyVault, error)
 }

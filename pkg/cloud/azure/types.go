@@ -94,3 +94,44 @@ type Subnet struct {
 	AvailableIPCount int64  `json:"availableIPCount"`
 	TotalIPCount     int64  `json:"totalIPCount"`
 }
+
+// AppGatewayBackend is the narrow projection of an Application Gateway
+// backend pool with health summary inlined. Mirrors AWS ALBTargetGroup
+// / GCP BackendService.
+type AppGatewayBackend struct {
+	Gateway        string `json:"gateway"`
+	PoolName       string `json:"poolName"`
+	HealthyCount   int    `json:"healthyCount"`
+	UnhealthyCount int    `json:"unhealthyCount"`
+	TotalCount     int    `json:"totalCount,omitempty"`
+}
+
+// Certificate is the narrow projection of an App Service / managed
+// certificate. Mirrors AWS ACMCertificate / GCP ManagedCertificate.
+type Certificate struct {
+	Name          string    `json:"name"`
+	ResourceGroup string    `json:"resourceGroup,omitempty"`
+	NotAfter      time.Time `json:"notAfter,omitempty"`
+	Issued        bool      `json:"issued,omitempty"` // false = provisioning/failed
+}
+
+// StorageAccount is the narrow projection of a Storage account's
+// public-access posture. Mirrors AWS S3BucketPAB / GCP Bucket.
+type StorageAccount struct {
+	Name                  string `json:"name"`
+	ResourceGroup         string `json:"resourceGroup,omitempty"`
+	AllowBlobPublicAccess bool   `json:"allowBlobPublicAccess"` // true = containers may be public
+	HTTPSOnly             bool   `json:"httpsOnly"`             // false = plaintext allowed
+	MinTLSVersion         string `json:"minTlsVersion,omitempty"`
+}
+
+// KeyVault is the narrow projection of a Key Vault's data-protection
+// posture. Mirrors AWS KMSKey / GCP KMSKey but Azure's drift signal is
+// soft-delete / purge-protection rather than key state.
+type KeyVault struct {
+	Name            string `json:"name"`
+	ResourceGroup   string `json:"resourceGroup,omitempty"`
+	SoftDelete      bool   `json:"softDelete"`      // recovery window for deleted secrets
+	PurgeProtection bool   `json:"purgeProtection"` // prevents permanent delete during window
+	PublicNetwork   bool   `json:"publicNetwork"`   // reachable from public internet
+}

@@ -33,6 +33,18 @@ type fakeAzure struct {
 
 	subnets    []pkgazure.Subnet
 	subnetsErr error
+
+	appgw    []pkgazure.AppGatewayBackend
+	appgwErr error
+
+	certs    []pkgazure.Certificate
+	certsErr error
+
+	storage    []pkgazure.StorageAccount
+	storageErr error
+
+	vaults    []pkgazure.KeyVault
+	vaultsErr error
 }
 
 func (f *fakeAzure) SubscriptionID() string { return f.subscription }
@@ -60,6 +72,22 @@ func (f *fakeAzure) ListManagedIdentities(_ context.Context) ([]pkgazure.Managed
 
 func (f *fakeAzure) ListSubnets(_ context.Context) ([]pkgazure.Subnet, error) {
 	return f.subnets, f.subnetsErr
+}
+
+func (f *fakeAzure) ListAppGatewayBackends(_ context.Context) ([]pkgazure.AppGatewayBackend, error) {
+	return f.appgw, f.appgwErr
+}
+
+func (f *fakeAzure) ListAppServiceCertificates(_ context.Context) ([]pkgazure.Certificate, error) {
+	return f.certs, f.certsErr
+}
+
+func (f *fakeAzure) ListStorageAccounts(_ context.Context) ([]pkgazure.StorageAccount, error) {
+	return f.storage, f.storageErr
+}
+
+func (f *fakeAzure) ListKeyVaults(_ context.Context) ([]pkgazure.KeyVault, error) {
+	return f.vaults, f.vaultsErr
 }
 
 type fakeSource struct {

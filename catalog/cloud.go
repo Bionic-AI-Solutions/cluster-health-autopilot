@@ -56,6 +56,10 @@ func RegisterCloudOSS(reg *registry.Registry, awsEnabled, gcpEnabled, azureEnabl
 			azureprobes.AKSNodePools{},
 			azureprobes.ManagedIdentities{},
 			azureprobes.Subnets{},
+			azureprobes.AppGatewayBackends{},
+			azureprobes.Certificates{},
+			azureprobes.StoragePublicAccess{},
+			azureprobes.KeyVaults{},
 		)
 	}
 }
