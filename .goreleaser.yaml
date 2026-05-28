@@ -79,6 +79,7 @@ dockers:
       - internal
       - pkg
       - catalog
+      - api
       - go.mod
       - go.sum
     goarch: amd64
@@ -108,6 +109,7 @@ dockers:
       - internal
       - pkg
       - catalog
+      - api
       - go.mod
       - go.sum
     goarch: arm64
