@@ -27,6 +27,7 @@ import (
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/anonymize"
 	cloudimpl "github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/cloud"
 	awsimpl "github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/cloud/aws"
+	azureimpl "github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/cloud/azure"
 	gcpimpl "github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/cloud/gcp"
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/diagnose"
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/fix"
@@ -38,6 +39,7 @@ import (
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/watcher"
 	cloudpkg "github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/cloud"
 	cloudpkgaws "github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/cloud/aws"
+	cloudpkgazure "github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/cloud/azure"
 	cloudpkggcp "github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/cloud/gcp"
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/ticketing/openproject"
 	"github.com/spf13/cobra"
@@ -450,6 +452,7 @@ func watchCmd() *cobra.Command {
 		cloudGCPRegion           string
 		cloudAzureEnabled        bool
 		cloudAzureSubscriptionID string
+		cloudAzureLocation       string
 		cloudIncludeCloud        bool
 		cloudExcludeCloud        bool
 		cloudCadence             time.Duration
@@ -546,6 +549,7 @@ the post-fix cluster state.`,
 					GCPRegion:           cloudGCPRegion,
 					AzureEnabled:        cloudAzureEnabled && !cloudExcludeCloud,
 					AzureSubscriptionID: cloudAzureSubscriptionID,
+					AzureLocation:       cloudAzureLocation,
 				})
 				if cerr != nil {
 					return cerr
@@ -635,8 +639,9 @@ the post-fix cluster state.`,
 	c.Flags().BoolVar(&cloudGCPEnabled, "cloud-gcp-enabled", envBool("CLOUD_GCP_ENABLED", false), "Enable GCP cloud probes (Cloud SQL, Persistent Disk, GKE, IAM SA, subnets, LB backends, managed certs, GCS, KMS). Requires GCP auth via Workload Identity or ADC.")
 	c.Flags().StringVar(&cloudGCPProject, "cloud-gcp-project", os.Getenv("CLOUD_GCP_PROJECT"), "GCP project ID for cloud probes. Required when --cloud-gcp-enabled.")
 	c.Flags().StringVar(&cloudGCPRegion, "cloud-gcp-region", os.Getenv("CLOUD_GCP_REGION"), "GCP region/location for cloud probes (e.g. us-central1). Empty = wildcard for GKE, global for KMS.")
-	c.Flags().BoolVar(&cloudAzureEnabled, "cloud-azure-enabled", envBool("CLOUD_AZURE_ENABLED", false), "Enable Azure cloud probes (M2 — not shipped yet)")
-	c.Flags().StringVar(&cloudAzureSubscriptionID, "cloud-azure-subscription-id", os.Getenv("CLOUD_AZURE_SUBSCRIPTION_ID"), "Azure subscription ID for cloud probes")
+	c.Flags().BoolVar(&cloudAzureEnabled, "cloud-azure-enabled", envBool("CLOUD_AZURE_ENABLED", false), "Enable Azure cloud probes (SQL, Disks, AKS, Managed Identity, subnets, App Gateway, certs, Storage, Key Vault). Requires Azure auth via AAD Workload Identity or az login.")
+	c.Flags().StringVar(&cloudAzureSubscriptionID, "cloud-azure-subscription-id", os.Getenv("CLOUD_AZURE_SUBSCRIPTION_ID"), "Azure subscription ID for cloud probes. Required when --cloud-azure-enabled.")
+	c.Flags().StringVar(&cloudAzureLocation, "cloud-azure-location", os.Getenv("CLOUD_AZURE_LOCATION"), "Azure region/location for cloud probes (e.g. eastus). Optional; surfaces in subjects.")
 	c.Flags().BoolVar(&cloudIncludeCloud, "include-cloud", false, "Force-enable cloud probes even when per-provider flags are off (uses defaults)")
 	c.Flags().BoolVar(&cloudExcludeCloud, "exclude-cloud", false, "Force-disable cloud probes regardless of per-provider flags (debugging / rate-limit fire drill)")
 	c.Flags().DurationVar(&cloudCadence, "cloud-cadence", 10*time.Minute, "Minimum interval between cloud-probe runs. Cloud probes don't fire on K8s events.")
@@ -652,6 +657,7 @@ type cloudOpts struct {
 	GCPRegion           string
 	AzureEnabled        bool
 	AzureSubscriptionID string
+	AzureLocation       string
 }
 
 // buildCloudSource assembles a cloud.Source from per-provider CLI flags.
@@ -683,13 +689,21 @@ func buildCloudSource(ctx context.Context, o cloudOpts) (cloudpkg.Source, error)
 		}
 		gcpClient = c
 	}
+	var azureClient cloudpkgazure.Client
 	if o.AzureEnabled {
-		return nil, fmt.Errorf("azure cloud probes land in a follow-up (Live SDK wrapper pending; cluster-health-autopilot/docs/design/2026-05-cloud-probe-framework.md)")
+		if o.AzureSubscriptionID == "" {
+			return nil, fmt.Errorf("--cloud-azure-subscription-id required when --cloud-azure-enabled")
+		}
+		c, err := azureimpl.NewLiveClient(ctx, o.AzureSubscriptionID, o.AzureLocation)
+		if err != nil {
+			return nil, fmt.Errorf("build Azure live client: %w", err)
+		}
+		azureClient = c
 	}
-	if awsClient == nil && gcpClient == nil {
+	if awsClient == nil && gcpClient == nil && azureClient == nil {
 		return nil, nil
 	}
-	return cloudimpl.NewSource(awsClient, gcpClient, nil, cloudpkg.ModeLive), nil
+	return cloudimpl.NewSource(awsClient, gcpClient, azureClient, cloudpkg.ModeLive), nil
 }
 
 // envBool reads an env var as bool; empty / unparseable returns dflt.

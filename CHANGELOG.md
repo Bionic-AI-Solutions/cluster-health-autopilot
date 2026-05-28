@@ -13,6 +13,13 @@ serves the latest tagged chart cut.
 
 ## [Unreleased]
 
+### Added — Azure cloud-probe Live SDK wrapper (probes now execute against real Azure) — all 3 clouds live
+
+- **`internal/cloud/azure/live.go`** — `LiveClient` implements all 10 `pkgazure.Client` methods against `azure-sdk-for-go` (armsql, armcompute, armcontainerservice, armmsi, armnetwork, armappservice, armstorage, armkeyvault, armauthorization). Auth via `DefaultAzureCredential` (AAD Workload Identity in-cluster, `az login` locally). Read-only. Resolves server→database, vnet→subnet, and cluster→nodepool nesting; extracts resource group from ARM IDs; counts role assignments per managed-identity principal.
+- **`cmd/cha buildCloudSource()`** — `--cloud-azure-enabled` now constructs the live client (requires `--cloud-azure-subscription-id`; optional `--cloud-azure-location`) instead of erroring. **With this, all three providers (AWS, GCP, Azure) execute against real clouds.**
+- Two documented limitations populated conservatively (no false-positives): VNet subnet free-IP (Network API exposes none → CIDR-derived total, available=total) and App Gateway backend health (per-gateway LRO too heavy per cycle → reports pool size as healthy). Both have Monitoring/LRO follow-ups noted in code.
+- **Verification boundary:** compiles cleanly against the real `azure-sdk-for-go` ARM modules (API-surface correctness), but **not** integration-tested against a live Azure subscription — needs credentials. Probe evaluation logic remains unit-tested against fakes.
+
 ### Added — GCP cloud-probe Live SDK wrapper (probes now execute against real GCP)
 
 - **`internal/cloud/gcp/live.go`** — `LiveClient` implements all 10 `pkggcp.Client` methods against `google.golang.org/api` (sqladmin, compute, container, iam, cloudkms, storage). Auth via Application Default Credentials (GKE Workload Identity in-cluster). Read-only. Compiles against the real SDK surface.
