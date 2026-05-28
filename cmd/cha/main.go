@@ -27,6 +27,7 @@ import (
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/anonymize"
 	cloudimpl "github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/cloud"
 	awsimpl "github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/cloud/aws"
+	gcpimpl "github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/cloud/gcp"
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/diagnose"
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/fix"
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/probe"
@@ -37,6 +38,7 @@ import (
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/watcher"
 	cloudpkg "github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/cloud"
 	cloudpkgaws "github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/cloud/aws"
+	cloudpkggcp "github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/cloud/gcp"
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/ticketing/openproject"
 	"github.com/spf13/cobra"
 )
@@ -445,6 +447,7 @@ func watchCmd() *cobra.Command {
 		cloudAWSRegion           string
 		cloudGCPEnabled          bool
 		cloudGCPProject          string
+		cloudGCPRegion           string
 		cloudAzureEnabled        bool
 		cloudAzureSubscriptionID string
 		cloudIncludeCloud        bool
@@ -540,6 +543,7 @@ the post-fix cluster state.`,
 					AWSRegion:           cloudAWSRegion,
 					GCPEnabled:          cloudGCPEnabled && !cloudExcludeCloud,
 					GCPProject:          cloudGCPProject,
+					GCPRegion:           cloudGCPRegion,
 					AzureEnabled:        cloudAzureEnabled && !cloudExcludeCloud,
 					AzureSubscriptionID: cloudAzureSubscriptionID,
 				})
@@ -628,8 +632,9 @@ the post-fix cluster state.`,
 	// --include-cloud / --exclude-cloud are operator overrides.
 	c.Flags().BoolVar(&cloudAWSEnabled, "cloud-aws-enabled", envBool("CLOUD_AWS_ENABLED", false), "Enable AWS cloud probes (RDS in M1; EBS/EKS/IAM/ALB/ACM/KMS/S3/VPC follow). Requires AWS auth via IRSA, assume-role, or static creds.")
 	c.Flags().StringVar(&cloudAWSRegion, "cloud-aws-region", os.Getenv("CLOUD_AWS_REGION"), "AWS region for cloud probes (e.g. us-east-1). Required when --cloud-aws-enabled.")
-	c.Flags().BoolVar(&cloudGCPEnabled, "cloud-gcp-enabled", envBool("CLOUD_GCP_ENABLED", false), "Enable GCP cloud probes (M2 — not shipped yet)")
-	c.Flags().StringVar(&cloudGCPProject, "cloud-gcp-project", os.Getenv("CLOUD_GCP_PROJECT"), "GCP project ID for cloud probes")
+	c.Flags().BoolVar(&cloudGCPEnabled, "cloud-gcp-enabled", envBool("CLOUD_GCP_ENABLED", false), "Enable GCP cloud probes (Cloud SQL, Persistent Disk, GKE, IAM SA, subnets, LB backends, managed certs, GCS, KMS). Requires GCP auth via Workload Identity or ADC.")
+	c.Flags().StringVar(&cloudGCPProject, "cloud-gcp-project", os.Getenv("CLOUD_GCP_PROJECT"), "GCP project ID for cloud probes. Required when --cloud-gcp-enabled.")
+	c.Flags().StringVar(&cloudGCPRegion, "cloud-gcp-region", os.Getenv("CLOUD_GCP_REGION"), "GCP region/location for cloud probes (e.g. us-central1). Empty = wildcard for GKE, global for KMS.")
 	c.Flags().BoolVar(&cloudAzureEnabled, "cloud-azure-enabled", envBool("CLOUD_AZURE_ENABLED", false), "Enable Azure cloud probes (M2 — not shipped yet)")
 	c.Flags().StringVar(&cloudAzureSubscriptionID, "cloud-azure-subscription-id", os.Getenv("CLOUD_AZURE_SUBSCRIPTION_ID"), "Azure subscription ID for cloud probes")
 	c.Flags().BoolVar(&cloudIncludeCloud, "include-cloud", false, "Force-enable cloud probes even when per-provider flags are off (uses defaults)")
@@ -644,15 +649,17 @@ type cloudOpts struct {
 	AWSRegion           string
 	GCPEnabled          bool
 	GCPProject          string
+	GCPRegion           string
 	AzureEnabled        bool
 	AzureSubscriptionID string
 }
 
 // buildCloudSource assembles a cloud.Source from per-provider CLI flags.
 // Returns nil when no provider is configured. AWS uses aws-sdk-go-v2's
-// default credential chain (env → shared → IRSA → EC2/ECS metadata)
-// so in-cluster IRSA "just works" via the Helm-injected SA annotation.
-// GCP and Azure stubs return an error in M1; they will land in M2.
+// default credential chain (env → shared → IRSA → EC2/ECS metadata) so
+// in-cluster IRSA "just works"; GCP uses Application Default
+// Credentials (GKE Workload Identity in-cluster). Azure remains a stub
+// until its Live SDK wrapper lands.
 func buildCloudSource(ctx context.Context, o cloudOpts) (cloudpkg.Source, error) {
 	var awsClient cloudpkgaws.Client
 	if o.AWSEnabled {
@@ -665,16 +672,24 @@ func buildCloudSource(ctx context.Context, o cloudOpts) (cloudpkg.Source, error)
 		}
 		awsClient = c
 	}
+	var gcpClient cloudpkggcp.Client
 	if o.GCPEnabled {
-		return nil, fmt.Errorf("gcp cloud probes land in M2 (cluster-health-autopilot/docs/design/2026-05-cloud-probe-framework.md)")
+		if o.GCPProject == "" {
+			return nil, fmt.Errorf("--cloud-gcp-project required when --cloud-gcp-enabled")
+		}
+		c, err := gcpimpl.NewLiveClient(ctx, o.GCPProject, o.GCPRegion)
+		if err != nil {
+			return nil, fmt.Errorf("build GCP live client: %w", err)
+		}
+		gcpClient = c
 	}
 	if o.AzureEnabled {
-		return nil, fmt.Errorf("azure cloud probes land in M2 (cluster-health-autopilot/docs/design/2026-05-cloud-probe-framework.md)")
+		return nil, fmt.Errorf("azure cloud probes land in a follow-up (Live SDK wrapper pending; cluster-health-autopilot/docs/design/2026-05-cloud-probe-framework.md)")
 	}
-	if awsClient == nil {
+	if awsClient == nil && gcpClient == nil {
 		return nil, nil
 	}
-	return cloudimpl.NewSource(awsClient, nil, nil, cloudpkg.ModeLive), nil
+	return cloudimpl.NewSource(awsClient, gcpClient, nil, cloudpkg.ModeLive), nil
 }
 
 // envBool reads an env var as bool; empty / unparseable returns dflt.

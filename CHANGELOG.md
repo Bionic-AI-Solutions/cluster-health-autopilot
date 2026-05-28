@@ -13,6 +13,14 @@ serves the latest tagged chart cut.
 
 ## [Unreleased]
 
+### Added — GCP cloud-probe Live SDK wrapper (probes now execute against real GCP)
+
+- **`internal/cloud/gcp/live.go`** — `LiveClient` implements all 10 `pkggcp.Client` methods against `google.golang.org/api` (sqladmin, compute, container, iam, cloudkms, storage). Auth via Application Default Credentials (GKE Workload Identity in-cluster). Read-only. Compiles against the real SDK surface.
+- **`cmd/cha buildCloudSource()`** — `--cloud-gcp-enabled` now constructs the live client (requires `--cloud-gcp-project`; optional `--cloud-gcp-region`) instead of erroring. The GCP probes are no longer dormant — they run against a real project when enabled.
+- Two documented SDK limitations populated conservatively so probes never false-positive: VPC subnet free-IP count (Compute API exposes no free-IP field → reports fully-free pending a Monitoring-API follow-up) and per-backend LB health (aggregated via `BackendServices.GetHealth`).
+- **Verification boundary:** the wrapper compiles cleanly against `google.golang.org/api v0.282.0` (proves API-surface correctness) but is **not** integration-tested against a live GCP project — that needs credentials. Probe evaluation logic remains unit-tested against fakes.
+- Azure Live wrapper follows in the next PR; until then `--cloud-azure-enabled` still errors.
+
 ### Added — Workstream B4 (config drift)
 
 - **`ConfigDrift`** analyzer (B4) — three signals the basic resource-health probes miss:
