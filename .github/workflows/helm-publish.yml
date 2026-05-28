@@ -38,5 +38,14 @@ jobs:
 
       - name: Run chart-releaser
         uses: helm/chart-releaser-action@v1.7.0
+        with:
+          # skip_existing makes a push that doesn't bump Chart.yaml a
+          # clean no-op instead of a hard 422 "tag already exists"
+          # failure. Most PRs touch charts/ (analyzer toggles, CRD,
+          # RBAC) without changing the chart version; without this flag
+          # chart-releaser tries to re-release the current version on
+          # every merge and emails a failure. Only an actual version
+          # bump now produces a new GitHub release + index.yaml update.
+          skip_existing: true
         env:
           CR_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
