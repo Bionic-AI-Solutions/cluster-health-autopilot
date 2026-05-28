@@ -5,6 +5,7 @@ package catalog
 
 import (
 	awsprobes "github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/cloud/aws"
+	gcpprobes "github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/cloud/gcp"
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/registry"
 )
 
@@ -17,9 +18,10 @@ import (
 // probes via the cloudprobe.Probe contract; downstream rendering
 // (Slack / Alertmanager / DriftReport / ticketing) is unchanged.
 //
-// M1 ships only the AWS RDS probe end-to-end; subsequent commits on
-// feat/cloud-probes add EBS, EKS, IAM, ALB, ACM, KMS, S3, VPC, plus
-// GCP and Azure in M2.
+// M1 shipped the AWS probe set (10 probes); M2 begins with the GCP
+// Cloud SQL + Persistent Disk probes (this PR) and grows via
+// follow-ups on feat/gcp-cloud-probes. Azure follows on
+// feat/azure-cloud-probes.
 func RegisterCloudOSS(reg *registry.Registry, awsEnabled, gcpEnabled, azureEnabled bool) {
 	if awsEnabled {
 		reg.RegisterCloudProbe(
@@ -33,6 +35,12 @@ func RegisterCloudOSS(reg *registry.Registry, awsEnabled, gcpEnabled, azureEnabl
 			awsprobes.KMSKeys{},
 			awsprobes.S3BucketPublicAccess{},
 			awsprobes.VPCSubnets{},
+		)
+	}
+	if gcpEnabled {
+		reg.RegisterCloudProbe(
+			gcpprobes.CloudSQL{},
+			gcpprobes.PersistentDisks{},
 		)
 	}
 }

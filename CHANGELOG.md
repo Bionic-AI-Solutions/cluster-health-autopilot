@@ -63,9 +63,19 @@ serves the latest tagged chart cut.
 - **`Dockerfile`** — second `go build` step compiles `/cha-operator` alongside `/usr/local/bin/cha`. Single image hosts both binaries; the operator Deployment overrides `command:` to invoke `/cha-operator` instead of the watcher.
 - **11 reconciler unit tests** using the controller-runtime fake client — covers create-all-subresources, owner-ref attachment, condition computation, watcher disabled (no-create + delete-on-disable), validation short-circuit (empty image tag), update-existing-deployment, remediate flow, ServiceAccountName override, post-delete reconcile silence.
 
+### Added — GCP cloud probes (Sprint 1 slice)
+
+First two probes of the M2 GCP slice from `docs/design/2026-05-cloud-probe-framework.md`. The remaining 8 probes (GKE control plane, GKE nodepool, IAM SA, LB backend, Google-managed certs, GCS public-access, KMS, subnet capacity) ship on follow-up PRs against `feat/gcp-cloud-probes`.
+
+- **`pkg/cloud/gcp/`** — `Client` interface fleshed out from scaffold (now has `Project()`, `Region()`, `ListCloudSQLInstances()`, `ListPersistentDisks()`). `types.go` adds narrow projections of `CloudSQLInstance` + `PersistentDisk` so probes don't depend on `cloud.google.com/go/...` directly.
+- **`internal/cloud/gcp/CloudSQL`** — reports drift on Cloud SQL instances: non-RUNNABLE state (FAILED/SUSPENDED critical; transitional warning), disk usage ≥ 80%/90% (warn/critical; suppressed when `StorageAutoResize=true`), missing automated backups (warning). Subject convention: `gcp-cloudsql/<project>/<instance>`.
+- **`internal/cloud/gcp/PersistentDisks`** — reports drift on Persistent Disks: FAILED state (critical), transitional state (CREATING/RESTORING/DELETING) past 1h grace (warning), detached-but-READY past 24h cleanup grace (warning — billing leak / orphaned PV). Subject convention: `gcp-pd/<project>/<zone-or-region>/<disk>`.
+- **`catalog/cloud.go`** — `RegisterCloudOSS` now registers the GCP probes when `gcpEnabled=true` (parameter was previously unused).
+- 21 unit tests via fake client (11 Cloud SQL + 10 Persistent Disks).
+
 ### Deferred (still on the v1.8 plan)
 
-Reserve for v1.8 — GCP+Azure cloud probes, M2 K8s probes (Kong, HPA, ArgoCD Application, Velero), envtest-driven integration tests for the operator, plus the metrics-server-dependent capacity signals (pod request vs usage, PVC growth-trajectory). See `docs/design/2026-05-v1.8-roadmap.md` and `docs/design/2026-05-v1.8-operator-phase-1.md`.
+Reserve for v1.8 — remaining 8 GCP probes (GKE / IAM / LB / GMSC / GCS / KMS / VNet) + the GCP Live SDK wrapper (`cloud.google.com/go`), Azure probes (all 10), M2 K8s probes (Kong, HPA, ArgoCD Application, Velero), envtest-driven integration tests for the operator, plus the metrics-server-dependent capacity signals (pod request vs usage, PVC growth-trajectory). See `docs/design/2026-05-v1.8-roadmap.md` and `docs/design/2026-05-v1.8-operator-phase-1.md`.
 
 ---
 
