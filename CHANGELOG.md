@@ -17,6 +17,21 @@ serves the latest tagged chart cut.
 
 ---
 
+## [1.8.3] — 2026-05-28
+
+Chart-only release that completes the AI-tier (commercial CHA-com) deployment path. No Go changes.
+
+### Added — AI-tier flag wiring in the chart
+
+The chart now renders the commercial `--ai-*` flag surface onto the watcher Deployment and diagnose CronJob when `ai.enabled=true`, via two new nil-safe helpers (`cha.aiArgs`, `cha.aiEnv`). Previously the `ai:` values block existed but was consumed by no template, so the paid tier could not actually be turned on through Helm.
+
+- **`cha.aiArgs`** emits `--ai-tier`, `--ai-endpoint`, `--ai-model`, `--ai-api-key-header`, `--ai-allow-saas`, `--ai-llm-fixer-matcher`, `--ai-audit-log`, and (for t3) repeatable `--t3-vault-allowed-prefix`. `ai.endpoint` and `ai.model` are `required` when enabled. The OSS `cha` binary does not understand these flags, so the block is inert unless `image.repository` points at `docker4zerocool/cha-com`.
+- **`cha.aiEnv`** injects the LLM bearer token into the env var the binary reads (`ai.apiKey.envName`, default `AI_API_KEY`) via `secretKeyRef` — never inlined, ESO-managed.
+- New `ai:` keys: `model`, `llmFixerMatcher`, `auditLog`, `apiKey.{envName,header}`, and `t3.vaultAllowedPrefixes` (gates the Vault blast radius the t3 runbook proposer may reference).
+- Approval-server templates (deployment / service / ingress / rbac / keygen-job) were already present; this release makes the watcher/diagnose side consumable.
+
+---
+
 ## [1.8.2] — 2026-05-28
 
 Hardening release from a post-v1.8 adversarial review. Corrects honesty/correctness defects found in the cloud Live wrappers and the operator, and closes one roadmap acceptance-criteria gap. No new probes; behavior changes are confined to live cloud mode and the opt-in operator.

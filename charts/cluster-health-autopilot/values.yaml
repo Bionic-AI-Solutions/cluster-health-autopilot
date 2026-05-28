@@ -406,21 +406,37 @@ securityContext:
 # gates mutation behind human one-click approval. See docs/AI_TIERS.md.
 #
 # OSS deployments leave ai.enabled=false; this entire block is then inert.
+#
+# Enabling this block requires the commercial CHA-com binary — set
+# image.repository=docker4zerocool/cha-com (the OSS `cha` binary does
+# not understand the --ai-* flags). The chart renders the flags only
+# when ai.enabled=true, so OSS installs are unaffected.
 ai:
   enabled: false
-  tier: t0                # t0 | t1 | t2 | t3
-  endpoint: ""            # REQUIRED if enabled; e.g. "https://gpu-ai.svc:8000/v1"
+  tier: t0                # t0 (narration) | t1 (fix proposals) | t2 (planner) | t3 (vault runbooks)
+  endpoint: ""            # REQUIRED if enabled; OpenAI-compatible base URL, e.g. "https://mcp.baisoln.com/gpu-ai/v1"
+  model: ""               # REQUIRED if enabled; e.g. "qwen3.6-35b-a3b-fp8"
   allowSaas: false        # set true to allow api.openai.com / api.anthropic.com endpoints
+  llmFixerMatcher: false  # t1+: use the LLM-classified fixer matcher (falls back to keyword on error)
+  auditLog: ""            # AI-event audit sink: "" (off) | "-" (stdout) | "/path/to.jsonl". Set for t1+ compliance.
   apiKey:
-    secretName: ""        # K8s secret holding the LLM API key (if any)
-    secretKey: "API_KEY"
+    secretName: ""        # K8s secret holding the LLM bearer token (ESO-managed); empty = no-auth in-cluster vLLM
+    secretKey: "API_KEY"  # key within the secret
+    envName: "AI_API_KEY" # env var the binary reads (matches --ai-api-key-env default)
+    header: ""            # HTTP header for the key; "" = "Authorization: Bearer"; set "X-API-Key" for Kong key-auth
+  t3:
+    # t3 only: Vault path prefixes the LLM runbook proposer may target.
+    # Intentionally narrow — every proposal is recommendation-only behind
+    # dual human approval, but this gates the blast radius the LLM may
+    # even reference.
+    vaultAllowedPrefixes: []   # e.g. ["secret/data/cha-recovery/"]
   rateLimit:
     actionsPerHour: 5     # AI-proposed actions/hour budget
     tokensPerHour: 1000000
   circuitBreaker:
     consecutiveFailures: 3
   audit:
-    destination: events   # events | loki | otlp
+    destination: events   # events | loki | otlp  (reserved for a future structured sink; auditLog above drives the binary today)
     lokiURL: ""
     otlpEndpoint: ""
 

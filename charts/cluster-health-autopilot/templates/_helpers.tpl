@@ -262,3 +262,49 @@ probes.<name>.enabled=false in values.yaml to emit CHA_PROBE_<NAME>=off.
 {{- end }}
 {{- end }}
 {{- end -}}
+
+{{- /*
+cha.aiArgs — the --ai-* CLI flags for the commercial CHA-com binary,
+appended to the watcher / diagnose args ONLY when ai.enabled=true.
+The OSS `cha` binary does not understand these flags, so ai.enabled
+implies image.repository points at docker4zerocool/cha-com. Inert for
+OSS installs (block never renders). See docs/AI_TIERS.md.
+*/ -}}
+{{- define "cha.aiArgs" -}}
+{{- if (.Values.ai).enabled }}
+- --ai-tier={{ .Values.ai.tier | default "t0" }}
+- --ai-endpoint={{ required "ai.endpoint is required when ai.enabled=true" .Values.ai.endpoint }}
+- --ai-model={{ required "ai.model is required when ai.enabled=true" .Values.ai.model }}
+{{- with (.Values.ai.apiKey).header }}
+- --ai-api-key-header={{ . }}
+{{- end }}
+{{- if .Values.ai.allowSaas }}
+- --ai-allow-saas
+{{- end }}
+{{- if .Values.ai.llmFixerMatcher }}
+- --ai-llm-fixer-matcher
+{{- end }}
+{{- with .Values.ai.auditLog }}
+- --ai-audit-log={{ . }}
+{{- end }}
+{{- range (.Values.ai.t3).vaultAllowedPrefixes }}
+- --t3-vault-allowed-prefix={{ . }}
+{{- end }}
+{{- end }}
+{{- end -}}
+
+{{- /*
+cha.aiEnv — injects the LLM bearer token into the env var the CHA-com
+binary reads (--ai-api-key-env, default AI_API_KEY). Sourced from a
+K8s Secret (ESO-managed); never inlined. Empty when ai.apiKey.secretName
+is unset (in-cluster vLLM with no auth).
+*/ -}}
+{{- define "cha.aiEnv" -}}
+{{- if and (.Values.ai).enabled (.Values.ai.apiKey).secretName }}
+- name: {{ .Values.ai.apiKey.envName | default "AI_API_KEY" }}
+  valueFrom:
+    secretKeyRef:
+      name: {{ .Values.ai.apiKey.secretName }}
+      key: {{ .Values.ai.apiKey.secretKey | default "API_KEY" }}
+{{- end }}
+{{- end -}}

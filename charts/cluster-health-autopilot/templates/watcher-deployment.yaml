@@ -130,6 +130,7 @@ spec:
             - --cloud-azure-subscription-id={{ required "cloud.azure.subscriptionId required when cloud.azure.enabled" .Values.cloud.azure.subscriptionId }}
             {{- end }}
             {{- end }}
+            {{- include "cha.aiArgs" . | nindent 12 }}
           env:
             # Downward-API for leader election (Sprint 4.3) — the
             # LeaderConfig reads these to construct the lease holder
@@ -152,6 +153,7 @@ spec:
             {{- include "cha.optionalFixerEnv" . | nindent 12 }}
             {{- include "cha.analyzerToggleEnv" . | nindent 12 }}
             {{- include "cha.probeToggleEnv" . | nindent 12 }}
+            {{- include "cha.aiEnv" . | nindent 12 }}
             {{- if and .Values.ticketing.enabled .Values.ticketing.auth.enabled }}
             - name: TICKETING_MCP_API_KEY
               valueFrom:

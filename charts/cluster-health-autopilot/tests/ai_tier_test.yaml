@@ -1,0 +1,79 @@
+suite: AI tier (CHA-com) flag wiring (v1.8.3)
+templates:
+  - templates/watcher-deployment.yaml
+tests:
+  - it: no --ai-* args when ai.enabled is false (OSS default)
+    template: templates/watcher-deployment.yaml
+    set:
+      watcher.enabled: true
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].args
+          content: "--ai-tier=t0"
+      - notContains:
+          path: spec.template.spec.containers[0].args
+          content: "--ai-tier=t3"
+
+  - it: t3 wiring renders the full --ai-* arg surface
+    template: templates/watcher-deployment.yaml
+    set:
+      watcher.enabled: true
+      ai.enabled: true
+      ai.tier: t3
+      ai.endpoint: "https://mcp.baisoln.com/gpu-ai/v1"
+      ai.model: "qwen3.6-35b-a3b-fp8"
+      ai.apiKey.header: "X-API-Key"
+      ai.apiKey.secretName: "cha-ai-llm-key"
+      ai.auditLog: "-"
+      ai.t3.vaultAllowedPrefixes:
+        - "secret/data/cha-recovery/"
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: "--ai-tier=t3"
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: "--ai-endpoint=https://mcp.baisoln.com/gpu-ai/v1"
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: "--ai-model=qwen3.6-35b-a3b-fp8"
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: "--ai-api-key-header=X-API-Key"
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: "--ai-audit-log=-"
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: "--t3-vault-allowed-prefix=secret/data/cha-recovery/"
+
+  - it: AI_API_KEY env is sourced from the secret (never inlined)
+    template: templates/watcher-deployment.yaml
+    set:
+      watcher.enabled: true
+      ai.enabled: true
+      ai.tier: t3
+      ai.endpoint: "https://mcp.baisoln.com/gpu-ai/v1"
+      ai.model: "qwen3.6-35b-a3b-fp8"
+      ai.apiKey.secretName: "cha-ai-llm-key"
+      ai.apiKey.secretKey: "apikey"
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: AI_API_KEY
+            valueFrom:
+              secretKeyRef:
+                name: cha-ai-llm-key
+                key: apikey
+
+  - it: ai.enabled with no endpoint fails the render
+    template: templates/watcher-deployment.yaml
+    set:
+      watcher.enabled: true
+      ai.enabled: true
+      ai.tier: t3
+      ai.model: "qwen3.6-35b-a3b-fp8"
+    asserts:
+      - failedTemplate:
+          errorMessage: "ai.endpoint is required when ai.enabled=true"

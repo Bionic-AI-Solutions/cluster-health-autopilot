@@ -56,11 +56,13 @@ spec:
                 {{- if and .Values.slack.healthinfo.enabled .Values.slack.healthinfo.secretName }}
                 - --slack-healthinfo=$(SLACK_HEALTHINFO_URL)
                 {{- end }}
+                {{- include "cha.aiArgs" . | nindent 16 }}
               env:
                 {{- include "cha.slackHealthinfoEnv" . | nindent 16 }}
                 {{- include "cha.vaultEnv" . | nindent 16 }}
                 {{- include "cha.analyzerToggleEnv" . | nindent 16 }}
                 {{- include "cha.probeToggleEnv" . | nindent 16 }}
+                {{- include "cha.aiEnv" . | nindent 16 }}
               resources:
                 {{- toYaml .Values.resources | nindent 16 }}
               securityContext:
