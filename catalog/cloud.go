@@ -42,6 +42,10 @@ func RegisterCloudOSS(reg *registry.Registry, awsEnabled, gcpEnabled, azureEnabl
 		reg.RegisterCloudProbe(
 			gcpprobes.CloudSQL{},
 			gcpprobes.PersistentDisks{},
+			gcpprobes.GKEControlPlane{},
+			gcpprobes.GKENodePools{},
+			gcpprobes.IAMServiceAccounts{},
+			gcpprobes.Subnets{},
 		)
 	}
 	if azureEnabled {

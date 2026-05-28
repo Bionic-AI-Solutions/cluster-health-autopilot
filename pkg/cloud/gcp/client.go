@@ -46,4 +46,20 @@ type Client interface {
 	// bound project + region. Returns (nil, nil) when there are
 	// none; (nil, err) on API failure.
 	ListPersistentDisks(ctx context.Context) ([]PersistentDisk, error)
+
+	// GetGKECluster fetches a single GKE cluster by name. Returns
+	// (nil, nil) when the cluster does not exist (no panic).
+	GetGKECluster(ctx context.Context, name string) (*GKECluster, error)
+
+	// ListGKENodePools returns all node pools for the named GKE
+	// cluster. Returns (nil, nil) when the cluster has none.
+	ListGKENodePools(ctx context.Context, clusterName string) ([]GKENodePool, error)
+
+	// ListServiceAccounts lists IAM service accounts in the bound
+	// project. Returns (nil, nil) when there are none.
+	ListServiceAccounts(ctx context.Context) ([]ServiceAccount, error)
+
+	// ListSubnets lists VPC subnetworks in the bound project +
+	// region. Returns (nil, nil) when there are none.
+	ListSubnets(ctx context.Context) ([]Subnet, error)
 }

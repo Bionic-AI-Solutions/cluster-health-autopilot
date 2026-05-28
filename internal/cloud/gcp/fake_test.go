@@ -23,6 +23,18 @@ type fakeGCP struct {
 
 	disks    []pkggcp.PersistentDisk
 	disksErr error
+
+	cluster    *pkggcp.GKECluster
+	clusterErr error
+
+	nodePools    []pkggcp.GKENodePool
+	nodePoolsErr error
+
+	serviceAccounts    []pkggcp.ServiceAccount
+	serviceAccountsErr error
+
+	subnets    []pkggcp.Subnet
+	subnetsErr error
 }
 
 func (f *fakeGCP) Project() string { return f.project }
@@ -34,6 +46,22 @@ func (f *fakeGCP) ListCloudSQLInstances(_ context.Context) ([]pkggcp.CloudSQLIns
 
 func (f *fakeGCP) ListPersistentDisks(_ context.Context) ([]pkggcp.PersistentDisk, error) {
 	return f.disks, f.disksErr
+}
+
+func (f *fakeGCP) GetGKECluster(_ context.Context, _ string) (*pkggcp.GKECluster, error) {
+	return f.cluster, f.clusterErr
+}
+
+func (f *fakeGCP) ListGKENodePools(_ context.Context, _ string) ([]pkggcp.GKENodePool, error) {
+	return f.nodePools, f.nodePoolsErr
+}
+
+func (f *fakeGCP) ListServiceAccounts(_ context.Context) ([]pkggcp.ServiceAccount, error) {
+	return f.serviceAccounts, f.serviceAccountsErr
+}
+
+func (f *fakeGCP) ListSubnets(_ context.Context) ([]pkggcp.Subnet, error) {
+	return f.subnets, f.subnetsErr
 }
 
 // fakeSource implements cloud.Source for unit tests. GCP is settable;

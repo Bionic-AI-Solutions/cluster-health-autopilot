@@ -49,3 +49,50 @@ type PersistentDisk struct {
 	DetachedDuration time.Duration `json:"detachedDuration,omitempty"` // computed by Live (now - DetachTime); 0 in Snapshot
 	CreatedAt        time.Time     `json:"createdAt,omitempty"`
 }
+
+// GKECluster is the narrow projection of a GKE cluster. Status values
+// per the Container API: PROVISIONING, RUNNING, RECONCILING,
+// STOPPING, ERROR, DEGRADED.
+type GKECluster struct {
+	Name           string    `json:"name"`
+	Status         string    `json:"status"`
+	Location       string    `json:"location,omitempty"`       // region or zone
+	CurrentVersion string    `json:"currentVersion,omitempty"` // control-plane k8s version
+	NodeCount      int64     `json:"nodeCount,omitempty"`
+	Endpoint       string    `json:"endpoint,omitempty"`
+	CreatedAt      time.Time `json:"createdAt,omitempty"`
+}
+
+// GKENodePool is the narrow projection of a GKE node pool. Status
+// values: PROVISIONING, RUNNING, RUNNING_WITH_ERROR, RECONCILING,
+// STOPPING, ERROR.
+type GKENodePool struct {
+	Name        string `json:"name"`
+	ClusterName string `json:"clusterName"`
+	Status      string `json:"status"`
+	NodeCount   int64  `json:"nodeCount,omitempty"`
+	Version     string `json:"version,omitempty"` // node k8s version
+	Autoscaling bool   `json:"autoscaling,omitempty"`
+}
+
+// ServiceAccount is the narrow projection of an IAM service account.
+// Disabled accounts that are still referenced by a workload are the
+// drift signal.
+type ServiceAccount struct {
+	Email       string `json:"email"`
+	DisplayName string `json:"displayName,omitempty"`
+	Disabled    bool   `json:"disabled,omitempty"`
+	KeyCount    int    `json:"keyCount,omitempty"`    // user-managed keys (long-lived; security smell)
+	OAuth2Bound bool   `json:"oauth2Bound,omitempty"` // bound to a GKE workload-identity binding
+}
+
+// Subnet is the narrow projection of a VPC subnetwork. The drift
+// signal is IP exhaustion: AvailableIPCount low relative to range.
+type Subnet struct {
+	Name             string `json:"name"`
+	Network          string `json:"network,omitempty"`
+	Region           string `json:"region,omitempty"`
+	IPCIDRRange      string `json:"ipCidrRange,omitempty"`
+	AvailableIPCount int64  `json:"availableIPCount"` // free addresses
+	TotalIPCount     int64  `json:"totalIPCount"`     // usable addresses in the range
+}
