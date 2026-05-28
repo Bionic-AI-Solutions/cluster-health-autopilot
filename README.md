@@ -4,27 +4,26 @@ A self-healing operational layer for Kubernetes clusters: **detect → remediate
 
 > **Pre-launch — engineering preview.** This README will be the public face on launch day; treat its current contents as draft.
 
-## Status (v1.7.0 — 2026-05-27)
+## Status (v1.8.0 — 2026-05-28)
 
 | Capability | Status |
 |---|---|
 | K8s probes (12) — Ceph, Postgres, Nodes, PVCs, Critical services, Endpoints, NodePressure, DaemonSets, PendingPods, CrashLoopBackOff, ETCD, FailedMounts | ✅ shipped |
+| **M2 K8s probes (4, v1.8)** — Kong route/upstream, HPA scaling-failure, ArgoCD Application sync, Velero backup-completion (each auto-skips when its CRD is absent) | ✅ shipped |
 | Diagnose analyzers (8) — secret/cert/ESO/image-pull/TLS classes | ✅ shipped |
-| **Drift-class analyzers (3, v1.7+)** — `GitOpsDrift` (Argo + Flux), `WorkloadStateDrift` (CNPG + StatefulSet ordinal-zero), `RBACDrift` (wildcard verbs + unbound ServiceAccounts) | ✅ shipped |
+| **Drift-class analyzers (6)** — `GitOpsDrift`, `WorkloadStateDrift`, `RBACDrift` (v1.7) + `ConfigDrift`, `CapacityDrift`, `SecurityDrift` (v1.8) | ✅ shipped |
 | Fixers (4 default + 1 opt-in) with GitOps + paused + suspended + cert-mgr-health safety gates | ✅ shipped |
-| AWS cloud probes (10) — RDS, EBS, EKS, IAM, ALB, ACM, KMS, S3, VPC + IRSA. Off by default (`cloud.enabled=false`) | ✅ shipped |
-| Helm chart (v1.7.0) with lease-based leader election (active in cluster), configurable workloads, narrow RBAC, per-severity Slack repeat intervals, drift-class analyzer toggles | ✅ shipped |
+| **Cloud probes (30) — 10 each AWS / GCP / Azure**, all with Live SDK wrappers (IRSA / GCP Workload Identity / AAD Workload Identity). Off by default; enable per-provider | ✅ shipped |
+| **Operator port (controller-runtime, v1.8)** — `ClusterHealthAutopilot` CRD + `cha-operator` manager reconciling watcher Deployment / CronJobs / RBAC; `Ready` + `WatcherRunning` conditions. Opt-in via `operator.enabled` | ✅ shipped (Phase 1 + 1b) |
+| Helm chart (v1.8.0) with lease-based leader election, configurable workloads, narrow RBAC, per-severity Slack repeat intervals, analyzer + cloud-provider toggles | ✅ shipped |
 | OpenProject ticketing sink (OSS) via MCP, Slack 3-channel routing with `--slack-critical-repeat-interval`, Alertmanager | ✅ shipped |
 | Layer-2 Investigator (OSS: deterministic implementation; CHA-com: LLM-backed agent) with event scrubbing + 6-tool action space | ✅ shipped |
-| GCP cloud probes | ⏳ roadmap (v1.8+) — `pkg/cloud/gcp/client.go` is scaffold only |
-| Azure cloud probes | ⏳ roadmap (v1.8+) — `pkg/cloud/azure/client.go` is scaffold only |
-| CHA-com paid binary v1.7.0 (pinned to OSS v1.7.0): approval-server, Ed25519 signing, gen-signing-key, paid catalog | ✅ shipped at `docker4zerocool/cha-com:1.7.0` (multi-arch) |
+| CHA-com paid binary v1.7.0: approval-server, Ed25519 signing, gen-signing-key, paid catalog | ✅ shipped at `docker4zerocool/cha-com:1.7.0` (multi-arch) |
 | Four paid-tier analyzers: `VaultPathDriftPro`, `CertificateChainAnomaly`, `MultiClusterDrift`, `StatefulSetReplicaPressure` | ✅ shipped (CHA-com v1.0.1–v1.0.4) |
 | Paid AI tiers — T0 narration, T1 fix proposer (5 operator-policy-bounded action_kinds), T2 multi-step planner, T3 vault break-glass runbook (dual-approval, JWT-signed, hash-chained audit) | ✅ shipped (CHA-com v1.1.0–v1.4.0) |
 | `cha-com watch` subcommand — AI-layered poll loop with fingerprint dedup, `--ai-audit-log` JSONL sink | ✅ shipped (CHA-com v1.5.0) |
 | **`LLMFixerMatcher`** (CHA-com v1.7.0, opt-in `--ai-llm-fixer-matcher`) — LLM-classified fixer matching with keyword fallback | ✅ shipped |
-| Drift classes v1.8 — Config, Capacity, Security | ⏳ roadmap |
-| Operator port (controller-runtime / kubebuilder) | ⏳ roadmap (v1.8+) |
+| Operator OLM bundle (Phase 1c), trigger-classes C (Alertmanager webhook) / E (external webhook) | ⏳ roadmap (v1.9+) |
 
 ---
 
