@@ -36,10 +36,14 @@ diagnose:
   # adds little value over the next daily tick.
   backoffLimit: 1
   # activeDeadlineSeconds caps the Job's total runtime (counted across pod
-  # restarts). A diagnose run that's stuck past 2 minutes is almost certainly
-  # blocked on an unresponsive cluster API, not making progress. Failing fast
-  # frees up the next scheduled tick to retry from a known-good start.
-  activeDeadlineSeconds: 120
+  # restarts). Raised 120 → 300 in v1.8.1: the v1.8 analyzer + M2-probe set
+  # adds a meaningful number of cluster List calls (CRDs, HPAs, all
+  # namespaces + pods + NetworkPolicies, Kong/Velero/Argo CRDs), and a
+  # live diagnose on a busy cluster (e.g. ~80 KongPlugins, ~250 drift
+  # records) was measured at ~157s — past the old 120s cap, so the Job
+  # was killed mid-run. 300s leaves headroom while still failing fast on a
+  # genuinely hung cluster API.
+  activeDeadlineSeconds: 300
   format: daily                   # daily | text | json — daily posts to #healthinfo; text/json for ad-hoc runs
 
 # Remediate CronJob — opt-in.
@@ -52,10 +56,11 @@ remediation:
   # See diagnose.backoffLimit comment. Remediation Jobs mutate cluster state
   # so we especially do NOT want them retrying a hung-mid-mutation run.
   backoffLimit: 1
-  # See diagnose.activeDeadlineSeconds comment. Remediation runs apply the
-  # whitelisted fixers and re-probe; 120s is well above the <60s wall-clock
-  # the engine targets per cycle.
-  activeDeadlineSeconds: 120
+  # See diagnose.activeDeadlineSeconds comment. Remediation runs the
+  # whitelisted fixers AND a full re-probe (which now includes the v1.8
+  # analyzer + M2-probe set), so it inherits the same ~157s read cost.
+  # Raised 120 → 300 in v1.8.1 to match diagnose.
+  activeDeadlineSeconds: 300
   dryRun: false                   # When true, fixers report Refused without mutating cluster state.
 
 # Slack three-channel routing.

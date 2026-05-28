@@ -11,7 +11,7 @@ tests:
           value: 1
       - equal:
           path: spec.jobTemplate.spec.activeDeadlineSeconds
-          value: 120
+          value: 300
 
   - it: diagnose backoffLimit is configurable
     template: templates/cronjob-diagnose.yaml
@@ -25,11 +25,11 @@ tests:
   - it: diagnose activeDeadlineSeconds is configurable
     template: templates/cronjob-diagnose.yaml
     set:
-      diagnose.activeDeadlineSeconds: 300
+      diagnose.activeDeadlineSeconds: 600
     asserts:
       - equal:
           path: spec.jobTemplate.spec.activeDeadlineSeconds
-          value: 300
+          value: 600
 
   - it: remediate job declares the same defaults
     template: templates/cronjob-remediate.yaml
@@ -41,7 +41,7 @@ tests:
           value: 1
       - equal:
           path: spec.jobTemplate.spec.activeDeadlineSeconds
-          value: 120
+          value: 300
 
   - it: concurrencyPolicy is Forbid (no overlapping runs)
     template: templates/cronjob-diagnose.yaml

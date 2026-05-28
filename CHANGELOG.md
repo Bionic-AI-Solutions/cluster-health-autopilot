@@ -17,6 +17,21 @@ serves the latest tagged chart cut.
 
 ---
 
+## [1.8.1] — 2026-05-28
+
+Patch release fixing two issues found while deploying v1.8.0 to a live cluster. Both are chart-only; no Go changes.
+
+### Fixed
+
+- **Diagnose / remediate `activeDeadlineSeconds` raised 120 → 300.** The v1.8 analyzer + M2-probe set adds a meaningful number of cluster List calls (CRDs, HPAs, all namespaces + pods + NetworkPolicies, Kong / Velero / Argo CRDs). A live diagnose on a busy cluster (~80 KongPlugins, ~250 drift records) was measured at ~157s — past the old 120s cap, so the CronJob was killed mid-run with `DeadlineExceeded`. 300s gives headroom while still failing fast on a genuinely hung cluster API.
+- **Operator templates made nil-safe for `--reuse-values` upgrades.** `operator-deployment.yaml` (`.Values.operator.enabled`) and `crd-clusterhealthautopilot.yaml` (`.Values.operator.installCRD`) dereferenced `.Values.operator` directly, so a `helm upgrade --reuse-values` from a pre-v1.8 install (whose stored values predate the `operator:` block) hit `nil pointer evaluating interface {}.enabled`. Now guarded with `(.Values.operator).enabled` / `(.Values.operator).installCRD`, matching the existing `(.Values.analyzers).*` pattern.
+
+### Verified on live cluster
+
+v1.8.0 deployed to the dev cluster (helm rev 23) and a live diagnose confirmed the new probes fire against real resources: **Kong** (80 KongPlugins inspected), **HPAScaling** (flagged 3 real scaling-disabled HPAs), **ArgoCD-Application**, **Velero**, and **SecurityDrift** (PSS / image-pin / NetworkPolicy gaps in the `kong` namespace). 255 DriftReports reconciled.
+
+---
+
 ## [1.8.0] — 2026-05-28
 
 Drift-class completion + operator port + full multi-cloud release. Closes the bulk of `docs/design/2026-05-v1.8-roadmap.md`: the remaining drift classes (config / capacity / security), the controller-runtime operator port (Phase 1 + 1b), the M2 K8s probe slice (Kong / HPA / ArgoCD / Velero), and a complete 30-probe multi-cloud surface (10 each AWS / GCP / Azure) with all three Live SDK wrappers wired so the probes execute against real clouds.

@@ -1,4 +1,4 @@
-{{- if .Values.operator.installCRD }}
+{{- if (.Values.operator).installCRD }}
 # ClusterHealthAutopilot CRD — phase-1 operator foundation.
 #
 # One CR per CHA install. The cha-operator binary (Phase 2) will

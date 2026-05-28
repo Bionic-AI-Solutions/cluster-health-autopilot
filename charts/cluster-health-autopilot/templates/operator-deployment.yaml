@@ -1,4 +1,4 @@
-{{- if .Values.operator.enabled }}
+{{- if (.Values.operator).enabled }}
 # cha-operator — controller-runtime manager that reconciles
 # ClusterHealthAutopilot CRs into the watcher Deployment + diagnose /
 # remediate CronJobs + ServiceAccount. Phase 1b lifecycle manager
