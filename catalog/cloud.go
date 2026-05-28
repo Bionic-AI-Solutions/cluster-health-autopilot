@@ -5,6 +5,7 @@ package catalog
 
 import (
 	awsprobes "github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/cloud/aws"
+	azureprobes "github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/cloud/azure"
 	gcpprobes "github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/cloud/gcp"
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/registry"
 )
@@ -41,6 +42,12 @@ func RegisterCloudOSS(reg *registry.Registry, awsEnabled, gcpEnabled, azureEnabl
 		reg.RegisterCloudProbe(
 			gcpprobes.CloudSQL{},
 			gcpprobes.PersistentDisks{},
+		)
+	}
+	if azureEnabled {
+		reg.RegisterCloudProbe(
+			azureprobes.SQLDatabases{},
+			azureprobes.Disks{},
 		)
 	}
 }

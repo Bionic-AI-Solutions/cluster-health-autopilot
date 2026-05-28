@@ -73,6 +73,16 @@ First two probes of the M2 GCP slice from `docs/design/2026-05-cloud-probe-frame
 - **`catalog/cloud.go`** — `RegisterCloudOSS` now registers the GCP probes when `gcpEnabled=true` (parameter was previously unused).
 - 21 unit tests via fake client (11 Cloud SQL + 10 Persistent Disks).
 
+### Added — Azure cloud probes (Sprint 1 slice)
+
+First two probes of the M2 Azure slice. The remaining 8 probes (AKS control plane, AKS nodepool, Managed Identity, App Gateway backend, certs, Storage public-access, Key Vault, VNet/subnet) ship on follow-up PRs against `feat/azure-cloud-probes`.
+
+- **`pkg/cloud/azure/`** — `Client` interface fleshed out from scaffold (now has `SubscriptionID()`, `Location()`, `ListSQLDatabases()`, `ListDisks()`). `types.go` adds narrow projections of `SQLDatabase` + `Disk` so probes don't depend on `azure-sdk-for-go` directly.
+- **`internal/cloud/azure/SQLDatabases`** — reports drift on Azure SQL Database: terminal states (Offline / Suspect / EmergencyMode / Inaccessible / Disabled) critical, Paused warning (expected for Serverless tier; flagged for awareness), transitional (Restoring / Scaling / etc.) warning, storage ≥ 80%/90% warn/critical, missing automated backups warning. Subject convention: `azure-sql/<subscription>/<resourceGroup>/<server>/<db>`.
+- **`internal/cloud/azure/Disks`** — reports drift on Managed Disks: `ProvisioningState=Failed` critical, transitional past 1h grace warning, `DiskState=Unattached` past 24h cleanup grace warning (billing leak / orphaned PV). Subject convention: `azure-disk/<subscription>/<resourceGroup>/<disk>`.
+- **`catalog/cloud.go`** — `RegisterCloudOSS` now registers the Azure probes when `azureEnabled=true` (the last unused parameter).
+- 22 unit tests via fake client (12 SQLDatabases + 10 Disks).
+
 ### Deferred (still on the v1.8 plan)
 
 Reserve for v1.8 — remaining 8 GCP probes (GKE / IAM / LB / GMSC / GCS / KMS / VNet) + the GCP Live SDK wrapper (`cloud.google.com/go`), Azure probes (all 10), M2 K8s probes (Kong, HPA, ArgoCD Application, Velero), envtest-driven integration tests for the operator, plus the metrics-server-dependent capacity signals (pod request vs usage, PVC growth-trajectory). See `docs/design/2026-05-v1.8-roadmap.md` and `docs/design/2026-05-v1.8-operator-phase-1.md`.

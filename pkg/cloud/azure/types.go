@@ -1,0 +1,49 @@
+// Copyright 2026 Cluster Health Autopilot contributors
+// SPDX-License-Identifier: Apache-2.0
+
+package azure
+
+import "time"
+
+// SQLDatabase is the narrow projection of an Azure SQL Database the
+// SQLDatabases probe needs. JSON tags are the snapshot-file wire
+// format.
+//
+// Status values per the Microsoft SQL Database API:
+//
+//	Online, Offline, Restoring, RecoveryPending, Recovery, Suspect,
+//	AutoClosed, Copying, Creating, Inaccessible, Disabled, EmergencyMode,
+//	OfflineSecondary, Paused, Pausing, Resuming, Scaling.
+//
+// Tier examples: Basic, Standard, Premium, GeneralPurpose,
+// BusinessCritical, Hyperscale, ServerlessV2.
+type SQLDatabase struct {
+	Name             string    `json:"name"`
+	ResourceGroup    string    `json:"resourceGroup"`
+	Server           string    `json:"server"`
+	Status           string    `json:"status"`         // Online / Offline / Paused / etc.
+	Tier             string    `json:"tier,omitempty"` // service tier
+	MaxSizeGB        int64     `json:"maxSizeGB,omitempty"`
+	UsedPercent      int       `json:"usedPercent,omitempty"`      // 0 in Snapshot if not captured
+	ZoneRedundant    bool      `json:"zoneRedundant,omitempty"`    // multi-AZ posture
+	BackupConfigured bool      `json:"backupConfigured,omitempty"` // automated backups on
+	GeoBackup        bool      `json:"geoBackup,omitempty"`        // geo-redundant backups
+	CreatedAt        time.Time `json:"createdAt,omitempty"`
+}
+
+// Disk is the narrow projection of an Azure Managed Disk. ProvisioningState
+// values: Creating, Updating, Succeeded, Failed, Deleting. DiskState
+// values: Unattached, Attached, Reserved, ActiveSAS, ActiveSASFrozen,
+// ReadyToUpload, ActiveUpload.
+type Disk struct {
+	Name              string        `json:"name"`
+	ResourceGroup     string        `json:"resourceGroup"`
+	Location          string        `json:"location,omitempty"`
+	ProvisioningState string        `json:"provisioningState"`   // Succeeded / Failed / Creating / etc.
+	DiskState         string        `json:"diskState,omitempty"` // Attached / Unattached / etc.
+	SKU               string        `json:"sku,omitempty"`       // Standard_LRS / Premium_LRS / etc.
+	SizeGB            int64         `json:"sizeGB,omitempty"`
+	AttachedToVM      string        `json:"attachedToVM,omitempty"`     // empty when detached
+	DetachedDuration  time.Duration `json:"detachedDuration,omitempty"` // Live: now - lastDetach; 0 in Snapshot
+	CreatedAt         time.Time     `json:"createdAt,omitempty"`
+}

@@ -1,23 +1,43 @@
 // Copyright 2026 Cluster Health Autopilot contributors
 // SPDX-License-Identifier: Apache-2.0
 
-// Package azure is the Azure sub-client surface. Scaffold only — the
-// M1 release ships AWS; Azure probes land in M2 (see
-// docs/design/2026-05-cloud-probe-framework.md).
+// Package azure is the Azure sub-client surface that cloud probes
+// call. Intentionally narrow — only the read operations the
+// M2-Sprint-1 probe set needs (Azure SQL Database, Managed Disks).
+// Adding a new resource type should be a deliberate decision.
 //
-// Mirrors the shape of pkg/cloud/aws so probes share a mental model
-// across providers.
+// The Client interface is implementation-agnostic — a Live wrapper
+// (deferred to a follow-up PR) will wrap azure-sdk-for-go, Snapshot
+// will replay captured JSON, Fake (in _test.go) returns canned
+// responses. Probes never import azure-sdk-for-go directly.
+//
+// Mirrors the shape of pkg/cloud/aws and pkg/cloud/gcp so probes
+// share a mental model across providers.
 package azure
 
 import "context"
 
-// Client is the Azure sub-client surface. Scaffold only — extended in
-// M2 with per-resource methods (Azure SQL DB, Disks, AKS control plane,
-// AKS node pool, Managed identity drift, App Gateway backend, certs,
-// Storage public-access, Key Vault state, VNet/subnet capacity).
+// Client is the Azure sub-client surface. nil-return semantics:
+// individual methods return (nil, nil) when the resource type is
+// genuinely empty; (nil, err) when the API call failed.
+//
+// All methods are READ-ONLY by design.
 type Client interface {
-	// SubscriptionID returns the Azure subscription this client is bound to.
+	// SubscriptionID returns the Azure subscription this client is
+	// bound to. Probes use it to stamp DriftReport subjects like
+	// "azure-sql/<subscription>/<resourceGroup>/<server>/<db>".
 	SubscriptionID() string
-}
 
-var _ = context.Background
+	// Location returns the Azure region this client is bound to.
+	// Surface in subjects for diagnostic clarity.
+	Location() string
+
+	// ListSQLDatabases lists Azure SQL Database resources in the
+	// bound subscription. Returns (nil, nil) when the subscription
+	// has zero databases; (nil, err) on API failure.
+	ListSQLDatabases(ctx context.Context) ([]SQLDatabase, error)
+
+	// ListDisks lists Managed Disk resources in the bound
+	// subscription. Returns (nil, nil) when there are none.
+	ListDisks(ctx context.Context) ([]Disk, error)
+}
