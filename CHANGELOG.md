@@ -83,9 +83,21 @@ First two probes of the M2 Azure slice. The remaining 8 probes (AKS control plan
 - **`catalog/cloud.go`** — `RegisterCloudOSS` now registers the Azure probes when `azureEnabled=true` (the last unused parameter).
 - 22 unit tests via fake client (12 SQLDatabases + 10 Disks).
 
+### Added — M2 K8s probes (Kong / HPA / ArgoCD / Velero)
+
+Four new resource-event-driven probes from `docs/design/2026-05-trigger-expansion-roadmap.md` M2/M3 and v1.8 roadmap §A5. Each auto-skips when its CRD is absent (or no-ops on an empty list for HPA), so default-on is safe. Each is independently disablable via `CHA_PROBE_<NAME>=off`.
+
+- **`Kong`** — flags `KongPlugin` resources reporting `status.conditions[type=Programmed,status=False]` (the gateway is serving upstream traffic without the intended policy). Critical. Auto-skips when `configuration.konghq.com` CRDs are absent.
+- **`HPAScaling`** — fast-path complement to the v1.8 `CapacityDrift` analyzer: any HPA with `ScalingActive=False` or `AbleToScale=False` *right now* (no grace) is critical. Empty cluster → HEALTHY (no opt-out needed).
+- **`ArgoCDApplication`** — fast-path complement to the v1.7 `GitOpsDrift` analyzer: `health.status` Degraded/Missing/Suspended critical, `sync.status` OutOfSync/Unknown warning. No grace. Auto-skips when `argoproj.io` CRDs are absent.
+- **`Velero`** — most-recent Backup per schedule: `Failed`/`PartiallyFailed` critical, `Completed` but older than the 26h SLA critical, `InProgress` past 4h warning. Groups by `velero.io/schedule-name`. Auto-skips when `velero.io` CRDs are absent.
+- `internal/snapshot/file.go` `kindToResource` extended with `HorizontalPodAutoscaler` / `KongPlugin` / `Application` / `Backup` so file-based snapshot capture covers these probes too.
+- Reader ClusterRole extended with `configuration.konghq.com/kongplugins` + `velero.io/backups` (HPA + ArgoCD reads already granted by B5/B1).
+- 17 unit tests.
+
 ### Deferred (still on the v1.8 plan)
 
-Reserve for v1.8 — remaining 8 GCP probes (GKE / IAM / LB / GMSC / GCS / KMS / VNet) + the GCP Live SDK wrapper (`cloud.google.com/go`), Azure probes (all 10), M2 K8s probes (Kong, HPA, ArgoCD Application, Velero), envtest-driven integration tests for the operator, plus the metrics-server-dependent capacity signals (pod request vs usage, PVC growth-trajectory). See `docs/design/2026-05-v1.8-roadmap.md` and `docs/design/2026-05-v1.8-operator-phase-1.md`.
+Reserve for v1.8 — remaining 8 GCP probes (GKE / IAM / LB / GMSC / GCS / KMS / VNet) + the GCP Live SDK wrapper (`cloud.google.com/go`), Azure probes (all 10) + the Azure Live SDK wrapper (`azure-sdk-for-go`), envtest-driven integration tests for the operator, plus the metrics-server-dependent capacity signals (pod request vs usage, PVC growth-trajectory). See `docs/design/2026-05-v1.8-roadmap.md` and `docs/design/2026-05-v1.8-operator-phase-1.md`.
 
 ---
 

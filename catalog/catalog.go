@@ -89,6 +89,23 @@ func RegisterOSS(r *registry.Registry) {
 	if os.Getenv("CHA_PROBE_FAILED_MOUNTS") != "off" {
 		r.RegisterProbe(probe.FailedMounts{})
 	}
+	// M2 probe-class additions (v1.8). Each auto-skips when its CRD
+	// is absent (Kong / ArgoCD / Velero) or no-ops on an empty list
+	// (HPA), so default-on is safe; the env opt-out is for operators
+	// who want to silence a probe on a cluster that does host the
+	// CRD but doesn't want CHA watching it.
+	if os.Getenv("CHA_PROBE_KONG") != "off" {
+		r.RegisterProbe(probe.Kong{})
+	}
+	if os.Getenv("CHA_PROBE_HPA_SCALING") != "off" {
+		r.RegisterProbe(probe.HPAScaling{})
+	}
+	if os.Getenv("CHA_PROBE_ARGOCD_APP") != "off" {
+		r.RegisterProbe(probe.ArgoCDApplication{})
+	}
+	if os.Getenv("CHA_PROBE_VELERO") != "off" {
+		r.RegisterProbe(probe.Velero{})
+	}
 	r.RegisterAnalyzer(
 		diagnose.SecretKeyMissing{},
 		diagnose.FailingExternalSecrets{},
