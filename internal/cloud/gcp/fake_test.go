@@ -35,6 +35,18 @@ type fakeGCP struct {
 
 	subnets    []pkggcp.Subnet
 	subnetsErr error
+
+	backends    []pkggcp.BackendService
+	backendsErr error
+
+	certs    []pkggcp.ManagedCertificate
+	certsErr error
+
+	buckets    []pkggcp.Bucket
+	bucketsErr error
+
+	kmsKeys    []pkggcp.KMSKey
+	kmsKeysErr error
 }
 
 func (f *fakeGCP) Project() string { return f.project }
@@ -62,6 +74,22 @@ func (f *fakeGCP) ListServiceAccounts(_ context.Context) ([]pkggcp.ServiceAccoun
 
 func (f *fakeGCP) ListSubnets(_ context.Context) ([]pkggcp.Subnet, error) {
 	return f.subnets, f.subnetsErr
+}
+
+func (f *fakeGCP) ListBackendServices(_ context.Context) ([]pkggcp.BackendService, error) {
+	return f.backends, f.backendsErr
+}
+
+func (f *fakeGCP) ListManagedCertificates(_ context.Context) ([]pkggcp.ManagedCertificate, error) {
+	return f.certs, f.certsErr
+}
+
+func (f *fakeGCP) ListBuckets(_ context.Context) ([]pkggcp.Bucket, error) {
+	return f.buckets, f.bucketsErr
+}
+
+func (f *fakeGCP) ListKMSKeys(_ context.Context) ([]pkggcp.KMSKey, error) {
+	return f.kmsKeys, f.kmsKeysErr
 }
 
 // fakeSource implements cloud.Source for unit tests. GCP is settable;

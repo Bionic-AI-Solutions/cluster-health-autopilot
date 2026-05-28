@@ -96,3 +96,48 @@ type Subnet struct {
 	AvailableIPCount int64  `json:"availableIPCount"` // free addresses
 	TotalIPCount     int64  `json:"totalIPCount"`     // usable addresses in the range
 }
+
+// BackendService is the narrow projection of a Load Balancer backend
+// service with its backend-health summary inlined (avoids per-backend
+// fan-out). Mirrors AWS ALBTargetGroup.
+type BackendService struct {
+	Name           string `json:"name"`
+	Protocol       string `json:"protocol,omitempty"`
+	HealthyCount   int    `json:"healthyCount"`
+	UnhealthyCount int    `json:"unhealthyCount"`
+	TotalBackends  int    `json:"totalBackends,omitempty"`
+}
+
+// ManagedCertificate is the narrow projection of a Google-managed SSL
+// certificate. Status: ACTIVE, PROVISIONING, PROVISIONING_FAILED,
+// PROVISIONING_FAILED_PERMANENTLY, RENEWAL_FAILED. Mirrors AWS
+// ACMCertificate.
+type ManagedCertificate struct {
+	Name       string    `json:"name"`
+	Status     string    `json:"status"`
+	DomainName string    `json:"domainName,omitempty"`
+	NotAfter   time.Time `json:"notAfter,omitempty"`
+}
+
+// Bucket is the narrow projection of a GCS bucket's public-access
+// posture. PublicAccessPrevention: "enforced" (good) or "inherited"
+// (may allow public ACLs). UniformBucketLevelAccess disables
+// object-level ACLs. Mirrors AWS S3BucketPAB.
+type Bucket struct {
+	Name                     string `json:"name"`
+	PublicAccessPrevention   string `json:"publicAccessPrevention,omitempty"` // enforced / inherited
+	UniformBucketLevelAccess bool   `json:"uniformBucketLevelAccess,omitempty"`
+	HasAllUsersBinding       bool   `json:"hasAllUsersBinding,omitempty"` // IAM grants allUsers/allAuthenticatedUsers
+}
+
+// KMSKey is the narrow projection of a Cloud KMS crypto key (primary
+// version). State: ENABLED, DISABLED, DESTROYED, DESTROY_SCHEDULED,
+// PENDING_GENERATION, IMPORT_FAILED, GENERATION_FAILED. Mirrors AWS
+// KMSKey.
+type KMSKey struct {
+	Name              string    `json:"name"`
+	PrimaryState      string    `json:"primaryState"`
+	Purpose           string    `json:"purpose,omitempty"`
+	RotationScheduled bool      `json:"rotationScheduled,omitempty"` // automatic rotation configured
+	NextRotation      time.Time `json:"nextRotation,omitempty"`
+}
