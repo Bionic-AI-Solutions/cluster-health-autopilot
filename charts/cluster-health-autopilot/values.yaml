@@ -182,28 +182,41 @@ cloud:
       roleArn: ""                  # for IRSA: ARN of the IAM role; auto-injected as eks.amazonaws.com/role-arn SA annotation
       assumeRoleArn: ""            # for assumeRole: target role
       credentialsSecret: ""        # for staticCredentials: K8s Secret name (ESO-managed)
-    # Per-probe toggles. Each probe is small and independent; turn off
-    # any you don't want without losing the rest. M1 ships RDS only;
-    # the other 9 land in follow-up commits on feat/cloud-probes.
+    # Per-probe documentation. All 10 AWS probes shipped in v1.8
+    # (M1 complete). Provider registration is gated by aws.enabled
+    # above; per-probe in-cluster gating is via CHA_PROBE_* env opt-outs
+    # on the binary (these keys are informational — flip aws.enabled to
+    # turn the whole provider on/off).
     probes:
       rds: true
-      ebs: false                   # M1 follow-up
-      eks: false                   # M1 follow-up
-      iam: false                   # M1 follow-up
-      alb: false                   # M1 follow-up
-      acm: false                   # M1 follow-up
-      kms: false                   # M1 follow-up
-      s3: false                    # M1 follow-up
-      vpc: false                   # M1 follow-up
+      ebs: true
+      eks: true
+      iam: true
+      alb: true
+      acm: true
+      kms: true
+      s3: true
+      vpc: true
   gcp:
-    enabled: false                 # M2 — not shipped yet
+    # GCP cloud probes shipped in v1.8 (M2): Cloud SQL, Persistent
+    # Disks, GKE control-plane + node pools, IAM service accounts,
+    # Subnets, LB backends, managed certs, GCS public access, KMS.
+    # NOTE: subnet IP-utilization and Cloud SQL storage-% are reported
+    # as "not measured" in live mode (need the Monitoring API; v1.9).
+    enabled: false
     project: ""
     auth:
       mode: workloadIdentity       # workloadIdentity | staticCredentials
       serviceAccount: ""           # for workloadIdentity: GSA email; auto-injected as iam.gke.io/gcp-service-account SA annotation
       credentialsSecret: ""        # for staticCredentials: K8s Secret name
   azure:
-    enabled: false                 # M2 — not shipped yet
+    # Azure cloud probes shipped in v1.8 (M2): SQL databases, Disks,
+    # AKS control-plane + node pools, Managed Identities, Subnets, App
+    # Gateway backends, certs, Storage public access, Key Vaults.
+    # NOTE: subnet IP-utilization, SQL storage-%, and App Gateway
+    # backend health are "not measured" in live mode (need Azure
+    # Monitor metrics / BackendHealth LRO; v1.9).
+    enabled: false
     subscriptionId: ""
     resourceGroup: ""              # optional scope; empty = subscription-wide
     auth:
@@ -521,6 +534,31 @@ analyzers:
     # attestation are managed by external policy controllers
     # (Kyverno, Gatekeeper, Sigstore) that already produce these
     # alerts independently.
+    enabled: true
+
+# M2 probe-class additions (v1.8). Each defaults to ON and AUTO-SKIPS
+# when its CRD is absent (Kong / ArgoCD / Velero) or no-ops on an empty
+# list (HPA), so leaving them on costs nothing on clusters that don't
+# host the asset. Set enabled: false only to silence a probe on a
+# cluster that DOES host the CRD but you don't want CHA watching it.
+probes:
+  kong:
+    # Kong ingress — KongPlugin / KongConsumer / Kong proxy readiness
+    # drift. Auto-skips when configuration.konghq.com CRDs are absent.
+    enabled: true
+  hpaScaling:
+    # HorizontalPodAutoscaler scaling health (distinct from the v1.8
+    # capacityDrift analyzer's longitudinal signals). No-ops on an
+    # empty HPA list.
+    enabled: true
+  argocdApp:
+    # Argo CD Application sync/health (probe-level snapshot, distinct
+    # from the gitopsDrift analyzer). Auto-skips when argoproj.io CRDs
+    # are absent.
+    enabled: true
+  velero:
+    # Velero backup freshness / last-backup status. Auto-skips when
+    # velero.io CRDs are absent.
     enabled: true
 
 # Optional fixers — off by default. Each entry adds RBAC verbs and exposes

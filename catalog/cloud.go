@@ -19,10 +19,12 @@ import (
 // probes via the cloudprobe.Probe contract; downstream rendering
 // (Slack / Alertmanager / DriftReport / ticketing) is unchanged.
 //
-// M1 shipped the AWS probe set (10 probes); M2 begins with the GCP
-// Cloud SQL + Persistent Disk probes (this PR) and grows via
-// follow-ups on feat/gcp-cloud-probes. Azure follows on
-// feat/azure-cloud-probes.
+// All three provider probe sets shipped in v1.8: M1 = AWS (10 probes),
+// M2 = GCP (10) + Azure (10). A handful of GCP/Azure signals (subnet
+// IP-utilization, SQL storage-%, Azure App Gateway backend health)
+// report "not measured" in live mode because they require the cloud
+// Monitoring API / a long-running health operation; those are wired in
+// v1.9. See internal/cloud/{gcp,azure}/live.go for the exact set.
 func RegisterCloudOSS(reg *registry.Registry, awsEnabled, gcpEnabled, azureEnabled bool) {
 	if awsEnabled {
 		reg.RegisterCloudProbe(

@@ -108,6 +108,17 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 // reconcileServiceAccount ensures the SA the workloads reference
 // exists. The owner-ref makes the CR's deletion cascade clean it up.
 func (r *Reconciler) reconcileServiceAccount(ctx context.Context, cr *chav1alpha1.ClusterHealthAutopilot) error {
+	// BYO ServiceAccount: when the CR pins spec.serviceAccountName the
+	// operator must NOT create or own that SA — it belongs to the
+	// caller (typically the chart's reader-bound SA, which already
+	// carries the probe RBAC the watcher needs). Owning it would graft
+	// an owner-ref onto a pre-existing SA and garbage-collect it when
+	// the CR is deleted. Operator-managed watchers get probe RBAC ONLY
+	// via this BYO path today; the operator does not yet provision its
+	// own reader ClusterRoleBinding (tracked for Phase 1c).
+	if cr.Spec.ServiceAccountName != "" {
+		return nil
+	}
 	desired := BuildServiceAccount(cr)
 	if err := controllerutilSetOwnerRef(cr, desired, r.Scheme); err != nil {
 		return err

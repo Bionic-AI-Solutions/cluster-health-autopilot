@@ -108,6 +108,14 @@ func (l *LiveClient) ListCloudSQLInstances(ctx context.Context) ([]pkggcp.CloudS
 			State:           in.State,
 			Region:          in.Region,
 			ConnectionName:  in.ConnectionName,
+			// DiskUsedPercent is NOT available from the SQL Admin
+			// instances.list response — it requires the Cloud
+			// Monitoring API (cloudsql.googleapis.com/database/disk/
+			// utilization). -1 = "not measured"; the probe skips the
+			// storage-utilization check rather than treating it as 0%
+			// (which would silently never fire). Real wiring is a v1.9
+			// Monitoring-API follow-up.
+			DiskUsedPercent: -1,
 		}
 		if in.Settings != nil {
 			inst.Tier = in.Settings.Tier
@@ -256,9 +264,10 @@ func (l *LiveClient) ListServiceAccounts(ctx context.Context) ([]pkggcp.ServiceA
 // free-IP count. Accurate utilization needs the Monitoring API metric
 // compute.googleapis.com/subnetwork/... — out of scope for this
 // wrapper. We populate TotalIPCount from the primary CIDR mask and set
-// AvailableIPCount = TotalIPCount so the IP-exhaustion probe never
-// false-positives. A follow-up can wire the Monitoring API for real
-// utilization.
+// AvailableIPCount = -1 ("not measured") so the IP-exhaustion probe
+// SKIPS the utilization check rather than treating the subnet as 100%
+// free, which would silently never fire in live mode. A follow-up
+// (v1.9) can wire the Monitoring API for real utilization.
 func (l *LiveClient) ListSubnets(ctx context.Context) ([]pkggcp.Subnet, error) {
 	var out []pkggcp.Subnet
 	err := l.compute.Subnetworks.AggregatedList(l.project).Pages(ctx, func(page *compute.SubnetworkAggregatedList) error {
@@ -271,7 +280,7 @@ func (l *LiveClient) ListSubnets(ctx context.Context) ([]pkggcp.Subnet, error) {
 					Region:           lastPathSegment(s.Region),
 					IPCIDRRange:      s.IpCidrRange,
 					TotalIPCount:     total,
-					AvailableIPCount: total, // see LIMITATION above
+					AvailableIPCount: -1, // not measured — see LIMITATION above
 				})
 			}
 		}

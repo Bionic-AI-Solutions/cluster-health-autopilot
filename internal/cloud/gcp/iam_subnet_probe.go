@@ -102,9 +102,17 @@ func (Subnets) Run(ctx context.Context, src cloud.Source) probe.Result {
 	}
 
 	var findings []probe.Finding
+	var unmeasured int
 	for _, s := range subnets {
 		if s.TotalIPCount <= 0 {
 			continue // can't compute a percentage; skip rather than divide-by-zero
+		}
+		if s.AvailableIPCount < 0 {
+			// Free-IP count not measured (live mode — needs the
+			// Monitoring API). Skip rather than treat as 100% free,
+			// which would silently never fire.
+			unmeasured++
+			continue
 		}
 		freePercent := int(s.AvailableIPCount * 100 / s.TotalIPCount)
 		subject := fmt.Sprintf("gcp-subnet/%s/%s/%s", gcpClient.Project(), s.Region, s.Name)
@@ -125,11 +133,15 @@ func (Subnets) Run(ctx context.Context, src cloud.Source) probe.Result {
 		}
 	}
 
+	detail := fmt.Sprintf("%d subnet(s) inspected in project %s", len(subnets), gcpClient.Project())
+	if unmeasured > 0 {
+		detail += fmt.Sprintf("; IP utilization not measured for %d (needs Monitoring API)", unmeasured)
+	}
 	return probe.Result{
 		Component: probe.ComponentResult{
 			Component: subnetsName,
 			Status:    rollupStatus(findings),
-			Detail:    fmt.Sprintf("%d subnet(s) inspected in project %s", len(subnets), gcpClient.Project()),
+			Detail:    detail,
 		},
 		Findings: findings,
 	}

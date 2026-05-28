@@ -186,11 +186,18 @@ func (l *LiveClient) ListSQLDatabases(ctx context.Context) ([]pkgazure.SQLDataba
 							rec.ZoneRedundant = *db.Properties.ZoneRedundant
 						}
 					}
-					// Backup config is a separate API surface; the
-					// short-term-retention policy existence is the
-					// signal. Conservatively assume configured (don't
-					// false-positive on a probe we can't cheaply
-					// confirm here).
+					// UsedPercent is not on the Database resource — it
+					// requires Azure Monitor metrics (storage_percent).
+					// -1 = "not measured"; the probe skips the storage
+					// check rather than treating it as 0% (which would
+					// silently never fire). v1.9 Monitor follow-up.
+					rec.UsedPercent = -1
+					// Azure SQL automated PITR backup is always on by
+					// platform for every non-Basic tier (retention is
+					// configurable 1–35 days but never zero), so this is
+					// a true platform invariant, not a placeholder. The
+					// probe's no-backup warning therefore correctly never
+					// fires for live Azure SQL.
 					rec.BackupConfigured = true
 					out = append(out, rec)
 				}
@@ -408,7 +415,11 @@ func (l *LiveClient) ListSubnets(ctx context.Context) ([]pkgazure.Subnet, error)
 						rec.AddressPrefix = *s.Properties.AddressPrefix
 						total := usableIPsFromCIDR(*s.Properties.AddressPrefix)
 						rec.TotalIPCount = total
-						rec.AvailableIPCount = total // see LIMITATION
+						// Free-IP count needs Azure Monitor metrics; -1 =
+						// "not measured" so the probe skips the IP check
+						// rather than treating the subnet as 100% free
+						// (which would silently never fire). v1.9.
+						rec.AvailableIPCount = -1
 					}
 					out = append(out, rec)
 				}
@@ -423,9 +434,10 @@ func (l *LiveClient) ListSubnets(ctx context.Context) ([]pkgazure.Subnet, error)
 // LIMITATION: backend health is a long-running BackendHealth operation
 // per gateway; running it for every probe cycle is expensive and
 // can't be verified here. We report TotalCount from the backend
-// address pool size and set HealthyCount = TotalCount (no
-// false-positive). A follow-up can wire BeginBackendHealth for real
-// per-pool health.
+// address pool size and set HealthyCount = -1 ("not measured") so the
+// probe SKIPS the health check rather than treating every pool as
+// fully healthy, which would silently never fire. A follow-up (v1.9)
+// can wire BeginBackendHealth for real per-pool health.
 func (l *LiveClient) ListAppGatewayBackends(ctx context.Context) ([]pkgazure.AppGatewayBackend, error) {
 	var out []pkgazure.AppGatewayBackend
 	pager := l.appgw.NewListAllPager(nil)
@@ -447,7 +459,7 @@ func (l *LiveClient) ListAppGatewayBackends(ctx context.Context) ([]pkgazure.App
 					Gateway:      *gw.Name,
 					PoolName:     *pool.Name,
 					TotalCount:   total,
-					HealthyCount: total, // see LIMITATION
+					HealthyCount: -1, // not measured — see LIMITATION
 				})
 			}
 		}

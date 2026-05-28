@@ -47,6 +47,24 @@ func TestAppGW_Partial_Warning(t *testing.T) {
 	}
 }
 
+// HealthyCount = -1 is the live-wrapper "not measured" sentinel. The
+// probe must SKIP the health check (not treat the pool as fully
+// healthy and silently never fire), stay HEALTHY, and note the gap.
+func TestAppGW_Unmeasured_Skipped(t *testing.T) {
+	got := AppGatewayBackends{}.Run(context.Background(), &fakeSource{
+		azure: &fakeAzure{subscription: "s", appgw: []pkgazure.AppGatewayBackend{{Gateway: "gw", PoolName: "web", HealthyCount: -1, TotalCount: 4}}},
+	})
+	if len(got.Findings) != 0 {
+		t.Errorf("unmeasured pool should be skipped; got: %+v", got.Findings)
+	}
+	if got.Component.Status != "HEALTHY" {
+		t.Errorf("status=%s want HEALTHY", got.Component.Status)
+	}
+	if !strings.Contains(got.Component.Detail, "not measured") {
+		t.Errorf("detail should note unmeasured pools; got: %q", got.Component.Detail)
+	}
+}
+
 // --- Certificates ---
 
 func TestAzureCert_IssuedFarExpiry_Silent(t *testing.T) {

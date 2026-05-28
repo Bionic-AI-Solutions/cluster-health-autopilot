@@ -227,3 +227,38 @@ no-target list cycle on clusters that don't host the asset class.
 {{- end }}
 {{- end }}
 {{- end -}}
+
+{{- /*
+cha.probeToggleEnv — env-var opt-outs for the v1.8 M2 probe-class
+additions (Kong / HPA-scaling / ArgoCD-app / Velero). Each defaults to
+ON and auto-skips when its CRD is absent (or no-ops on an empty list
+for HPA), so the toggle is only needed to silence a probe on a cluster
+that DOES host the CRD but doesn't want CHA watching it. Flip
+probes.<name>.enabled=false in values.yaml to emit CHA_PROBE_<NAME>=off.
+*/ -}}
+{{- define "cha.probeToggleEnv" -}}
+{{- if (.Values.probes).kong }}
+{{- if not .Values.probes.kong.enabled }}
+- name: CHA_PROBE_KONG
+  value: "off"
+{{- end }}
+{{- end }}
+{{- if (.Values.probes).hpaScaling }}
+{{- if not .Values.probes.hpaScaling.enabled }}
+- name: CHA_PROBE_HPA_SCALING
+  value: "off"
+{{- end }}
+{{- end }}
+{{- if (.Values.probes).argocdApp }}
+{{- if not .Values.probes.argocdApp.enabled }}
+- name: CHA_PROBE_ARGOCD_APP
+  value: "off"
+{{- end }}
+{{- end }}
+{{- if (.Values.probes).velero }}
+{{- if not .Values.probes.velero.enabled }}
+- name: CHA_PROBE_VELERO
+  value: "off"
+{{- end }}
+{{- end }}
+{{- end -}}

@@ -60,6 +60,7 @@ spec:
                 {{- include "cha.slackHealthinfoEnv" . | nindent 16 }}
                 {{- include "cha.vaultEnv" . | nindent 16 }}
                 {{- include "cha.analyzerToggleEnv" . | nindent 16 }}
+                {{- include "cha.probeToggleEnv" . | nindent 16 }}
               resources:
                 {{- toYaml .Values.resources | nindent 16 }}
               securityContext:

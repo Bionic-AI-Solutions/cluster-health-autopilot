@@ -79,8 +79,16 @@ func (Subnets) Run(ctx context.Context, src cloud.Source) probe.Result {
 	}
 
 	var findings []probe.Finding
+	var unmeasured int
 	for _, s := range subnets {
 		if s.TotalIPCount <= 0 {
+			continue
+		}
+		if s.AvailableIPCount < 0 {
+			// Free-IP count not measured (live mode — needs Azure
+			// Monitor metrics). Skip rather than treat as 100% free,
+			// which would silently never fire.
+			unmeasured++
 			continue
 		}
 		freePercent := int(s.AvailableIPCount * 100 / s.TotalIPCount)
@@ -102,8 +110,12 @@ func (Subnets) Run(ctx context.Context, src cloud.Source) probe.Result {
 		}
 	}
 
+	detail := fmt.Sprintf("%d subnet(s) inspected in subscription %s", len(subnets), azClient.SubscriptionID())
+	if unmeasured > 0 {
+		detail += fmt.Sprintf("; IP utilization not measured for %d (needs Monitor metrics)", unmeasured)
+	}
 	return probe.Result{
-		Component: probe.ComponentResult{Component: subnetsName, Status: rollupStatus(findings), Detail: fmt.Sprintf("%d subnet(s) inspected in subscription %s", len(subnets), azClient.SubscriptionID())},
+		Component: probe.ComponentResult{Component: subnetsName, Status: rollupStatus(findings), Detail: detail},
 		Findings:  findings,
 	}
 }

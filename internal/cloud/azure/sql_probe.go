@@ -113,8 +113,12 @@ func evaluateSQLDatabase(db pkgazure.SQLDatabase, subscription string) []probe.F
 		})
 	}
 
-	// Storage utilization.
-	if db.UsedPercent >= storageCritPercent {
+	// Storage utilization. UsedPercent < 0 means "not measured" (live
+	// mode — needs Azure Monitor metrics); skip rather than treat as 0%,
+	// which would silently never fire.
+	if db.UsedPercent < 0 {
+		// no-op: utilization unknown
+	} else if db.UsedPercent >= storageCritPercent {
 		out = append(out, probe.Finding{
 			Component:   subject,
 			Severity:    probe.SeverityCritical,

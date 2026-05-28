@@ -50,7 +50,16 @@ type ClusterHealthAutopilotSpec struct {
 	Alerting *AlertingSpec `json:"alerting,omitempty"`
 
 	// ServiceAccountName overrides the controller-managed SA name.
-	// When empty the controller picks <cr-name>-sa.
+	// When empty the controller creates and owns <cr-name>-sa.
+	//
+	// IMPORTANT (RBAC): the operator does not yet provision a reader
+	// ClusterRoleBinding for the SA it creates, so the default
+	// <cr-name>-sa has NO probe RBAC and the watcher would get
+	// `forbidden` on every List. To run an operator-managed watcher
+	// today, set this to an existing reader-bound SA (e.g. the chart's
+	// `<release>-cluster-health-autopilot` SA). When set, the operator
+	// references but does NOT create or own that SA. Operator-owned
+	// RBAC is tracked for Phase 1c.
 	// +optional
 	ServiceAccountName string `json:"serviceAccountName,omitempty"`
 }

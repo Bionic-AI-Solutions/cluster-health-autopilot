@@ -159,6 +159,24 @@ func TestAzureSubnets_ZeroTotal_Skipped(t *testing.T) {
 	}
 }
 
+// AvailableIPCount = -1 is the live-wrapper "not measured" sentinel.
+// The probe must SKIP the IP check (not treat it as 100% free and
+// silently never fire), stay HEALTHY, and surface the gap in Detail.
+func TestAzureSubnets_Unmeasured_Skipped(t *testing.T) {
+	got := Subnets{}.Run(context.Background(), &fakeSource{
+		azure: &fakeAzure{subscription: "s", subnets: []pkgazure.Subnet{{Name: "live", VNet: "vnet", TotalIPCount: 1000, AvailableIPCount: -1}}},
+	})
+	if len(got.Findings) != 0 {
+		t.Errorf("unmeasured subnet should be skipped; got: %+v", got.Findings)
+	}
+	if got.Component.Status != "HEALTHY" {
+		t.Errorf("status=%s want HEALTHY", got.Component.Status)
+	}
+	if !strings.Contains(got.Component.Detail, "not measured") {
+		t.Errorf("detail should note unmeasured subnets; got: %q", got.Component.Detail)
+	}
+}
+
 func TestAzureBatch2_NamesStable(t *testing.T) {
 	cases := map[string]string{
 		AKSControlPlane{}.Name():   "azure-aks-control-plane",

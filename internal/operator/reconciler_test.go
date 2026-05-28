@@ -347,3 +347,21 @@ func TestReconcile_ExplicitServiceAccountName_UsedByDeployment(t *testing.T) {
 		t.Errorf("SA on watcher pod=%q want shared-cha-sa", dep.Spec.Template.Spec.ServiceAccountName)
 	}
 }
+
+// When the CR pins spec.serviceAccountName (BYO reader-bound SA), the
+// operator must NOT create or own that SA — owning it would graft an
+// owner-ref onto a pre-existing SA and garbage-collect it on CR delete.
+func TestReconcile_ExplicitServiceAccountName_NotCreatedByOperator(t *testing.T) {
+	cr := fullCR()
+	cr.Spec.ServiceAccountName = "shared-cha-sa"
+	r, c := newReconciler(t, cr)
+	reconcileOnce(t, r, cr)
+
+	var sa corev1.ServiceAccount
+	err := c.Get(context.Background(),
+		types.NamespacedName{Namespace: "cha-system", Name: "shared-cha-sa"},
+		&sa)
+	if err == nil {
+		t.Fatalf("operator must not create the BYO SA %q (it belongs to the caller)", "shared-cha-sa")
+	}
+}

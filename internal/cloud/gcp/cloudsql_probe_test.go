@@ -142,6 +142,22 @@ func TestCloudSQL_DiskCritical_SuppressedWhenAutoResize(t *testing.T) {
 	}
 }
 
+// DiskUsedPercent = -1 is the live-wrapper "not measured" sentinel.
+// The probe must SKIP the storage check (not treat it as 0% and
+// silently never fire). With backups on + RUNNABLE, no findings.
+func TestCloudSQL_StorageUnmeasured_Skipped(t *testing.T) {
+	got := runCloudSQL(pkggcp.CloudSQLInstance{
+		Name:             "live-1",
+		State:            "RUNNABLE",
+		DiskSizeGB:       100,
+		DiskUsedPercent:  -1,
+		BackupConfigured: true,
+	})
+	if len(got.Findings) != 0 {
+		t.Errorf("unmeasured storage should be skipped; got: %+v", got.Findings)
+	}
+}
+
 func TestCloudSQL_NoBackup_Warning(t *testing.T) {
 	got := runCloudSQL(pkggcp.CloudSQLInstance{
 		Name:             "prod-1",

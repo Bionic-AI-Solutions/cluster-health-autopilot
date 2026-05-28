@@ -664,8 +664,9 @@ type cloudOpts struct {
 // Returns nil when no provider is configured. AWS uses aws-sdk-go-v2's
 // default credential chain (env → shared → IRSA → EC2/ECS metadata) so
 // in-cluster IRSA "just works"; GCP uses Application Default
-// Credentials (GKE Workload Identity in-cluster). Azure remains a stub
-// until its Live SDK wrapper lands.
+// Credentials (GKE Workload Identity in-cluster); Azure uses
+// azidentity.NewDefaultAzureCredential (env → Workload Identity →
+// Managed Identity → CLI). All three Live SDK wrappers ship in v1.8.
 func buildCloudSource(ctx context.Context, o cloudOpts) (cloudpkg.Source, error) {
 	var awsClient cloudpkgaws.Client
 	if o.AWSEnabled {

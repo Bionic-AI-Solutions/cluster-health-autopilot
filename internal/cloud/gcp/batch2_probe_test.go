@@ -195,6 +195,26 @@ func TestSubnets_ZeroTotal_Skipped(t *testing.T) {
 	}
 }
 
+// AvailableIPCount = -1 is the live-wrapper "not measured" sentinel.
+// The probe must SKIP the IP check (not treat it as 100% free and
+// silently never fire), stay HEALTHY, and note the gap in Detail.
+func TestSubnets_Unmeasured_Skipped(t *testing.T) {
+	got := Subnets{}.Run(context.Background(), &fakeSource{
+		gcp: &fakeGCP{project: "p", subnets: []pkggcp.Subnet{
+			{Name: "live", Region: "us-central1", TotalIPCount: 1000, AvailableIPCount: -1},
+		}},
+	})
+	if len(got.Findings) != 0 {
+		t.Errorf("unmeasured subnet should be skipped; got: %+v", got.Findings)
+	}
+	if got.Component.Status != "HEALTHY" {
+		t.Errorf("status=%s want HEALTHY", got.Component.Status)
+	}
+	if !strings.Contains(got.Component.Detail, "not measured") {
+		t.Errorf("detail should note unmeasured subnets; got: %q", got.Component.Detail)
+	}
+}
+
 func TestBatch2_NamesStable(t *testing.T) {
 	cases := map[string]string{
 		GKEControlPlane{}.Name():    "gcp-gke-control-plane",

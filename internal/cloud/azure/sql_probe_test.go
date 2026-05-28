@@ -122,6 +122,20 @@ func TestSQLDatabases_StorageCritical_AtThreshold(t *testing.T) {
 	}
 }
 
+// UsedPercent = -1 is the live-wrapper "not measured" sentinel. The
+// probe must SKIP the storage check (not treat it as 0% and silently
+// never fire). With backups on + Online status, there are no findings.
+func TestSQLDatabases_StorageUnmeasured_Skipped(t *testing.T) {
+	got := runSQL(pkgazure.SQLDatabase{
+		Name: "live-1", ResourceGroup: "rg", Server: "sql",
+		Status: "Online", MaxSizeGB: 100, UsedPercent: -1,
+		BackupConfigured: true,
+	})
+	if len(got.Findings) != 0 {
+		t.Errorf("unmeasured storage should be skipped; got: %+v", got.Findings)
+	}
+}
+
 func TestSQLDatabases_NoBackup_Warning(t *testing.T) {
 	got := runSQL(pkgazure.SQLDatabase{
 		Name: "prod-1", ResourceGroup: "rg", Server: "sql",

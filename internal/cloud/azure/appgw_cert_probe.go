@@ -34,7 +34,15 @@ func (AppGatewayBackends) Run(ctx context.Context, src cloud.Source) probe.Resul
 	}
 
 	var findings []probe.Finding
+	var unmeasured int
 	for _, p := range pools {
+		if p.HealthyCount < 0 {
+			// Backend health not measured (live mode — needs the
+			// BackendHealth LRO). Skip rather than treat every pool as
+			// healthy, which would silently never fire.
+			unmeasured++
+			continue
+		}
 		subject := fmt.Sprintf("azure-appgw/%s/%s/%s", azClient.SubscriptionID(), p.Gateway, p.PoolName)
 		switch {
 		case p.HealthyCount == 0 && (p.UnhealthyCount > 0 || p.TotalCount > 0):
@@ -53,8 +61,12 @@ func (AppGatewayBackends) Run(ctx context.Context, src cloud.Source) probe.Resul
 		}
 	}
 
+	detail := fmt.Sprintf("%d backend pool(s) inspected in subscription %s", len(pools), azClient.SubscriptionID())
+	if unmeasured > 0 {
+		detail += fmt.Sprintf("; backend health not measured for %d (needs BackendHealth LRO)", unmeasured)
+	}
 	return probe.Result{
-		Component: probe.ComponentResult{Component: appgwName, Status: rollupStatus(findings), Detail: fmt.Sprintf("%d backend pool(s) inspected in subscription %s", len(pools), azClient.SubscriptionID())},
+		Component: probe.ComponentResult{Component: appgwName, Status: rollupStatus(findings), Detail: detail},
 		Findings:  findings,
 	}
 }

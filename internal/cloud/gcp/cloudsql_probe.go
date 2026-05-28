@@ -125,8 +125,10 @@ func evaluateCloudSQLInstance(db pkggcp.CloudSQLInstance, project string) []prob
 
 	// Storage utilization — emitted independently of state. Auto-resize
 	// instances are skipped: GCP grows them automatically, and flagging
-	// 90% on those is operator-noise.
-	if !db.StorageAutoResize {
+	// 90% on those is operator-noise. DiskUsedPercent < 0 means "not
+	// measured" (live mode — needs the Monitoring API); skip rather than
+	// treat as 0% used, which would silently never fire.
+	if !db.StorageAutoResize && db.DiskUsedPercent >= 0 {
 		if db.DiskUsedPercent >= storageCritPercent {
 			out = append(out, probe.Finding{
 				Component:   subject,

@@ -1,0 +1,67 @@
+suite: M2 probe-class toggles (v1.8.2)
+templates:
+  - templates/watcher-deployment.yaml
+tests:
+  - it: no CHA_PROBE_* env when all M2 probes default-on
+    template: templates/watcher-deployment.yaml
+    set:
+      watcher.enabled: true
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: CHA_PROBE_KONG
+            value: "off"
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: CHA_PROBE_VELERO
+            value: "off"
+
+  - it: CHA_PROBE_KONG=off when probes.kong.enabled=false
+    template: templates/watcher-deployment.yaml
+    set:
+      watcher.enabled: true
+      probes.kong.enabled: false
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: CHA_PROBE_KONG
+            value: "off"
+
+  - it: CHA_PROBE_HPA_SCALING=off when probes.hpaScaling.enabled=false
+    template: templates/watcher-deployment.yaml
+    set:
+      watcher.enabled: true
+      probes.hpaScaling.enabled: false
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: CHA_PROBE_HPA_SCALING
+            value: "off"
+
+  - it: CHA_PROBE_ARGOCD_APP=off when probes.argocdApp.enabled=false
+    template: templates/watcher-deployment.yaml
+    set:
+      watcher.enabled: true
+      probes.argocdApp.enabled: false
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: CHA_PROBE_ARGOCD_APP
+            value: "off"
+
+  - it: CHA_PROBE_VELERO=off when probes.velero.enabled=false
+    template: templates/watcher-deployment.yaml
+    set:
+      watcher.enabled: true
+      probes.velero.enabled: false
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: CHA_PROBE_VELERO
+            value: "off"

@@ -13,7 +13,38 @@ serves the latest tagged chart cut.
 
 ## [Unreleased]
 
-(Reserve for v1.9+ — config / capacity metrics-server-dependent signals, App Gateway / subnet utilization live wiring, operator Phase 1c OLM bundle, trigger-classes C/E.)
+(Reserve for v1.9+ — config / capacity metrics-server-dependent signals, the cloud Monitoring-API wiring that turns the "not measured" signals below into live metrics, operator Phase 1c (operator-provisioned reader ClusterRoleBinding + OLM bundle), trigger-classes C/E.)
+
+---
+
+## [1.8.2] — 2026-05-28
+
+Hardening release from a post-v1.8 adversarial review. Corrects honesty/correctness defects found in the cloud Live wrappers and the operator, and closes one roadmap acceptance-criteria gap. No new probes; behavior changes are confined to live cloud mode and the opt-in operator.
+
+### Fixed — cloud Live wrappers no longer silently pass un-measurable signals
+
+The GCP/Azure Live wrappers previously populated placeholder values for metrics the SDK list-calls don't expose, which made several probe checks **silently never fire in live mode** (green unit tests masked it because they inject values the live wrapper can't produce). Each is now reported as **"not measured"** via a `-1` sentinel, and the probe **skips** that specific check (surfacing the gap in the component Detail) instead of evaluating it as healthy:
+
+- **GCP Subnets** — IP-exhaustion check (`AvailableIPCount` was set to the total → always 100% free).
+- **Azure Subnets** — same IP-exhaustion check.
+- **Azure App Gateway backends** — backend-health check (`HealthyCount` was set to the total).
+- **GCP Cloud SQL / Azure SQL** — storage-utilization check (`DiskUsedPercent`/`UsedPercent` was never populated → treated as 0%).
+
+These require the cloud Monitoring API / a long-running BackendHealth operation and are wired for real in v1.9. AWS already fetches all of these for real and is unaffected. (Azure SQL automated PITR backup is a genuine platform invariant, not a placeholder — comment clarified, behavior unchanged.)
+
+### Fixed — operator BYO-ServiceAccount no longer adopts a pre-existing SA
+
+When a `ClusterHealthAutopilot` CR pins `spec.serviceAccountName` (the supported path for giving an operator-managed watcher the probe RBAC it needs — point it at the chart's reader-bound SA), the reconciler used to still create+own that SA, grafting an owner-ref onto a pre-existing object and garbage-collecting it on CR deletion. The reconciler now skips SA creation entirely when `spec.serviceAccountName` is set.
+
+**Known limitation (tracked for Phase 1c):** the operator does not yet provision its own reader `ClusterRoleBinding`, so an operator-managed watcher gets probe RBAC **only** via the BYO-SA path above. Documented on the CRD field and in the operator design doc.
+
+### Added — M2 probe-class Helm toggles (roadmap AC parity)
+
+`probes.{kong,hpaScaling,argocdApp,velero}.enabled` now exist in `values.yaml` and emit `CHA_PROBE_*=off` via the new `cha.probeToggleEnv` helper (mirrors `cha.analyzerToggleEnv`). Closes the v1.8 acceptance criterion that promised per-probe Helm values; the probes were previously gated only by env opt-out + CRD auto-skip. All default ON (auto-skip when the CRD is absent).
+
+### Changed
+
+- Cleared stale "not shipped yet" / "M1 follow-up" / "Azure remains a stub" comments in `values.yaml`, `cmd/cha/main.go`, and `catalog/cloud.go` — all three cloud providers and the M2 probe set shipped in v1.8.
 
 ---
 
