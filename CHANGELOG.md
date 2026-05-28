@@ -13,6 +13,14 @@ serves the latest tagged chart cut.
 
 ## [Unreleased]
 
+(Reserve for v1.9+ — config / capacity metrics-server-dependent signals, App Gateway / subnet utilization live wiring, operator Phase 1c OLM bundle, trigger-classes C/E.)
+
+---
+
+## [1.8.0] — 2026-05-28
+
+Drift-class completion + operator port + full multi-cloud release. Closes the bulk of `docs/design/2026-05-v1.8-roadmap.md`: the remaining drift classes (config / capacity / security), the controller-runtime operator port (Phase 1 + 1b), the M2 K8s probe slice (Kong / HPA / ArgoCD / Velero), and a complete 30-probe multi-cloud surface (10 each AWS / GCP / Azure) with all three Live SDK wrappers wired so the probes execute against real clouds.
+
 ### Added — Azure cloud-probe Live SDK wrapper (probes now execute against real Azure) — all 3 clouds live
 
 - **`internal/cloud/azure/live.go`** — `LiveClient` implements all 10 `pkgazure.Client` methods against `azure-sdk-for-go` (armsql, armcompute, armcontainerservice, armmsi, armnetwork, armappservice, armstorage, armkeyvault, armauthorization). Auth via `DefaultAzureCredential` (AAD Workload Identity in-cluster, `az login` locally). Read-only. Resolves server→database, vnet→subnet, and cluster→nodepool nesting; extracts resource group from ARM IDs; counts role assignments per managed-identity principal.
