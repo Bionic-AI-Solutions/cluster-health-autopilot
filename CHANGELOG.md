@@ -84,6 +84,17 @@ Four more GCP probes (6 of 10 now shipped). Remaining 4 (LB backend, Google-mana
 - `pkg/cloud/gcp` client + types extended; `catalog/cloud.go` registers all 6 GCP probes when `gcpEnabled=true`.
 - 18 unit tests.
 
+### Added — GCP cloud probes (Sprint 3 slice — 10/10 GCP parity)
+
+Final 4 GCP probes — completes 10-probe parity with the AWS set.
+
+- **`LoadBalancerBackends`** — 0 healthy backends critical, partial-unhealthy warning. Mirrors AWS `ALBTargetHealth`. Subject `gcp-lb/<project>/<name>`.
+- **`ManagedCertificates`** — PROVISIONING_FAILED* / RENEWAL_FAILED critical, ACTIVE-but-< 21d-to-expiry warning. Mirrors AWS `ACMCertExpiry`. Subject `gcp-cert/<project>/<name>`.
+- **`GCSPublicAccess`** — allUsers / allAuthenticatedUsers IAM binding critical, `publicAccessPrevention != enforced` warning. Mirrors AWS `S3BucketPublicAccess`. Subject `gcp-gcs/<project>/<bucket>`.
+- **`KMSKeys`** — DESTROY_SCHEDULED / DESTROYED / *_FAILED critical, DISABLED warning, ENABLED-without-rotation warning. Mirrors AWS `KMSKeys`. Subject `gcp-kms/<project>/<key>`.
+- `catalog/cloud.go` registers all 10 GCP probes when `gcpEnabled=true`.
+- 18 unit tests.
+
 ### Added — Azure cloud probes (Sprint 1 slice)
 
 First two probes of the M2 Azure slice. The remaining 8 probes (AKS control plane, AKS nodepool, Managed Identity, App Gateway backend, certs, Storage public-access, Key Vault, VNet/subnet) ship on follow-up PRs against `feat/azure-cloud-probes`.

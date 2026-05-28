@@ -62,4 +62,21 @@ type Client interface {
 	// ListSubnets lists VPC subnetworks in the bound project +
 	// region. Returns (nil, nil) when there are none.
 	ListSubnets(ctx context.Context) ([]Subnet, error)
+
+	// ListBackendServices lists Load Balancer backend services with
+	// their backend-health summary inlined. Returns (nil, nil) when
+	// there are none.
+	ListBackendServices(ctx context.Context) ([]BackendService, error)
+
+	// ListManagedCertificates lists Google-managed SSL certificates
+	// in the bound project. Returns (nil, nil) when there are none.
+	ListManagedCertificates(ctx context.Context) ([]ManagedCertificate, error)
+
+	// ListBuckets lists GCS buckets with their public-access posture.
+	// Returns (nil, nil) when there are none.
+	ListBuckets(ctx context.Context) ([]Bucket, error)
+
+	// ListKMSKeys lists Cloud KMS crypto keys in the bound project.
+	// Returns (nil, nil) when there are none.
+	ListKMSKeys(ctx context.Context) ([]KMSKey, error)
 }
