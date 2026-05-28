@@ -21,6 +21,18 @@ type fakeAzure struct {
 
 	disks    []pkgazure.Disk
 	disksErr error
+
+	cluster    *pkgazure.AKSCluster
+	clusterErr error
+
+	nodePools    []pkgazure.AKSNodePool
+	nodePoolsErr error
+
+	identities    []pkgazure.ManagedIdentity
+	identitiesErr error
+
+	subnets    []pkgazure.Subnet
+	subnetsErr error
 }
 
 func (f *fakeAzure) SubscriptionID() string { return f.subscription }
@@ -32,6 +44,22 @@ func (f *fakeAzure) ListSQLDatabases(_ context.Context) ([]pkgazure.SQLDatabase,
 
 func (f *fakeAzure) ListDisks(_ context.Context) ([]pkgazure.Disk, error) {
 	return f.disks, f.disksErr
+}
+
+func (f *fakeAzure) GetAKSCluster(_ context.Context, _ string) (*pkgazure.AKSCluster, error) {
+	return f.cluster, f.clusterErr
+}
+
+func (f *fakeAzure) ListAKSNodePools(_ context.Context, _ string) ([]pkgazure.AKSNodePool, error) {
+	return f.nodePools, f.nodePoolsErr
+}
+
+func (f *fakeAzure) ListManagedIdentities(_ context.Context) ([]pkgazure.ManagedIdentity, error) {
+	return f.identities, f.identitiesErr
+}
+
+func (f *fakeAzure) ListSubnets(_ context.Context) ([]pkgazure.Subnet, error) {
+	return f.subnets, f.subnetsErr
 }
 
 type fakeSource struct {

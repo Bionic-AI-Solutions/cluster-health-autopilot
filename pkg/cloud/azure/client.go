@@ -40,4 +40,21 @@ type Client interface {
 	// ListDisks lists Managed Disk resources in the bound
 	// subscription. Returns (nil, nil) when there are none.
 	ListDisks(ctx context.Context) ([]Disk, error)
+
+	// GetAKSCluster fetches a single AKS managed cluster by name.
+	// Returns (nil, nil) when it does not exist.
+	GetAKSCluster(ctx context.Context, name string) (*AKSCluster, error)
+
+	// ListAKSNodePools returns the agent pools for the named AKS
+	// cluster. Returns (nil, nil) when the cluster has none.
+	ListAKSNodePools(ctx context.Context, clusterName string) ([]AKSNodePool, error)
+
+	// ListManagedIdentities lists user-assigned managed identities
+	// in the bound subscription. Returns (nil, nil) when there are
+	// none.
+	ListManagedIdentities(ctx context.Context) ([]ManagedIdentity, error)
+
+	// ListSubnets lists VNet subnets in the bound subscription.
+	// Returns (nil, nil) when there are none.
+	ListSubnets(ctx context.Context) ([]Subnet, error)
 }

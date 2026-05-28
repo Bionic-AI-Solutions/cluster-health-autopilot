@@ -52,6 +52,10 @@ func RegisterCloudOSS(reg *registry.Registry, awsEnabled, gcpEnabled, azureEnabl
 		reg.RegisterCloudProbe(
 			azureprobes.SQLDatabases{},
 			azureprobes.Disks{},
+			azureprobes.AKSControlPlane{},
+			azureprobes.AKSNodePools{},
+			azureprobes.ManagedIdentities{},
+			azureprobes.Subnets{},
 		)
 	}
 }

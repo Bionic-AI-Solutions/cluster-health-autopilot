@@ -94,6 +94,17 @@ First two probes of the M2 Azure slice. The remaining 8 probes (AKS control plan
 - **`catalog/cloud.go`** — `RegisterCloudOSS` now registers the Azure probes when `azureEnabled=true` (the last unused parameter).
 - 22 unit tests via fake client (12 SQLDatabases + 10 Disks).
 
+### Added — Azure cloud probes (Sprint 2 slice)
+
+Four more Azure probes (6 of 10 now shipped). Mirrors GCP Sprint 2. Remaining 4 (App Gateway backend, certs, Storage public-access, Key Vault) follow in Sprint 3.
+
+- **`AKSControlPlane`** — configured cluster (env `CLOUD_AZURE_AKS_CLUSTER`) `ProvisioningState=Failed` or `PowerState=Stopped` critical, non-Succeeded warning, not-found critical. Mirrors AWS `EKSControlPlane` / GCP `GKEControlPlane`. Subject `azure-aks/<subscription>/<resourceGroup>/<cluster>`.
+- **`AKSNodePools`** — Failed provisioning critical, Stopped / non-Succeeded warning. Subject `azure-aks-nodepool/<subscription>/<cluster>/<pool>`.
+- **`ManagedIdentities`** — user-assigned identity with zero role assignments warning (orphaned; workloads using it silently lack permissions). Mirrors AWS `IAMRoles` / GCP `IAMServiceAccounts`. Subject `azure-mi/<subscription>/<resourceGroup>/<name>`.
+- **`Subnets`** — VNet subnet IP-exhaustion: < 10% free critical, < 25% warning; zero-total skipped. Subject `azure-subnet/<subscription>/<vnet>/<name>`.
+- `pkg/cloud/azure` Client + types extended; `catalog/cloud.go` registers all 6 Azure probes when `azureEnabled=true`.
+- 17 unit tests.
+
 ### Added — M2 K8s probes (Kong / HPA / ArgoCD / Velero)
 
 Four new resource-event-driven probes from `docs/design/2026-05-trigger-expansion-roadmap.md` M2/M3 and v1.8 roadmap §A5. Each auto-skips when its CRD is absent (or no-ops on an empty list for HPA), so default-on is safe. Each is independently disablable via `CHA_PROBE_<NAME>=off`.

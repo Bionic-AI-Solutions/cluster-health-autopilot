@@ -47,3 +47,50 @@ type Disk struct {
 	DetachedDuration  time.Duration `json:"detachedDuration,omitempty"` // Live: now - lastDetach; 0 in Snapshot
 	CreatedAt         time.Time     `json:"createdAt,omitempty"`
 }
+
+// AKSCluster is the narrow projection of an AKS managed cluster.
+// ProvisioningState: Succeeded, Failed, Creating, Updating, Deleting.
+// PowerState.Code: Running, Stopped.
+type AKSCluster struct {
+	Name              string    `json:"name"`
+	ResourceGroup     string    `json:"resourceGroup"`
+	Location          string    `json:"location,omitempty"`
+	ProvisioningState string    `json:"provisioningState"`
+	PowerState        string    `json:"powerState,omitempty"` // Running / Stopped
+	KubernetesVersion string    `json:"kubernetesVersion,omitempty"`
+	CreatedAt         time.Time `json:"createdAt,omitempty"`
+}
+
+// AKSNodePool is the narrow projection of an AKS agent pool.
+// ProvisioningState mirrors the cluster; PowerState too.
+type AKSNodePool struct {
+	Name              string `json:"name"`
+	ClusterName       string `json:"clusterName"`
+	ProvisioningState string `json:"provisioningState"`
+	PowerState        string `json:"powerState,omitempty"`
+	Count             int64  `json:"count,omitempty"`
+	Autoscaling       bool   `json:"autoscaling,omitempty"`
+}
+
+// ManagedIdentity is the narrow projection of a user-assigned managed
+// identity. The drift signal is an identity with no role assignments
+// (orphaned) — it's referenced by a workload but grants nothing, so
+// the workload silently lacks permissions.
+type ManagedIdentity struct {
+	Name            string `json:"name"`
+	ResourceGroup   string `json:"resourceGroup"`
+	ClientID        string `json:"clientId,omitempty"`
+	RoleAssignmentN int    `json:"roleAssignmentCount"` // number of role assignments
+	FederatedCredsN int    `json:"federatedCredsCount"` // workload-identity federated credentials
+}
+
+// Subnet is the narrow projection of a VNet subnet. Drift signal:
+// IP-address exhaustion.
+type Subnet struct {
+	Name             string `json:"name"`
+	VNet             string `json:"vnet,omitempty"`
+	ResourceGroup    string `json:"resourceGroup,omitempty"`
+	AddressPrefix    string `json:"addressPrefix,omitempty"`
+	AvailableIPCount int64  `json:"availableIPCount"`
+	TotalIPCount     int64  `json:"totalIPCount"`
+}
