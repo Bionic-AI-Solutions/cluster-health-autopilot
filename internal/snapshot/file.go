@@ -196,6 +196,11 @@ var kindToResource = map[string]string{
 	"Order":                 "orders",
 	"Secret":                "secrets",
 	"Ingress":               "ingresses",
+	// M2 probe-class additions (v1.8).
+	"HorizontalPodAutoscaler": "horizontalpodautoscalers",
+	"KongPlugin":              "kongplugins",
+	"Application":             "applications", // ArgoCD argoproj.io/v1alpha1
+	"Backup":                  "backups",      // Velero velero.io/v1
 }
 
 func indexKey(gvr schema.GroupVersionResource) string {

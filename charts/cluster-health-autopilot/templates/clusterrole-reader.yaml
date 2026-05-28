@@ -101,6 +101,16 @@ rules:
   - apiGroups: ["ceph.rook.io"]
     resources: ["cephclusters"]
     verbs: ["get", "list", "watch"]
+  # M2 probe-class CRD reads (v1.8). Each probe auto-skips when its
+  # CRD is absent, so these rules are no-ops on clusters that don't
+  # run Kong / Velero. (autoscaling HPA + argoproj.io Application
+  # reads are already granted above for CapacityDrift + GitOpsDrift.)
+  - apiGroups: ["configuration.konghq.com"]
+    resources: ["kongplugins"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["velero.io"]
+    resources: ["backups"]
+    verbs: ["get", "list", "watch"]
 {{- if .Values.driftReport.enabled }}
   # DriftReport CRD — read existing CRs to compute the upsert diff each tick.
   # watch added so watcher mode can seed its seen-map on startup.
