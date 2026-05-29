@@ -17,6 +17,21 @@ serves the latest tagged chart cut.
 
 ---
 
+## [1.8.6] — 2026-05-29
+
+P0 signal-hygiene from the AI-remediation plan (`docs/design/` in CHA-com), plus the chart arg that activates commercial click-to-fix delivery.
+
+### Fixed — false-positive criticals (alert-fatigue de-noising)
+
+- **HPAScaling: `ScalingActive=False` / `reason=ScalingDisabled` is now Warning, not Critical.** That condition is the *expected* state when an HPA's target is intentionally at zero (KEDA scale-to-zero, or a Deployment scaled to 0) — the autoscaler simply goes dormant. Flagging it CRITICAL was a false positive that trained operators to ignore the board. Every other reason (`FailedGetScale`, `FailedGetResourceMetric`, quota/PDB blocks) stays CRITICAL.
+- **Endpoint discovery skips `cm-acme-http-solver-*` Ingresses.** cert-manager spawns these transient HTTP-01 challenge solvers and deletes them on completion; probing them produced churning false-criticals and ticket spam for hosts that aren't real services.
+
+### Added
+
+- **`ai.approvalServerUrl`** chart value → `--approval-server-url` arg on the aiwatch (via `cha.aiArgs`). When set (with `approval.enabled`), the commercial CHA-com binary emits signed one-click click-to-fix links for T1/T2 proposals.
+
+---
+
 ## [1.8.5] — 2026-05-28
 
 Chart-only fix found while enabling the paid tier on a live cluster.

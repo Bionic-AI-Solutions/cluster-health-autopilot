@@ -424,6 +424,7 @@ ai:
   allowSaas: false        # set true to allow api.openai.com / api.anthropic.com endpoints
   llmFixerMatcher: false  # t1+: use the LLM-classified fixer matcher (falls back to keyword on error)
   auditLog: ""            # AI-event audit sink: "" (off) | "-" (stdout) | "/path/to.jsonl". Set for t1+ compliance.
+  approvalServerUrl: ""   # t1+: base URL of the approval-server (e.g. https://cha-approve.example.com). When set, T1/T2 proposals emit a signed one-click click-to-fix link. Pair with approval.enabled + approval.ingress.host.
   image:
     # The commercial CHA-com image for the aiwatch Deployment. Tag
     # defaults to "v<AppVersion>" (cha-com images carry a leading "v").

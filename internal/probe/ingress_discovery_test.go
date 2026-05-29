@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"testing"
 
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/snapshot"
@@ -117,6 +118,36 @@ func TestDiscoverIngressTargets_Defaults(t *testing.T) {
 		}
 	}
 }
+
+// cert-manager HTTP-01 solver Ingresses are transient and must never be
+// discovered as probe targets (they caused churning false-criticals +
+// ticket spam during the langfuse cert issuance).
+func TestDiscoverIngressTargets_SkipsAcmeSolver(t *testing.T) {
+	const list = `{
+  "apiVersion": "networking.k8s.io/v1", "kind": "IngressList",
+  "items": [
+    {"apiVersion": "networking.k8s.io/v1", "kind": "Ingress",
+     "metadata": {"name": "real-ing", "namespace": "app"},
+     "spec": {"rules": [{"host": "real.example.com"}]}},
+    {"apiVersion": "networking.k8s.io/v1", "kind": "Ingress",
+     "metadata": {"name": "cm-acme-http-solver-2qkzp", "namespace": "app"},
+     "spec": {"rules": [{"host": "real.example.com"}]}}
+  ]
+}`
+	src := loadSrcDisc(t, map[string]string{"ingresses.json": list})
+	got := DiscoverIngressTargets(context.Background(), src, DefaultDiscoveryOptions(), nil)
+	for _, tgt := range got {
+		if tgt.Name != "" && (tgt.URL == "" || containsSolver(tgt.Name)) {
+			t.Errorf("acme solver ingress leaked into targets: %+v", tgt)
+		}
+	}
+	// real.example.com still discovered (via the real ingress).
+	if len(got) != 1 || got[0].URL != "https://real.example.com" {
+		t.Fatalf("expected only real.example.com; got: %+v", got)
+	}
+}
+
+func containsSolver(s string) bool { return strings.Contains(s, "cm-acme-http-solver-") }
 
 func TestDiscoverIngressTargets_Disabled(t *testing.T) {
 	src := loadSrcDisc(t, map[string]string{"ingresses.json": ingressList})

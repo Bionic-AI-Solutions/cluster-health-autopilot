@@ -95,6 +95,18 @@ const hpaHealthy = `{
   ]
 }`
 
+// ScalingActive=False with reason=ScalingDisabled is the expected state
+// for an intentionally scaled-to-zero / KEDA workload — must be Warning,
+// not Critical (false-positive de-noising).
+const hpaScalingDisabled = `{
+  "apiVersion": "autoscaling/v2", "kind": "HorizontalPodAutoscalerList",
+  "items": [
+    {"apiVersion": "autoscaling/v2", "kind": "HorizontalPodAutoscaler",
+     "metadata": {"name": "keda-hpa-comfyui", "namespace": "comfyui"},
+     "status": {"conditions": [{"type": "ScalingActive", "status": "False", "reason": "ScalingDisabled", "message": "scaling is disabled since the replica count of the target is zero"}]}}
+  ]
+}`
+
 func TestHPAScaling_NoHPAs_Healthy(t *testing.T) {
 	src := loadProbeSrc(t, map[string]string{})
 	r := HPAScaling{}.Run(context.Background(), src)
@@ -111,6 +123,20 @@ func TestHPAScaling_ScalingActiveFalse_Critical(t *testing.T) {
 	}
 	if len(r.Findings) != 1 || !strings.Contains(r.Findings[0].Message, "ScalingActive=False") {
 		t.Errorf("expected ScalingActive=False finding; got: %+v", r.Findings)
+	}
+}
+
+func TestHPAScaling_ScalingDisabled_Warning(t *testing.T) {
+	src := loadProbeSrc(t, map[string]string{"hpa.json": hpaScalingDisabled})
+	r := HPAScaling{}.Run(context.Background(), src)
+	if r.Component.Status == "CRITICAL" {
+		t.Fatalf("ScalingDisabled must not be CRITICAL (intentional scale-to-zero); got %s", r.Component.Status)
+	}
+	if len(r.Findings) != 1 || r.Findings[0].Severity != SeverityWarning {
+		t.Fatalf("expected one Warning finding; got: %+v", r.Findings)
+	}
+	if !strings.Contains(r.Findings[0].Message, "scale-to-zero") {
+		t.Errorf("warning message should explain the scale-to-zero expectation; got: %q", r.Findings[0].Message)
 	}
 }
 

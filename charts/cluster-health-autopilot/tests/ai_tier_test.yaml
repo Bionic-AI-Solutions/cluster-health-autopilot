@@ -74,9 +74,11 @@ tests:
       ai.endpoint: "https://mcp.baisoln.com/gpu-ai/v1"
       ai.model: "qwen3.6-35b-a3b-fp8"
     asserts:
-      - equal:
+      # Match the v-prefix pattern rather than a hardcoded tag so the test
+      # survives appVersion bumps (the default tag is v<AppVersion>).
+      - matchRegex:
           path: spec.template.spec.containers[0].image
-          value: docker4zerocool/cha-com:v1.8.2
+          pattern: ^docker4zerocool/cha-com:v[0-9]+\.[0-9]+\.[0-9]+$
 
   - it: AI_API_KEY env is sourced from the secret (never inlined)
     template: templates/aiwatch-deployment.yaml

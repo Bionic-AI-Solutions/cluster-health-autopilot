@@ -308,6 +308,9 @@ running the OSS image + operational loop. See docs/DEPLOYMENT.md.
 {{- with .Values.ai.auditLog }}
 - --ai-audit-log={{ . }}
 {{- end }}
+{{- with .Values.ai.approvalServerUrl }}
+- --approval-server-url={{ . }}
+{{- end }}
 {{- range (.Values.ai.t3).vaultAllowedPrefixes }}
 - --t3-vault-allowed-prefix={{ . }}
 {{- end }}
