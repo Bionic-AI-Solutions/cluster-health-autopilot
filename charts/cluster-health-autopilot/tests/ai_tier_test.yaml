@@ -113,6 +113,38 @@ tests:
             name: CHA_SIGNING_KEY_PATH
             value: /etc/cha/keys/signing.key
 
+  - it: RAG memory args render only when ai.memory.enabled
+    template: templates/aiwatch-deployment.yaml
+    set:
+      ai.enabled: true
+      ai.tier: t1
+      ai.endpoint: "https://mcp.baisoln.com/gpu-ai/v1"
+      ai.model: "qwen3.6-35b-a3b-fp8"
+      ai.memory.enabled: true
+      ai.memory.embeddings.model: "qwen3-embedding-0.6b"
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: "--memory-store-url=http://RELEASE-NAME-cluster-health-autopilot-rag.NAMESPACE.svc:6333"
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: "--memory-embeddings-model=qwen3-embedding-0.6b"
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: "--memory-topk=5"
+
+  - it: no RAG memory args when ai.memory disabled (default)
+    template: templates/aiwatch-deployment.yaml
+    set:
+      ai.enabled: true
+      ai.tier: t1
+      ai.endpoint: "https://mcp.baisoln.com/gpu-ai/v1"
+      ai.model: "qwen3.6-35b-a3b-fp8"
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].args
+          content: "--memory-store-url=http://RELEASE-NAME-cluster-health-autopilot-rag.NAMESPACE.svc:6333"
+
   - it: ai.enabled with no endpoint fails the render
     template: templates/aiwatch-deployment.yaml
     set:

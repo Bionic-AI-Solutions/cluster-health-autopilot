@@ -314,6 +314,14 @@ running the OSS image + operational loop. See docs/DEPLOYMENT.md.
 {{- range (.Values.ai.t3).vaultAllowedPrefixes }}
 - --t3-vault-allowed-prefix={{ . }}
 {{- end }}
+{{- if (.Values.ai.memory).enabled }}
+- --memory-store-url={{ (.Values.ai.memory).storeUrl | default (printf "http://%s-rag.%s.svc:6333" (include "cha.fullname" .) .Release.Namespace) }}
+{{- with (.Values.ai.memory.embeddings).endpoint }}
+- --memory-embeddings-endpoint={{ . }}
+{{- end }}
+- --memory-embeddings-model={{ required "ai.memory.embeddings.model is required when ai.memory.enabled" (.Values.ai.memory.embeddings).model }}
+- --memory-topk={{ (.Values.ai.memory).topK | default 5 }}
+{{- end }}
 {{- end -}}
 
 {{- /*
