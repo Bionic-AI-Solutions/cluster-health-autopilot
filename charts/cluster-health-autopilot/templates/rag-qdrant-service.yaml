@@ -1,0 +1,26 @@
+{{- if (.Values.ai.memory).enabled }}
+# ClusterIP service for the RAG vector store. The aiwatch reaches it at
+# http://<release>-rag.<ns>.svc:6333 (REST) for embed-upsert + retrieval.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "cha.fullname" . }}-rag
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "cha.labels" . | nindent 4 }}
+    cha.bionicaisolutions.com/role: rag
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "cha.selectorLabels" . | nindent 4 }}
+    cha.bionicaisolutions.com/role: rag
+  ports:
+    - name: http
+      port: 6333
+      targetPort: http
+      protocol: TCP
+    - name: grpc
+      port: 6334
+      targetPort: grpc
+      protocol: TCP
+{{- end }}

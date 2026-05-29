@@ -17,6 +17,17 @@ serves the latest tagged chart cut.
 
 ---
 
+## [1.8.8] — 2026-05-29
+
+P2/G5a — the dedicated RAG vector store deployment (chart-only; off by default).
+
+### Added — in-namespace Qdrant RAG
+
+- **`ai.memory.enabled`** stands up a dedicated **Qdrant** vector store (StatefulSet + PVC + ClusterIP Service) in the install namespace, alongside the other CHA objects. The aiwatch (P2/G5b–c, CHA-com) embeds ResolutionRecords via the in-cluster gpu-ai embeddings endpoint and retrieves prior resolutions to ground T1–T3 proposals. The ResolutionRecord CRD (1.8.7) is the system-of-record; Qdrant is the rebuildable semantic index over it.
+- New `ai.memory.*` values: `image`, `storage.{size,className}`, `resources`, `embeddings.{endpoint,model}`, `storeUrl`, `topK`. Off by default and independent of `ai.enabled` so it can be rolled out separately.
+
+---
+
 ## [1.8.6] — 2026-05-29
 
 P0 signal-hygiene from the AI-remediation plan (`docs/design/` in CHA-com), plus the chart arg that activates commercial click-to-fix delivery.
