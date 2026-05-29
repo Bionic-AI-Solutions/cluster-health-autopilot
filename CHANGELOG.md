@@ -17,6 +17,16 @@ serves the latest tagged chart cut.
 
 ---
 
+## [1.8.10] — 2026-05-29
+
+P2/G5c chart wiring — connects the deployed aiwatch to the RAG store.
+
+### Added
+
+- When `ai.memory.enabled`, `cha.aiArgs` now passes `--memory-store-url` (defaults to the in-namespace Qdrant service `http://<release>-rag.<ns>.svc:6333`), `--memory-embeddings-endpoint` (defaults to `ai.endpoint`), `--memory-embeddings-model` (required), and `--memory-topk` to the aiwatch. With this, the commercial binary's RAG grounding (CHA-com G5c retrieve half) is reachable end-to-end; off by default.
+
+---
+
 ## [1.8.9] — 2026-05-29
 
 P1/G4 foundation for the AI-remediation memory loop. Chart-only effect (new CRD + RBAC); the recorder library is dormant until the AI write-path wires it (P2/G5c).
