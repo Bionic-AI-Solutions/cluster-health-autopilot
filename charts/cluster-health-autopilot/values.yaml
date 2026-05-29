@@ -443,6 +443,30 @@ ai:
     # dual human approval, but this gates the blast radius the LLM may
     # even reference.
     vaultAllowedPrefixes: []   # e.g. ["secret/data/cha-recovery/"]
+  # Dedicated RAG memory (P2). When enabled, stands up an in-namespace
+  # Qdrant vector store; the aiwatch embeds ResolutionRecords via the
+  # in-cluster gpu-ai embeddings endpoint and retrieves prior resolutions
+  # to ground proposals. Off by default (independent of ai.enabled so it
+  # can be rolled out separately).
+  memory:
+    enabled: false
+    image:
+      repository: qdrant/qdrant
+      tag: "v1.12.4"
+      pullPolicy: IfNotPresent
+    storage:
+      size: "5Gi"
+      className: ""          # default storage class if empty (use nfs-client/cephfs on mixed GPU nodes)
+    resources: {}
+    # Embeddings endpoint the aiwatch uses to vectorize records. Reuses
+    # the in-cluster gpu-ai model — no new model to host.
+    embeddings:
+      endpoint: "https://mcp.baisoln.com/gpu-ai/v1"   # OpenAI-compatible /embeddings
+      model: "qwen3-embedding-0.6b"
+      # The vector store URL the aiwatch talks to (in-namespace service).
+      # Defaults to the chart's own Qdrant service when empty.
+    storeUrl: ""             # default: http://<release>-rag.<ns>.svc:6333
+    topK: 5                  # how many prior resolutions to retrieve per finding
   rateLimit:
     actionsPerHour: 5     # AI-proposed actions/hour budget
     tokensPerHour: 1000000
