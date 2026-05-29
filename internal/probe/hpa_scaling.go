@@ -72,10 +72,24 @@ func (HPAScaling) Run(ctx context.Context, src snapshot.Source) Result {
 			if (t == "ScalingActive" || t == "AbleToScale") && s == "False" {
 				reason, _ := cond["reason"].(string)
 				msg, _ := cond["message"].(string)
+				// ScalingActive=False / reason=ScalingDisabled is the
+				// EXPECTED state when the target is intentionally at zero
+				// (KEDA scale-to-zero, or a Deployment scaled to 0) — the
+				// HPA simply goes dormant. Flagging it CRITICAL is a false
+				// positive that erodes trust, so downgrade to Warning
+				// (visible, not paging). Every other reason
+				// (FailedGetScale, FailedGetResourceMetric, quota/PDB
+				// blocks, etc.) stays CRITICAL.
+				sev := SeverityCritical
+				m := fmt.Sprintf("HPA %s/%s %s=False (reason=%s)", ns, name, t, reason)
+				if t == "ScalingActive" && reason == "ScalingDisabled" {
+					sev = SeverityWarning
+					m = fmt.Sprintf("HPA %s/%s autoscaling inactive (reason=ScalingDisabled) — expected when the target is scaled to zero / KEDA scale-to-zero; not an outage", ns, name)
+				}
 				findings = append(findings, Finding{
 					Component:   subject,
-					Severity:    SeverityCritical,
-					Message:     fmt.Sprintf("HPA %s/%s %s=False (reason=%s)", ns, name, t, reason),
+					Severity:    sev,
+					Message:     m,
 					Remediation: fmt.Sprintf("kubectl describe hpa %s -n %s — controller's last message: %s", name, ns, msg),
 				})
 				break

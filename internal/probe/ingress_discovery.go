@@ -108,6 +108,13 @@ func DiscoverIngressTargets(
 		if _, skip := opts.SkipNamespaces[ns]; skip {
 			continue
 		}
+		if isEphemeralIngress(ing.GetName()) {
+			// cert-manager spawns short-lived cm-acme-http-solver-*
+			// Ingresses during an HTTP-01 challenge and deletes them on
+			// completion. Probing them produces churning false-criticals
+			// (and ticket spam) for hosts that aren't real services.
+			continue
+		}
 		if v, ok := ing.GetAnnotations()[annotation]; ok && strings.EqualFold(v, "true") {
 			continue
 		}
@@ -140,6 +147,14 @@ func DiscoverIngressTargets(
 	// Stable order — same snapshot must produce the same target list.
 	sort.Slice(out, func(i, j int) bool { return out[i].URL < out[j].URL })
 	return out
+}
+
+// isEphemeralIngress reports whether an Ingress is a transient artifact
+// that should never be probed as a real endpoint. Currently matches
+// cert-manager's HTTP-01 challenge solvers (cm-acme-http-solver-*), which
+// exist only for the duration of an ACME challenge.
+func isEphemeralIngress(name string) bool {
+	return strings.HasPrefix(name, "cm-acme-http-solver-")
 }
 
 // hostnamesOf returns the hostname component of each target's URL.
