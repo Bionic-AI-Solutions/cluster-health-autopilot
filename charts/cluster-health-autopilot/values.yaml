@@ -496,6 +496,17 @@ approval:
     pullPolicy: IfNotPresent
   signingKey:
     secretName: cha-approval-signing-key
+  # G10 approval-HA: leave store.backend empty (default in-memory) for the
+  # default single-replica posture. Set to "configmap" to share replay +
+  # runbook state across replicas via Kubernetes — required when running
+  # replicas > 1, otherwise a token used on one replica can be replayed on
+  # another. The chart provisions the matching Role + RoleBinding only when
+  # backend = configmap (minimum-privilege otherwise).
+  store:
+    backend: ""              # "" (= inmemory) | configmap
+    namespace: ""            # default = release namespace
+    replayConfigMap: cha-approval-replay
+    runbookConfigMap: cha-approval-runbooks
   ingress:
     enabled: false
     host: ""               # REQUIRED if approval.ingress.enabled; e.g. cha-approve.example.com

@@ -17,6 +17,16 @@ serves the latest tagged chart cut.
 
 ---
 
+## [1.8.12] — 2026-05-30
+
+Chart wiring for the approval-server HA backend introduced in CHA-com PR #16.
+
+### Added
+
+- `approval.store.backend=configmap` (and `.namespace`, `.replayConfigMap`, `.runbookConfigMap`): when set, passes the matching `--store-*` flags to `cha-com approval-server`, switches the Deployment to `RollingUpdate`, and provisions a per-namespace Role + RoleBinding granting the approval-server SA `get/update/create` on the named ConfigMaps (minimum-privilege: NOT granted in the default in-memory posture). With this set + `approval.replicas > 1`, the approval-server is HA-safe (a JTI used on replica A cannot be replayed on B; T3 dual-approval state cannot fork).
+
+---
+
 ## [1.8.11] — 2026-05-30
 
 Chart-only fix: the RAG Qdrant StatefulSet (added in 1.8.9) CrashLooped on first deploy because `securityContext.readOnlyRootFilesystem: true` made Qdrant's default snapshots/temp paths unwritable. Redirected both under the mounted storage PVC via `QDRANT__STORAGE__SNAPSHOTS_PATH` and `QDRANT__STORAGE__TEMP_PATH` env vars — single volume now serves all writes.

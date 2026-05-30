@@ -88,4 +88,46 @@ subjects:
   - kind: ServiceAccount
     name: {{ include "cha.fullname" . }}-approval-server
     namespace: {{ .Release.Namespace }}
+{{- if eq (.Values.approval.store).backend "configmap" }}
+---
+# G10 approval-HA: when the operator selects the shared ConfigMap store
+# backend, the approval-server SA needs RW on the replay + runbook
+# ConfigMaps. Gated on store.backend so the inmemory deploy stays
+# minimum-privilege (no extra ConfigMap access).
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "cha.fullname" . }}-approval-stores
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "cha.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    resourceNames:
+      - {{ .Values.approval.store.replayConfigMap | default "cha-approval-replay" }}
+      - {{ .Values.approval.store.runbookConfigMap | default "cha-approval-runbooks" }}
+    verbs: ["get", "update"]
+  # Initial create-if-not-exists: scoped without resourceNames since
+  # create cannot be restricted by name.
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "cha.fullname" . }}-approval-stores
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "cha.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "cha.fullname" . }}-approval-stores
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "cha.fullname" . }}-approval-server
+    namespace: {{ .Release.Namespace }}
+{{- end }}
 {{- end }}
