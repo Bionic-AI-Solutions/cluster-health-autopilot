@@ -47,5 +47,9 @@ RUN go build \
 FROM gcr.io/distroless/static:nonroot
 COPY --from=builder /out/cha /usr/local/bin/cha
 COPY --from=builder /out/cha-operator /cha-operator
-USER nonroot:nonroot
+# Numeric UID matches distroless's `nonroot` user (65532). MUST stay
+# numeric — kubelet's `runAsNonRoot: true` admission rejects images
+# whose USER directive is a non-numeric name, since it can't verify
+# the resolved UID is non-zero without running the image.
+USER 65532:65532
 ENTRYPOINT ["/usr/local/bin/cha"]
