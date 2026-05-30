@@ -231,12 +231,32 @@ type ClusterHealthAutopilotStatus struct {
 // constants so tests and metrics dashboards reference one source.
 const (
 	// ConditionReady reflects whether the entire CR is reconciled.
+	// True iff all subresource reconciles succeeded AND every other
+	// individual condition is True (currently WatcherRunning +
+	// ReaderRBACReady — the AND grows as Phase 2 adds verifiers).
 	ConditionReady = "Ready"
 
 	// ConditionWatcherRunning is set True when the managed watcher
 	// Deployment has at least one available replica.
 	ConditionWatcherRunning = "WatcherRunning"
+
+	// ConditionReaderRBACReady is set True when the operator has
+	// provisioned the shared reader ClusterRole AND the per-CR
+	// ClusterRoleBinding that grants the watcher SA cluster-wide
+	// read on the probe surface. False when either RBAC object is
+	// missing — the watcher would get `forbidden` on every List
+	// without them.
+	ConditionReaderRBACReady = "ReaderRBACReady"
 )
+
+// FinalizerOperatorRBAC tags a ClusterHealthAutopilot CR for the RBAC
+// cleanup pass. Cluster-scoped resources (the per-CR ClusterRoleBinding
+// the operator provisions) can NOT carry an ownerRef back to a
+// namespaced CR — Kubernetes' garbage collector drops the ref and
+// orphans the child. The finalizer gives the controller a chance to
+// delete the binding before the CR is GC'd, so cluster-scoped state
+// stays consistent with CR lifecycle.
+const FinalizerOperatorRBAC = "cha.bionicaisolutions.com/operator-rbac"
 
 // ClusterHealthAutopilot is the Schema for the clusterhealthautopilots
 // API. One CR per CHA install — replaces the Helm values.yaml that

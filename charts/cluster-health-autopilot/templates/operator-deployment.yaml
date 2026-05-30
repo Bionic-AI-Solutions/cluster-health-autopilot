@@ -52,6 +52,16 @@ rules:
   - apiGroups: [""]
     resources: ["events"]
     verbs: ["create", "patch"]
+  # Phase 1c: operator-provisioned reader RBAC. The operator creates +
+  # maintains a SHARED ClusterRole (cha-operator-watcher-reader) plus a
+  # PER-CR ClusterRoleBinding so the watcher SA gets cluster-wide read
+  # on the probe surface without depending on the chart's
+  # clusterrole-reader template. The role's verbs are static; bindings
+  # follow CR lifecycle via FinalizerOperatorRBAC. Get + list also
+  # power the ReaderRBACReady status condition.
+  - apiGroups: ["rbac.authorization.k8s.io"]
+    resources: ["clusterroles", "clusterrolebindings"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding

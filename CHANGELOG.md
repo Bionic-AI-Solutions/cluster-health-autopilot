@@ -39,6 +39,16 @@ serves the latest tagged chart cut.
 
 - Stale package docs in `pkg/cloud/gcp/client.go` and `pkg/cloud/azure/client.go` that claimed "Live wrapper deferred to a follow-up PR" — both Live wrappers shipped (v1.7 baseline; v1.9 Cloud Monitoring / Azure Monitor / BackendHealth LRO additions in PRs #103–#106). Comments now reflect what's on `main`.
 
+### Added — Operator Phase 1c (slice A) — operator-provisioned reader RBAC
+
+- `api/v1alpha1`: new `ConditionReaderRBACReady` condition + `FinalizerOperatorRBAC` (`cha.bionicaisolutions.com/operator-rbac`) — cluster-scoped resources can't carry namespaced ownerRefs, so the finalizer drives cleanup.
+- `internal/operator/rbac_builders.go`: `BuildReaderClusterRole()` returns a shared cluster-scoped role mirroring `templates/clusterrole-reader.yaml`'s verb set. `BuildReaderClusterRoleBinding(cr)` returns a per-CR binding labeled `managed-by-cr` + `cr-namespace` for safe identification by the finalizer.
+- `internal/operator/reconciler.go`: adds `reconcileReaderRBAC()` (idempotent CreateOrUpdate on the shared role + per-CR binding), `finalizeReaderRBAC()` (deletes ONLY bindings we labeled; defense-in-depth against name collisions), and finalizer add/remove paths on every reconcile. `ReaderRBACReady` is computed from observed state: ClusterRole present + binding present + subject targets the CR's SA. `Ready` is now `(no reconcile error) AND ReaderRBACReady`; `WatcherRunning` continues to track availability orthogonally.
+- Chart: operator ClusterRole extended with cluster-wide CRUD on `rbac.authorization.k8s.io/{clusterroles,clusterrolebindings}`.
+- 6 new reconciler tests with the controller-runtime fake client: creates-both / finalizer-add / on-delete-removes-binding-and-finalizer / shared-ClusterRole-survives-CR-delete / defense-in-depth-skips-unlabeled-bindings / ReaderRBACReady-True / WrongSubject-detected-and-corrected.
+- Coexistence contract: operator-managed binding lands ALONGSIDE the chart-managed binding (RBAC unions across bindings; same SA + same role from two managers is harmless). Operators can run both side-by-side; chart binding stays helm-owned until `helm uninstall`.
+- **NOT in this slice**: OLM bundle (Phase 1c slice B) + CI bundle-smoke (Phase 1c slice C). Each is a separate PR per `docs/design/2026-05-v1.9-operator-phase-1c.md`.
+
 ### Added — `Silence` CRD + watch-loop suppression
 
 - New `Silence` CRD (`silences.cha.bionicaisolutions.com`, namespace-scoped, `sil` short name). Operators create a Silence to mute a known-benign-but-unfixable finding for a bounded window. Matcher fields: `source` / `subject` / `severity` (empty = wildcard); CRD validation rejects an entirely-empty matcher. `spec.until` is required; past expiry the Silence becomes a no-op but is NOT auto-deleted (audit trail). Optional `reason` + `createdBy` for "why is this muted?" answers.
