@@ -39,6 +39,13 @@ serves the latest tagged chart cut.
 
 - Stale package docs in `pkg/cloud/gcp/client.go` and `pkg/cloud/azure/client.go` that claimed "Live wrapper deferred to a follow-up PR" — both Live wrappers shipped (v1.7 baseline; v1.9 Cloud Monitoring / Azure Monitor / BackendHealth LRO additions in PRs #103–#106). Comments now reflect what's on `main`.
 
+### Added — Operator Phase 1c (slice B) — OLM bundle scaffolding
+
+- New `bundle/` directory and `bundle.Dockerfile` carrying the OLM ClusterServiceVersion + the four shipped CRDs (`ClusterHealthAutopilot`, `Silence`, `ResolutionRecord`, `DriftReport`). The CSV's `install.spec` mirrors `templates/operator-deployment.yaml` (image, args, env, ports, probes, securityContext) so `operator-sdk run bundle <image>` produces structurally the same operator as `helm install`.
+- `installModes`: `OwnNamespace` + `SingleNamespace` + `AllNamespaces` (true); `MultiNamespace` (false) — explicit because the reconciler scope decisions in Phase 1b watch all-namespaces.
+- New parity-guard tests in `internal/operator/bundle_parity_test.go`: (1) CSV is valid YAML + kind=ClusterServiceVersion; (2) every CRD shipped in `bundle/manifests/` is declared under CSV `customresourcedefinitions.owned` (no orphan CRDs); (3) the chart's operator ClusterRole rules and the CSV's `clusterPermissions[0].rules` carry the same `(apiGroup, resource)` set (catches the common drift pattern where someone adds a rule to one file and forgets the other).
+- **NOT in this slice**: CI bundle-smoke job using `operator-sdk run bundle` against kind — Phase 1c slice C, separate PR.
+
 ### Added — Operator Phase 1c (slice A) — operator-provisioned reader RBAC
 
 - `api/v1alpha1`: new `ConditionReaderRBACReady` condition + `FinalizerOperatorRBAC` (`cha.bionicaisolutions.com/operator-rbac`) — cluster-scoped resources can't carry namespaced ownerRefs, so the finalizer drives cleanup.

@@ -1,0 +1,293 @@
+# ClusterHealthAutopilot CRD — phase-1 operator foundation.
+#
+# One CR per CHA install. The cha-operator binary (Phase 2) will
+# reconcile this CR into the watcher Deployment, diagnose/remediate
+# CronJobs, ServiceAccount, and the existing ClusterRole bindings.
+#
+# Phase 1 ships the CRD shape only. The reconcile loop lands in the
+# next PR. Installing this CRD on a cluster without the operator
+# binary is harmless: the resource is just queryable state with no
+# controller yet.
+#
+# Schema is intentionally a thin x-kubernetes-preserve-unknown-fields
+# envelope at the leaves — the Go types
+# (api/v1alpha1/clusterhealthautopilot_types.go) are the source of
+# truth and the controller's typed builder validates inputs.
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: clusterhealthautopilots.cha.bionicaisolutions.com
+  labels:
+    helm.sh/chart: cluster-health-autopilot-1.8.12
+    app.kubernetes.io/name: cluster-health-autopilot
+    app.kubernetes.io/instance: cha
+    app.kubernetes.io/version: "1.8.6"
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: cluster-health-autopilot
+  annotations:
+    "helm.sh/resource-policy": keep
+spec:
+  group: cha.bionicaisolutions.com
+  scope: Namespaced
+  names:
+    kind: ClusterHealthAutopilot
+    plural: clusterhealthautopilots
+    singular: clusterhealthautopilot
+    shortNames:
+      - cha
+    categories:
+      - cha
+      - cluster-health
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      subresources:
+        status: {}
+      schema:
+        openAPIV3Schema:
+          type: object
+          required:
+            - spec
+          properties:
+            apiVersion:
+              type: string
+            kind:
+              type: string
+            metadata:
+              type: object
+            spec:
+              type: object
+              required:
+                - image
+              properties:
+                image:
+                  type: object
+                  required:
+                    - repository
+                    - tag
+                  properties:
+                    repository:
+                      type: string
+                      minLength: 1
+                    tag:
+                      type: string
+                      minLength: 1
+                    pullPolicy:
+                      type: string
+                      enum: ["", "Always", "IfNotPresent", "Never"]
+                    pullSecrets:
+                      type: array
+                      items:
+                        type: string
+                serviceAccountName:
+                  type: string
+                watcher:
+                  type: object
+                  required:
+                    - enabled
+                  properties:
+                    enabled:
+                      type: boolean
+                    replicas:
+                      type: integer
+                      minimum: 0
+                    debounce:
+                      type: string
+                    resyncPeriod:
+                      type: string
+                diagnose:
+                  type: object
+                  required:
+                    - enabled
+                  properties:
+                    enabled:
+                      type: boolean
+                    schedule:
+                      type: string
+                    backoffLimit:
+                      type: integer
+                      minimum: 0
+                    activeDeadlineSeconds:
+                      type: integer
+                      minimum: 0
+                remediate:
+                  type: object
+                  required:
+                    - enabled
+                  properties:
+                    enabled:
+                      type: boolean
+                    schedule:
+                      type: string
+                    dryRun:
+                      type: boolean
+                alerting:
+                  type: object
+                  properties:
+                    slack:
+                      type: object
+                      properties:
+                        alerts:
+                          type: object
+                          required: [secretName]
+                          properties:
+                            secretName:
+                              type: string
+                              minLength: 1
+                            secretKey:
+                              type: string
+                        critical:
+                          type: object
+                          required: [secretName]
+                          properties:
+                            secretName:
+                              type: string
+                              minLength: 1
+                            secretKey:
+                              type: string
+                        healthInfo:
+                          type: object
+                          required: [secretName]
+                          properties:
+                            secretName:
+                              type: string
+                              minLength: 1
+                            secretKey:
+                              type: string
+                    alertmanager:
+                      type: object
+                      required:
+                        - url
+                        - clusterName
+                      properties:
+                        url:
+                          type: string
+                          minLength: 1
+                        clusterName:
+                          type: string
+                          minLength: 1
+                ai:
+                  # AISpec — CHA-com paid-tier AI watcher + approval-
+                  # server + optional RAG store. Schema lands in Phase
+                  # 1c; the reconciler does NOT yet consume these
+                  # fields (configure via the chart's ai.* helm values
+                  # until Phase 2 wires them).
+                  type: object
+                  properties:
+                    enabled:
+                      type: boolean
+                    tier:
+                      type: string
+                      enum: [off, t0, t1, t2, t3]
+                    endpoint:
+                      type: string
+                    model:
+                      type: string
+                    interval:
+                      type: string
+                    allowSaas:
+                      type: boolean
+                    llmFixerMatcher:
+                      type: boolean
+                    auditLog:
+                      type: string
+                    approvalServerUrl:
+                      type: string
+                    image:
+                      type: object
+                      properties:
+                        repository:
+                          type: string
+                        tag:
+                          type: string
+                        pullPolicy:
+                          type: string
+                        pullSecrets:
+                          type: array
+                          items:
+                            type: string
+                    apiKey:
+                      type: object
+                      properties:
+                        secretName:
+                          type: string
+                        secretKey:
+                          type: string
+                        envName:
+                          type: string
+                        header:
+                          type: string
+                    t3:
+                      type: object
+                      properties:
+                        vaultAllowedPrefixes:
+                          type: array
+                          items:
+                            type: string
+                    memory:
+                      type: object
+                      properties:
+                        enabled:
+                          type: boolean
+                        image:
+                          type: object
+                          properties:
+                            repository:
+                              type: string
+                            tag:
+                              type: string
+                            pullPolicy:
+                              type: string
+                        storage:
+                          type: object
+                          properties:
+                            size:
+                              type: string
+                            className:
+                              type: string
+                        embeddings:
+                          type: object
+                          properties:
+                            endpoint:
+                              type: string
+                            model:
+                              type: string
+                        storeUrl:
+                          type: string
+                        topK:
+                          type: integer
+                          minimum: 0
+            status:
+              type: object
+              x-kubernetes-preserve-unknown-fields: true
+              properties:
+                observedGeneration:
+                  type: integer
+                conditions:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      type:
+                        type: string
+                      status:
+                        type: string
+                      reason:
+                        type: string
+                      message:
+                        type: string
+                      lastTransitionTime:
+                        type: string
+                      observedGeneration:
+                        type: integer
+      additionalPrinterColumns:
+        - name: Ready
+          type: string
+          jsonPath: .status.conditions[?(@.type=="Ready")].status
+        - name: Watcher
+          type: string
+          jsonPath: .status.conditions[?(@.type=="WatcherRunning")].status
+        - name: Age
+          type: date
+          jsonPath: .metadata.creationTimestamp
