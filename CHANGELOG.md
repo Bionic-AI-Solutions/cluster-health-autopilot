@@ -13,10 +13,12 @@ serves the latest tagged chart cut.
 
 ## [Unreleased]
 
-### Added — GCP Cloud Monitoring wiring for Cloud SQL disk utilization (P4/G9, vertical slice)
+### Added — Cloud Monitoring wiring, P4/G9
 
-- `internal/cloud/gcp`: new `monitoringQuerier` interface + `cloudMonitoringQuerier` impl backed by `google.golang.org/api/monitoring/v3`. Queries `cloudsql.googleapis.com/database/disk/utilization` (ALIGN_MEAN over a 5-min window) and converts the 0..1 fraction to a 0..100 integer percent. `LiveClient.ListCloudSQLInstances` now populates `DiskUsedPercent` from this querier when available, falling back to the `-1` "not measured" sentinel on a query failure or missing time-series. `monitoring.NewService` failures are non-fatal — the wrapper proceeds without Monitoring rather than failing install on partial credential grants. Unit-tested response parsing covers nil / empty / multi-point / round-to-nearest / over-100 cap / negative-defensive cases.
-- Same pattern (interface + injectable querier + best-effort fallback) is now the template for the remaining "not measured" signals: GCP `AvailableIPCount`, Azure storage / IP-pool / AppGW backend health.
+- **GCP Cloud SQL disk utilization** — `internal/cloud/gcp`: new `monitoringQuerier` interface + `cloudMonitoringQuerier` impl backed by `google.golang.org/api/monitoring/v3`. Queries `cloudsql.googleapis.com/database/disk/utilization` (ALIGN_MEAN over a 5-min window). `LiveClient.ListCloudSQLInstances` now populates `DiskUsedPercent` from the querier, falling back to `-1` "not measured" on failure. Non-fatal `monitoring.NewService` errors keep install working on partial credential grants.
+- **Azure SQL DB storage_percent** — `internal/cloud/azure`: same shape; `monitoringQuerier` interface + `azureMonitoringQuerier` impl backed by `github.com/Azure/azure-sdk-for-go/sdk/monitor/azquery`. Queries the `storage_percent` metric (Average over 5-min window) for each `Microsoft.Sql/servers/databases` ARM ID. `LiveClient.ListSQLDatabases` populates `UsedPercent` from the querier; `-1` fallback preserved. Non-fatal `azquery.NewMetricsClient` errors keep install working when the SP lacks the Monitoring Reader role.
+- Both impls use a small `metricsClient`/equivalent interface so unit tests stub the SDK without spinning up its transport. Parsing functions (`latestDiskUsedPercent`, `latestStoragePercent`) are pure + table-tested (nil / empty / multi-point / rounding / over-100 cap / defensive negatives).
+- Pattern (interface + injectable querier + soft-fail + pure parser) is now the template for the remaining "not measured" signals: GCP `AvailableIPCount`, Azure IP-pool / AppGW backend health.
 
 (Reserve for v1.9+ — remaining cloud Monitoring-API signals, operator Phase 1c (operator-provisioned reader ClusterRoleBinding + OLM bundle), trigger-classes C/E.)
 

@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
+	"github.com/Azure/azure-sdk-for-go/sdk/monitor/azquery"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appservice/armappservice/v4"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization/v2"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v6"
@@ -52,6 +53,12 @@ type LiveClient struct {
 	certs       *armappservice.CertificatesClient
 	storage     *armstorage.AccountsClient
 	vaults      *armkeyvault.VaultsClient
+
+	// monitor populates time-series-only signals (Azure SQL storage_percent
+	// etc.) that the ARM list APIs don't carry directly. nil is acceptable
+	// — callers fall back to the "not measured" sentinel (UsedPercent=-1),
+	// preserving the v1.8.x posture for partial credential grants.
+	monitor monitoringQuerier
 }
 
 // NewLiveClient constructs a Live Azure client bound to a subscription
@@ -119,6 +126,15 @@ func NewLiveClient(ctx context.Context, subscription, location string) (*LiveCli
 		return nil, fmt.Errorf("azure: key vaults: %w", err)
 	}
 
+	// Azure Monitor metrics client is best-effort: if NewMetricsClient
+	// fails (no Monitoring Reader role, network blocked, etc.) we proceed
+	// without it and fall back to the "not measured" sentinel for time-
+	// series-only signals. Preserves install-success on partial creds.
+	var monitor monitoringQuerier
+	if mc, mErr := azquery.NewMetricsClient(cred, nil); mErr == nil {
+		monitor = newAzureMonitoringQuerier(mc)
+	}
+
 	return &LiveClient{
 		subscription: subscription,
 		location:     location,
@@ -135,6 +151,7 @@ func NewLiveClient(ctx context.Context, subscription, location string) (*LiveCli
 		certs:        certs,
 		storage:      storageC,
 		vaults:       vaults,
+		monitor:      monitor,
 	}, nil
 }
 
@@ -188,10 +205,20 @@ func (l *LiveClient) ListSQLDatabases(ctx context.Context) ([]pkgazure.SQLDataba
 					}
 					// UsedPercent is not on the Database resource — it
 					// requires Azure Monitor metrics (storage_percent).
-					// -1 = "not measured"; the probe skips the storage
-					// check rather than treating it as 0% (which would
-					// silently never fire). v1.9 Monitor follow-up.
+					// G9: queried here when the Monitor client is wired.
+					// The querier returns -1 when no recent point exists
+					// (lag / fresh DB / Monitoring Reader role missing)
+					// — the probe then skips the storage check rather
+					// than treating it as 0%.
 					rec.UsedPercent = -1
+					if l.monitor != nil && db.ID != nil {
+						if pct, mErr := l.monitor.SQLDatabaseStoragePercent(ctx, *db.ID); mErr == nil {
+							rec.UsedPercent = pct
+						}
+						// Monitoring errors are swallowed: a query
+						// failure leaves UsedPercent at -1 (skip the
+						// check), same posture as "not measured."
+					}
 					// Azure SQL automated PITR backup is always on by
 					// platform for every non-Basic tier (retention is
 					// configurable 1–35 days but never zero), so this is
