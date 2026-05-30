@@ -64,8 +64,20 @@ rules:
   # clusterrole-reader template. The role's verbs are static; bindings
   # follow CR lifecycle via FinalizerOperatorRBAC. Get + list also
   # power the ReaderRBACReady status condition.
+  #
+  # `escalate` on clusterroles bypasses the K8s admission check that
+  # the creator must already hold every verb being granted — the
+  # reader role grants ~25 resource reads (pods, secrets, events,
+  # nodes, …) that the operator itself doesn't hold. Without
+  # escalate the reconciler 403s with `attempting to grant RBAC
+  # permissions not currently held`. `bind` on clusterroles bypasses
+  # the analogous check when creating a ClusterRoleBinding that
+  # references a role the operator doesn't fully hold.
   - apiGroups: ["rbac.authorization.k8s.io"]
-    resources: ["clusterroles", "clusterrolebindings"]
+    resources: ["clusterroles"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete", "escalate", "bind"]
+  - apiGroups: ["rbac.authorization.k8s.io"]
+    resources: ["clusterrolebindings"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1

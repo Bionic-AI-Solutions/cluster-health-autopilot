@@ -133,9 +133,16 @@ spec:
             - apiGroups: [""]
               resources: ["events"]
               verbs: ["create", "patch"]
-            # Phase 1c: operator-provisioned reader RBAC.
+            # Phase 1c: operator-provisioned reader RBAC. `escalate`
+            # bypasses the admission check that the creator must
+            # already hold every verb being granted — required because
+            # the reader role grants ~25 resource reads the operator
+            # itself doesn't hold. Mirror the chart in lockstep.
             - apiGroups: ["rbac.authorization.k8s.io"]
-              resources: ["clusterroles", "clusterrolebindings"]
+              resources: ["clusterroles"]
+              verbs: ["get", "list", "watch", "create", "update", "patch", "delete", "escalate", "bind"]
+            - apiGroups: ["rbac.authorization.k8s.io"]
+              resources: ["clusterrolebindings"]
               verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
 
       deployments:
