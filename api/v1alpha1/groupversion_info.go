@@ -21,6 +21,7 @@
 package v1alpha1
 
 import (
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )
@@ -50,6 +51,14 @@ func addKnownTypes(scheme *runtime.Scheme) error {
 		&Silence{},
 		&SilenceList{},
 	)
+	// MUST register metav1 types (ListOptions, GetOptions, …) against
+	// this GroupVersion. Without it, client-go can't serialize a List
+	// request body for the CR's group: the manager cache start-up
+	// crashes with `v1.ListOptions is not suitable for converting to
+	// "<group>/<version>"`. Bundle-smoke caught this; unit tests with
+	// the fake client don't, because the fake client bypasses the
+	// wire conversion path entirely.
+	metav1.AddToGroupVersion(scheme, GroupVersion)
 	return nil
 }
 
