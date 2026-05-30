@@ -11,6 +11,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -18,6 +19,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
@@ -73,6 +75,36 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		return ctrl.Result{}, fmt.Errorf("fetch CR: %w", err)
 	}
 
+	// 1b. Finalizer / deletion handling (Phase 1c).
+	//
+	// The per-CR reader ClusterRoleBinding the operator provisions is
+	// CLUSTER-SCOPED. Kubernetes' garbage collector does NOT honor an
+	// ownerRef from a namespaced parent to a cluster-scoped child — it
+	// drops the ref and orphans the binding. So a finalizer drives
+	// explicit cleanup before the CR is GC'd.
+	if !cr.DeletionTimestamp.IsZero() {
+		if controllerutil.ContainsFinalizer(&cr, chav1alpha1.FinalizerOperatorRBAC) {
+			if err := r.finalizeReaderRBAC(ctx, &cr); err != nil {
+				return ctrl.Result{}, fmt.Errorf("finalize reader RBAC: %w", err)
+			}
+			controllerutil.RemoveFinalizer(&cr, chav1alpha1.FinalizerOperatorRBAC)
+			if err := r.Update(ctx, &cr); err != nil {
+				return ctrl.Result{}, fmt.Errorf("clear finalizer: %w", err)
+			}
+		}
+		return ctrl.Result{}, nil
+	}
+	// Ensure the finalizer is in place BEFORE reconciling the binding
+	// (so a CR delete between create and the next reconcile still
+	// gets the cleanup pass).
+	if controllerutil.AddFinalizer(&cr, chav1alpha1.FinalizerOperatorRBAC) {
+		if err := r.Update(ctx, &cr); err != nil {
+			return ctrl.Result{}, fmt.Errorf("add finalizer: %w", err)
+		}
+		// The Update re-queues us with a fresh ResourceVersion; the
+		// continuation here uses the in-memory cr we already mutated.
+	}
+
 	// Validate before doing any work. Refusing here short-circuits
 	// the rest and surfaces the problem via Ready=False.
 	if cr.Spec.Image.Tag == "" {
@@ -91,12 +123,13 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	}
 
 	track(r.reconcileServiceAccount(ctx, &cr))
+	track(r.reconcileReaderRBAC(ctx, &cr))
 	track(r.reconcileWatcher(ctx, &cr))
 	track(r.reconcileDiagnose(ctx, &cr))
 	track(r.reconcileRemediate(ctx, &cr))
 
-	// 3. Compute Ready + WatcherRunning conditions from the
-	// observed cluster state.
+	// 3. Compute Ready + WatcherRunning + ReaderRBACReady conditions
+	// from the observed cluster state.
 	r.computeConditions(ctx, &cr, firstErr)
 
 	if err := r.updateStatus(ctx, &cr); err != nil {
@@ -129,6 +162,61 @@ func (r *Reconciler) reconcileServiceAccount(ctx context.Context, cr *chav1alpha
 		c := current.(*corev1.ServiceAccount)
 		mergeLabels(&c.ObjectMeta, desired.Labels)
 	})
+}
+
+// reconcileReaderRBAC ensures the operator-provisioned reader
+// ClusterRole + per-CR ClusterRoleBinding both exist. The role is
+// shared across every CR in the cluster; the binding is per-CR and
+// references the CR's ServiceAccount.
+//
+// Neither object carries an ownerRef back to the CR — they're cluster-
+// scoped, and Kubernetes drops namespaced ownerRefs on cluster-scoped
+// children. Cleanup runs through the finalizer (see finalizeReaderRBAC).
+func (r *Reconciler) reconcileReaderRBAC(ctx context.Context, cr *chav1alpha1.ClusterHealthAutopilot) error {
+	// 1. Shared ClusterRole — create-or-update idempotently. Survives
+	//    every CR delete on purpose (other CRs may still reference it).
+	desiredRole := BuildReaderClusterRole()
+	if err := r.createOrUpdate(ctx, desiredRole, func(current client.Object) {
+		c := current.(*rbacv1.ClusterRole)
+		c.Rules = desiredRole.Rules
+		mergeLabels(&c.ObjectMeta, desiredRole.Labels)
+	}); err != nil {
+		return fmt.Errorf("reader ClusterRole: %w", err)
+	}
+
+	// 2. Per-CR ClusterRoleBinding — Subject must point at the
+	//    operator-managed SA (or the BYO-SA when spec.serviceAccountName
+	//    is set). Re-derived from the CR every reconcile so a CR Spec
+	//    change to the SA name is picked up.
+	desiredBinding := BuildReaderClusterRoleBinding(cr)
+	return r.createOrUpdate(ctx, desiredBinding, func(current client.Object) {
+		c := current.(*rbacv1.ClusterRoleBinding)
+		c.RoleRef = desiredBinding.RoleRef
+		c.Subjects = desiredBinding.Subjects
+		mergeLabels(&c.ObjectMeta, desiredBinding.Labels)
+	})
+}
+
+// finalizeReaderRBAC deletes the per-CR ClusterRoleBinding before the
+// CR is garbage-collected. The shared ClusterRole stays — it may be
+// in use by OTHER CRs in the cluster, and a leftover unbound role is
+// harmless on cleanup.
+func (r *Reconciler) finalizeReaderRBAC(ctx context.Context, cr *chav1alpha1.ClusterHealthAutopilot) error {
+	binding := &rbacv1.ClusterRoleBinding{}
+	name := ReaderClusterRoleBindingName(cr)
+	if err := r.Get(ctx, types.NamespacedName{Name: name}, binding); err != nil {
+		// Already gone — nothing to clean up.
+		return client.IgnoreNotFound(err)
+	}
+	// Defense in depth: only delete a binding we actually labeled
+	// ourselves. Stops a manual `kubectl create clusterrolebinding
+	// cha-operator-watcher-<ns>-<name>` from being garbage-collected
+	// when the CR happens to share its name.
+	if binding.Labels[ManagedByCRLabel] != cr.Name ||
+		binding.Labels[ManagedByCRNamespaceLabel] != cr.Namespace {
+		return nil
+	}
+	return client.IgnoreNotFound(r.Delete(ctx, binding))
 }
 
 // reconcileWatcher creates / updates / deletes the watcher
@@ -272,19 +360,80 @@ func (r *Reconciler) computeConditions(ctx context.Context, cr *chav1alpha1.Clus
 	setCondition(&cr.Status, chav1alpha1.ConditionWatcherRunning,
 		watcherStatus, watcherReason, watcherMsg, cr.Generation)
 
-	// Ready — true iff all subresources reconciled without error.
+	// ReaderRBACReady — True iff BOTH the shared ClusterRole and the
+	// per-CR ClusterRoleBinding exist + the binding targets the CR's
+	// SA. Either missing → False (the watcher would get `forbidden`
+	// on every List). Get-error → Unknown.
+	var rbacStatus metav1.ConditionStatus
+	var rbacReason, rbacMsg string
+	var role rbacv1.ClusterRole
+	roleErr := r.Get(ctx, types.NamespacedName{Name: ReaderClusterRoleName}, &role)
+	var binding rbacv1.ClusterRoleBinding
+	bindingErr := r.Get(ctx, types.NamespacedName{Name: ReaderClusterRoleBindingName(cr)}, &binding)
+	switch {
+	case apierrors.IsNotFound(roleErr):
+		rbacStatus = metav1.ConditionFalse
+		rbacReason = "ClusterRoleMissing"
+		rbacMsg = "reader ClusterRole " + ReaderClusterRoleName + " not found"
+	case apierrors.IsNotFound(bindingErr):
+		rbacStatus = metav1.ConditionFalse
+		rbacReason = "ClusterRoleBindingMissing"
+		rbacMsg = "reader ClusterRoleBinding " + ReaderClusterRoleBindingName(cr) + " not found"
+	case roleErr != nil:
+		rbacStatus = metav1.ConditionUnknown
+		rbacReason = "GetFailed"
+		rbacMsg = roleErr.Error()
+	case bindingErr != nil:
+		rbacStatus = metav1.ConditionUnknown
+		rbacReason = "GetFailed"
+		rbacMsg = bindingErr.Error()
+	case !bindingTargetsSA(&binding, ServiceAccountNameFor(cr), cr.Namespace):
+		rbacStatus = metav1.ConditionFalse
+		rbacReason = "WrongSubject"
+		rbacMsg = "binding does not target the CR's ServiceAccount"
+	default:
+		rbacStatus = metav1.ConditionTrue
+		rbacReason = "Provisioned"
+		rbacMsg = "reader ClusterRole + per-CR binding present"
+	}
+	setCondition(&cr.Status, chav1alpha1.ConditionReaderRBACReady,
+		rbacStatus, rbacReason, rbacMsg, cr.Generation)
+
+	// Ready — True iff reconcile had no error AND every other
+	// condition that gates correctness is True. Phase 1c adds
+	// ReaderRBACReady to the AND; Phase 2 may add AlertmanagerConnected.
 	readyStatus := metav1.ConditionTrue
 	readyReason := "Reconciled"
 	readyMsg := "all subresources reconciled"
-	if firstErr != nil {
+	switch {
+	case firstErr != nil:
 		readyStatus = metav1.ConditionFalse
 		readyReason = "ReconcileError"
 		readyMsg = firstErr.Error()
+	case rbacStatus != metav1.ConditionTrue:
+		readyStatus = metav1.ConditionFalse
+		readyReason = "ReaderRBACNotReady"
+		readyMsg = "ReaderRBACReady=" + string(rbacStatus) + ": " + rbacMsg
 	}
 	setCondition(&cr.Status, chav1alpha1.ConditionReady,
 		readyStatus, readyReason, readyMsg, cr.Generation)
 
 	cr.Status.ObservedGeneration = cr.Generation
+}
+
+// bindingTargetsSA reports whether a ClusterRoleBinding lists the
+// given ServiceAccount among its Subjects. Used by the condition
+// computer to detect a stale binding whose Subject no longer matches
+// the CR's SA (e.g. operator updated spec.serviceAccountName).
+func bindingTargetsSA(b *rbacv1.ClusterRoleBinding, saName, saNamespace string) bool {
+	for _, s := range b.Subjects {
+		if s.Kind == rbacv1.ServiceAccountKind &&
+			s.Name == saName &&
+			s.Namespace == saNamespace {
+			return true
+		}
+	}
+	return false
 }
 
 // markReady is the validation-short-circuit helper.

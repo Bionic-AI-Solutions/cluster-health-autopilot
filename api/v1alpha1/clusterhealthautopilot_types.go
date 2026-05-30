@@ -69,16 +69,14 @@ type ClusterHealthAutopilotSpec struct {
 	AI *AISpec `json:"ai,omitempty"`
 
 	// ServiceAccountName overrides the controller-managed SA name.
-	// When empty the controller creates and owns <cr-name>-sa.
+	// When empty the controller creates `<cr-name>-sa` AND provisions a
+	// cluster-wide reader ClusterRoleBinding for it (Phase 1c — see
+	// `BuildReaderClusterRoleBinding`). So an operator-managed install
+	// works greenfield without any chart-installed RBAC.
 	//
-	// IMPORTANT (RBAC): the operator does not yet provision a reader
-	// ClusterRoleBinding for the SA it creates, so the default
-	// <cr-name>-sa has NO probe RBAC and the watcher would get
-	// `forbidden` on every List. To run an operator-managed watcher
-	// today, set this to an existing reader-bound SA (e.g. the chart's
-	// `<release>-cluster-health-autopilot` SA). When set, the operator
-	// references but does NOT create or own that SA. Operator-owned
-	// RBAC is tracked for Phase 1c.
+	// When set, the operator binds the named (BYO) ServiceAccount to
+	// the shared reader ClusterRole but does NOT create or own the SA
+	// itself — the SA lifecycle belongs to whoever defined it.
 	// +optional
 	ServiceAccountName string `json:"serviceAccountName,omitempty"`
 }
@@ -231,12 +229,32 @@ type ClusterHealthAutopilotStatus struct {
 // constants so tests and metrics dashboards reference one source.
 const (
 	// ConditionReady reflects whether the entire CR is reconciled.
+	// True iff all subresource reconciles succeeded AND every other
+	// individual condition is True (currently WatcherRunning +
+	// ReaderRBACReady — the AND grows as Phase 2 adds verifiers).
 	ConditionReady = "Ready"
 
 	// ConditionWatcherRunning is set True when the managed watcher
 	// Deployment has at least one available replica.
 	ConditionWatcherRunning = "WatcherRunning"
+
+	// ConditionReaderRBACReady is set True when the operator has
+	// provisioned the shared reader ClusterRole AND the per-CR
+	// ClusterRoleBinding that grants the watcher SA cluster-wide
+	// read on the probe surface. False when either RBAC object is
+	// missing — the watcher would get `forbidden` on every List
+	// without them.
+	ConditionReaderRBACReady = "ReaderRBACReady"
 )
+
+// FinalizerOperatorRBAC tags a ClusterHealthAutopilot CR for the RBAC
+// cleanup pass. Cluster-scoped resources (the per-CR ClusterRoleBinding
+// the operator provisions) can NOT carry an ownerRef back to a
+// namespaced CR — Kubernetes' garbage collector drops the ref and
+// orphans the child. The finalizer gives the controller a chance to
+// delete the binding before the CR is GC'd, so cluster-scoped state
+// stays consistent with CR lifecycle.
+const FinalizerOperatorRBAC = "cha.bionicaisolutions.com/operator-rbac"
 
 // ClusterHealthAutopilot is the Schema for the clusterhealthautopilots
 // API. One CR per CHA install — replaces the Helm values.yaml that
