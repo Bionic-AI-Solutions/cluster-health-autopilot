@@ -25,6 +25,10 @@ serves the latest tagged chart cut.
 - `internal/cloud/azure`: new `backendHealthClient` interface + `liveBackendHealthClient` impl that wraps `ApplicationGatewaysClient.BeginBackendHealth` + `PollUntilDone` with a 60s poll cap (so a single misbehaving gateway can't stretch a probe cycle). Pure `aggregateBackendHealth` flattens the LRO response into per-pool `{Healthy, Total}` counts; **dedup**s the same backend address across HTTP settings (preferring the strongest Health observation: Up > Partial > Draining > Down > Unknown) and counts `Up`/`Partial` as healthy. `ListAppGatewayBackends` now populates `HealthyCount` from the aggregated result instead of leaving the `-1` "not measured" sentinel; failures keep the `-1` fallback so the probe skips the check.
 - Different shape from the Monitor-API slices (LRO, not time-series) but the same overall pattern: injectable interface for testability + production impl + soft-fail.
 
+### Added — Azure subnet IP-pool free count (P4/G9 slice 4)
+
+- `internal/cloud/azure`: `ListSubnets` now computes `AvailableIPCount = TotalIPCount - used`, summing every IP-consuming resource type attached to the subnet (`IPConfigurations` NIC refs, `ApplicationGatewayIPConfigurations`, `IPConfigurationProfiles`, `PrivateEndpoints`). These fields are READ-ONLY on the Subnet resource and populated by the apiserver automatically — no `$expand` needed, no extra API call. The IP-exhaustion probe now fires on real data instead of skipping. Pure `subnetUsedIPCount` helper is fully unit-tested.
+
 (Reserve for v1.9+ — remaining cloud Monitoring-API signals, operator Phase 1c (operator-provisioned reader ClusterRoleBinding + OLM bundle), trigger-classes C/E.)
 
 ---

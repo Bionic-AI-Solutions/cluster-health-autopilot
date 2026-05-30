@@ -448,11 +448,19 @@ func (l *LiveClient) ListSubnets(ctx context.Context) ([]pkgazure.Subnet, error)
 						rec.AddressPrefix = *s.Properties.AddressPrefix
 						total := usableIPsFromCIDR(*s.Properties.AddressPrefix)
 						rec.TotalIPCount = total
-						// Free-IP count needs Azure Monitor metrics; -1 =
-						// "not measured" so the probe skips the IP check
-						// rather than treating the subnet as 100% free
-						// (which would silently never fire). v1.9.
-						rec.AvailableIPCount = -1
+						// G9: count consumed IPs across every subnet-attached
+						// resource type (NICs, AppGW configs, IP-config
+						// profiles, private endpoints). The Subnet's
+						// IPConfigurations + sibling fields are READ-ONLY
+						// and populated by the apiserver — no $expand
+						// needed. Available = total (already minus Azure's
+						// 5-IP reservation) - used; never negative.
+						used := int64(subnetUsedIPCount(s))
+						avail := total - used
+						if avail < 0 {
+							avail = 0
+						}
+						rec.AvailableIPCount = avail
 					}
 					out = append(out, rec)
 				}
