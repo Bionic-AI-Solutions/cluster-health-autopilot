@@ -1,0 +1,28 @@
+# Sample ClusterHealthAutopilot CR used by the bundle-smoke CI job.
+# Minimal valid shape:
+#   - operator-managed SA (no spec.serviceAccountName → operator creates
+#     the SA AND binds it via the Phase-1c reader ClusterRoleBinding)
+#   - watcher Deployment but no Slack / Alertmanager fan-out (the
+#     smoke test only asserts the operator reconciles the CR cleanly —
+#     it doesn't exercise alerting paths)
+#   - diagnose disabled to avoid running a CronJob against the kind
+#     apiserver
+apiVersion: cha.bionicaisolutions.com/v1alpha1
+kind: ClusterHealthAutopilot
+metadata:
+  name: smoke
+  namespace: cha-system
+spec:
+  image:
+    # The bundle-smoke job sets this to the locally-built smoke tag.
+    # The CSV's deployment is patched to the same image via sed.
+    repository: cluster-health-autopilot
+    tag: "smoke"
+    pullPolicy: IfNotPresent
+  watcher:
+    enabled: true
+    replicas: 1
+  diagnose:
+    enabled: false
+  remediate:
+    enabled: false
