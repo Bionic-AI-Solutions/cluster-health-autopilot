@@ -17,6 +17,16 @@ serves the latest tagged chart cut.
 
 ---
 
+## [1.8.11] — 2026-05-30
+
+Chart-only fix: the RAG Qdrant StatefulSet (added in 1.8.9) CrashLooped on first deploy because `securityContext.readOnlyRootFilesystem: true` made Qdrant's default snapshots/temp paths unwritable. Redirected both under the mounted storage PVC via `QDRANT__STORAGE__SNAPSHOTS_PATH` and `QDRANT__STORAGE__TEMP_PATH` env vars — single volume now serves all writes.
+
+### Fixed
+
+- RAG Qdrant snapshots + temp paths point inside the storage PVC (was: read-only root FS → CrashLoopBackOff `"Can't create Snapshots directory: ReadOnlyFilesystem"`).
+
+---
+
 ## [1.8.10] — 2026-05-29
 
 P2/G5c chart wiring — connects the deployed aiwatch to the RAG store.

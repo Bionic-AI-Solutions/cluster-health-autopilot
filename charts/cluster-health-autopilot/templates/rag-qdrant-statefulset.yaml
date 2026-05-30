@@ -58,6 +58,18 @@ spec:
               port: http
             initialDelaySeconds: 5
             periodSeconds: 10
+          # The Pod's root filesystem is read-only (.Values.securityContext
+          # sets readOnlyRootFilesystem: true), but Qdrant writes BOTH its
+          # main DB AND a sibling snapshots/temp directory at startup. By
+          # default they land at /qdrant/snapshots and /qdrant/.qdrant-temp
+          # — on the read-only image FS — and the container CrashLoops with
+          # "Can't create Snapshots directory: ReadOnlyFilesystem". Redirect
+          # both under the mounted PVC so one volume serves all writes.
+          env:
+            - name: QDRANT__STORAGE__SNAPSHOTS_PATH
+              value: /qdrant/storage/snapshots
+            - name: QDRANT__STORAGE__TEMP_PATH
+              value: /qdrant/storage/temp
           livenessProbe:
             httpGet:
               path: /livez

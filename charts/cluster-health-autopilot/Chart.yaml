@@ -5,7 +5,7 @@ description: |
   re-verify → report, on a schedule, without dashboards or pagers.
 
 type: application
-version: 1.8.10         # Chart version — bump on chart-only changes.
+version: 1.8.11         # Chart version — bump on chart-only changes.
 appVersion: "1.8.6"    # Application version — matches the cha binary tag.
 
 kubeVersion: ">=1.27.0-0"
