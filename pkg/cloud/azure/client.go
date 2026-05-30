@@ -6,10 +6,16 @@
 // M2-Sprint-1 probe set needs (Azure SQL Database, Managed Disks).
 // Adding a new resource type should be a deliberate decision.
 //
-// The Client interface is implementation-agnostic — a Live wrapper
-// (deferred to a follow-up PR) will wrap azure-sdk-for-go, Snapshot
-// will replay captured JSON, Fake (in _test.go) returns canned
-// responses. Probes never import azure-sdk-for-go directly.
+// The Client interface is implementation-agnostic. Three impls exist:
+//   - Live (internal/cloud/azure/live.go) wraps azure-sdk-for-go ARM
+//     clients + Azure Monitor (azquery for SQL DB storage_percent — PR
+//     #104) + the AppGW BackendHealth LRO (PR #105) + a primary-range
+//     subnet IP-usage count (PR #106). Shipped v1.7+; Monitor/LRO/IP
+//     wiring shipped in v1.9.x.
+//   - Snapshot (internal/cloud/azure/snapshot.go) replays captured JSON.
+//   - Fake (in _test.go) returns canned responses.
+//
+// Probes never import azure-sdk-for-go directly.
 //
 // Mirrors the shape of pkg/cloud/aws and pkg/cloud/gcp so probes
 // share a mental model across providers.

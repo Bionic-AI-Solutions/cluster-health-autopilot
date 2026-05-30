@@ -29,7 +29,17 @@ serves the latest tagged chart cut.
 
 - `internal/cloud/azure`: `ListSubnets` now computes `AvailableIPCount = TotalIPCount - used`, summing every IP-consuming resource type attached to the subnet (`IPConfigurations` NIC refs, `ApplicationGatewayIPConfigurations`, `IPConfigurationProfiles`, `PrivateEndpoints`). These fields are READ-ONLY on the Subnet resource and populated by the apiserver automatically — no `$expand` needed, no extra API call. The IP-exhaustion probe now fires on real data instead of skipping. Pure `subnetUsedIPCount` helper is fully unit-tested.
 
-(Reserve for v1.9+ — remaining cloud Monitoring-API signals, operator Phase 1c (operator-provisioned reader ClusterRoleBinding + OLM bundle), trigger-classes C/E.)
+### Added — typed `AISpec` on `ClusterHealthAutopilot` v1alpha1 (operator Phase-2 schema slice)
+
+- `api/v1alpha1`: new `AISpec` + `AIAPIKeySpec` + `AIT3Spec` + `AIMemorySpec` + `AIMemoryStorageSpec` + `AIEmbeddingsSpec` types mirroring the chart's `ai.*` helm values surface. Exposed as `ClusterHealthAutopilotSpec.AI` (optional). DeepCopy methods hand-written matching the Phase-1 pattern.
+- CRD YAML extended to accept `spec.ai` so the apiserver validates the schema. Tier uses `kubebuilder:validation:Enum=off;t0;t1;t2;t3`.
+- **Controller does NOT yet consume these fields.** The reconciler still relies on the chart's `ai.*` helm values for the running aiwatch + approval-server. Schema lands now so operator-managed manifests are forward-compatible with the Phase 2 reconciler wiring; the misleading comment that previously claimed the fields were "opaque pass-throughs" is corrected.
+
+### Fixed
+
+- Stale package docs in `pkg/cloud/gcp/client.go` and `pkg/cloud/azure/client.go` that claimed "Live wrapper deferred to a follow-up PR" — both Live wrappers shipped (v1.7 baseline; v1.9 Cloud Monitoring / Azure Monitor / BackendHealth LRO additions in PRs #103–#106). Comments now reflect what's on `main`.
+
+(Reserve for v1.9+ — operator Phase 1c per `docs/design/2026-05-v1.9-operator-phase-1c.md`; Phase 2 reconciler consumption of the AISpec above; remaining cloud Monitoring-API signals; trigger-classes C/E.)
 
 ---
 

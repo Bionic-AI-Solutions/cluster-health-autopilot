@@ -163,6 +163,97 @@ spec:
                         clusterName:
                           type: string
                           minLength: 1
+                ai:
+                  # AISpec — CHA-com paid-tier AI watcher + approval-
+                  # server + optional RAG store. Schema lands in Phase
+                  # 1c; the reconciler does NOT yet consume these
+                  # fields (configure via the chart's ai.* helm values
+                  # until Phase 2 wires them).
+                  type: object
+                  properties:
+                    enabled:
+                      type: boolean
+                    tier:
+                      type: string
+                      enum: [off, t0, t1, t2, t3]
+                    endpoint:
+                      type: string
+                    model:
+                      type: string
+                    interval:
+                      type: string
+                    allowSaas:
+                      type: boolean
+                    llmFixerMatcher:
+                      type: boolean
+                    auditLog:
+                      type: string
+                    approvalServerUrl:
+                      type: string
+                    image:
+                      type: object
+                      properties:
+                        repository:
+                          type: string
+                        tag:
+                          type: string
+                        pullPolicy:
+                          type: string
+                        pullSecrets:
+                          type: array
+                          items:
+                            type: string
+                    apiKey:
+                      type: object
+                      properties:
+                        secretName:
+                          type: string
+                        secretKey:
+                          type: string
+                        envName:
+                          type: string
+                        header:
+                          type: string
+                    t3:
+                      type: object
+                      properties:
+                        vaultAllowedPrefixes:
+                          type: array
+                          items:
+                            type: string
+                    memory:
+                      type: object
+                      properties:
+                        enabled:
+                          type: boolean
+                        image:
+                          type: object
+                          properties:
+                            repository:
+                              type: string
+                            tag:
+                              type: string
+                            pullPolicy:
+                              type: string
+                        storage:
+                          type: object
+                          properties:
+                            size:
+                              type: string
+                            className:
+                              type: string
+                        embeddings:
+                          type: object
+                          properties:
+                            endpoint:
+                              type: string
+                            model:
+                              type: string
+                        storeUrl:
+                          type: string
+                        topK:
+                          type: integer
+                          minimum: 0
             status:
               type: object
               x-kubernetes-preserve-unknown-fields: true

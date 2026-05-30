@@ -100,6 +100,10 @@ func (in *ClusterHealthAutopilotSpec) DeepCopyInto(out *ClusterHealthAutopilotSp
 		out.Alerting = new(AlertingSpec)
 		in.Alerting.DeepCopyInto(out.Alerting)
 	}
+	if in.AI != nil {
+		out.AI = new(AISpec)
+		in.AI.DeepCopyInto(out.AI)
+	}
 }
 
 // DeepCopy returns a deep copy of the receiver.
@@ -205,6 +209,89 @@ func (in *SlackSpec) DeepCopy() *SlackSpec {
 		return nil
 	}
 	out := new(SlackSpec)
+	in.DeepCopyInto(out)
+	return out
+}
+
+// --- AISpec ---
+
+// DeepCopyInto copies the receiver into out. in must be non-nil.
+func (in *AISpec) DeepCopyInto(out *AISpec) {
+	*out = *in
+	if in.Image != nil {
+		out.Image = new(ImageSpec)
+		in.Image.DeepCopyInto(out.Image)
+	}
+	if in.APIKey != nil {
+		out.APIKey = new(AIAPIKeySpec)
+		*out.APIKey = *in.APIKey
+	}
+	if in.T3 != nil {
+		out.T3 = new(AIT3Spec)
+		in.T3.DeepCopyInto(out.T3)
+	}
+	if in.Memory != nil {
+		out.Memory = new(AIMemorySpec)
+		in.Memory.DeepCopyInto(out.Memory)
+	}
+}
+
+// DeepCopy returns a deep copy of the receiver.
+func (in *AISpec) DeepCopy() *AISpec {
+	if in == nil {
+		return nil
+	}
+	out := new(AISpec)
+	in.DeepCopyInto(out)
+	return out
+}
+
+// --- AIT3Spec ---
+
+// DeepCopyInto copies the receiver into out. in must be non-nil.
+func (in *AIT3Spec) DeepCopyInto(out *AIT3Spec) {
+	*out = *in
+	if in.VaultAllowedPrefixes != nil {
+		out.VaultAllowedPrefixes = make([]string, len(in.VaultAllowedPrefixes))
+		copy(out.VaultAllowedPrefixes, in.VaultAllowedPrefixes)
+	}
+}
+
+// DeepCopy returns a deep copy of the receiver.
+func (in *AIT3Spec) DeepCopy() *AIT3Spec {
+	if in == nil {
+		return nil
+	}
+	out := new(AIT3Spec)
+	in.DeepCopyInto(out)
+	return out
+}
+
+// --- AIMemorySpec ---
+
+// DeepCopyInto copies the receiver into out. in must be non-nil.
+func (in *AIMemorySpec) DeepCopyInto(out *AIMemorySpec) {
+	*out = *in
+	if in.Image != nil {
+		out.Image = new(ImageSpec)
+		in.Image.DeepCopyInto(out.Image)
+	}
+	if in.Storage != nil {
+		out.Storage = new(AIMemoryStorageSpec)
+		*out.Storage = *in.Storage
+	}
+	if in.Embeddings != nil {
+		out.Embeddings = new(AIEmbeddingsSpec)
+		*out.Embeddings = *in.Embeddings
+	}
+}
+
+// DeepCopy returns a deep copy of the receiver.
+func (in *AIMemorySpec) DeepCopy() *AIMemorySpec {
+	if in == nil {
+		return nil
+	}
+	out := new(AIMemorySpec)
 	in.DeepCopyInto(out)
 	return out
 }

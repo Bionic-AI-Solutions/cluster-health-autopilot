@@ -7,10 +7,17 @@
 // type to the surface should be a deliberate decision, not an
 // "I needed this from gcloud" reflex.
 //
-// The Client interface is implementation-agnostic — a Live wrapper
-// (deferred to a follow-up PR) will wrap cloud.google.com/go,
-// Snapshot will replay captured JSON, Fake (in _test.go) returns
-// canned responses. Probes never import cloud.google.com/go directly.
+// The Client interface is implementation-agnostic. Three impls exist:
+//   - Live (internal/cloud/gcp/live.go) wraps google.golang.org/api/*
+//     and the Cloud Monitoring v3 API. Cloud SQL DiskUsedPercent is
+//     populated from the cloudsql.googleapis.com/database/disk/
+//     utilization metric (shipped v1.9 / PR #103); other live signals
+//     come from sqladmin / compute / container / kms / storage / iam
+//     (shipped v1.7+).
+//   - Snapshot (internal/cloud/gcp/snapshot.go) replays captured JSON.
+//   - Fake (in _test.go) returns canned responses.
+//
+// Probes never import cloud.google.com/go directly.
 //
 // Mirrors the shape of pkg/cloud/aws so probes share a mental model
 // across providers.

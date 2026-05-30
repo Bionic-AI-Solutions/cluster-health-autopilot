@@ -16,9 +16,19 @@ import (
 // Phase 1 of the operator port covers WatcherSpec + DiagnoseSpec —
 // the two most-deployed CHA modes. RemediateSpec ships alongside but
 // can be left disabled. AlertingSpec captures the Slack + Alertmanager
-// wiring; TicketingSpec and AISpec ship as opaque pass-throughs in
-// Phase 1 (the controller mounts them verbatim onto the watcher
-// Deployment) and gain typed validation in Phase 2.
+// wiring.
+//
+// AISpec lands the AI-companion (CHA-com) configuration shape at the
+// CR level — schema only. The controller does not yet consume these
+// fields in Phase 1; the AI watcher and approval-server continue to
+// be configured via the chart's `ai.*` and `approval.*` helm values
+// until the Phase 2 reconciler picks them up. Ship the schema now so
+// operator-managed manifests are forward-compatible.
+//
+// TicketingSpec is intentionally not yet in v1alpha1 — its shape is
+// provider-specific (OpenProject / Jira / ServiceNow) and the typed
+// schema lands when ticketing also moves off helm values in Phase 2.
+// See `docs/design/2026-05-v1.9-operator-phase-1c.md` for the roadmap.
 type ClusterHealthAutopilotSpec struct {
 	// Image is the container image the watcher + cronjobs run.
 	// Required. Operators typically pin a semver tag; the controller
@@ -48,6 +58,15 @@ type ClusterHealthAutopilotSpec struct {
 	// blocks mean "no alerts" — useful for dry-running.
 	// +optional
 	Alerting *AlertingSpec `json:"alerting,omitempty"`
+
+	// AI configures the CHA-com paid-tier AI watcher (aiwatch) +
+	// approval-server. Schema only in Phase 1 — the controller does
+	// NOT consume these fields yet; configure AI via the chart's
+	// `ai.*` helm values today. The schema lands here so an operator-
+	// managed CR can declare AI config forward-compatibly. Phase 2
+	// wires the reconciler.
+	// +optional
+	AI *AISpec `json:"ai,omitempty"`
 
 	// ServiceAccountName overrides the controller-managed SA name.
 	// When empty the controller creates and owns <cr-name>-sa.
@@ -241,4 +260,166 @@ type ClusterHealthAutopilotList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`
 	Items           []ClusterHealthAutopilot `json:"items"`
+}
+
+// AISpec is the typed schema for the CHA-com paid-tier AI watcher
+// (aiwatch + approval-server + optional RAG store). Schema-only in
+// Phase 1 — the controller does NOT consume these fields yet. Adding
+// the schema now lets operator-managed installs declare AI config on
+// the CR ahead of the Phase 2 reconciler wiring; today's installs
+// continue to configure AI via the chart's `ai.*` helm values.
+type AISpec struct {
+	// Enabled is the master switch. Default false; matches helm
+	// `ai.enabled`.
+	// +optional
+	Enabled bool `json:"enabled,omitempty"`
+
+	// Tier selects the AI capability level.
+	// +kubebuilder:validation:Enum=off;t0;t1;t2;t3
+	// +optional
+	Tier string `json:"tier,omitempty"`
+
+	// Endpoint is the OpenAI-compatible base URL (e.g.
+	// "https://mcp.baisoln.com/gpu-ai/v1"). Required when Enabled.
+	// +optional
+	Endpoint string `json:"endpoint,omitempty"`
+
+	// Model is the default model identifier passed to the LLM
+	// (e.g. "qwen3.6-35b-a3b-fp8"). Required when Enabled.
+	// +optional
+	Model string `json:"model,omitempty"`
+
+	// Interval is the AI poll cadence; tiers fire only on NEW
+	// diagnostics each cycle. Empty → chart default ("60s").
+	// +optional
+	Interval string `json:"interval,omitempty"`
+
+	// AllowSaaS opts in to non-cluster endpoints (api.openai.com /
+	// api.anthropic.com / etc). Off by default; in-cluster vLLM is
+	// the BYOM recommendation.
+	// +optional
+	AllowSaaS bool `json:"allowSaas,omitempty"`
+
+	// LLMFixerMatcher (t1+): use the LLM-classified fixer matcher
+	// instead of the keyword heuristic. Falls back to keyword on
+	// LLM error / timeout.
+	// +optional
+	LLMFixerMatcher bool `json:"llmFixerMatcher,omitempty"`
+
+	// AuditLog destination for AI events: empty (off) | "-" (stdout)
+	// | file path. Required for t1+ compliance posture.
+	// +optional
+	AuditLog string `json:"auditLog,omitempty"`
+
+	// ApprovalServerURL (t1+) is the base URL of the approval-server
+	// — when set, T1/T2 proposals emit a signed click-to-fix link.
+	// +optional
+	ApprovalServerURL string `json:"approvalServerUrl,omitempty"`
+
+	// Image is the CHA-com binary image (the aiwatch + approval-server
+	// containers). Empty → chart default ("docker4zerocool/cha-com"
+	// at `v<AppVersion>`).
+	// +optional
+	Image *ImageSpec `json:"image,omitempty"`
+
+	// APIKey references the K8s Secret holding the LLM bearer token.
+	// +optional
+	APIKey *AIAPIKeySpec `json:"apiKey,omitempty"`
+
+	// T3 scopes the LLM runbook proposer's blast radius (Vault path
+	// prefixes it may reference). Every t3 proposal is still
+	// recommendation-only behind dual human approval.
+	// +optional
+	T3 *AIT3Spec `json:"t3,omitempty"`
+
+	// Memory is the dedicated RAG (Qdrant + embeddings) config. When
+	// enabled, the chart stands up an in-namespace vector store and
+	// the aiwatch grounds proposals in prior verified resolutions.
+	// +optional
+	Memory *AIMemorySpec `json:"memory,omitempty"`
+}
+
+// AIAPIKeySpec references the LLM-bearer-token Secret.
+type AIAPIKeySpec struct {
+	// SecretName is the K8s Secret in the install namespace (ESO-
+	// managed in production).
+	// +optional
+	SecretName string `json:"secretName,omitempty"`
+
+	// SecretKey is the key inside the Secret. Default "API_KEY".
+	// +optional
+	SecretKey string `json:"secretKey,omitempty"`
+
+	// EnvName is the env var the binary reads. Default "AI_API_KEY".
+	// +optional
+	EnvName string `json:"envName,omitempty"`
+
+	// Header is the HTTP header for the key. Empty → "Authorization:
+	// Bearer <key>". Set "X-API-Key" for Kong key-auth gateways.
+	// +optional
+	Header string `json:"header,omitempty"`
+}
+
+// AIT3Spec is the t3 Vault break-glass configuration.
+type AIT3Spec struct {
+	// VaultAllowedPrefixes lists the Vault path prefixes the t3
+	// runbook proposer may target. Empty → no Vault paths permitted.
+	// +optional
+	VaultAllowedPrefixes []string `json:"vaultAllowedPrefixes,omitempty"`
+}
+
+// AIMemorySpec configures the dedicated RAG vector store + embeddings.
+type AIMemorySpec struct {
+	// Enabled stands up the in-namespace Qdrant StatefulSet. Off by
+	// default; independent of AI.Enabled so it can be rolled
+	// separately.
+	// +optional
+	Enabled bool `json:"enabled,omitempty"`
+
+	// Image is the Qdrant container image. Empty → chart default
+	// (qdrant/qdrant:v1.12.4).
+	// +optional
+	Image *ImageSpec `json:"image,omitempty"`
+
+	// Storage configures the Qdrant PVC.
+	// +optional
+	Storage *AIMemoryStorageSpec `json:"storage,omitempty"`
+
+	// Embeddings configures how aiwatch vectorizes records.
+	// +optional
+	Embeddings *AIEmbeddingsSpec `json:"embeddings,omitempty"`
+
+	// StoreURL is the Qdrant service URL the aiwatch connects to.
+	// Empty → chart-default in-namespace service.
+	// +optional
+	StoreURL string `json:"storeUrl,omitempty"`
+
+	// TopK is the number of prior resolutions retrieved per finding.
+	// 0 → chart default (5).
+	// +optional
+	TopK int32 `json:"topK,omitempty"`
+}
+
+// AIMemoryStorageSpec is the Qdrant PVC shape.
+type AIMemoryStorageSpec struct {
+	// Size is the PVC size, e.g. "5Gi". Empty → "5Gi".
+	// +optional
+	Size string `json:"size,omitempty"`
+
+	// ClassName is the storageClassName. Empty → default class.
+	// +optional
+	ClassName string `json:"className,omitempty"`
+}
+
+// AIEmbeddingsSpec configures the embeddings call.
+type AIEmbeddingsSpec struct {
+	// Endpoint is the OpenAI-compatible /embeddings base URL.
+	// Empty → AI.Endpoint.
+	// +optional
+	Endpoint string `json:"endpoint,omitempty"`
+
+	// Model is the embedding model identifier (e.g.
+	// "qwen3-embedding-0.6b"). Required when AIMemorySpec.Enabled.
+	// +optional
+	Model string `json:"model,omitempty"`
 }
