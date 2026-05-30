@@ -59,6 +59,11 @@ type LiveClient struct {
 	// — callers fall back to the "not measured" sentinel (UsedPercent=-1),
 	// preserving the v1.8.x posture for partial credential grants.
 	monitor monitoringQuerier
+
+	// appgwHealth wraps the AppGW BackendHealth LRO so ListAppGatewayBackends
+	// can populate HealthyCount instead of leaving it at -1. nil → fall
+	// back to the "not measured" sentinel.
+	appgwHealth backendHealthClient
 }
 
 // NewLiveClient constructs a Live Azure client bound to a subscription
@@ -152,6 +157,7 @@ func NewLiveClient(ctx context.Context, subscription, location string) (*LiveCli
 		storage:      storageC,
 		vaults:       vaults,
 		monitor:      monitor,
+		appgwHealth:  newLiveBackendHealthClient(appgw),
 	}, nil
 }
 
@@ -477,17 +483,37 @@ func (l *LiveClient) ListAppGatewayBackends(ctx context.Context) ([]pkgazure.App
 			if gw == nil || gw.Name == nil || gw.Properties == nil {
 				continue
 			}
+			// G9: query BackendHealth LRO once per gateway and aggregate
+			// per pool. Failures are swallowed; HealthyCount stays at -1
+			// so the probe skips the check (same posture as "not measured").
+			poolHealthByName := map[string]poolHealth{}
+			if l.appgwHealth != nil {
+				rg := resourceGroupFromID(deref(gw.ID))
+				if h, hErr := l.appgwHealth.BackendHealth(ctx, rg, *gw.Name); hErr == nil {
+					poolHealthByName = aggregateBackendHealth(h)
+				}
+			}
 			for _, pool := range gw.Properties.BackendAddressPools {
 				if pool == nil || pool.Name == nil || pool.Properties == nil {
 					continue
 				}
 				total := len(pool.Properties.BackendAddresses)
-				out = append(out, pkgazure.AppGatewayBackend{
+				rec := pkgazure.AppGatewayBackend{
 					Gateway:      *gw.Name,
 					PoolName:     *pool.Name,
 					TotalCount:   total,
-					HealthyCount: -1, // not measured — see LIMITATION
-				})
+					HealthyCount: -1, // default: not measured
+				}
+				if ph, ok := poolHealthByName[*pool.Name]; ok {
+					rec.HealthyCount = ph.Healthy
+					// Prefer the BackendHealth-reported total (which counts
+					// observed servers) over the spec's pool-size when
+					// available; falls back to the spec total otherwise.
+					if ph.Total > 0 {
+						rec.TotalCount = ph.Total
+					}
+				}
+				out = append(out, rec)
 			}
 		}
 	}

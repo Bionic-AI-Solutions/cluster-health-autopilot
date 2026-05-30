@@ -20,6 +20,11 @@ serves the latest tagged chart cut.
 - Both impls use a small `metricsClient`/equivalent interface so unit tests stub the SDK without spinning up its transport. Parsing functions (`latestDiskUsedPercent`, `latestStoragePercent`) are pure + table-tested (nil / empty / multi-point / rounding / over-100 cap / defensive negatives).
 - Pattern (interface + injectable querier + soft-fail + pure parser) is now the template for the remaining "not measured" signals: GCP `AvailableIPCount`, Azure IP-pool / AppGW backend health.
 
+### Added — Azure App Gateway backend health via BackendHealth LRO (P4/G9 slice 3)
+
+- `internal/cloud/azure`: new `backendHealthClient` interface + `liveBackendHealthClient` impl that wraps `ApplicationGatewaysClient.BeginBackendHealth` + `PollUntilDone` with a 60s poll cap (so a single misbehaving gateway can't stretch a probe cycle). Pure `aggregateBackendHealth` flattens the LRO response into per-pool `{Healthy, Total}` counts; **dedup**s the same backend address across HTTP settings (preferring the strongest Health observation: Up > Partial > Draining > Down > Unknown) and counts `Up`/`Partial` as healthy. `ListAppGatewayBackends` now populates `HealthyCount` from the aggregated result instead of leaving the `-1` "not measured" sentinel; failures keep the `-1` fallback so the probe skips the check.
+- Different shape from the Monitor-API slices (LRO, not time-series) but the same overall pattern: injectable interface for testability + production impl + soft-fail.
+
 (Reserve for v1.9+ — remaining cloud Monitoring-API signals, operator Phase 1c (operator-provisioned reader ClusterRoleBinding + OLM bundle), trigger-classes C/E.)
 
 ---
