@@ -84,21 +84,78 @@ jobs:
       # registry pod.
       - name: Patch CSV image to smoke tag + rebuild bundle
         run: |
-          sed -i 's|docker4zerocool/cluster-health-autopilot:1\.9\.[0-9]\+|cluster-health-autopilot:smoke|g' \
+          # The CSV ships pointing at the public docker4zerocool tag;
+          # the smoke test points at a locally-pushed registry tag so
+          # the kubelet on the kind node can pull it without internet.
+          # Keep the registry-host portion in lockstep with the value
+          # used in the `Start local registry` + `kind cluster …
+          # extraConfig` steps below.
+          sed -i 's|docker4zerocool/cluster-health-autopilot:1\.9\.[0-9]\+|localhost:5001/cluster-health-autopilot:smoke|g' \
               bundle/manifests/cha.clusterserviceversion.yaml
           docker build -t cha-operator-bundle:smoke -f bundle.Dockerfile .
 
       - name: Install kind
-        uses: helm/kind-action@v1
-        with:
-          version: v0.24.0
-          cluster_name: bundle-smoke
-          wait: 60s
-
-      - name: Load images into kind
         run: |
-          kind load docker-image cluster-health-autopilot:smoke --name bundle-smoke
-          kind load docker-image cha-operator-bundle:smoke      --name bundle-smoke
+          KIND_VERSION=v0.24.0
+          curl -fsSL -o kind \
+            "https://kind.sigs.k8s.io/dl/${KIND_VERSION}/kind-linux-amd64"
+          chmod +x kind
+          sudo mv kind /usr/local/bin/kind
+          kind version
+
+      # `operator-sdk run bundle` requires a CANONICAL (registry-qualified)
+      # bundle image reference AND in-cluster pull access. `kind load
+      # docker-image` puts the bundle on the kind node, but the OLM
+      # bundle-registry pod still issues a `docker pull` against the
+      # image's registry — so we need an actual registry the cluster
+      # can reach. Standard kind-with-local-registry pattern:
+      #   https://kind.sigs.k8s.io/docs/user/local-registry/
+      - name: Start local registry
+        run: |
+          docker run -d --restart=always -p 127.0.0.1:5001:5000 \
+            --name kind-registry registry:2
+
+      - name: Create kind cluster wired to the local registry
+        run: |
+          # Inline kind config: tells containerd on the kind node to
+          # alias the published `localhost:5001` registry to the
+          # in-network DNS name `kind-registry:5000` (we attach the
+          # container to the kind network in the next step).
+          cat > /tmp/kind-config.yaml <<EOF
+          kind: Cluster
+          apiVersion: kind.x-k8s.io/v1alpha4
+          name: bundle-smoke
+          containerdConfigPatches:
+            - |-
+              [plugins."io.containerd.grpc.v1.cri".registry.mirrors."localhost:5001"]
+                endpoint = ["http://kind-registry:5000"]
+          nodes:
+            - role: control-plane
+          EOF
+          kind create cluster --config /tmp/kind-config.yaml --wait 60s
+          # Connect the registry to the kind docker network so kind
+          # nodes resolve `kind-registry` and pull from it.
+          docker network connect kind kind-registry || true
+          # Document the registry in the cluster for tooling that
+          # honors the kind-of-registry-aware ConfigMap convention.
+          cat <<EOF | kubectl apply -f -
+          apiVersion: v1
+          kind: ConfigMap
+          metadata:
+            name: local-registry-hosting
+            namespace: kube-public
+          data:
+            localRegistryHosting.v1: |
+              host: "localhost:5001"
+              help: "https://kind.sigs.k8s.io/docs/user/local-registry/"
+          EOF
+
+      - name: Push operator + bundle images to the local registry
+        run: |
+          docker tag cluster-health-autopilot:smoke localhost:5001/cluster-health-autopilot:smoke
+          docker tag cha-operator-bundle:smoke      localhost:5001/cha-operator-bundle:smoke
+          docker push localhost:5001/cluster-health-autopilot:smoke
+          docker push localhost:5001/cha-operator-bundle:smoke
 
       - name: Install operator-sdk
         run: |
@@ -132,10 +189,14 @@ jobs:
         run: |
           # `operator-sdk run bundle` pushes a one-off CatalogSource +
           # Subscription that installs the bundle into the namespace,
-          # then waits for the CSV to reach Succeeded.
-          operator-sdk run bundle cha-operator-bundle:smoke \
+          # then waits for the CSV to reach Succeeded. `--use-http`
+          # tells the registry pod to pull via plain HTTP (the local
+          # registry isn't TLS'd; production users override the bundle
+          # ref to an HTTPS registry).
+          operator-sdk run bundle localhost:5001/cha-operator-bundle:smoke \
             --namespace cha-system \
             --install-mode OwnNamespace \
+            --use-http \
             --timeout 10m
 
       - name: Show operator state
