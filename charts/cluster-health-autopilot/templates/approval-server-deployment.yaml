@@ -57,6 +57,13 @@ spec:
             - --store-replay-configmap={{ .Values.approval.store.replayConfigMap | default "cha-approval-replay" }}
             - --store-runbook-configmap={{ .Values.approval.store.runbookConfigMap | default "cha-approval-runbooks" }}
             {{- end }}
+            {{- if (.Values.ai.memory).enabled }}
+            - --memory-store-url={{ (.Values.ai.memory).storeUrl | default (printf "http://%s-rag.%s.svc:6333" (include "cha.fullname" .) .Release.Namespace) }}
+            {{- with (.Values.ai.memory.embeddings).endpoint }}
+            - --memory-embeddings-endpoint={{ . }}
+            {{- end }}
+            - --memory-embeddings-model={{ required "ai.memory.embeddings.model is required when ai.memory.enabled=true" (.Values.ai.memory.embeddings).model }}
+            {{- end }}
           ports:
             - name: http
               containerPort: 8443
