@@ -1,0 +1,123 @@
+# examples/k3s-edge/values.yaml
+#
+# CHA values overlay for bare-metal k3s clusters.
+#
+# k3s ships Traefik as the default ingress controller and local-path as
+# the default StorageClass. The kubeadm ETCD probe is meaningless (k3s
+# embeds etcd or SQLite inside the k3s binary, not as a static pod).
+# This overlay turns the right probes on/off and sets scheduling
+# tolerations for combined control-plane+worker nodes that k3s
+# single-server and small clusters produce.
+#
+# Apply on top of the chart defaults:
+#   helm upgrade --install cha bionic-ai-solutions/cluster-health-autopilot \
+#     -f examples/k3s-edge/values.yaml -n cha --create-namespace
+
+# ── Probe overrides ──────────────────────────────────────────────────
+#
+# The kubeadm ETCD probe expects component=etcd static pods in
+# kube-system. k3s does not create those. Disable it to prevent the
+# permanent "ETCD probe is blind" warning that would otherwise appear
+# in every report.
+#
+# The three k3s-specific probes are ON by default once implemented
+# (v1.10). This overlay makes the intent explicit and documents the
+# rationale.
+#
+# NOTE: CHA_PROBE_ETCD, CHA_PROBE_TRAEFIK_ROUTES, CHA_PROBE_K3S_LOCALPATH,
+# and CHA_PROBE_K3S_DATASTORE are read directly by the cha binary. Until
+# v1.10 ships these entries are forward-declared; the binary silently
+# ignores unknown env vars.
+extraEnv:
+  - name: CHA_PROBE_ETCD
+    value: "off"
+  - name: CHA_PROBE_TRAEFIK_ROUTES
+    value: "on"
+  - name: CHA_PROBE_K3S_LOCALPATH
+    value: "on"
+  - name: CHA_PROBE_K3S_DATASTORE
+    value: "on"
+
+# ── Probe toggles ────────────────────────────────────────────────────
+#
+# The probes block maps to CHA_PROBE_* env vars via the chart's
+# cha.probeToggleEnv helper. Entries are additive — only override what
+# differs from the chart defaults.
+probes:
+  # Traefik Routes probe (v1.10) — k3s default ingress controller.
+  # Checks IngressRoute CRDs for missing backend Services, dangling
+  # Middleware references, and TLS routes with no certResolver or
+  # TLSStore. Auto-skips when traefik.io CRDs are absent. Default ON.
+  traefikRoutes:
+    enabled: true
+
+  # k3s LocalPath Storage probe (v1.10) — surfaces ephemeral-storage
+  # pressure on nodes that host local-path PVCs. No-ops when no
+  # local-path PVCs exist. Default ON.
+  k3sLocalPath:
+    enabled: true
+
+  # k3s Datastore probe (v1.10) — detects embedded etcd vs SQLite
+  # mode, checks apiserver endpoint health, and validates etcd snapshot
+  # ConfigMap freshness. Auto-skips on non-k3s clusters. Default ON.
+  k3sDatastore:
+    enabled: true
+
+  # Disable the Kong probe — most k3s edge clusters use Traefik as the
+  # sole ingress controller. Remove this override (or set enabled: true)
+  # if you are also running Kong alongside Traefik.
+  kong:
+    enabled: false
+
+# ── Scheduling: k3s combined control-plane+worker nodes ─────────────
+#
+# k3s single-server and small (1–3 node) clusters use combined
+# control-plane+worker nodes. These nodes carry the
+# node-role.kubernetes.io/master and/or control-plane taints that
+# prevent ordinary workload pods from scheduling on them by default.
+#
+# The tolerations below allow CHA CronJob and Watcher pods to land on
+# these nodes so CHA itself is not blocked by the scheduling constraints
+# it watches. The node-role tolerations match the standard k3s/RKE2
+# control-plane taint names.
+tolerations:
+  - key: node-role.kubernetes.io/master
+    operator: Exists
+    effect: NoSchedule
+  - key: node-role.kubernetes.io/control-plane
+    operator: Exists
+    effect: NoSchedule
+  # k3s also applies CriticalAddonsOnly on some configurations (e.g.
+  # when --node-taint CriticalAddonsOnly=true:NoExecute is set).
+  - key: CriticalAddonsOnly
+    operator: Exists
+
+# ── Watcher scheduling (if enabled) ─────────────────────────────────
+# The watcher Deployment inherits pod-level tolerations from the
+# top-level tolerations key above via the chart template. No separate
+# override is needed here.
+
+# ── local-path storage class ─────────────────────────────────────────
+# local-path is the default StorageClass on k3s. CHA's own memory store
+# (if ai.memory.enabled=true) should use a network-backed StorageClass
+# on multi-node clusters so Qdrant data survives node failure. On a
+# single-node k3s install local-path is fine.
+#
+# Uncomment and set to "local-path" for single-node edge installs:
+# ai:
+#   memory:
+#     storage:
+#       className: "local-path"
+
+# ── Endpoint probe: Traefik route host discovery ─────────────────────
+# DiscoverTraefikRouteTargets() is automatically called alongside
+# DiscoverIngressTargets() when Traefik CRDs are present. No extra
+# configuration is needed. To disable Traefik-based host discovery
+# while keeping the TraefikRoutes probe active, add the following to
+# the extraEnv block above:
+#
+#   - name: CHA_DISCOVERY_TRAEFIK
+#     value: "off"
+#
+# (This env var gates the DiscoverTraefikRouteTargets call in
+# ingress_discovery.go, independent of CHA_PROBE_TRAEFIK_ROUTES.)

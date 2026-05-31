@@ -106,6 +106,19 @@ func RegisterOSS(r *registry.Registry) {
 	if os.Getenv("CHA_PROBE_VELERO") != "off" {
 		r.RegisterProbe(probe.Velero{})
 	}
+	// k3s-specific probes (v1.10) — safe to register default-on because each
+	// auto-skips gracefully when not on a k3s cluster or when the required CRD
+	// is absent (TraefikRoutes, K3sDatastore). K3sLocalPathStorage no-ops when
+	// there are no local-path PVCs.
+	if os.Getenv("CHA_PROBE_TRAEFIK_ROUTES") != "off" {
+		r.RegisterProbe(probe.TraefikRoutes{})
+	}
+	if os.Getenv("CHA_PROBE_K3S_LOCALPATH") != "off" {
+		r.RegisterProbe(probe.K3sLocalPathStorage{})
+	}
+	if os.Getenv("CHA_PROBE_K3S_DATASTORE") != "off" {
+		r.RegisterProbe(probe.K3sDatastore{})
+	}
 	r.RegisterAnalyzer(
 		diagnose.SecretKeyMissing{},
 		diagnose.FailingExternalSecrets{},

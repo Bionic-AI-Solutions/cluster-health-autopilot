@@ -6,6 +6,7 @@ package probe
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -173,5 +174,124 @@ func hostnamesOf(targets []EndpointTarget) []string {
 		}
 		out = append(out, strings.ToLower(h))
 	}
+	return out
+}
+
+// traefikHostRe matches Host(`<hostname>`) expressions in Traefik match DSL strings.
+// Examples this handles:
+//
+//	Host(`foo.example.com`)
+//	Host(`foo.example.com`) && PathPrefix(`/api`)
+//	Host(`a.example.com`) || Host(`b.example.com`)
+//
+// HostRegexp entries are not matched — wildcard patterns cannot be reduced to
+// a single probeable FQDN.
+var traefikHostRe = regexp.MustCompile("Host\\(`([^`]+)`\\)")
+
+// DiscoverTraefikRouteTargets enumerates Traefik IngressRoute CRDs and
+// returns auto-generated EndpointTarget entries for every host extracted
+// from route match expressions, subject to the same opt-out rules as
+// DiscoverIngressTargets.
+//
+// Host extraction uses a regexp scan over the Traefik match DSL. HostRegexp
+// entries (e.g. HostRegexp(`{subdomain:.+}.example.com`)) are skipped —
+// wildcard patterns cannot be reduced to a single probeable FQDN.
+//
+// SKIP: if Traefik CRDs are not installed (list call returns an error), the
+// function returns nil silently — same auto-skip pattern as the TraefikRoutes
+// probe. This makes it safe to call unconditionally on any cluster.
+//
+// For k3s clusters, call this function alongside DiscoverIngressTargets to
+// cover routes that live in IngressRoute CRDs rather than standard Ingress
+// objects:
+//
+//	discovered := DiscoverIngressTargets(ctx, src, opts, existing)
+//	discovered = append(discovered, DiscoverTraefikRouteTargets(ctx, src, opts, hostnamesOf(discovered))...)
+func DiscoverTraefikRouteTargets(
+	ctx context.Context,
+	src snapshot.Source,
+	opts DiscoveryOptions,
+	existing []string,
+) []EndpointTarget {
+	if !opts.Enabled {
+		return nil
+	}
+	scheme := opts.Scheme
+	if scheme == "" {
+		scheme = "https"
+	}
+	annotation := opts.OptOutAnnotation
+	if annotation == "" {
+		annotation = "cha.bionicaisolutions.com/probe-disable"
+	}
+
+	routes, err := src.List(ctx, snapshot.GVRTraefikIngressRoute, "")
+	if err != nil || routes == nil || len(routes.Items) == 0 {
+		// CRD absent, RBAC missing, or no routes — silently skip.
+		return nil
+	}
+
+	existingSet := make(map[string]struct{}, len(existing))
+	for _, h := range existing {
+		existingSet[strings.ToLower(h)] = struct{}{}
+	}
+
+	seen := make(map[string]struct{})
+	var out []EndpointTarget
+
+	for i := range routes.Items {
+		ir := routes.Items[i]
+		ns := ir.GetNamespace()
+		if _, skip := opts.SkipNamespaces[ns]; skip {
+			continue
+		}
+		if v, ok := ir.GetAnnotations()[annotation]; ok && strings.EqualFold(v, "true") {
+			continue
+		}
+
+		specRoutes, _, _ := unstructured.NestedSlice(ir.Object, "spec", "routes")
+		for _, rawRoute := range specRoutes {
+			rm, ok := rawRoute.(map[string]any)
+			if !ok {
+				continue
+			}
+			matchExpr, _ := rm["match"].(string)
+			if matchExpr == "" {
+				continue
+			}
+
+			// Extract all Host(`...`) captures from the match expression.
+			// FindAllStringSubmatch returns [][]string; index [n][1] is the
+			// capture group (the hostname inside the backticks).
+			matches := traefikHostRe.FindAllStringSubmatch(matchExpr, -1)
+			for _, m := range matches {
+				if len(m) < 2 {
+					continue
+				}
+				host := strings.TrimSpace(strings.ToLower(m[1]))
+				if host == "" {
+					continue
+				}
+				// Skip wildcards and bare names (no dot → cluster-internal).
+				if strings.Contains(host, "*") || !strings.Contains(host, ".") {
+					continue
+				}
+				if _, hasExplicit := existingSet[host]; hasExplicit {
+					continue
+				}
+				if _, dup := seen[host]; dup {
+					continue
+				}
+				seen[host] = struct{}{}
+				out = append(out, EndpointTarget{
+					URL:  fmt.Sprintf("%s://%s", scheme, host),
+					Name: fmt.Sprintf("%s/%s → %s", ns, ir.GetName(), host),
+				})
+			}
+		}
+	}
+
+	// Stable order — same snapshot must produce the same target list.
+	sort.Slice(out, func(i, j int) bool { return out[i].URL < out[j].URL })
 	return out
 }

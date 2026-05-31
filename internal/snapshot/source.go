@@ -68,4 +68,39 @@ var (
 	GVRCertManagerChallenge = schema.GroupVersionResource{Group: "acme.cert-manager.io", Version: "v1", Resource: "challenges"}
 
 	GVRIngress = schema.GroupVersionResource{Group: "networking.k8s.io", Version: "v1", Resource: "ingresses"}
+
+	// GVRConfigMap is used by the K3sDatastore probe to check etcd snapshot
+	// ConfigMaps written by k3s in kube-system.
+	GVRConfigMap = schema.GroupVersionResource{Group: "", Version: "v1", Resource: "configmaps"}
+
+	// GVRService is the GVR for core/v1 Service objects.
+	// Used by the TraefikRoutes probe to validate backend service references.
+	GVRService = schema.GroupVersionResource{Group: "", Version: "v1", Resource: "services"}
+
+	// GVRStorageClass is the GVR for storage.k8s.io/v1 StorageClass objects.
+	// Used by K3sLocalPathStorage to detect the cluster default StorageClass.
+	GVRStorageClass = schema.GroupVersionResource{Group: "storage.k8s.io", Version: "v1", Resource: "storageclasses"}
+
+	// GVREndpoints is the GVR for core/v1 Endpoints objects.
+	// Used by K3sDatastore to check apiserver reachability from within the cluster.
+	GVREndpoints = schema.GroupVersionResource{Group: "", Version: "v1", Resource: "endpoints"}
+
+	// Traefik IngressRoute CRDs — present on any k3s cluster with the default
+	// Traefik ingress controller. Probes auto-skip when the list call returns a
+	// "no such resource" error (same pattern as Kong). The canonical group for
+	// Traefik v3 (k3s 1.30+) is traefik.io; v2 used traefik.containo.us.
+	// These GVRs reference the v3 group; the TraefikRoutes probe and
+	// DiscoverTraefikRouteTargets fall back to traefik.containo.us on list error.
+	GVRTraefikIngressRoute = schema.GroupVersionResource{
+		Group: "traefik.io", Version: "v1alpha1", Resource: "ingressroutes",
+	}
+	GVRTraefikIngressRouteTCP = schema.GroupVersionResource{
+		Group: "traefik.io", Version: "v1alpha1", Resource: "ingressroutetcps",
+	}
+	GVRTraefikMiddleware = schema.GroupVersionResource{
+		Group: "traefik.io", Version: "v1alpha1", Resource: "middlewares",
+	}
+	GVRTraefikTLSStore = schema.GroupVersionResource{
+		Group: "traefik.io", Version: "v1alpha1", Resource: "tlsstores",
+	}
 )

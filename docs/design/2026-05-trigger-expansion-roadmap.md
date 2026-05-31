@@ -460,6 +460,36 @@ Investigation history that produced this roadmap:
   (14 GVRs); current catalog at `catalog/catalog.go` (6 probes, 7 analyzers,
   5 fixers).
 
+## Open items (scoped, not yet started)
+
+### OLM / OperatorHub distribution (Path B — v1.11+ target)
+
+**Decision (2026-05-31):** Path A (Helm, `operator.enabled=true`) is the
+immediate cluster migration path for the Bionic production cluster. Path B
+(OLM bundle → CatalogSource → OperatorHub listing) is the distribution story
+for commercial multi-cluster fleet management and PLG discoverability.
+
+**Prerequisites before Path B can ship:**
+1. `docker push docker4zerocool/cha-operator-bundle:v1.9.4` — the bundle
+   image exists in CI (bundle-smoke validates it) but has never been pushed
+   to Docker Hub. One `docker push` away once the tag is cut.
+2. `operator-sdk olm install` on each target cluster — adds ~10 OLM pods to
+   the `olm` namespace. Has known NetworkPolicy + gRPC quirks on k3s clusters;
+   fine on EKS/GKE/AKS.
+3. CatalogSource pointing at the bundle (self-hosted catalog image, or
+   operator-sdk run bundle for one-off installs).
+4. OperatorGroup + Subscription YAML for each cluster.
+5. (Optional) OperatorHub.io PR for public listing — requires community review
+   (~1–2 weeks).
+
+**When it pays off:** Multi-cluster fleet (push catalog image → all subscribed
+clusters auto-upgrade), customer installs from OperatorHub, commercial
+distribution without requiring customers to run Helm.
+
+**All the hard work is done:** The bundle (CSV, 4 CRDs, bundle.Dockerfile),
+the CI gate (bundle-smoke on kind, passes), and the operator binary are all
+shipped. No code left to write for Path B — just infra and publishing steps.
+
 ## Out of scope (later if needed)
 
 - Cross-cluster trigger correlation (a single probe firing across N clusters

@@ -201,6 +201,15 @@ var kindToResource = map[string]string{
 	"KongPlugin":              "kongplugins",
 	"Application":             "applications", // ArgoCD argoproj.io/v1alpha1
 	"Backup":                  "backups",      // Velero velero.io/v1
+	// k3s probe suite additions (v1.9.x).
+	"ConfigMap":       "configmaps",
+	"Service":         "services",
+	"StorageClass":    "storageclasses",
+	"Endpoints":       "endpoints",
+	"IngressRoute":    "ingressroutes",    // Traefik traefik.io/v1alpha1
+	"IngressRouteTCP": "ingressroutetcps", // Traefik traefik.io/v1alpha1
+	"Middleware":      "middlewares",      // Traefik traefik.io/v1alpha1
+	"TLSStore":        "tlsstores",        // Traefik traefik.io/v1alpha1
 }
 
 func indexKey(gvr schema.GroupVersionResource) string {
