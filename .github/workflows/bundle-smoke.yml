@@ -180,6 +180,18 @@ jobs:
           # InstallPlan CRDs + the catalog-operator + olm-operator
           # Deployments). ~90s on kind.
           operator-sdk olm install --timeout=5m
+          # `operator-sdk olm install` also installs the upstream
+          # `operatorhubio-catalog` CatalogSource that points at
+          # quay.io's catalog registry. Our bundle has zero
+          # dependencies on operatorhubio — but OLM's resolver
+          # consults every CatalogSource in the cluster when
+          # generating an InstallPlan, and a flaky/unreachable
+          # operatorhubio-catalog gRPC pod causes
+          # `ResolutionFailed/ErrorPreventedResolution` and the
+          # InstallPlan never appears (we hit a 10-min context
+          # deadline on the Subscription). Delete the upstream
+          # catalog up-front so the resolver only sees ours.
+          kubectl delete catalogsource operatorhubio-catalog -n olm --ignore-not-found
 
       - name: Create install namespace
         run: |
