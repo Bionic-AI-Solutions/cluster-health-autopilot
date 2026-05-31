@@ -320,6 +320,33 @@ spec:
                               type: boolean
                             secretName:
                               type: string
+                externalDNS:
+                  # ExternalDNSSpec — DNS-chain drift analyzer's optional
+                  # Cloudflare integration. Schema-only if the watcher image
+                  # predates v1.10; the analyzer reads it at registration time.
+                  type: object
+                  properties:
+                    cloudflare:
+                      type: object
+                      properties:
+                        enabled:
+                          type: boolean
+                        apiTokenSecretRef:
+                          type: object
+                          required: [name]
+                          properties:
+                            name:
+                              type: string
+                            key:
+                              type: string
+                        zoneIDs:
+                          type: array
+                          items:
+                            type: string
+                        expectedTargets:
+                          type: array
+                          items:
+                            type: string
             status:
               type: object
               x-kubernetes-preserve-unknown-fields: true
