@@ -227,6 +227,308 @@ func TestK3sDatastore_EtcdStaleSnapshot(t *testing.T) {
 	}
 }
 
+// ─── K3sDatastore: clustered etcd (multi-member) checks ───────────────────────
+
+// nodes3EtcdMembers — three control-plane nodes, each labelled
+// node-role.kubernetes.io/etcd, all with a recent snapshot timestamp.
+func nodes3EtcdMembersFresh() string {
+	tsRecent := time.Now().Add(-30 * time.Minute).UTC().Format("20060102150405")
+	return fmt.Sprintf(`{
+  "apiVersion": "v1", "kind": "NodeList",
+  "items": [
+    {"apiVersion": "v1", "kind": "Node",
+     "metadata": {"name": "cp1", "labels": {"node-role.kubernetes.io/etcd": "true"},
+                  "annotations": {"etcd.k3s.cattle.io/local-snapshots-timestamp": "%s"}},
+     "spec": {"providerID": "k3s://cp1"}},
+    {"apiVersion": "v1", "kind": "Node",
+     "metadata": {"name": "cp2", "labels": {"node-role.kubernetes.io/etcd": "true"},
+                  "annotations": {"etcd.k3s.cattle.io/local-snapshots-timestamp": "%s"}},
+     "spec": {"providerID": "k3s://cp2"}},
+    {"apiVersion": "v1", "kind": "Node",
+     "metadata": {"name": "cp3", "labels": {"node-role.kubernetes.io/etcd": "true"},
+                  "annotations": {"etcd.k3s.cattle.io/local-snapshots-timestamp": "%s"}},
+     "spec": {"providerID": "k3s://cp3"}}
+  ]
+}`, tsRecent, tsRecent, tsRecent)
+}
+
+// etcd3PodsHealthy — three Ready etcd pods (matches nodes3EtcdMembers).
+const etcd3PodsHealthy = `{
+  "apiVersion": "v1", "kind": "PodList",
+  "items": [
+    {"apiVersion": "v1", "kind": "Pod",
+     "metadata": {"name": "etcd-cp1", "namespace": "kube-system",
+                  "labels": {"component": "etcd"}},
+     "status": {"conditions": [{"type": "Ready", "status": "True"}],
+                "containerStatuses": [{"restartCount": 0}]}},
+    {"apiVersion": "v1", "kind": "Pod",
+     "metadata": {"name": "etcd-cp2", "namespace": "kube-system",
+                  "labels": {"component": "etcd"}},
+     "status": {"conditions": [{"type": "Ready", "status": "True"}],
+                "containerStatuses": [{"restartCount": 0}]}},
+    {"apiVersion": "v1", "kind": "Pod",
+     "metadata": {"name": "etcd-cp3", "namespace": "kube-system",
+                  "labels": {"component": "etcd"}},
+     "status": {"conditions": [{"type": "Ready", "status": "True"}],
+                "containerStatuses": [{"restartCount": 0}]}}
+  ]
+}`
+
+// TestK3sDatastore_HA3MembersHealthy — full HA configuration, all signals OK.
+func TestK3sDatastore_HA3MembersHealthy(t *testing.T) {
+	src := loadProbeSrc(t, map[string]string{
+		"nodes.json": nodes3EtcdMembersFresh(),
+		"pods.json":  etcd3PodsHealthy,
+		"cms.json":   snapshotCMRecent(),
+	})
+	r := K3sDatastore{}.Run(context.Background(), src)
+	if r.Component.Status != "HEALTHY" {
+		t.Errorf("HA healthy: want HEALTHY, got %q (findings=%+v)", r.Component.Status, r.Findings)
+	}
+}
+
+// TestK3sDatastore_QuorumAtRisk — 3 declared etcd nodes but only 1 pod Ready (two
+// not Ready) → CRITICAL finding mentioning quorum.
+func TestK3sDatastore_QuorumAtRisk(t *testing.T) {
+	tsRecent := time.Now().Add(-30 * time.Minute).UTC().Format("20060102150405")
+	nodes3 := fmt.Sprintf(`{
+  "apiVersion": "v1", "kind": "NodeList",
+  "items": [
+    {"apiVersion": "v1", "kind": "Node",
+     "metadata": {"name": "cp1", "labels": {"node-role.kubernetes.io/etcd": "true"},
+                  "annotations": {"etcd.k3s.cattle.io/local-snapshots-timestamp": "%s"}},
+     "spec": {"providerID": "k3s://cp1"}},
+    {"apiVersion": "v1", "kind": "Node",
+     "metadata": {"name": "cp2", "labels": {"node-role.kubernetes.io/etcd": "true"},
+                  "annotations": {"etcd.k3s.cattle.io/local-snapshots-timestamp": "%s"}},
+     "spec": {"providerID": "k3s://cp2"}},
+    {"apiVersion": "v1", "kind": "Node",
+     "metadata": {"name": "cp3", "labels": {"node-role.kubernetes.io/etcd": "true"},
+                  "annotations": {"etcd.k3s.cattle.io/local-snapshots-timestamp": "%s"}},
+     "spec": {"providerID": "k3s://cp3"}}
+  ]
+}`, tsRecent, tsRecent, tsRecent)
+	pods := `{
+  "apiVersion": "v1", "kind": "PodList",
+  "items": [
+    {"apiVersion": "v1", "kind": "Pod",
+     "metadata": {"name": "etcd-cp1", "namespace": "kube-system",
+                  "labels": {"component": "etcd"}},
+     "status": {"conditions": [{"type": "Ready", "status": "True"}],
+                "containerStatuses": [{"restartCount": 0}]}},
+    {"apiVersion": "v1", "kind": "Pod",
+     "metadata": {"name": "etcd-cp2", "namespace": "kube-system",
+                  "labels": {"component": "etcd"}},
+     "status": {"conditions": [{"type": "Ready", "status": "False"}],
+                "containerStatuses": [{"restartCount": 0}]}},
+    {"apiVersion": "v1", "kind": "Pod",
+     "metadata": {"name": "etcd-cp3", "namespace": "kube-system",
+                  "labels": {"component": "etcd"}},
+     "status": {"conditions": [{"type": "Ready", "status": "False"}],
+                "containerStatuses": [{"restartCount": 0}]}}
+  ]
+}`
+	src := loadProbeSrc(t, map[string]string{
+		"nodes.json": nodes3,
+		"pods.json":  pods,
+		"cms.json":   snapshotCMRecent(),
+	})
+	r := K3sDatastore{}.Run(context.Background(), src)
+	if r.Component.Status != "CRITICAL" {
+		t.Errorf("quorum loss: want CRITICAL, got %q (findings=%+v)", r.Component.Status, r.Findings)
+	}
+	found := false
+	for _, f := range r.Findings {
+		if f.Severity == SeverityCritical && strings.Contains(strings.ToLower(f.Message), "quorum") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected a CRITICAL quorum-loss finding; got %+v", r.Findings)
+	}
+}
+
+// TestK3sDatastore_TwoMemberWarning — declared==2 is a known anti-pattern
+// (no fault tolerance) — emit WARNING regardless of pod state.
+func TestK3sDatastore_TwoMemberWarning(t *testing.T) {
+	tsRecent := time.Now().Add(-30 * time.Minute).UTC().Format("20060102150405")
+	nodes2 := fmt.Sprintf(`{
+  "apiVersion": "v1", "kind": "NodeList",
+  "items": [
+    {"apiVersion": "v1", "kind": "Node",
+     "metadata": {"name": "cp1", "labels": {"node-role.kubernetes.io/etcd": "true"},
+                  "annotations": {"etcd.k3s.cattle.io/local-snapshots-timestamp": "%s"}},
+     "spec": {"providerID": "k3s://cp1"}},
+    {"apiVersion": "v1", "kind": "Node",
+     "metadata": {"name": "cp2", "labels": {"node-role.kubernetes.io/etcd": "true"},
+                  "annotations": {"etcd.k3s.cattle.io/local-snapshots-timestamp": "%s"}},
+     "spec": {"providerID": "k3s://cp2"}}
+  ]
+}`, tsRecent, tsRecent)
+	pods2 := `{
+  "apiVersion": "v1", "kind": "PodList",
+  "items": [
+    {"apiVersion": "v1", "kind": "Pod",
+     "metadata": {"name": "etcd-cp1", "namespace": "kube-system",
+                  "labels": {"component": "etcd"}},
+     "status": {"conditions": [{"type": "Ready", "status": "True"}],
+                "containerStatuses": [{"restartCount": 0}]}},
+    {"apiVersion": "v1", "kind": "Pod",
+     "metadata": {"name": "etcd-cp2", "namespace": "kube-system",
+                  "labels": {"component": "etcd"}},
+     "status": {"conditions": [{"type": "Ready", "status": "True"}],
+                "containerStatuses": [{"restartCount": 0}]}}
+  ]
+}`
+	src := loadProbeSrc(t, map[string]string{
+		"nodes.json": nodes2,
+		"pods.json":  pods2,
+		"cms.json":   snapshotCMRecent(),
+	})
+	r := K3sDatastore{}.Run(context.Background(), src)
+	found := false
+	for _, f := range r.Findings {
+		if f.Severity == SeverityWarning && strings.Contains(strings.ToLower(f.Message), "2 voting members") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected 2-member fault-tolerance warning; got %+v", r.Findings)
+	}
+}
+
+// TestK3sDatastore_MemberMissing — 3 etcd-labelled nodes but only 2 pods → CRITICAL.
+func TestK3sDatastore_MemberMissing(t *testing.T) {
+	tsRecent := time.Now().Add(-30 * time.Minute).UTC().Format("20060102150405")
+	nodes3 := fmt.Sprintf(`{
+  "apiVersion": "v1", "kind": "NodeList",
+  "items": [
+    {"apiVersion": "v1", "kind": "Node",
+     "metadata": {"name": "cp1", "labels": {"node-role.kubernetes.io/etcd": "true"},
+                  "annotations": {"etcd.k3s.cattle.io/local-snapshots-timestamp": "%s"}},
+     "spec": {"providerID": "k3s://cp1"}},
+    {"apiVersion": "v1", "kind": "Node",
+     "metadata": {"name": "cp2", "labels": {"node-role.kubernetes.io/etcd": "true"},
+                  "annotations": {"etcd.k3s.cattle.io/local-snapshots-timestamp": "%s"}},
+     "spec": {"providerID": "k3s://cp2"}},
+    {"apiVersion": "v1", "kind": "Node",
+     "metadata": {"name": "cp3", "labels": {"node-role.kubernetes.io/etcd": "true"},
+                  "annotations": {"etcd.k3s.cattle.io/local-snapshots-timestamp": "%s"}},
+     "spec": {"providerID": "k3s://cp3"}}
+  ]
+}`, tsRecent, tsRecent, tsRecent)
+	pods2 := `{
+  "apiVersion": "v1", "kind": "PodList",
+  "items": [
+    {"apiVersion": "v1", "kind": "Pod",
+     "metadata": {"name": "etcd-cp1", "namespace": "kube-system",
+                  "labels": {"component": "etcd"}},
+     "status": {"conditions": [{"type": "Ready", "status": "True"}],
+                "containerStatuses": [{"restartCount": 0}]}},
+    {"apiVersion": "v1", "kind": "Pod",
+     "metadata": {"name": "etcd-cp2", "namespace": "kube-system",
+                  "labels": {"component": "etcd"}},
+     "status": {"conditions": [{"type": "Ready", "status": "True"}],
+                "containerStatuses": [{"restartCount": 0}]}}
+  ]
+}`
+	src := loadProbeSrc(t, map[string]string{
+		"nodes.json": nodes3,
+		"pods.json":  pods2,
+		"cms.json":   snapshotCMRecent(),
+	})
+	r := K3sDatastore{}.Run(context.Background(), src)
+	found := false
+	for _, f := range r.Findings {
+		if f.Severity == SeverityCritical && strings.Contains(strings.ToLower(f.Message), "missing member") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected missing-member CRITICAL finding; got %+v", r.Findings)
+	}
+}
+
+// TestK3sDatastore_MemberSnapshotStale — 3 healthy members but one has a
+// local-snapshot annotation that lags >SLA behind the newest → WARNING.
+func TestK3sDatastore_MemberSnapshotStale(t *testing.T) {
+	newest := time.Now().Add(-30 * time.Minute).UTC().Format("20060102150405")
+	stale := time.Now().Add(-72 * time.Hour).UTC().Format("20060102150405")
+	nodes3 := fmt.Sprintf(`{
+  "apiVersion": "v1", "kind": "NodeList",
+  "items": [
+    {"apiVersion": "v1", "kind": "Node",
+     "metadata": {"name": "cp1", "labels": {"node-role.kubernetes.io/etcd": "true"},
+                  "annotations": {"etcd.k3s.cattle.io/local-snapshots-timestamp": "%s"}},
+     "spec": {"providerID": "k3s://cp1"}},
+    {"apiVersion": "v1", "kind": "Node",
+     "metadata": {"name": "cp2", "labels": {"node-role.kubernetes.io/etcd": "true"},
+                  "annotations": {"etcd.k3s.cattle.io/local-snapshots-timestamp": "%s"}},
+     "spec": {"providerID": "k3s://cp2"}},
+    {"apiVersion": "v1", "kind": "Node",
+     "metadata": {"name": "cp3", "labels": {"node-role.kubernetes.io/etcd": "true"},
+                  "annotations": {"etcd.k3s.cattle.io/local-snapshots-timestamp": "%s"}},
+     "spec": {"providerID": "k3s://cp3"}}
+  ]
+}`, newest, newest, stale)
+	src := loadProbeSrc(t, map[string]string{
+		"nodes.json": nodes3,
+		"pods.json":  etcd3PodsHealthy,
+		"cms.json":   snapshotCMRecent(),
+	})
+	r := K3sDatastore{}.Run(context.Background(), src)
+	found := false
+	for _, f := range r.Findings {
+		if f.Severity == SeverityWarning &&
+			strings.Contains(f.Message, "cp3") &&
+			strings.Contains(strings.ToLower(f.Message), "lag behind") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected per-member snapshot-lag warning naming cp3; got %+v", r.Findings)
+	}
+}
+
+// TestK3sDatastore_MemberNeverSnapshotted — etcd-labelled node with no
+// local-snapshot annotation → WARNING.
+func TestK3sDatastore_MemberNeverSnapshotted(t *testing.T) {
+	tsRecent := time.Now().Add(-30 * time.Minute).UTC().Format("20060102150405")
+	nodes3 := fmt.Sprintf(`{
+  "apiVersion": "v1", "kind": "NodeList",
+  "items": [
+    {"apiVersion": "v1", "kind": "Node",
+     "metadata": {"name": "cp1", "labels": {"node-role.kubernetes.io/etcd": "true"},
+                  "annotations": {"etcd.k3s.cattle.io/local-snapshots-timestamp": "%s"}},
+     "spec": {"providerID": "k3s://cp1"}},
+    {"apiVersion": "v1", "kind": "Node",
+     "metadata": {"name": "cp2", "labels": {"node-role.kubernetes.io/etcd": "true"},
+                  "annotations": {"etcd.k3s.cattle.io/local-snapshots-timestamp": "%s"}},
+     "spec": {"providerID": "k3s://cp2"}},
+    {"apiVersion": "v1", "kind": "Node",
+     "metadata": {"name": "cp3", "labels": {"node-role.kubernetes.io/etcd": "true"}},
+     "spec": {"providerID": "k3s://cp3"}}
+  ]
+}`, tsRecent, tsRecent)
+	src := loadProbeSrc(t, map[string]string{
+		"nodes.json": nodes3,
+		"pods.json":  etcd3PodsHealthy,
+		"cms.json":   snapshotCMRecent(),
+	})
+	r := K3sDatastore{}.Run(context.Background(), src)
+	found := false
+	for _, f := range r.Findings {
+		if f.Severity == SeverityWarning &&
+			strings.Contains(f.Message, "cp3") &&
+			strings.Contains(strings.ToLower(f.Message), "never wrote") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected never-snapshotted warning naming cp3; got %+v", r.Findings)
+	}
+}
+
 // ─── K3sLocalPathStorage ───────────────────────────────────────────────────────
 
 // pvcsNoLocalPath has PVCs but none use the local-path storage class.

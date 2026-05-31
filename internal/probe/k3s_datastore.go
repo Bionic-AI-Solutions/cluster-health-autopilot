@@ -190,6 +190,140 @@ func (d K3sDatastore) Run(ctx context.Context, src snapshot.Source) Result {
 		}
 	}
 
+	// ── Step 2b: Per-node etcd-member metadata ────────────────────────────
+	// k3s labels each etcd-bearing node with `node-role.kubernetes.io/etcd`
+	// and annotates with `etcd.k3s.cattle.io/local-snapshots-timestamp` on
+	// every successful local snapshot. The two together tell us:
+	//   1. How many etcd members the *cluster* believes it should have
+	//      (count of nodes with the etcd role label).
+	//   2. Whether each member is actively participating in the snapshot
+	//      rotation (annotation present and recent).
+	// Compare against the live etcd pod count → quorum risk detection.
+	var etcdNodes []string
+	memberSnapshotAges := make(map[string]time.Duration)
+	for _, n := range nodes.Items {
+		labels := n.GetLabels()
+		if _, isEtcd := labels["node-role.kubernetes.io/etcd"]; !isEtcd {
+			continue
+		}
+		etcdNodes = append(etcdNodes, n.GetName())
+		annos := n.GetAnnotations()
+		ts, ok := annos["etcd.k3s.cattle.io/local-snapshots-timestamp"]
+		if !ok || ts == "" {
+			memberSnapshotAges[n.GetName()] = -1 // sentinel: never snapshotted
+			continue
+		}
+		// k3s timestamp format: 20060102150405 (sortable, no separators).
+		parsed, err := time.Parse("20060102150405", ts)
+		if err != nil {
+			// Fall back to RFC3339; older k3s versions used that format.
+			parsed, err = time.Parse(time.RFC3339, ts)
+		}
+		if err != nil {
+			memberSnapshotAges[n.GetName()] = -2 // sentinel: unparseable
+			continue
+		}
+		memberSnapshotAges[n.GetName()] = now().Sub(parsed)
+	}
+
+	// Quorum check: with N voting etcd members, the cluster tolerates
+	// (N-1)/2 failures. If running pod count < (declared/2)+1, quorum
+	// is at risk if even one more member goes down.
+	declared := len(etcdNodes)
+	running := len(members) - len(notReady)
+	if declared >= 3 && running < (declared/2)+1 {
+		findings = append(findings, Finding{
+			Component: k3sDatastoreName,
+			Severity:  SeverityCritical,
+			Message: fmt.Sprintf(
+				"k3s embedded etcd: only %d/%d members ready — below quorum threshold",
+				running, declared,
+			),
+			Remediation: "etcd has lost quorum. The cluster is read-only. " +
+				"Bring failed members back: " +
+				"check k3s status on the affected node(s): `sudo systemctl status k3s`. " +
+				"If a member is unrecoverable, see https://docs.k3s.io/datastore/ha-embedded#remove-a-failed-server.",
+		})
+	} else if declared == 2 {
+		findings = append(findings, Finding{
+			Component: k3sDatastoreName,
+			Severity:  SeverityWarning,
+			Message:   "k3s embedded etcd has exactly 2 voting members — no fault tolerance (a 2-node cluster cannot tolerate any failure)",
+			Remediation: "Add a third control-plane node OR remove one to drop back to single-node. " +
+				"See https://docs.k3s.io/datastore/ha-embedded.",
+		})
+	}
+
+	// Member-count parity: declared etcd-role nodes vs running etcd pods.
+	if declared > len(members) && len(members) > 0 {
+		findings = append(findings, Finding{
+			Component: k3sDatastoreName,
+			Severity:  SeverityCritical,
+			Message: fmt.Sprintf(
+				"k3s embedded etcd: %d node(s) labelled node-role.kubernetes.io/etcd but only %d etcd pod(s) running — missing member(s)",
+				declared, len(members),
+			),
+			Remediation: "An etcd-labelled node is not running its etcd member. " +
+				"On the affected node: `sudo systemctl status k3s` and `journalctl -u k3s | grep etcd`. " +
+				"If the node was removed permanently, drop the role label: " +
+				"`kubectl label node <name> node-role.kubernetes.io/etcd-`.",
+		})
+	}
+
+	// Per-member snapshot freshness. Compare each member's local
+	// timestamp to the newest; a member that's >sla behind the newest
+	// is not participating in the snapshot rotation.
+	if len(memberSnapshotAges) > 0 {
+		var newestAge time.Duration = 1<<62 - 1
+		for _, age := range memberSnapshotAges {
+			if age < 0 {
+				continue
+			}
+			if age < newestAge {
+				newestAge = age
+			}
+		}
+		var stale []string
+		var never []string
+		for name, age := range memberSnapshotAges {
+			switch {
+			case age == -1:
+				never = append(never, name)
+			case age == -2:
+				// Unparseable — skip silently; this is a forward-compat
+				// guard, not a real failure mode.
+			case newestAge >= 0 && age-newestAge > sla:
+				stale = append(stale, fmt.Sprintf("%s(%s behind)", name, (age-newestAge).Round(time.Minute)))
+			}
+		}
+		if len(never) > 0 {
+			findings = append(findings, Finding{
+				Component: k3sDatastoreName,
+				Severity:  SeverityWarning,
+				Message: fmt.Sprintf(
+					"k3s embedded etcd member(s) never wrote a local snapshot: %s",
+					strings.Join(never, ", "),
+				),
+				Remediation: "Member is etcd-labelled but never wrote etcd.k3s.cattle.io/local-snapshots-timestamp. " +
+					"Either the member just joined (wait one snapshot cycle) or its k3s server can't write snapshots " +
+					"(check `journalctl -u k3s | grep -i snapshot` on the node).",
+			})
+		}
+		if len(stale) > 0 {
+			findings = append(findings, Finding{
+				Component: k3sDatastoreName,
+				Severity:  SeverityWarning,
+				Message: fmt.Sprintf(
+					"k3s embedded etcd member(s) lag behind newest snapshot by >%s: %s",
+					sla, strings.Join(stale, ", "),
+				),
+				Remediation: "Member is participating in the cluster but not the snapshot rotation. " +
+					"Check `--etcd-snapshot-schedule-cron` on the affected node's k3s server config, " +
+					"and inspect `journalctl -u k3s | grep snapshot` for write failures.",
+			})
+		}
+	}
+
 	if len(notReady) > 0 {
 		findings = append(findings, Finding{
 			Component: k3sDatastoreName,
