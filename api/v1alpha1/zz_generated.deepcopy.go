@@ -104,6 +104,10 @@ func (in *ClusterHealthAutopilotSpec) DeepCopyInto(out *ClusterHealthAutopilotSp
 		out.AI = new(AISpec)
 		in.AI.DeepCopyInto(out.AI)
 	}
+	if in.Approval != nil {
+		out.Approval = new(ApprovalSpec)
+		in.Approval.DeepCopyInto(out.Approval)
+	}
 }
 
 // DeepCopy returns a deep copy of the receiver.
@@ -292,6 +296,66 @@ func (in *AIMemorySpec) DeepCopy() *AIMemorySpec {
 		return nil
 	}
 	out := new(AIMemorySpec)
+	in.DeepCopyInto(out)
+	return out
+}
+
+// --- ApprovalSpec ---
+
+// DeepCopyInto copies the receiver into out. in must be non-nil.
+func (in *ApprovalSpec) DeepCopyInto(out *ApprovalSpec) {
+	*out = *in
+	if in.Image != nil {
+		out.Image = new(ImageSpec)
+		in.Image.DeepCopyInto(out.Image)
+	}
+	if in.SigningKey != nil {
+		out.SigningKey = new(ApprovalSigningKeySpec)
+		*out.SigningKey = *in.SigningKey
+	}
+	if in.Store != nil {
+		out.Store = new(ApprovalStoreSpec)
+		*out.Store = *in.Store
+	}
+	if in.Ingress != nil {
+		out.Ingress = new(ApprovalIngressSpec)
+		in.Ingress.DeepCopyInto(out.Ingress)
+	}
+}
+
+// DeepCopy returns a deep copy of the receiver.
+func (in *ApprovalSpec) DeepCopy() *ApprovalSpec {
+	if in == nil {
+		return nil
+	}
+	out := new(ApprovalSpec)
+	in.DeepCopyInto(out)
+	return out
+}
+
+// --- ApprovalIngressSpec ---
+
+// DeepCopyInto copies the receiver into out. in must be non-nil.
+func (in *ApprovalIngressSpec) DeepCopyInto(out *ApprovalIngressSpec) {
+	*out = *in
+	if in.Annotations != nil {
+		out.Annotations = make(map[string]string, len(in.Annotations))
+		for k, v := range in.Annotations {
+			out.Annotations[k] = v
+		}
+	}
+	if in.TLS != nil {
+		out.TLS = new(ApprovalIngressTLSSpec)
+		*out.TLS = *in.TLS
+	}
+}
+
+// DeepCopy returns a deep copy of the receiver.
+func (in *ApprovalIngressSpec) DeepCopy() *ApprovalIngressSpec {
+	if in == nil {
+		return nil
+	}
+	out := new(ApprovalIngressSpec)
 	in.DeepCopyInto(out)
 	return out
 }

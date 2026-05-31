@@ -168,11 +168,13 @@ spec:
                           type: string
                           minLength: 1
                 ai:
-                  # AISpec — CHA-com paid-tier AI watcher + approval-
-                  # server + optional RAG store. Schema lands in Phase
-                  # 1c; the reconciler does NOT yet consume these
-                  # fields (configure via the chart's ai.* helm values
-                  # until Phase 2 wires them).
+                  # AISpec — CHA-com paid-tier AI watcher + optional
+                  # in-namespace Qdrant. Reconciled by Phase 2 / 2b
+                  # (aiwatch Deployment + Qdrant StatefulSet/Service).
+                  # The approval-server URL the aiwatch points at sits
+                  # here at `approvalServerUrl`; the approval-server
+                  # SPEC (Deployment, Service, RBAC, signing key, etc.)
+                  # lives under `spec.approval` below.
                   type: object
                   properties:
                     enabled:
@@ -258,6 +260,70 @@ spec:
                         topK:
                           type: integer
                           minimum: 0
+                approval:
+                  # ApprovalSpec — CHA-com approval-server (in-namespace
+                  # HTTPS endpoint that validates SRE approve/deny clicks
+                  # on JWT-signed proposals). Schema-only in Phase 2c-A;
+                  # the reconciler picks it up in Phase 2c-B.
+                  type: object
+                  properties:
+                    enabled:
+                      type: boolean
+                    replicas:
+                      type: integer
+                      minimum: 0
+                    auditNamespace:
+                      type: string
+                    image:
+                      type: object
+                      properties:
+                        repository:
+                          type: string
+                        tag:
+                          type: string
+                        pullPolicy:
+                          type: string
+                        pullSecrets:
+                          type: array
+                          items:
+                            type: string
+                    signingKey:
+                      type: object
+                      properties:
+                        secretName:
+                          type: string
+                    store:
+                      type: object
+                      properties:
+                        backend:
+                          type: string
+                          enum: [inmemory, configmap]
+                        namespace:
+                          type: string
+                        replayConfigMap:
+                          type: string
+                        runbookConfigMap:
+                          type: string
+                    ingress:
+                      type: object
+                      properties:
+                        enabled:
+                          type: boolean
+                        ingressClassName:
+                          type: string
+                        host:
+                          type: string
+                        annotations:
+                          type: object
+                          additionalProperties:
+                            type: string
+                        tls:
+                          type: object
+                          properties:
+                            enabled:
+                              type: boolean
+                            secretName:
+                              type: string
             status:
               type: object
               x-kubernetes-preserve-unknown-fields: true

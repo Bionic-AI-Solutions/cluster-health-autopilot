@@ -60,13 +60,29 @@ type ClusterHealthAutopilotSpec struct {
 	Alerting *AlertingSpec `json:"alerting,omitempty"`
 
 	// AI configures the CHA-com paid-tier AI watcher (aiwatch) +
-	// approval-server. Schema only in Phase 1 — the controller does
-	// NOT consume these fields yet; configure AI via the chart's
-	// `ai.*` helm values today. The schema lands here so an operator-
-	// managed CR can declare AI config forward-compatibly. Phase 2
-	// wires the reconciler.
+	// optional in-namespace Qdrant. Phase 2 / 2b consume these fields.
 	// +optional
 	AI *AISpec `json:"ai,omitempty"`
+
+	// Approval configures the CHA-com approval-server Deployment +
+	// Service + RBAC + signing-key Secret + optional Ingress.
+	//
+	// Schema-only in Phase 2c-A (this PR) — the controller does NOT
+	// reconcile approval-server objects yet; today's chart users
+	// continue to drive the install via the chart's `approval.*` helm
+	// values. The schema lands ahead of the reconciler so operator-
+	// managed CRs can declare approval-server config forward-compatibly
+	// (matches how `AISpec` landed in #107 before Phase 2 picked it up).
+	//
+	// `spec.ai.approvalServerUrl` and `spec.approval` are independent:
+	// the former is the URL the aiwatch points at (could be an
+	// out-of-cluster approval-server); the latter is the spec for the
+	// in-namespace approval-server the operator manages. Production
+	// installs typically set both — `approvalServerUrl =
+	// http://<cr>-approval-server.<ns>.svc:8443` when the operator runs
+	// the server alongside.
+	// +optional
+	Approval *ApprovalSpec `json:"approval,omitempty"`
 
 	// ServiceAccountName overrides the controller-managed SA name.
 	// When empty the controller creates `<cr-name>-sa` AND provisions a
@@ -464,4 +480,150 @@ type AIEmbeddingsSpec struct {
 	// "qwen3-embedding-0.6b"). Required when AIMemorySpec.Enabled.
 	// +optional
 	Model string `json:"model,omitempty"`
+}
+
+// ApprovalSpec is the typed schema for the approval-server (the
+// in-namespace HTTPS endpoint that validates and applies an SRE's
+// approve/deny click on a JWT-signed proposal from the aiwatch).
+//
+// Schema-only in Phase 2c-A — the controller does NOT reconcile
+// approval-server resources yet; the chart-managed install at
+// `templates/approval-server-*.yaml` is still the only way to stand
+// one up. Phase 2c-B will pick this up and produce:
+//   - the `<cr>-approval-server` Deployment + Service
+//   - the signing-key Secret (operator-generated Ed25519 keypair,
+//     replacing the chart's pre-install keygen Job — Helm hooks
+//     don't fit the controller model)
+//   - RBAC: ClusterRoleBinding to the watcher's `-remediator` role
+//     (approval-server applies fixes), namespace-local Role+Binding
+//     for signing-key Secret read, audit Events emission, and
+//     optionally the ConfigMap replay/runbook stores
+//   - an optional `Ingress` (gated on `ingress.enabled`).
+type ApprovalSpec struct {
+	// Enabled is the master switch for the approval-server. Default
+	// false; matches helm `approval.enabled`.
+	// +optional
+	Enabled bool `json:"enabled,omitempty"`
+
+	// Replicas is the desired replica count. Default 1. Going > 1 is
+	// only safe when `Store.Backend = "configmap"` — the in-memory
+	// store can't dedupe replayed approval clicks across replicas, so
+	// the operator pins the Deployment to Recreate strategy in that
+	// mode. With the ConfigMap backend, RollingUpdate is honored.
+	// +optional
+	Replicas int32 `json:"replicas,omitempty"`
+
+	// Image is the CHA-com binary image (same binary that powers the
+	// aiwatch — the approval-server is a subcommand). Defaults to
+	// `docker4zerocool/cha-com:v<OSS-tag>`, matching ai.image.
+	// +optional
+	Image *ImageSpec `json:"image,omitempty"`
+
+	// SigningKey controls the Ed25519 signing-key Secret the
+	// approval-server mounts at /etc/cha/keys/signing.key. The
+	// aiwatch signs proposal JWTs with the same key; the
+	// approval-server verifies them.
+	// +optional
+	SigningKey *ApprovalSigningKeySpec `json:"signingKey,omitempty"`
+
+	// Store selects the durable replay-store backend. Default
+	// `inmemory` (per-replica, suitable for single-replica installs).
+	// Set `configmap` for HA installs — the operator stamps RBAC for
+	// the named replay + runbook ConfigMaps automatically.
+	// +optional
+	Store *ApprovalStoreSpec `json:"store,omitempty"`
+
+	// Ingress optionally exposes the approve/deny endpoint publicly
+	// (typical for Slack approval flows that need the SRE to click a
+	// link). Off by default — production users that drive approval
+	// via in-cluster automation can leave it disabled.
+	// +optional
+	Ingress *ApprovalIngressSpec `json:"ingress,omitempty"`
+
+	// AuditNamespace is the namespace the approval-server emits audit
+	// Events into. Empty → CR namespace.
+	// +optional
+	AuditNamespace string `json:"auditNamespace,omitempty"`
+}
+
+// ApprovalSigningKeySpec controls the JWT signing-key Secret.
+type ApprovalSigningKeySpec struct {
+	// SecretName is the K8s Secret holding `signing.key` (Ed25519
+	// private) + `signing.pub` (public). Default
+	// `cha-approval-signing-key`. The operator creates this Secret
+	// idempotently with a freshly-generated keypair if it doesn't
+	// already exist (replacing the chart's pre-install keygen Job).
+	// +optional
+	SecretName string `json:"secretName,omitempty"`
+}
+
+// ApprovalStoreSpec selects the durable replay-store backend for the
+// approval-server. `inmemory` (default) holds replay + runbook state in
+// the pod's memory — fine for single-replica installs; loses state on
+// restart. `configmap` persists both via Kubernetes ConfigMaps that the
+// operator stamps RBAC for.
+type ApprovalStoreSpec struct {
+	// Backend selects the implementation.
+	// +kubebuilder:validation:Enum=inmemory;configmap
+	// +optional
+	Backend string `json:"backend,omitempty"`
+
+	// Namespace is the namespace the backend writes to. Empty → CR
+	// namespace.
+	// +optional
+	Namespace string `json:"namespace,omitempty"`
+
+	// ReplayConfigMap is the name of the ConfigMap holding consumed
+	// JWT JTIs (one-shot replay defense). Default
+	// `cha-approval-replay`.
+	// +optional
+	ReplayConfigMap string `json:"replayConfigMap,omitempty"`
+
+	// RunbookConfigMap is the name of the ConfigMap holding runbook
+	// state (post-approval execution audit). Default
+	// `cha-approval-runbooks`.
+	// +optional
+	RunbookConfigMap string `json:"runbookConfigMap,omitempty"`
+}
+
+// ApprovalIngressSpec optionally exposes the approval-server publicly.
+type ApprovalIngressSpec struct {
+	// Enabled is the gate. Off by default — production users that
+	// drive approval purely via in-cluster Slack/email handlers can
+	// leave it disabled.
+	// +optional
+	Enabled bool `json:"enabled,omitempty"`
+
+	// IngressClassName names the Ingress class to bind. Empty → the
+	// cluster's default class.
+	// +optional
+	IngressClassName string `json:"ingressClassName,omitempty"`
+
+	// Host is the public hostname users will hit (e.g.
+	// `approve.cha.example.com`). Required when Enabled.
+	// +optional
+	Host string `json:"host,omitempty"`
+
+	// Annotations passes Ingress annotations through verbatim
+	// (cert-manager, oauth2-proxy, kong, etc.).
+	// +optional
+	Annotations map[string]string `json:"annotations,omitempty"`
+
+	// TLS configures the Ingress's TLS termination.
+	// +optional
+	TLS *ApprovalIngressTLSSpec `json:"tls,omitempty"`
+}
+
+// ApprovalIngressTLSSpec is the TLS shape for the Ingress.
+type ApprovalIngressTLSSpec struct {
+	// Enabled adds the spec.tls block. cert-manager users typically
+	// pair this with an annotation that auto-provisions the named
+	// Secret.
+	// +optional
+	Enabled bool `json:"enabled,omitempty"`
+
+	// SecretName is the Secret carrying the TLS cert+key. Empty →
+	// `<cr>-approval-server-tls`.
+	// +optional
+	SecretName string `json:"secretName,omitempty"`
 }
