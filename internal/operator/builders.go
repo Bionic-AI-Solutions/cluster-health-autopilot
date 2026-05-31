@@ -201,10 +201,11 @@ func BuildWatcherDeployment(cr *chav1alpha1.ClusterHealthAutopilot) *appsv1.Depl
 
 	args := []string{
 		"watch",
+		"--live",
 		"--debounce=" + debounce,
-		"--resync=" + resync,
+		"--resync-period=" + resync,
 	}
-	args = append(args, alertingArgs(cr.Spec.Alerting)...)
+	args = append(args, alertingArgs(cr.Spec.Alerting, false)...)
 
 	env := []corev1.EnvVar{
 		{
@@ -220,6 +221,7 @@ func BuildWatcherDeployment(cr *chav1alpha1.ClusterHealthAutopilot) *appsv1.Depl
 			},
 		},
 	}
+	env = append(env, alertingEnv(cr.Spec.Alerting)...)
 
 	return &appsv1.Deployment{
 		TypeMeta: metav1.TypeMeta{APIVersion: "apps/v1", Kind: "Deployment"},
@@ -266,7 +268,7 @@ func BuildDiagnoseCronJob(cr *chav1alpha1.ClusterHealthAutopilot) *batchv1.CronJ
 	}
 	return buildCronJobCommon(cr, "diagnose", NamesFor(cr).Diagnose, cr.Spec.Diagnose.Schedule,
 		cr.Spec.Diagnose.BackoffLimit, cr.Spec.Diagnose.ActiveDeadlineSeconds,
-		[]string{"diagnose"},
+		[]string{"diagnose", "--live"},
 		defaultDiagnoseSchedule, defaultDiagnoseBackoffLimit, defaultDiagnoseActiveDeadlineS,
 	)
 }
@@ -277,7 +279,7 @@ func BuildRemediateCronJob(cr *chav1alpha1.ClusterHealthAutopilot) *batchv1.Cron
 	if cr.Spec.Remediate == nil || !cr.Spec.Remediate.Enabled {
 		return nil
 	}
-	args := []string{"remediate"}
+	args := []string{"remediate", "--live"}
 	if cr.Spec.Remediate.DryRun {
 		args = append(args, "--dry-run=true")
 	}
@@ -307,7 +309,8 @@ func buildCronJobCommon(
 		activeDeadline = defaultDeadline
 	}
 	labels := CommonLabels(cr, role)
-	args = append(args, alertingArgs(cr.Spec.Alerting)...)
+	// diagnose posts the daily #healthinfo digest; remediate does not.
+	args = append(args, alertingArgs(cr.Spec.Alerting, role == "diagnose")...)
 
 	successfulJobsHistoryLimit := int32(3)
 	failedJobsHistoryLimit := int32(3)
@@ -339,6 +342,7 @@ func buildCronJobCommon(
 								{
 									Name:            role,
 									Image:           imageRef(cr.Spec.Image),
+									Env:             alertingEnv(cr.Spec.Alerting),
 									ImagePullPolicy: pullPolicy(cr.Spec.Image),
 									Args:            args,
 								},
@@ -351,10 +355,16 @@ func buildCronJobCommon(
 	}
 }
 
-// alertingArgs turns the AlertingSpec into CLI flags the existing
-// `cha` binary already accepts. Keeping the wire format identical to
-// the chart means the chart's tested behavior carries over verbatim.
-func alertingArgs(a *chav1alpha1.AlertingSpec) []string {
+// alertingArgs turns the AlertingSpec into CLI flags the `cha` binary
+// accepts. Slack webhook URLs are passed via K8s env-var expansion
+// $(SLACK_*_URL) — the values are injected by alertingEnv() into the
+// container's env.
+//
+// The `cha watch` subcommand only accepts --slack-alerts and
+// --slack-critical; --slack-healthinfo is exclusive to `cha diagnose`
+// (it posts the daily digest). Pass includeHealthInfo=false for the
+// watcher Deployment and true for the diagnose CronJob.
+func alertingArgs(a *chav1alpha1.AlertingSpec, includeHealthInfo bool) []string {
 	if a == nil {
 		return nil
 	}
@@ -367,24 +377,55 @@ func alertingArgs(a *chav1alpha1.AlertingSpec) []string {
 	}
 	if a.Slack != nil {
 		if c := a.Slack.Alerts; c != nil && c.SecretName != "" {
-			out = append(out, slackChannelFlag("alerts", c))
+			out = append(out, "--slack-alerts=$(SLACK_ALERTS_URL)")
 		}
 		if c := a.Slack.Critical; c != nil && c.SecretName != "" {
-			out = append(out, slackChannelFlag("critical", c))
+			out = append(out, "--slack-critical=$(SLACK_CRITICAL_URL)")
 		}
-		if c := a.Slack.HealthInfo; c != nil && c.SecretName != "" {
-			out = append(out, slackChannelFlag("healthinfo", c))
+		if includeHealthInfo {
+			if c := a.Slack.HealthInfo; c != nil && c.SecretName != "" {
+				out = append(out, "--slack-healthinfo=$(SLACK_HEALTHINFO_URL)")
+			}
 		}
 	}
 	return out
 }
 
-func slackChannelFlag(channel string, c *chav1alpha1.SlackChannelSpec) string {
-	key := c.SecretKey
-	if key == "" {
-		key = defaultSlackSecretKey
+// alertingEnv builds the env var slice that provides Slack webhook URLs
+// via secretKeyRef so alertingArgs() can reference them as $(ENV_VAR).
+// K8s expands $(FOO) in container args from the container's env at
+// pod-start time, before the process exec.
+func alertingEnv(a *chav1alpha1.AlertingSpec) []corev1.EnvVar {
+	if a == nil || a.Slack == nil {
+		return nil
 	}
-	return fmt.Sprintf("--slack-%s-webhook-secret=%s:%s", channel, c.SecretName, key)
+	var env []corev1.EnvVar
+	if c := a.Slack.Alerts; c != nil && c.SecretName != "" {
+		env = append(env, secretRefEnv("SLACK_ALERTS_URL", c.SecretName, defaultSlackSecretKey, c.SecretKey))
+	}
+	if c := a.Slack.Critical; c != nil && c.SecretName != "" {
+		env = append(env, secretRefEnv("SLACK_CRITICAL_URL", c.SecretName, defaultSlackSecretKey, c.SecretKey))
+	}
+	if c := a.Slack.HealthInfo; c != nil && c.SecretName != "" {
+		env = append(env, secretRefEnv("SLACK_HEALTHINFO_URL", c.SecretName, defaultSlackSecretKey, c.SecretKey))
+	}
+	return env
+}
+
+func secretRefEnv(name, secretName, defaultKey, overrideKey string) corev1.EnvVar {
+	key := defaultKey
+	if overrideKey != "" {
+		key = overrideKey
+	}
+	return corev1.EnvVar{
+		Name: name,
+		ValueFrom: &corev1.EnvVarSource{
+			SecretKeyRef: &corev1.SecretKeySelector{
+				LocalObjectReference: corev1.LocalObjectReference{Name: secretName},
+				Key:                  key,
+			},
+		},
+	}
 }
 
 func intstrPtr(i int) *intstr.IntOrString {
@@ -575,6 +616,54 @@ func BuildAIWatchDeployment(cr *chav1alpha1.ClusterHealthAutopilot) *appsv1.Depl
 	labels := CommonLabels(cr, "aiwatch")
 	replicas := int32(1)
 
+	pod := corev1.PodSpec{
+		ServiceAccountName: ServiceAccountNameFor(cr),
+		ImagePullSecrets:   pullSecretRefs(aiPullSecrets(cr)),
+		Containers: []corev1.Container{
+			{
+				Name:            "aiwatch",
+				Image:           aiImageRef(cr),
+				ImagePullPolicy: aiPullPolicy(cr),
+				Args:            aiArgs(cr),
+				Env:             aiEnv(cr),
+			},
+		},
+	}
+
+	// When the approval-server is enabled, the aiwatch needs the Ed25519
+	// signing key to mint click-to-fix JWT URLs. The chart mounts it
+	// conditionally under approval.enabled; mirror that here. Without this
+	// mount the cha-com binary crashes at startup with:
+	//   "--approval-server-url set but CHA_SIGNING_KEY_PATH is empty"
+	if ApprovalEnabled(cr) {
+		secretName := ApprovalSigningKeySecretName(cr)
+		pod.Volumes = append(pod.Volumes, corev1.Volume{
+			Name: "signing-key",
+			VolumeSource: corev1.VolumeSource{
+				Secret: &corev1.SecretVolumeSource{
+					SecretName: secretName,
+					Items: []corev1.KeyToPath{
+						// 0444 so the non-root container (UID 65532) can read the
+						// private key. fsGroup would be the ideal mechanism but
+						// requires the chart/CR to set podSecurityContext.fsGroup.
+						{Key: "signing.key", Path: "signing.key", Mode: int32Ptr(0o444)},
+						{Key: "signing.pub", Path: "signing.pub", Mode: int32Ptr(0o444)},
+					},
+				},
+			},
+		})
+		c := &pod.Containers[0]
+		c.Env = append(c.Env, corev1.EnvVar{
+			Name:  "CHA_SIGNING_KEY_PATH",
+			Value: "/etc/cha/keys/signing.key",
+		})
+		c.VolumeMounts = append(c.VolumeMounts, corev1.VolumeMount{
+			Name:      "signing-key",
+			MountPath: "/etc/cha/keys",
+			ReadOnly:  true,
+		})
+	}
+
 	return &appsv1.Deployment{
 		TypeMeta: metav1.TypeMeta{APIVersion: "apps/v1", Kind: "Deployment"},
 		ObjectMeta: metav1.ObjectMeta{
@@ -588,19 +677,7 @@ func BuildAIWatchDeployment(cr *chav1alpha1.ClusterHealthAutopilot) *appsv1.Depl
 			Strategy: appsv1.DeploymentStrategy{Type: appsv1.RecreateDeploymentStrategyType},
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{Labels: labels},
-				Spec: corev1.PodSpec{
-					ServiceAccountName: ServiceAccountNameFor(cr),
-					ImagePullSecrets:   pullSecretRefs(aiPullSecrets(cr)),
-					Containers: []corev1.Container{
-						{
-							Name:            "aiwatch",
-							Image:           aiImageRef(cr),
-							ImagePullPolicy: aiPullPolicy(cr),
-							Args:            aiArgs(cr),
-							Env:             aiEnv(cr),
-						},
-					},
-				},
+				Spec:       pod,
 			},
 		},
 	}

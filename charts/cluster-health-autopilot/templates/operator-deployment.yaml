@@ -64,9 +64,21 @@ rules:
   - apiGroups: ["batch"]
     resources: ["cronjobs"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  # Approval-server stores backend (configmap). The operator creates the
+  # approval-server namespaced Role that grants configmap access to the
+  # approval-server SA. The operator must hold the configmap verbs itself
+  # so K8s RBAC escalation prevention passes (k3s escalate on roles has
+  # a known quirk with resourceNames-scoped rules). Standard operator
+  # pattern: hold every verb you intend to grant.
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "list", "watch", "create", "update", "patch"]
   # Approval-server's namespaced Role/RoleBinding triplet.
   - apiGroups: ["rbac.authorization.k8s.io"]
-    resources: ["roles", "rolebindings"]
+    resources: ["roles"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete", "escalate", "bind"]
+  - apiGroups: ["rbac.authorization.k8s.io"]
+    resources: ["rolebindings"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
   # Optional approval-server Ingress (Phase 2c-C). Only reconciled
   # when spec.approval.ingress.enabled=true; gating the verb itself

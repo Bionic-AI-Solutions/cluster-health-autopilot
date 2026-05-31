@@ -108,7 +108,7 @@ func TestBuildWatcherDeployment_DebounceAndResyncDefaults(t *testing.T) {
 	d := BuildWatcherDeployment(cr)
 	args := d.Spec.Template.Spec.Containers[0].Args
 	mustContain(t, args, "--debounce=10s")
-	mustContain(t, args, "--resync=10m")
+	mustContain(t, args, "--resync-period=10m")
 }
 
 func TestBuildWatcherDeployment_DebounceAndResyncOverrides(t *testing.T) {
@@ -121,7 +121,7 @@ func TestBuildWatcherDeployment_DebounceAndResyncOverrides(t *testing.T) {
 	d := BuildWatcherDeployment(cr)
 	args := d.Spec.Template.Spec.Containers[0].Args
 	mustContain(t, args, "--debounce=5s")
-	mustContain(t, args, "--resync=30s")
+	mustContain(t, args, "--resync-period=30s")
 }
 
 func TestBuildWatcherDeployment_AlertingArgs(t *testing.T) {
@@ -140,7 +140,7 @@ func TestBuildWatcherDeployment_AlertingArgs(t *testing.T) {
 	args := d.Spec.Template.Spec.Containers[0].Args
 	mustContain(t, args, "--alertmanager-url=http://alertmanager.pg.svc:9093")
 	mustContain(t, args, "--cluster-name=bionic-cluster")
-	mustContain(t, args, "--slack-critical-webhook-secret=cha-critical:WEBHOOK_URL")
+	mustContain(t, args, "--slack-critical=$(SLACK_CRITICAL_URL)")
 }
 
 // --- Diagnose CronJob ---

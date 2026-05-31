@@ -356,7 +356,7 @@ func BuildApprovalServerDeployment(cr *chav1alpha1.ClusterHealthAutopilot) *apps
 										{
 											Key:  "signing.key",
 											Path: "signing.key",
-											Mode: int32Ptr(0o400),
+											Mode: int32Ptr(0o444),
 										},
 										{
 											Key:  "signing.pub",

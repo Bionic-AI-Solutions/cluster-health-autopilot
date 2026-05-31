@@ -247,6 +247,61 @@ func TestBuildAIWatchDeployment_PullSecretsAIOverride(t *testing.T) {
 	}
 }
 
+func TestBuildAIWatchDeployment_ApprovalEnabled_MountsSigningKey(t *testing.T) {
+	// When spec.approval.enabled=true, the aiwatch Deployment must mount
+	// the Ed25519 signing key and set CHA_SIGNING_KEY_PATH. Without this
+	// the cha-com binary exits at startup with
+	// "--approval-server-url set but CHA_SIGNING_KEY_PATH is empty".
+	cr := aiCR()
+	cr.Spec.Approval = &chav1alpha1.ApprovalSpec{Enabled: true}
+	d := BuildAIWatchDeployment(cr)
+	if d == nil {
+		t.Fatal("deployment must not be nil")
+	}
+	c := d.Spec.Template.Spec.Containers[0]
+
+	var foundEnv, foundMount bool
+	for _, e := range c.Env {
+		if e.Name == "CHA_SIGNING_KEY_PATH" && e.Value == "/etc/cha/keys/signing.key" {
+			foundEnv = true
+		}
+	}
+	for _, m := range c.VolumeMounts {
+		if m.Name == "signing-key" && m.MountPath == "/etc/cha/keys" {
+			foundMount = true
+		}
+	}
+	if !foundEnv {
+		t.Error("CHA_SIGNING_KEY_PATH env not set on aiwatch when approval.enabled=true")
+	}
+	if !foundMount {
+		t.Error("signing-key VolumeMount missing on aiwatch when approval.enabled=true")
+	}
+	var foundVol bool
+	for _, v := range d.Spec.Template.Spec.Volumes {
+		if v.Name == "signing-key" {
+			foundVol = true
+		}
+	}
+	if !foundVol {
+		t.Error("signing-key Volume not added to pod spec when approval.enabled=true")
+	}
+}
+
+func TestBuildAIWatchDeployment_ApprovalDisabled_NoSigningKey(t *testing.T) {
+	cr := aiCR() // no spec.approval
+	d := BuildAIWatchDeployment(cr)
+	c := d.Spec.Template.Spec.Containers[0]
+	for _, e := range c.Env {
+		if e.Name == "CHA_SIGNING_KEY_PATH" {
+			t.Error("CHA_SIGNING_KEY_PATH should not be set when approval.enabled=false")
+		}
+	}
+	if len(d.Spec.Template.Spec.Volumes) != 0 {
+		t.Errorf("no volumes should be added when approval not enabled; got %d", len(d.Spec.Template.Spec.Volumes))
+	}
+}
+
 func TestNamesFor_IncludesAIWatch(t *testing.T) {
 	cr := sampleCR()
 	if got := NamesFor(cr).AIWatch; got != "bionic-aiwatch" {

@@ -138,8 +138,16 @@ spec:
             - apiGroups: ["batch"]
               resources: ["cronjobs"]
               verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+            # Approval-server stores backend ConfigMaps (operator must hold
+            # these verbs to pass RBAC escalation prevention on k3s).
+            - apiGroups: [""]
+              resources: ["configmaps"]
+              verbs: ["get", "list", "watch", "create", "update", "patch"]
             - apiGroups: ["rbac.authorization.k8s.io"]
-              resources: ["roles", "rolebindings"]
+              resources: ["roles"]
+              verbs: ["get", "list", "watch", "create", "update", "patch", "delete", "escalate", "bind"]
+            - apiGroups: ["rbac.authorization.k8s.io"]
+              resources: ["rolebindings"]
               verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
             # Phase 2c-C: optional approval-server Ingress.
             - apiGroups: ["networking.k8s.io"]

@@ -52,7 +52,6 @@ spec:
   remediate:
     enabled: true
     schedule: "0 9 * * *"
-    activeDeadlineSeconds: 300
     dryRun: false
 
   # Alerting — Alertmanager fan-out.
@@ -100,7 +99,7 @@ spec:
       # which the operator creates via spec.ai.memory.enabled=true (Qdrant SS+Svc).
     image:
       repository: docker4zerocool/cha-com
-      tag: "1.9.3"
+      tag: "1.9.6"
       pullPolicy: IfNotPresent
 
   # Approval server — HA (2 replicas), ConfigMap-backed replay store.
@@ -126,5 +125,5 @@ spec:
         secretName: cha-approval-server-tls
     image:
       repository: docker4zerocool/cha-com
-      tag: "1.9.3"
+      tag: "1.9.6"
       pullPolicy: IfNotPresent
