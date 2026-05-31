@@ -84,6 +84,12 @@ type ClusterHealthAutopilotSpec struct {
 	// +optional
 	Approval *ApprovalSpec `json:"approval,omitempty"`
 
+	// ExternalDNS configures the DNS-chain drift analyzer's optional
+	// Cloudflare integration. Schema-only if the watcher image predates
+	// v1.10; the analyzer reads it at registration time.
+	// +optional
+	ExternalDNS *ExternalDNSSpec `json:"externalDNS,omitempty"`
+
 	// ServiceAccountName overrides the controller-managed SA name.
 	// When empty the controller creates `<cr-name>-sa` AND provisions a
 	// cluster-wide reader ClusterRoleBinding for it (Phase 1c — see
@@ -638,4 +644,50 @@ type ApprovalIngressTLSSpec struct {
 	// `<cr>-approval-server-tls`.
 	// +optional
 	SecretName string `json:"secretName,omitempty"`
+}
+
+// ExternalDNSSpec configures the DNS-chain drift analyzer's optional
+// Cloudflare integration. Schema-only if the watcher image predates
+// v1.10; the analyzer reads it at registration time.
+type ExternalDNSSpec struct {
+	// Cloudflare is the Cloudflare-specific DNS drift config.
+	// +optional
+	Cloudflare *CloudflareSpec `json:"cloudflare,omitempty"`
+}
+
+// CloudflareSpec configures the Cloudflare DNS chain drift analyzer.
+type CloudflareSpec struct {
+	// Enabled is the master switch for Cloudflare-backed DNS drift
+	// detection. When false the analyzer is not registered even if
+	// APITokenSecretRef is set.
+	// +optional
+	Enabled bool `json:"enabled,omitempty"`
+
+	// APITokenSecretRef references the K8s Secret holding the
+	// Cloudflare API token. Required when Enabled.
+	// +optional
+	APITokenSecretRef *CloudflareSecretRef `json:"apiTokenSecretRef,omitempty"`
+
+	// ZoneIDs is the list of Cloudflare zone IDs to inspect. Empty
+	// means "all zones accessible to the token."
+	// +optional
+	ZoneIDs []string `json:"zoneIDs,omitempty"`
+
+	// ExpectedTargets is the list of hostnames (or CIDR-prefix strings)
+	// the analyzer accepts as valid DNS targets. Drift is flagged when
+	// a resolved CNAME/A record is not in this list.
+	// +optional
+	ExpectedTargets []string `json:"expectedTargets,omitempty"`
+}
+
+// CloudflareSecretRef points at the K8s Secret holding the Cloudflare
+// API token. All fields are plain strings — value-copy is sufficient,
+// no explicit DeepCopy needed.
+type CloudflareSecretRef struct {
+	// Name is the Kubernetes Secret name in the install namespace.
+	Name string `json:"name"`
+
+	// Key is the key inside the Secret. Defaults to "token".
+	// +optional
+	Key string `json:"key,omitempty"`
 }

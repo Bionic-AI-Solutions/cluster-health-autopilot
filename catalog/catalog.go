@@ -27,14 +27,51 @@
 package catalog
 
 import (
+	"context"
 	"os"
 
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/diagnose"
+	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/dns/cloudflare"
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/fix"
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/investigator"
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/probe"
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/registry"
 )
+
+// cfClientAdapter wraps the concrete cloudflare.Client and adapts its
+// return types to the diagnose.CloudflareClient interface.
+type cfClientAdapter struct {
+	inner cloudflare.Client
+}
+
+func (a cfClientAdapter) ListZones(ctx context.Context) ([]diagnose.Zone, error) {
+	zones, err := a.inner.ListZones(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]diagnose.Zone, len(zones))
+	for i, z := range zones {
+		out[i] = diagnose.Zone{ID: z.ID, Name: z.Name}
+	}
+	return out, nil
+}
+
+func (a cfClientAdapter) ListDNSRecords(ctx context.Context, zoneID string) ([]diagnose.DNSRecord, error) {
+	records, err := a.inner.ListDNSRecords(ctx, zoneID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]diagnose.DNSRecord, len(records))
+	for i, r := range records {
+		out[i] = diagnose.DNSRecord{
+			Name:    r.Name,
+			Type:    r.Type,
+			Content: r.Content,
+			Proxied: r.Proxied,
+		}
+	}
+	return out, nil
+}
 
 // RegisterOSS adds all built-in OSS-tier probes, analyzers, and fixers to r.
 //
@@ -168,6 +205,22 @@ func RegisterOSS(r *registry.Registry) {
 	// an LLM-backed implementation after this registration runs.
 	if os.Getenv("CHA_INVESTIGATOR") != "off" {
 		r.RegisterInvestigator(investigator.RuleBased{})
+	}
+
+	// DNSChainDrift analyzer — wired when CHA_CLOUDFLARE_TOKEN env is set.
+	// When absent, the analyzer still runs the K8s-chain hops and emits
+	// "external DNS hop not verified" for each host. Opt-out via
+	// CHA_ANALYZER_DNS_CHAIN_DRIFT=off.
+	if os.Getenv("CHA_ANALYZER_DNS_CHAIN_DRIFT") != "off" {
+		var cfClient diagnose.CloudflareClient
+		if tok := os.Getenv("CHA_CLOUDFLARE_TOKEN"); tok != "" {
+			cfClient = cfClientAdapter{inner: cloudflare.New(tok, "")}
+		}
+		r.RegisterAnalyzer(diagnose.DNSChainDrift{
+			Client:      cfClient,
+			SeedTargets: probe.DefaultEndpointHostnames(),
+			OptOutAnno:  "cha.bionicaisolutions.com/probe-disable",
+		})
 	}
 }
 

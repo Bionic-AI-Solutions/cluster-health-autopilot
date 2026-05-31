@@ -108,6 +108,10 @@ func (in *ClusterHealthAutopilotSpec) DeepCopyInto(out *ClusterHealthAutopilotSp
 		out.Approval = new(ApprovalSpec)
 		in.Approval.DeepCopyInto(out.Approval)
 	}
+	if in.ExternalDNS != nil {
+		out.ExternalDNS = new(ExternalDNSSpec)
+		in.ExternalDNS.DeepCopyInto(out.ExternalDNS)
+	}
 }
 
 // DeepCopy returns a deep copy of the receiver.
@@ -359,6 +363,60 @@ func (in *ApprovalIngressSpec) DeepCopy() *ApprovalIngressSpec {
 	in.DeepCopyInto(out)
 	return out
 }
+
+// --- ExternalDNSSpec ---
+
+// DeepCopyInto copies the receiver into out. in must be non-nil.
+func (in *ExternalDNSSpec) DeepCopyInto(out *ExternalDNSSpec) {
+	*out = *in
+	if in.Cloudflare != nil {
+		out.Cloudflare = new(CloudflareSpec)
+		in.Cloudflare.DeepCopyInto(out.Cloudflare)
+	}
+}
+
+// DeepCopy returns a deep copy of the receiver.
+func (in *ExternalDNSSpec) DeepCopy() *ExternalDNSSpec {
+	if in == nil {
+		return nil
+	}
+	out := new(ExternalDNSSpec)
+	in.DeepCopyInto(out)
+	return out
+}
+
+// --- CloudflareSpec ---
+
+// DeepCopyInto copies the receiver into out. in must be non-nil.
+func (in *CloudflareSpec) DeepCopyInto(out *CloudflareSpec) {
+	*out = *in
+	if in.APITokenSecretRef != nil {
+		out.APITokenSecretRef = new(CloudflareSecretRef)
+		*out.APITokenSecretRef = *in.APITokenSecretRef
+	}
+	if in.ZoneIDs != nil {
+		out.ZoneIDs = make([]string, len(in.ZoneIDs))
+		copy(out.ZoneIDs, in.ZoneIDs)
+	}
+	if in.ExpectedTargets != nil {
+		out.ExpectedTargets = make([]string, len(in.ExpectedTargets))
+		copy(out.ExpectedTargets, in.ExpectedTargets)
+	}
+}
+
+// DeepCopy returns a deep copy of the receiver.
+func (in *CloudflareSpec) DeepCopy() *CloudflareSpec {
+	if in == nil {
+		return nil
+	}
+	out := new(CloudflareSpec)
+	in.DeepCopyInto(out)
+	return out
+}
+
+// Note: CloudflareSecretRef contains only string fields; value-copy
+// in CloudflareSpec.DeepCopyInto is sufficient — no separate
+// DeepCopyInto/DeepCopy needed.
 
 // --- Silence ---
 
