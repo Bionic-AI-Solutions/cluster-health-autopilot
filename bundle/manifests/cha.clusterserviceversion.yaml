@@ -115,15 +115,19 @@ spec:
             - apiGroups: ["cha.bionicaisolutions.com"]
               resources: ["clusterhealthautopilots/finalizers"]
               verbs: ["update"]
-            # Managed children (Service + StatefulSet added Phase 2b
-            # for the in-namespace Qdrant). PVCs flow transitively via
-            # the StatefulSet's volumeClaimTemplates — the operator
-            # doesn't need pvc verbs.
+            # Managed children. Phase 2b added Service + StatefulSet
+            # (Qdrant). Phase 2c-B added Secret (Ed25519 signing key)
+            # + roles/rolebindings (approval-server namespaced RBAC).
+            # PVCs flow transitively via the StatefulSet's
+            # volumeClaimTemplates — no pvc verbs needed.
             - apiGroups: [""]
               resources: ["serviceaccounts"]
               verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
             - apiGroups: [""]
               resources: ["services"]
+              verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+            - apiGroups: [""]
+              resources: ["secrets"]
               verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
             - apiGroups: ["apps"]
               resources: ["deployments"]
@@ -133,6 +137,9 @@ spec:
               verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
             - apiGroups: ["batch"]
               resources: ["cronjobs"]
+              verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+            - apiGroups: ["rbac.authorization.k8s.io"]
+              resources: ["roles", "rolebindings"]
               verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
             # Leader-election Lease.
             - apiGroups: ["coordination.k8s.io"]

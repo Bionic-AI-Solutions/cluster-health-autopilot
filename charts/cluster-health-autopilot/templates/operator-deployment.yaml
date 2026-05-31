@@ -39,15 +39,21 @@ rules:
   - apiGroups: ["cha.bionicaisolutions.com"]
     resources: ["clusterhealthautopilots/finalizers"]
     verbs: ["update"]
-  # Managed children: ServiceAccount, Service (Qdrant), Deployment,
-  # StatefulSet (Qdrant), CronJob. PersistentVolumeClaims are managed
-  # transitively by the Qdrant StatefulSet's volumeClaimTemplates so
-  # the operator doesn't need pvc verbs.
+  # Managed children: ServiceAccount, Service (Qdrant + approval),
+  # Deployment, StatefulSet (Qdrant), CronJob. Secrets (Phase 2c-B)
+  # for the operator-generated Ed25519 signing key. Roles +
+  # RoleBindings (Phase 2c-B) for the approval-server's narrow
+  # namespaced RBAC. PersistentVolumeClaims are managed transitively
+  # by the Qdrant StatefulSet's volumeClaimTemplates so the operator
+  # doesn't need pvc verbs.
   - apiGroups: [""]
     resources: ["serviceaccounts"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
   - apiGroups: [""]
     resources: ["services"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: [""]
+    resources: ["secrets"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
   - apiGroups: ["apps"]
     resources: ["deployments"]
@@ -57,6 +63,10 @@ rules:
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
   - apiGroups: ["batch"]
     resources: ["cronjobs"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  # Approval-server's namespaced Role/RoleBinding triplet.
+  - apiGroups: ["rbac.authorization.k8s.io"]
+    resources: ["roles", "rolebindings"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
   # Leader-election Lease (manager will create on startup).
   - apiGroups: ["coordination.k8s.io"]

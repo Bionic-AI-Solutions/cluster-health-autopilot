@@ -163,6 +163,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	track(r.reconcileRemediate(ctx, &cr))
 	track(r.reconcileAIWatch(ctx, &cr))
 	track(r.reconcileQdrant(ctx, &cr))
+	track(r.reconcileApprovalServer(ctx, &cr))
 
 	// 3. Compute Ready + WatcherRunning + ReaderRBACReady conditions
 	// from the observed cluster state.
@@ -233,26 +234,42 @@ func (r *Reconciler) reconcileReaderRBAC(ctx context.Context, cr *chav1alpha1.Cl
 	})
 }
 
-// finalizeReaderRBAC deletes the per-CR ClusterRoleBinding before the
-// CR is garbage-collected. The shared ClusterRole stays — it may be
-// in use by OTHER CRs in the cluster, and a leftover unbound role is
-// harmless on cleanup.
+// finalizeReaderRBAC deletes the per-CR cluster-scoped ClusterRoleBindings
+// before the CR is garbage-collected. The shared ClusterRoles stay — they
+// may be in use by OTHER CRs in the cluster, and a leftover unbound role
+// is harmless on cleanup.
+//
+// Phase 2c-B extended this to ALSO clean up the per-CR approval-fixer
+// binding when AI/approval is enabled. Both bindings are cluster-scoped
+// and labeled with ManagedByCRLabel, so the same defense-in-depth check
+// applies.
 func (r *Reconciler) finalizeReaderRBAC(ctx context.Context, cr *chav1alpha1.ClusterHealthAutopilot) error {
-	binding := &rbacv1.ClusterRoleBinding{}
-	name := ReaderClusterRoleBindingName(cr)
-	if err := r.Get(ctx, types.NamespacedName{Name: name}, binding); err != nil {
-		// Already gone — nothing to clean up.
-		return client.IgnoreNotFound(err)
+	bindingNames := []string{
+		ReaderClusterRoleBindingName(cr),
+		ApprovalFixerClusterRoleBindingName(cr),
 	}
-	// Defense in depth: only delete a binding we actually labeled
-	// ourselves. Stops a manual `kubectl create clusterrolebinding
-	// cha-operator-watcher-<ns>-<name>` from being garbage-collected
-	// when the CR happens to share its name.
-	if binding.Labels[ManagedByCRLabel] != cr.Name ||
-		binding.Labels[ManagedByCRNamespaceLabel] != cr.Namespace {
-		return nil
+	for _, name := range bindingNames {
+		binding := &rbacv1.ClusterRoleBinding{}
+		err := r.Get(ctx, types.NamespacedName{Name: name}, binding)
+		if apierrors.IsNotFound(err) {
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		// Defense in depth: only delete a binding we actually labeled
+		// ourselves. Stops a manual `kubectl create clusterrolebinding`
+		// from being garbage-collected when the user happens to pick
+		// the same name.
+		if binding.Labels[ManagedByCRLabel] != cr.Name ||
+			binding.Labels[ManagedByCRNamespaceLabel] != cr.Namespace {
+			continue
+		}
+		if err := client.IgnoreNotFound(r.Delete(ctx, binding)); err != nil {
+			return err
+		}
 	}
-	return client.IgnoreNotFound(r.Delete(ctx, binding))
+	return nil
 }
 
 // reconcileWatcher creates / updates / deletes the watcher
@@ -342,6 +359,193 @@ func (r *Reconciler) reconcileAIWatch(ctx context.Context, cr *chav1alpha1.Clust
 		c.Spec.Strategy = desired.Spec.Strategy
 		mergeLabels(&c.ObjectMeta, desired.Labels)
 	})
+}
+
+// reconcileApprovalServer creates / updates / deletes the
+// approval-server stack (SA + signing-key Secret + Deployment +
+// Service + fixer ClusterRole/Binding + 3 namespaced Roles+Bindings)
+// based on spec.approval. Mirrors the chart's
+// templates/approval-server-*.yaml. Phase 2c-B.
+//
+// The signing-key Secret is operator-generated (Ed25519) and
+// idempotent — once created, never regenerated. Replicas of the
+// operator reading the same Secret produce the same JWT verification
+// behavior.
+func (r *Reconciler) reconcileApprovalServer(ctx context.Context, cr *chav1alpha1.ClusterHealthAutopilot) error {
+	ns := cr.Namespace
+	name := ApprovalServerName(cr)
+
+	desiredSA := BuildApprovalServerServiceAccount(cr)
+	desiredSvc := BuildApprovalServerService(cr)
+	desiredDep := BuildApprovalServerDeployment(cr)
+
+	if desiredSA == nil {
+		// Approval disabled — tear down everything we manage. Signing-
+		// key Secret is intentionally NOT deleted (Secret restore-on-
+		// re-enable would otherwise invalidate every outstanding
+		// approval JWT; users who want to rotate explicitly should
+		// kubectl delete the Secret themselves). The shared fixer
+		// ClusterRole is preserved like the reader role — other CRs
+		// may still bind to it. The per-CR fixer ClusterRoleBinding
+		// is cleaned up by the finalizer pass when the CR is GC'd.
+		teardownList := []struct {
+			obj client.Object
+			n   string
+			ns  string
+		}{
+			{&appsv1.Deployment{}, name, ns},
+			{&corev1.Service{}, name, ns},
+			{&corev1.ServiceAccount{}, name, ns},
+			{&rbacv1.Role{}, name + "-signing-reader", ns},
+			{&rbacv1.RoleBinding{}, name + "-signing-reader", ns},
+			{&rbacv1.Role{}, name + "-events", ApprovalAuditNamespace(cr)},
+			{&rbacv1.RoleBinding{}, name + "-events", ApprovalAuditNamespace(cr)},
+			{&rbacv1.Role{}, name + "-stores", ns},
+			{&rbacv1.RoleBinding{}, name + "-stores", ns},
+			{&rbacv1.ClusterRoleBinding{}, ApprovalFixerClusterRoleBindingName(cr), ""},
+		}
+		for _, item := range teardownList {
+			if err := r.deleteIfExists(ctx, item.obj, item.ns, item.n); err != nil {
+				return fmt.Errorf("teardown %T %s: %w", item.obj, item.n, err)
+			}
+		}
+		return nil
+	}
+
+	// Set owner refs on namespaced children (cluster-scoped objects
+	// don't take ownerRefs from a namespaced parent — they're cleaned
+	// up by the finalizer instead).
+	for _, o := range []client.Object{desiredSA, desiredSvc, desiredDep} {
+		if err := controllerutilSetOwnerRef(cr, o, r.Scheme); err != nil {
+			return err
+		}
+	}
+
+	// 1. Signing-key Secret — generate-once, then leave alone.
+	if err := r.reconcileSigningKeySecret(ctx, cr); err != nil {
+		return fmt.Errorf("signing-key Secret: %w", err)
+	}
+
+	// 2. ServiceAccount.
+	if err := r.createOrUpdate(ctx, desiredSA, func(current client.Object) {
+		c := current.(*corev1.ServiceAccount)
+		mergeLabels(&c.ObjectMeta, desiredSA.Labels)
+	}); err != nil {
+		return fmt.Errorf("approval SA: %w", err)
+	}
+
+	// 3. Shared fixer ClusterRole — idempotent across all CRs.
+	fixerRole := BuildApprovalFixerClusterRole()
+	if err := r.createOrUpdate(ctx, fixerRole, func(current client.Object) {
+		c := current.(*rbacv1.ClusterRole)
+		c.Rules = fixerRole.Rules
+		mergeLabels(&c.ObjectMeta, fixerRole.Labels)
+	}); err != nil {
+		return fmt.Errorf("approval fixer ClusterRole: %w", err)
+	}
+
+	// 4. Per-CR fixer ClusterRoleBinding.
+	fixerBinding := BuildApprovalFixerClusterRoleBinding(cr)
+	if err := r.createOrUpdate(ctx, fixerBinding, func(current client.Object) {
+		c := current.(*rbacv1.ClusterRoleBinding)
+		c.RoleRef = fixerBinding.RoleRef
+		c.Subjects = fixerBinding.Subjects
+		mergeLabels(&c.ObjectMeta, fixerBinding.Labels)
+	}); err != nil {
+		return fmt.Errorf("approval fixer binding: %w", err)
+	}
+
+	// 5. Namespaced Role/RoleBinding triplet.
+	for _, pair := range []struct {
+		role    *rbacv1.Role
+		binding *rbacv1.RoleBinding
+		label   string
+	}{
+		{BuildApprovalSigningReaderRole(cr), BuildApprovalSigningReaderRoleBinding(cr), "signing-reader"},
+		{BuildApprovalEventsRole(cr), BuildApprovalEventsRoleBinding(cr), "events"},
+		{BuildApprovalStoresRole(cr), BuildApprovalStoresRoleBinding(cr), "stores"},
+	} {
+		if pair.role == nil {
+			// stores-RBAC is gated on configmap backend; events Role
+			// is always non-nil but defensive.
+			continue
+		}
+		// Owner-ref the Role + Binding to the CR (same namespace
+		// when AuditNamespace defaults; if user pinned a different
+		// AuditNamespace cross-namespace ownerRef would fail — the
+		// next conditional handles that).
+		if pair.role.Namespace == cr.Namespace {
+			if err := controllerutilSetOwnerRef(cr, pair.role, r.Scheme); err != nil {
+				return err
+			}
+			if err := controllerutilSetOwnerRef(cr, pair.binding, r.Scheme); err != nil {
+				return err
+			}
+		}
+		if err := r.createOrUpdate(ctx, pair.role, func(current client.Object) {
+			c := current.(*rbacv1.Role)
+			c.Rules = pair.role.Rules
+			mergeLabels(&c.ObjectMeta, pair.role.Labels)
+		}); err != nil {
+			return fmt.Errorf("approval %s Role: %w", pair.label, err)
+		}
+		if err := r.createOrUpdate(ctx, pair.binding, func(current client.Object) {
+			c := current.(*rbacv1.RoleBinding)
+			c.RoleRef = pair.binding.RoleRef
+			c.Subjects = pair.binding.Subjects
+			mergeLabels(&c.ObjectMeta, pair.binding.Labels)
+		}); err != nil {
+			return fmt.Errorf("approval %s RoleBinding: %w", pair.label, err)
+		}
+	}
+
+	// 6. Service.
+	if err := r.createOrUpdate(ctx, desiredSvc, func(current client.Object) {
+		c := current.(*corev1.Service)
+		c.Spec.Ports = desiredSvc.Spec.Ports
+		c.Spec.Selector = desiredSvc.Spec.Selector
+		mergeLabels(&c.ObjectMeta, desiredSvc.Labels)
+	}); err != nil {
+		return fmt.Errorf("approval Service: %w", err)
+	}
+
+	// 7. Deployment.
+	return r.createOrUpdate(ctx, desiredDep, func(current client.Object) {
+		c := current.(*appsv1.Deployment)
+		c.Spec.Replicas = desiredDep.Spec.Replicas
+		c.Spec.Template = desiredDep.Spec.Template
+		c.Spec.Strategy = desiredDep.Spec.Strategy
+		mergeLabels(&c.ObjectMeta, desiredDep.Labels)
+	})
+}
+
+// reconcileSigningKeySecret creates the Ed25519 signing-key Secret on
+// the first reconcile and leaves it alone after. The operator MUST NOT
+// regenerate the keypair on subsequent reconciles — every outstanding
+// approval JWT (signed by the previous key) would become unverifiable.
+func (r *Reconciler) reconcileSigningKeySecret(ctx context.Context, cr *chav1alpha1.ClusterHealthAutopilot) error {
+	name := ApprovalSigningKeySecretName(cr)
+	var existing corev1.Secret
+	err := r.Get(ctx, types.NamespacedName{Namespace: cr.Namespace, Name: name}, &existing)
+	if err == nil {
+		// Already exists — leave it alone, just refresh labels.
+		mergeLabels(&existing.ObjectMeta, CommonLabels(cr, "approval-server"))
+		return r.Update(ctx, &existing)
+	}
+	if !apierrors.IsNotFound(err) {
+		return fmt.Errorf("get signing Secret: %w", err)
+	}
+	desired, err := GenerateSigningKeySecret(cr)
+	if err != nil {
+		return err
+	}
+	if err := controllerutilSetOwnerRef(cr, desired, r.Scheme); err != nil {
+		return err
+	}
+	if err := r.Create(ctx, desired); err != nil && !apierrors.IsAlreadyExists(err) {
+		return fmt.Errorf("create signing Secret: %w", err)
+	}
+	return nil
 }
 
 // reconcileQdrant creates / updates / deletes the in-namespace Qdrant
@@ -603,11 +807,75 @@ func (r *Reconciler) computeConditions(ctx context.Context, cr *chav1alpha1.Clus
 	setCondition(&cr.Status, chav1alpha1.ConditionMemoryStoreReady,
 		memStatus, memReason, memMsg, cr.Generation)
 
+	// ApprovalServerReady (Phase 2c-B) — True only when signing-key
+	// Secret has both keys AND Deployment reports availableReplicas > 0
+	// AND Service exists. Disabled when approval is off.
+	var apStatus metav1.ConditionStatus
+	var apReason, apMsg string
+	if !ApprovalEnabled(cr) {
+		apStatus = metav1.ConditionFalse
+		apReason = "Disabled"
+		apMsg = "spec.approval.enabled is false"
+	} else {
+		var secret corev1.Secret
+		secErr := r.Get(ctx, types.NamespacedName{
+			Namespace: cr.Namespace, Name: ApprovalSigningKeySecretName(cr),
+		}, &secret)
+		var svc corev1.Service
+		svcErr := r.Get(ctx, types.NamespacedName{
+			Namespace: cr.Namespace, Name: ApprovalServerName(cr),
+		}, &svc)
+		var dep appsv1.Deployment
+		depErr := r.Get(ctx, types.NamespacedName{
+			Namespace: cr.Namespace, Name: ApprovalServerName(cr),
+		}, &dep)
+		switch {
+		case apierrors.IsNotFound(secErr):
+			apStatus = metav1.ConditionFalse
+			apReason = "SigningKeyMissing"
+			apMsg = "signing-key Secret " + ApprovalSigningKeySecretName(cr) + " not found"
+		case secErr != nil:
+			apStatus = metav1.ConditionUnknown
+			apReason = "GetFailed"
+			apMsg = secErr.Error()
+		case len(secret.Data["signing.key"]) == 0 || len(secret.Data["signing.pub"]) == 0:
+			apStatus = metav1.ConditionFalse
+			apReason = "SigningKeyIncomplete"
+			apMsg = "signing-key Secret missing signing.key or signing.pub"
+		case apierrors.IsNotFound(svcErr):
+			apStatus = metav1.ConditionFalse
+			apReason = "ServiceMissing"
+			apMsg = "approval-server Service " + ApprovalServerName(cr) + " not found"
+		case apierrors.IsNotFound(depErr):
+			apStatus = metav1.ConditionFalse
+			apReason = "DeploymentMissing"
+			apMsg = "approval-server Deployment " + ApprovalServerName(cr) + " not found"
+		case svcErr != nil || depErr != nil:
+			apStatus = metav1.ConditionUnknown
+			apReason = "GetFailed"
+			if svcErr != nil {
+				apMsg = svcErr.Error()
+			} else {
+				apMsg = depErr.Error()
+			}
+		case dep.Status.AvailableReplicas > 0:
+			apStatus = metav1.ConditionTrue
+			apReason = "AvailableReplicasPositive"
+			apMsg = fmt.Sprintf("availableReplicas=%d/%d",
+				dep.Status.AvailableReplicas, *dep.Spec.Replicas)
+		default:
+			apStatus = metav1.ConditionFalse
+			apReason = "NoAvailableReplicas"
+			apMsg = "approval-server Deployment has no available replicas"
+		}
+	}
+	setCondition(&cr.Status, chav1alpha1.ConditionApprovalServerReady,
+		apStatus, apReason, apMsg, cr.Generation)
+
 	// Ready — True iff reconcile had no error AND every other
-	// condition that gates correctness is True. AIWatchRunning is
-	// gating ONLY when AI is enabled; MemoryStoreReady is gating
-	// ONLY when memory is enabled. Neither gates an install that
-	// doesn't opt into them.
+	// condition that gates correctness is True. Each AI/memory/
+	// approval condition gates Ready ONLY when its feature is
+	// enabled, so installs that don't opt in stay Ready=True.
 	readyStatus := metav1.ConditionTrue
 	readyReason := "Reconciled"
 	readyMsg := "all subresources reconciled"
@@ -628,6 +896,10 @@ func (r *Reconciler) computeConditions(ctx context.Context, cr *chav1alpha1.Clus
 		readyStatus = metav1.ConditionFalse
 		readyReason = "MemoryStoreNotReady"
 		readyMsg = "MemoryStoreReady=" + string(memStatus) + ": " + memMsg
+	case ApprovalEnabled(cr) && apStatus != metav1.ConditionTrue:
+		readyStatus = metav1.ConditionFalse
+		readyReason = "ApprovalServerNotReady"
+		readyMsg = "ApprovalServerReady=" + string(apStatus) + ": " + apMsg
 	}
 	setCondition(&cr.Status, chav1alpha1.ConditionReady,
 		readyStatus, readyReason, readyMsg, cr.Generation)

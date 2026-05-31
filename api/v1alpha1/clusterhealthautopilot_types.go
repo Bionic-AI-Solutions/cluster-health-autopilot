@@ -277,6 +277,14 @@ const (
 	// store can be Ready before aiwatch even starts, and the
 	// aiwatch can run without memory.
 	ConditionMemoryStoreReady = "MemoryStoreReady"
+
+	// ConditionApprovalServerReady reflects the in-namespace
+	// approval-server Deployment + Service + signing-key Secret when
+	// `spec.approval.enabled` is true. False/Disabled when approval
+	// is off. True only when the Deployment has availableReplicas > 0,
+	// the Service exists, AND the signing-key Secret has a non-empty
+	// private key.
+	ConditionApprovalServerReady = "ApprovalServerReady"
 )
 
 // FinalizerOperatorRBAC tags a ClusterHealthAutopilot CR for the RBAC
@@ -286,6 +294,10 @@ const (
 // orphans the child. The finalizer gives the controller a chance to
 // delete the binding before the CR is GC'd, so cluster-scoped state
 // stays consistent with CR lifecycle.
+//
+// Covers BOTH the Phase-1c reader binding AND the Phase-2c-B
+// approval-server fixer binding. Single finalizer is enough — the
+// finalize handler iterates every managed cluster-scoped binding.
 const FinalizerOperatorRBAC = "cha.bionicaisolutions.com/operator-rbac"
 
 // ClusterHealthAutopilot is the Schema for the clusterhealthautopilots
