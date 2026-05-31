@@ -5,6 +5,7 @@ package operator
 
 import (
 	"context"
+	"encoding/base64"
 	"testing"
 
 	chav1alpha1 "github.com/Bionic-AI-Solutions/cluster-health-autopilot/api/v1alpha1"
@@ -236,6 +237,46 @@ func TestGenerateSigningKeySecret_HasBothKeys(t *testing.T) {
 	if len(s.Data["signing.key"]) == 0 || len(s.Data["signing.pub"]) == 0 {
 		t.Errorf("Secret missing signing.key or signing.pub; got keys=%v", keysOf(s.Data))
 	}
+}
+
+// TestGenerateSigningKeySecret_RawBase64_NotPEM is a regression guard
+// for v1.10.0 → v1.10.1: cha-com (approval-server + aiwatch) loads the
+// signing key with base64.StdEncoding.DecodeString on the file content.
+// PEM-wrapped data (-----BEGIN PRIVATE KEY-----…) fails that decode at
+// byte 0 with "signing key not valid base64: illegal base64 data at
+// input byte 0", crashing every aiwatch + approval-server pod on
+// startup. The encoding MUST be raw base64 of the ed25519 key bytes.
+func TestGenerateSigningKeySecret_RawBase64_NotPEM(t *testing.T) {
+	cr := approvalCR()
+	s, err := GenerateSigningKeySecret(cr)
+	if err != nil {
+		t.Fatalf("keygen: %v", err)
+	}
+	for _, k := range []string{"signing.key", "signing.pub"} {
+		raw := s.Data[k]
+		if bytesHasPrefix(raw, []byte("-----BEGIN")) {
+			t.Errorf("%s is PEM-wrapped; cha-com expects raw base64. First bytes: %q", k, raw[:min(40, len(raw))])
+		}
+		if _, err := base64Decode(raw); err != nil {
+			t.Errorf("%s is not valid base64: %v", k, err)
+		}
+	}
+}
+
+func bytesHasPrefix(b, prefix []byte) bool {
+	if len(b) < len(prefix) {
+		return false
+	}
+	for i := range prefix {
+		if b[i] != prefix[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func base64Decode(s []byte) ([]byte, error) {
+	return base64.StdEncoding.DecodeString(string(s))
 }
 
 // --- Reconcile-loop wiring ---

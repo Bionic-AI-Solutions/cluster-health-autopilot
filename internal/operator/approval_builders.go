@@ -6,7 +6,7 @@ package operator
 import (
 	"crypto/ed25519"
 	"crypto/rand"
-	"encoding/pem"
+	"encoding/base64"
 	"fmt"
 
 	chav1alpha1 "github.com/Bionic-AI-Solutions/cluster-health-autopilot/api/v1alpha1"
@@ -598,30 +598,28 @@ func BuildApprovalStoresRoleBinding(cr *chav1alpha1.ClusterHealthAutopilot) *rba
 }
 
 // GenerateSigningKeySecret returns a Secret carrying a fresh Ed25519
-// keypair (`signing.key` private + `signing.pub` public, both PEM).
-// The operator calls this when the named Secret doesn't yet exist;
-// idempotent across replicas via CAS in the create path (a second
-// operator replica that finds the Secret already there reads it
-// instead of regenerating, so JWT signatures stay verifiable).
+// keypair (`signing.key` private + `signing.pub` public). The
+// encoding MUST be **raw base64 without PEM wrapping** — this matches
+// the format the cha-com `approval-server` and `aiwatch` binaries
+// expect when they load the key from
+// /etc/cha/keys/signing.{key,pub}. PEM wrapping causes them to fail
+// at startup with "signing key not valid base64".
 //
-// `randSource` is the source of randomness. Tests pass a
-// deterministic reader for reproducibility; production uses
-// crypto/rand.Reader. The crypto/ed25519 stdlib generates a 64-byte
-// private key (the first 32 bytes are the seed) and a 32-byte public
-// key.
+// The operator calls this when the named Secret doesn't yet exist;
+// idempotent across replicas via the create path (a second operator
+// replica that finds the Secret already there reads it instead of
+// regenerating, so JWT signatures stay verifiable).
+//
+// The crypto/ed25519 stdlib generates a 64-byte private key (the
+// first 32 bytes are the seed) and a 32-byte public key; both are
+// base64-StdEncoding-encoded into the Secret bytes.
 func GenerateSigningKeySecret(cr *chav1alpha1.ClusterHealthAutopilot) (*corev1.Secret, error) {
 	pub, priv, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
 		return nil, fmt.Errorf("ed25519 keygen: %w", err)
 	}
-	privPEM := pem.EncodeToMemory(&pem.Block{
-		Type:  "PRIVATE KEY",
-		Bytes: priv,
-	})
-	pubPEM := pem.EncodeToMemory(&pem.Block{
-		Type:  "PUBLIC KEY",
-		Bytes: pub,
-	})
+	privEnc := base64.StdEncoding.EncodeToString(priv)
+	pubEnc := base64.StdEncoding.EncodeToString(pub)
 	return &corev1.Secret{
 		TypeMeta: metav1.TypeMeta{APIVersion: "v1", Kind: "Secret"},
 		ObjectMeta: metav1.ObjectMeta{
@@ -631,8 +629,8 @@ func GenerateSigningKeySecret(cr *chav1alpha1.ClusterHealthAutopilot) (*corev1.S
 		},
 		Type: corev1.SecretTypeOpaque,
 		Data: map[string][]byte{
-			"signing.key": privPEM,
-			"signing.pub": pubPEM,
+			"signing.key": []byte(privEnc),
+			"signing.pub": []byte(pubEnc),
 		},
 	}, nil
 }
