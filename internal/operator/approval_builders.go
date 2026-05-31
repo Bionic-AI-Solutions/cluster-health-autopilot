@@ -685,6 +685,22 @@ func BuildApprovalServerIngress(cr *chav1alpha1.ClusterHealthAutopilot) *network
 							},
 						},
 						{
+							// /deny shares the same symmetric one-shot
+							// token with /approve (cha-com #17). SRE
+							// clicking Deny records a denial outcome
+							// (which the RAG memory loop learns from)
+							// and burns the JTI so the matching
+							// approve link can't be replayed.
+							Path:     "/deny",
+							PathType: &pathType,
+							Backend: networkingv1.IngressBackend{
+								Service: &networkingv1.IngressServiceBackend{
+									Name: ApprovalServerName(cr),
+									Port: networkingv1.ServiceBackendPort{Name: "http"},
+								},
+							},
+						},
+						{
 							Path:     "/healthz",
 							PathType: &pathType,
 							Backend: networkingv1.IngressBackend{

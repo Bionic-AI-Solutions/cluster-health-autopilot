@@ -44,6 +44,8 @@ var CaptureGVRs = []schema.GroupVersionResource{
 	GVRCertificateRequest,
 	GVRCertManagerOrder,
 	GVRIngress,
+	GVRService,
+	GVREndpoints,
 	// GVRSecret intentionally excluded — see comment above.
 }
 

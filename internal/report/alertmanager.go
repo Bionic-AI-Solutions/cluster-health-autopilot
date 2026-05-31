@@ -10,6 +10,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/fix"
@@ -85,6 +86,15 @@ func BuildActiveAlerts(active []DeltaDiag, clusterName string, ttl time.Duration
 		annotations := map[string]string{
 			"summary":     d.Message,
 			"remediation": d.Remediation,
+			// `silence_snippet` is a ready-to-run kubectl command an
+			// SRE can paste to suppress this exact finding-class for a
+			// bounded duration. Surfaces via the Silence CRD (Phase 1c)
+			// which the watch loop honors at the analyzer-filter layer.
+			// Receivers (Slack/email) render this in the same block as
+			// `remediation` so the operator can decide: fix → remediate,
+			// noise → silence. Bounded to 24h by default; SRE edits
+			// spec.until before applying.
+			"silence_snippet": buildSilenceSnippet(d, 24*time.Hour),
 		}
 		// AI tier annotations — populated only when CHA-com active.
 		// Alertmanager templates can reference {{ .Annotations.ai_enrichment }}
@@ -94,6 +104,13 @@ func BuildActiveAlerts(active []DeltaDiag, clusterName string, ttl time.Duration
 		}
 		if d.ApprovalURL != "" {
 			annotations["proposed_fix_url"] = d.ApprovalURL
+			// Symmetric deny URL (cha-com #17 symmetric one-shot
+			// tokens). The Slack/email template renders both buttons
+			// so the SRE has a one-click Deny alongside Approve.
+			// Whichever endpoint the JTI lands at first wins; the
+			// other is burned. Denial records a RAG outcome so the
+			// proposer learns from rejections.
+			annotations["proposed_deny_url"] = strings.Replace(d.ApprovalURL, "/approve?", "/deny?", 1)
 		}
 		if d.ProposedActionID != "" {
 			annotations["proposed_action_id"] = d.ProposedActionID
@@ -200,4 +217,60 @@ func truncateLabel(s string) string {
 		return s
 	}
 	return s[:253] + "..."
+}
+
+// silenceSnippetName derives a stable Silence CR name from a finding
+// subject. K8s names are ≤63 chars, lowercase alphanumeric + dashes;
+// substitute "/" and other illegal characters with "-".
+func silenceSnippetName(subject string) string {
+	var b strings.Builder
+	prev := byte('-')
+	for i := 0; i < len(subject); i++ {
+		c := subject[i]
+		switch {
+		case c >= 'A' && c <= 'Z':
+			b.WriteByte(c + 32)
+			prev = c + 32
+		case (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9'):
+			b.WriteByte(c)
+			prev = c
+		default:
+			if prev != '-' {
+				b.WriteByte('-')
+				prev = '-'
+			}
+		}
+	}
+	name := strings.Trim(b.String(), "-")
+	if len(name) > 50 {
+		name = name[:50]
+	}
+	return "silence-" + name
+}
+
+// buildSilenceSnippet returns a kubectl-apply heredoc that, when run,
+// creates a Silence CR matching the finding's exact subject for the
+// given duration. SREs paste this into a terminal to suppress noise.
+//
+// Matcher is `subject` (most specific) — silences ONLY this exact
+// finding, not the class. If the SRE wants to suppress a whole probe
+// they edit the spec.matcher block to use `source` instead.
+func buildSilenceSnippet(d DeltaDiag, ttl time.Duration) string {
+	until := time.Now().UTC().Add(ttl).Format(time.RFC3339)
+	name := silenceSnippetName(d.Subject)
+	// `subject` matcher because the Silence CRD's spec.matcher
+	// accepts {source, subject, severity}. Subject is the most
+	// specific selector — exact match only.
+	return fmt.Sprintf(`kubectl apply -f - <<EOF
+apiVersion: cha.bionicaisolutions.com/v1alpha1
+kind: Silence
+metadata:
+  name: %s
+  namespace: cluster-health-autopilot
+spec:
+  matcher:
+    subject: %q
+  until: %q
+  reason: "silenced from alert at %s"
+EOF`, name, d.Subject, until, time.Now().UTC().Format(time.RFC3339))
 }

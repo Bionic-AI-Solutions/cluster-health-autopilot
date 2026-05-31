@@ -365,7 +365,6 @@ func DefaultEndpointTargets() []EndpointTarget {
 		{URL: "https://baisoln.com", Name: "baisoln.com (apex)", ExpectStatus: 200},
 		{URL: "https://www.baisoln.com", Name: "baisoln.com (www)", ExpectStatus: 200},
 		{URL: "https://auth.bionicaisolutions.com", Name: "Keycloak Auth"},
-		{URL: "https://langfuse.bionicaisolutions.com", Name: "Langfuse Observability"},
 		{URL: "https://platform.baisoln.com", Name: "Bionic Platform"},
 		{URL: "https://mail.bionicaisolutions.com", Name: "Mail Service"},
 	}

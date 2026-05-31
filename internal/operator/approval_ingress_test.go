@@ -66,10 +66,10 @@ func TestBuildApprovalServerIngress_BasicShape(t *testing.T) {
 	if ing.Spec.Rules[0].Host != "approve.cha.example.com" {
 		t.Errorf("host=%q want approve.cha.example.com", ing.Spec.Rules[0].Host)
 	}
-	if ing.Spec.Rules[0].HTTP == nil || len(ing.Spec.Rules[0].HTTP.Paths) != 2 {
-		t.Fatalf("expected 2 paths (/approve + /healthz); got %+v", ing.Spec.Rules[0].HTTP)
+	if ing.Spec.Rules[0].HTTP == nil || len(ing.Spec.Rules[0].HTTP.Paths) != 3 {
+		t.Fatalf("expected 3 paths (/approve + /deny + /healthz); got %+v", ing.Spec.Rules[0].HTTP)
 	}
-	wantPaths := map[string]bool{"/approve": false, "/healthz": false}
+	wantPaths := map[string]bool{"/approve": false, "/deny": false, "/healthz": false}
 	for _, p := range ing.Spec.Rules[0].HTTP.Paths {
 		if _, ok := wantPaths[p.Path]; ok {
 			wantPaths[p.Path] = true

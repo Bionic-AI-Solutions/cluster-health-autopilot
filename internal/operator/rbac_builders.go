@@ -109,9 +109,16 @@ func BuildReaderClusterRoleBinding(cr *chav1alpha1.ClusterHealthAutopilot) *rbac
 func readerPolicyRules() []rbacv1.PolicyRule {
 	return []rbacv1.PolicyRule{
 		// Core probe surface (pods/nodes/PVCs/events/namespaces).
+		// Services + endpoints needed by the DNS-chain drift analyzer
+		// to walk Ingress → Service → Endpoints chains. Without them
+		// every Ingress shows up as orphan-service (the analyzer's
+		// src.Get(GVRService) returns 403, which it treats as
+		// "doesn't exist"). v1.10.3 regression — caught against the
+		// live Bionic cluster where ~10 healthy Ingresses were
+		// incorrectly flagged.
 		{
 			APIGroups: []string{""},
-			Resources: []string{"pods", "nodes", "persistentvolumeclaims", "events", "namespaces"},
+			Resources: []string{"pods", "nodes", "persistentvolumeclaims", "events", "namespaces", "services", "endpoints"},
 			Verbs:     []string{"get", "list", "watch"},
 		},
 		// Secrets — names + keys only (ProactiveSecretKeyCheck doesn't
