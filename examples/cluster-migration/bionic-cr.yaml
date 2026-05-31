@@ -1,0 +1,130 @@
+# ClusterHealthAutopilot CR — Bionic production cluster.
+#
+# This CR replicates the current Helm-managed config (chart 1.9.0) so
+# the operator takes over lifecycle management of all CHA workloads.
+#
+# MIGRATION PROCEDURE:
+# 1. helm upgrade cha charts/cluster-health-autopilot/ -n cluster-health-autopilot
+#       --reuse-values --set operator.enabled=true (enables operator Deployment)
+# 2. kubectl apply -f examples/cluster-migration/bionic-cr.yaml
+# 3. Watch: kubectl get clusterhealthautopilot bionic -n cluster-health-autopilot -w
+# 4. Once Ready=True, verify all pods running (bionic-watcher, bionic-aiwatch,
+#    bionic-rag, bionic-approval-server).
+# 5. Cutover: helm upgrade ... --set watcher.enabled=false
+#       --set remediation.enabled=false --set diagnose.enabled=false
+#       --set ai.enabled=false --set approval.enabled=false
+#    This scales down the chart-managed pods; the operator-managed ones continue.
+#
+# NOTES:
+# - spec.ai.apiKey.secretName must exist independently (chart-managed ESO secret)
+# - spec.approval.ingress.tls is handled by cert-manager annotation on the chart;
+#   the operator-managed Ingress will need the annotation added post-apply
+#   (see spec.approval.ingress.annotations below)
+# - Slack webhook secrets (cha-slack-*) are chart-managed and remain so;
+#   the watcher args pick them up via alertingArgs() from spec.alerting.
+apiVersion: cha.bionicaisolutions.com/v1alpha1
+kind: ClusterHealthAutopilot
+metadata:
+  name: bionic
+  namespace: cluster-health-autopilot
+spec:
+  # OSS binary image — includes k3s probe suite + operator port (v1.9.0).
+  image:
+    repository: docker4zerocool/cluster-health-autopilot
+    tag: "1.9.0"
+    pullPolicy: IfNotPresent
+
+  # Watcher — always-on event-driven probe → fix pipeline.
+  watcher:
+    enabled: true
+    replicas: 1
+    debounce: 10s
+    resyncPeriod: 10m
+
+  # Diagnose — daily read-only sweep (same schedule as chart).
+  diagnose:
+    enabled: true
+    schedule: "0 9 * * *"
+    activeDeadlineSeconds: 300
+    backoffLimit: 1
+
+  # Remediate — daily auto-fixer sweep.
+  remediate:
+    enabled: true
+    schedule: "0 9 * * *"
+    activeDeadlineSeconds: 300
+    dryRun: false
+
+  # Alerting — Alertmanager fan-out.
+  alerting:
+    alertmanager:
+      url: http://alertmanager.pg.svc.cluster.local:9093
+      clusterName: bionic-cluster
+    # Slack channels are referenced via secret names; the operator passes
+    # --slack-alerts-webhook-secret=<name>:<key> to the watcher binary.
+    slack:
+      alerts:
+        secretName: cha-slack-ceph-alerts
+      critical:
+        secretName: cha-slack-ceph-critical
+      healthInfo:
+        secretName: cha-slack-healthinfo
+
+  # AI — CHA-com paid tier T3 (full LLM-fixer-matcher + Vault runbook +
+  # confidence-gated auto-apply + RAG memory).
+  ai:
+    enabled: true
+    tier: t3
+    endpoint: https://mcp.baisoln.com/gpu-ai/v1
+    model: qwen3.6-35b-a3b-fp8
+    interval: 60s
+    llmFixerMatcher: true
+    auditLog: "-"
+    allowSaas: false
+    approvalServerUrl: https://cha-approve.baisoln.com
+    apiKey:
+      secretName: cha-ai-llm-key
+      secretKey: API_KEY
+      envName: AI_API_KEY
+      header: X-API-Key
+    t3:
+      vaultAllowedPrefixes:
+        - secret/data/cha-recovery/
+    memory:
+      enabled: true
+      embeddings:
+        endpoint: https://mcp.baisoln.com/gpu-ai/v1
+        model: qwen3-embedding-0.6b
+      topK: 5
+      # storeUrl defaults to http://bionic-rag.cluster-health-autopilot.svc:6333
+      # which the operator creates via spec.ai.memory.enabled=true (Qdrant SS+Svc).
+    image:
+      repository: docker4zerocool/cha-com
+      tag: "1.9.3"
+      pullPolicy: IfNotPresent
+
+  # Approval server — HA (2 replicas), ConfigMap-backed replay store.
+  approval:
+    enabled: true
+    replicas: 2
+    auditNamespace: cluster-health-autopilot
+    store:
+      backend: configmap
+      replayConfigMap: cha-approval-replay
+      runbookConfigMap: cha-approval-runbooks
+    signingKey:
+      secretName: cha-approval-signing-key
+    ingress:
+      enabled: true
+      host: cha-approve.baisoln.com
+      ingressClassName: ""   # cluster default (Traefik on k3s)
+      annotations:
+        # cert-manager provisions the TLS cert automatically.
+        cert-manager.io/cluster-issuer: letsencrypt-prod
+      tls:
+        enabled: true
+        secretName: cha-approval-server-tls
+    image:
+      repository: docker4zerocool/cha-com
+      tag: "1.9.3"
+      pullPolicy: IfNotPresent
