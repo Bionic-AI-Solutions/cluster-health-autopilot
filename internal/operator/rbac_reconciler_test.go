@@ -39,6 +39,12 @@ func TestReconcile_CreatesReaderClusterRoleAndBinding(t *testing.T) {
 	if !hasRule(role.Rules, "", "pods") {
 		t.Errorf("ClusterRole missing core/pods read rule")
 	}
+	// v1.10.2 regression guard: watcher uses controller-runtime
+	// lease-based leader election. Without this rule the watcher
+	// emits a 461-line "cannot get leases" error every 5–10s.
+	if !hasRule(role.Rules, "coordination.k8s.io", "leases") {
+		t.Errorf("ClusterRole missing coordination.k8s.io/leases for watcher leader election")
+	}
 
 	var binding rbacv1.ClusterRoleBinding
 	if err := c.Get(context.Background(), types.NamespacedName{Name: ReaderClusterRoleBindingName(cr)}, &binding); err != nil {

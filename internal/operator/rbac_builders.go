@@ -223,5 +223,18 @@ func readerPolicyRules() []rbacv1.PolicyRule {
 			Resources: []string{"driftreports", "resolutionrecords", "silences"},
 			Verbs:     []string{"get", "list", "watch"},
 		},
+		// Leader-election: the watcher binary uses controller-runtime's
+		// lease-based leader election so multi-replica installs don't
+		// double-fire. Without these verbs, a single-replica install
+		// works (loop continues; lease acquisition is non-fatal) but
+		// the watcher logs a 461-line "cannot get leases" error every
+		// 5–10s. Verbs scoped to coordination.k8s.io only — these
+		// don't expand the probe surface, they're for the watcher's
+		// own internal coordination.
+		{
+			APIGroups: []string{"coordination.k8s.io"},
+			Resources: []string{"leases"},
+			Verbs:     []string{"get", "list", "watch", "create", "update", "patch"},
+		},
 	}
 }
