@@ -31,7 +31,7 @@ spec:
   # OSS binary image — includes k3s probe suite + operator port (v1.9.0).
   image:
     repository: docker4zerocool/cluster-health-autopilot
-    tag: "1.9.0"
+    tag: "1.10.0"
     pullPolicy: IfNotPresent
 
   # Watcher — always-on event-driven probe → fix pipeline.
