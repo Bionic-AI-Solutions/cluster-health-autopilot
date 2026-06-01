@@ -157,16 +157,36 @@ func (r RBACDrift) checkWildcardVerbs(ctx context.Context, src snapshot.Source, 
 }
 
 // checkUnboundServiceAccounts walks ServiceAccounts referenced by Pods
-// and flags those without any RoleBinding / ClusterRoleBinding. Skips
-// the default ServiceAccount in every namespace (it's unbound by
-// design).
+// and flags those without any RoleBinding / ClusterRoleBinding. Skips:
+//   - the default ServiceAccount in every namespace (unbound by design)
+//   - any SA that has automountServiceAccountToken=false at SA or Pod
+//     level — the token isn't mounted, so a Role binding would be
+//     useless. Workloads that explicitly disable automount are using
+//     the SA only as an identity marker (logs, audit), not for K8s API
+//     access; flagging them as "unbound" produced false-positive noise
+//     pre-1.11.1 for every Helm chart that ships hardened SAs.
 func (r RBACDrift) checkUnboundServiceAccounts(ctx context.Context, src snapshot.Source) []Diagnostic {
 	pods, err := src.List(ctx, snapshot.GVRPod, "")
 	if err != nil || pods == nil {
 		return nil
 	}
 
-	// Collect (namespace, serviceaccount) pairs referenced by Pods.
+	// Pre-fetch SA objects so we can check automountServiceAccountToken
+	// without N+1 lookups (one List vs one Get per Pod).
+	sas, _ := src.List(ctx, snapshot.GVRServiceAccount, "")
+	saAutomount := map[string]*bool{} // "<ns>/<name>" → *bool (nil = unset, default true)
+	if sas != nil {
+		for i := range sas.Items {
+			sa := &sas.Items[i]
+			key := sa.GetNamespace() + "/" + sa.GetName()
+			if v, found, _ := unstructured.NestedBool(sa.Object, "automountServiceAccountToken"); found {
+				saAutomount[key] = &v
+			}
+		}
+	}
+
+	// Collect (namespace, serviceaccount) pairs referenced by Pods that
+	// ACTUALLY mount the token. Pod-level automount overrides SA-level.
 	type saRef struct{ ns, name string }
 	refs := map[saRef]struct{}{}
 	for i := range pods.Items {
@@ -177,6 +197,18 @@ func (r RBACDrift) checkUnboundServiceAccounts(ctx context.Context, src snapshot
 		}
 		saName, _, _ := unstructured.NestedString(p.Object, "spec", "serviceAccountName")
 		if saName == "" || saName == "default" {
+			continue
+		}
+		// Effective automount: Pod-level wins if set; else SA-level if
+		// set; else K8s default = true (token mounted).
+		automount := true
+		if v, found, _ := unstructured.NestedBool(p.Object, "spec", "automountServiceAccountToken"); found {
+			automount = v
+		} else if sav, ok := saAutomount[ns+"/"+saName]; ok && sav != nil {
+			automount = *sav
+		}
+		if !automount {
+			// No token mounted → no Role binding needed → don't flag.
 			continue
 		}
 		refs[saRef{ns: ns, name: saName}] = struct{}{}

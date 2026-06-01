@@ -77,6 +77,11 @@ var (
 	// Used by the TraefikRoutes probe to validate backend service references.
 	GVRService = schema.GroupVersionResource{Group: "", Version: "v1", Resource: "services"}
 
+	// GVRServiceAccount is the GVR for core/v1 ServiceAccount objects.
+	// Used by RBACDrift to read automountServiceAccountToken so SAs that
+	// explicitly opt out of token mounting are NOT flagged as "unbound".
+	GVRServiceAccount = schema.GroupVersionResource{Group: "", Version: "v1", Resource: "serviceaccounts"}
+
 	// GVRStorageClass is the GVR for storage.k8s.io/v1 StorageClass objects.
 	// Used by K3sLocalPathStorage to detect the cluster default StorageClass.
 	GVRStorageClass = schema.GroupVersionResource{Group: "storage.k8s.io", Version: "v1", Resource: "storageclasses"}

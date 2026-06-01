@@ -46,6 +46,7 @@ var CaptureGVRs = []schema.GroupVersionResource{
 	GVRIngress,
 	GVRService,
 	GVREndpoints,
+	GVRServiceAccount,
 	// GVRSecret intentionally excluded — see comment above.
 }
 
