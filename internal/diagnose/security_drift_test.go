@@ -174,7 +174,11 @@ func TestSecurityDrift_PodWithDigestPinnedImage_Silent(t *testing.T) {
 	}
 }
 
-func TestSecurityDrift_PodWithMutableTag_Warning(t *testing.T) {
+func TestSecurityDrift_PodWithMutableTag_InfoOnTrustedRegistry(t *testing.T) {
+	// v1.14.0: trusted-upstream registries (ghcr.io, quay.io, gcr.io,
+	// registry.k8s.io, plus canonical docker.io official images) get
+	// severity=info instead of warning. Operator can override via
+	// CHA_DIGEST_PIN_UNTRUSTED_SEVERITY env.
 	src := secureBaseline()
 	src.byResource["pods"] = []unstructured.Unstructured{
 		makePodWithContainers("app", "x-1", map[string]string{
@@ -185,11 +189,83 @@ func TestSecurityDrift_PodWithMutableTag_Warning(t *testing.T) {
 	if len(got) != 1 {
 		t.Fatalf("expected 1 diagnostic; got %d: %+v", len(got), got)
 	}
+	if got[0].Severity != "info" {
+		t.Errorf("trusted-upstream ghcr.io image should be info; got severity=%q", got[0].Severity)
+	}
 	if !strings.Contains(got[0].Message, "without digest pin") {
 		t.Errorf("message lacks 'without digest pin': %s", got[0].Message)
 	}
 	if !strings.Contains(got[0].Message, "v1.2.3") {
 		t.Errorf("message should name the offending image: %s", got[0].Message)
+	}
+}
+
+// TestSecurityDrift_PodWithMutableTag_WarningOnInHouseRegistry —
+// in-house images (e.g., the team's own Docker Hub namespace) stay
+// at warning because they're where REAL supply-chain pinning matters.
+func TestSecurityDrift_PodWithMutableTag_WarningOnInHouseRegistry(t *testing.T) {
+	src := secureBaseline()
+	src.byResource["pods"] = []unstructured.Unstructured{
+		makePodWithContainers("app", "x-1", map[string]string{
+			"main": "docker4zerocool/my-app:v1.2.3", // in-house, not trusted-upstream
+		}),
+	}
+	got := SecurityDrift{}.Run(context.Background(), src)
+	if len(got) != 1 {
+		t.Fatalf("expected 1 diagnostic; got %d", len(got))
+	}
+	if got[0].Severity != "warning" {
+		t.Errorf("in-house image should be warning; got severity=%q", got[0].Severity)
+	}
+}
+
+// TestSecurityDrift_PodWithMixedImages_WarningEscalates — when a pod
+// has BOTH an upstream image AND an in-house image, the diagnostic
+// goes to warning (any single untrusted image escalates the pod).
+func TestSecurityDrift_PodWithMixedImages_WarningEscalates(t *testing.T) {
+	src := secureBaseline()
+	src.byResource["pods"] = []unstructured.Unstructured{
+		makePodWithContainers("app", "x-1", map[string]string{
+			"trusted":  "ghcr.io/org/sidecar:v0.5",  // trusted-upstream → would be info alone
+			"in-house": "docker4zerocool/main:v1.0", // in-house → escalates to warning
+		}),
+	}
+	got := SecurityDrift{}.Run(context.Background(), src)
+	if len(got) != 1 {
+		t.Fatalf("expected 1 diagnostic; got %d", len(got))
+	}
+	if got[0].Severity != "warning" {
+		t.Errorf("mixed pod should escalate to warning; got severity=%q", got[0].Severity)
+	}
+}
+
+// TestClassifyDigestPinSeverity exhaustively covers the trust matrix.
+func TestClassifyDigestPinSeverity(t *testing.T) {
+	cases := map[string]string{
+		// Trusted upstream — info
+		"ghcr.io/org/app:v1":                 "info",
+		"quay.io/operator/foo:1.2":           "info",
+		"gcr.io/distroless/static:latest":    "info",
+		"registry.k8s.io/pause:3.9":          "info",
+		"k8s.gcr.io/pause:3.9":               "info",
+		"docker.io/postgres:17":              "info",
+		"postgres:17":                        "info", // implicit docker.io
+		"docker.io/redis:7-alpine":           "info",
+		"redis:7-alpine":                     "info",
+		"docker.io/haproxy:2.8-alpine":       "info",
+		"docker.io/envoyproxy/envoy:v1.30":   "info",
+		"public.ecr.aws/lambda/python:3.11":  "info",
+		"mcr.microsoft.com/dotnet/runtime:8": "info",
+		// In-house / unknown — warning
+		"docker4zerocool/my-app:v1.0":         "warning",
+		"someorg/myapp:v1.0":                  "warning",
+		"docker.io/someorg/myapp:v1.0":        "warning",
+		"my-private-registry.example.com/x:1": "warning",
+	}
+	for img, want := range cases {
+		if got := classifyDigestPinSeverity(img); got != want {
+			t.Errorf("classify(%q) = %q; want %q", img, got, want)
+		}
 	}
 }
 

@@ -94,6 +94,17 @@ func (NoopProposer) ProposeForNamespace(context.Context, snapshot.Source, string
 //     Ingress in the cluster has a backend Service inside the target
 //     namespace, we infer that traffic from the controller's ns must be
 //     allowed)
+//  4. **Allow from kube-system** (CoreDNS, kubelet probes, scheduler).
+//     Without this, ConfigMap/Secret reload, liveness/readiness probes,
+//     and DNS lookups break on policy-enforcing CNIs.
+//  5. **Allow from EXTERNAL (0.0.0.0/0) on LoadBalancer / NodePort
+//     service ports** — the v1.13.0 hardening that prevents the
+//     2026-06-01 class of outage. When a Service of type
+//     LoadBalancer or NodePort lives in this namespace, external
+//     traffic arrives at the backing pods with the CLIENT source IP
+//     (post-MetalLB-ARP) rather than an in-cluster pod IP. A pure
+//     `namespaceSelector` allow list will silently DROP that traffic
+//     on kube-router / Calico / Cilium, breaking the SaaS surface.
 //
 // Egress is NOT restricted — DNS, in-cluster service calls, and
 // external API access all keep working.
@@ -108,6 +119,21 @@ type SnapshotProposer struct {
 	// detect from Ingress objects. Defaults to ["kong", "ingress-nginx",
 	// "traefik", "istio-system", "kong-system"].
 	IngressControllerNamespaces []string
+
+	// IncludeSystemNamespaceAllow controls whether the rendered policy
+	// includes a `namespaceSelector: kubernetes.io/metadata.name=kube-system`
+	// allow rule. Default: true (safe). Set false only for hardened
+	// air-gapped deployments where you've explicitly placed kube-system
+	// components under their own NetworkPolicies.
+	IncludeSystemNamespaceAllow *bool
+
+	// IncludeLoadBalancerExternalAllow controls whether the proposer
+	// emits `ipBlock: 0.0.0.0/0` allow rules for ports of Services
+	// typed LoadBalancer or NodePort in the namespace. Default: true
+	// (REQUIRED for external traffic to reach workloads on policy-
+	// enforcing CNIs; pre-1.13.0 omission was the root cause of the
+	// 2026-06-01 outage).
+	IncludeLoadBalancerExternalAllow *bool
 }
 
 // systemNamespaces are the kube* namespaces the proposer should never
@@ -173,6 +199,50 @@ func (p SnapshotProposer) ProposeForNamespace(ctx context.Context, src snapshot.
                 operator: In
                 values: ["%s"]
       # %s`, cns, "ingress-controller in "+cns))
+	}
+
+	// v1.13.0 hardening #1: allow-from kube-system. CoreDNS, kubelet
+	// probes (liveness/readiness), and other system components live in
+	// kube-system; without this allow, workloads on policy-enforcing
+	// CNIs lose DNS resolution and pod-startup health gates.
+	if p.includeSystemNamespaceAllow() {
+		allows = append(allows, AllowRule{
+			Kind: "controller-namespace", Namespace: "kube-system",
+			Why: "CoreDNS + kubelet probes + scheduler health checks",
+		})
+		ingressBlocks = append(ingressBlocks, `    - from:
+        - namespaceSelector:
+            matchExpressions:
+              - key: kubernetes.io/metadata.name
+                operator: In
+                values: ["kube-system"]
+      # CoreDNS / kubelet probes / scheduler`)
+	}
+
+	// v1.13.0 hardening #2: external-traffic allow on LoadBalancer +
+	// NodePort service ports. This is the rule the 2026-06-01 outage
+	// proved is non-optional on policy-enforcing CNIs.
+	if p.includeLoadBalancerExternalAllow() {
+		ports := detectExternalPorts(ctx, src, namespace)
+		if len(ports) > 0 {
+			var portList []string
+			for _, p := range ports {
+				portList = append(portList, fmt.Sprintf("        - protocol: %s\n          port: %d", p.proto, p.port))
+				allows = append(allows, AllowRule{
+					Kind:      "external-ipblock",
+					Namespace: "0.0.0.0/0",
+					Why: fmt.Sprintf("external traffic to %s/%d (LoadBalancer / NodePort exposed)",
+						p.proto, p.port),
+				})
+			}
+			ingressBlocks = append(ingressBlocks, fmt.Sprintf(`    - from:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+      ports:
+%s
+      # external traffic via LoadBalancer / NodePort (MetalLB / cloud LB)`,
+				strings.Join(portList, "\n")))
+		}
 	}
 
 	yaml := fmt.Sprintf(`apiVersion: networking.k8s.io/v1
@@ -270,5 +340,85 @@ func (p SnapshotProposer) fallbackNamespaces() []string {
 	}
 	out := append([]string{}, commonIngressControllerNamespaces...)
 	sort.Strings(out)
+	return out
+}
+
+// includeSystemNamespaceAllow returns the effective setting for the
+// kube-system allow rule. Defaults to true.
+func (p SnapshotProposer) includeSystemNamespaceAllow() bool {
+	if p.IncludeSystemNamespaceAllow == nil {
+		return true
+	}
+	return *p.IncludeSystemNamespaceAllow
+}
+
+// includeLoadBalancerExternalAllow returns the effective setting for
+// the 0.0.0.0/0 external-traffic allow rule on LoadBalancer/NodePort
+// ports. Defaults to true (REQUIRED on policy-enforcing CNIs).
+func (p SnapshotProposer) includeLoadBalancerExternalAllow() bool {
+	if p.IncludeLoadBalancerExternalAllow == nil {
+		return true
+	}
+	return *p.IncludeLoadBalancerExternalAllow
+}
+
+// externalPort is one (protocol, port) pair exposed via LoadBalancer
+// or NodePort in the target namespace. The deterministic proposer
+// emits an `ipBlock: 0.0.0.0/0` allow rule for each one.
+type externalPort struct {
+	proto string // "TCP" | "UDP" | "SCTP"
+	port  int64
+}
+
+// detectExternalPorts walks Services in the namespace and returns the
+// distinct (proto, port) pairs that are exposed via LoadBalancer or
+// NodePort. Returns empty when the namespace has no externally-exposed
+// services — in that case the proposer skips the 0.0.0.0/0 rule
+// entirely (no external surface to allow).
+func detectExternalPorts(ctx context.Context, src snapshot.Source, namespace string) []externalPort {
+	svcs, _ := src.List(ctx, snapshot.GVRService, namespace)
+	if svcs == nil {
+		return nil
+	}
+	seen := map[externalPort]struct{}{}
+	for i := range svcs.Items {
+		svc := &svcs.Items[i]
+		typ, _, _ := unstructured.NestedString(svc.Object, "spec", "type")
+		if typ != "LoadBalancer" && typ != "NodePort" {
+			continue
+		}
+		portsRaw, _, _ := unstructured.NestedSlice(svc.Object, "spec", "ports")
+		for _, p := range portsRaw {
+			pm, ok := p.(map[string]any)
+			if !ok {
+				continue
+			}
+			proto, _ := pm["protocol"].(string)
+			if proto == "" {
+				proto = "TCP"
+			}
+			// `port` is required on Service; cast from int64 (the K8s
+			// default) or fall through.
+			portN, _, _ := unstructured.NestedInt64(pm, "port")
+			if portN == 0 {
+				continue
+			}
+			seen[externalPort{proto: proto, port: portN}] = struct{}{}
+		}
+	}
+	if len(seen) == 0 {
+		return nil
+	}
+	out := make([]externalPort, 0, len(seen))
+	for ep := range seen {
+		out = append(out, ep)
+	}
+	// Sort for deterministic YAML output.
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].port != out[j].port {
+			return out[i].port < out[j].port
+		}
+		return out[i].proto < out[j].proto
+	})
 	return out
 }
