@@ -86,6 +86,29 @@ func makeRBACPod(ns, name, saName string) unstructured.Unstructured {
 	return u
 }
 
+// makeRBACPodWithAutomount mirrors makeRBACPod but sets pod-level
+// spec.automountServiceAccountToken. Pod-level overrides SA-level.
+func makeRBACPodWithAutomount(ns, name, saName string, automount bool) unstructured.Unstructured {
+	u := makeRBACPod(ns, name, saName)
+	_ = unstructured.SetNestedField(u.Object, automount, "spec", "automountServiceAccountToken")
+	return u
+}
+
+// makeServiceAccount builds a core/v1 ServiceAccount.
+// automount=nil leaves the field unset (defaults to true on the API
+// server). automount=&true / &false sets it explicitly.
+func makeServiceAccount(ns, name string, automount *bool) unstructured.Unstructured {
+	u := unstructured.Unstructured{}
+	u.SetAPIVersion("v1")
+	u.SetKind("ServiceAccount")
+	u.SetNamespace(ns)
+	u.SetName(name)
+	if automount != nil {
+		_ = unstructured.SetNestedField(u.Object, *automount, "automountServiceAccountToken")
+	}
+	return u
+}
+
 func makeRoleBinding(ns, name, saNamespace, saName string) unstructured.Unstructured {
 	u := unstructured.Unstructured{}
 	u.SetAPIVersion("rbac.authorization.k8s.io/v1")
@@ -226,6 +249,86 @@ func TestRBACDrift_DefaultSA_Skipped(t *testing.T) {
 	got := RBACDrift{}.Run(context.Background(), src)
 	if len(got) != 0 {
 		t.Errorf("default SA should be skipped; got %+v", got)
+	}
+}
+
+// TestRBACDrift_SAWithAutomountFalse_Silent — the v1.11.1 bug fix.
+// When the SA has automountServiceAccountToken=false, the API server
+// does NOT mount the token into the Pod; a Role binding would be
+// useless. Flagging it as "unbound" was producing false-positive
+// noise on every Helm chart that ships hardened SAs (langfuse,
+// openproject, meilisearch, external-secrets-webhook, etc.).
+func TestRBACDrift_SAWithAutomountFalse_Silent(t *testing.T) {
+	f := false
+	src := &memSourceRBAC{byResource: map[string][]unstructured.Unstructured{
+		"pods":            {makeRBACPod("billing", "billing-7d", "myapp")},
+		"serviceaccounts": {makeServiceAccount("billing", "myapp", &f)},
+	}}
+	got := RBACDrift{}.Run(context.Background(), src)
+	if len(got) != 0 {
+		t.Errorf("SA with automountServiceAccountToken=false must be silent; got %+v", got)
+	}
+}
+
+// TestRBACDrift_SAWithAutomountTrueExplicit_StillFlagged — explicit
+// automount=true is the original-flagged behavior; ensure the fix
+// didn't accidentally silence the true positives.
+func TestRBACDrift_SAWithAutomountTrueExplicit_StillFlagged(t *testing.T) {
+	tr := true
+	src := &memSourceRBAC{byResource: map[string][]unstructured.Unstructured{
+		"pods":            {makeRBACPod("billing", "billing-7d", "myapp")},
+		"serviceaccounts": {makeServiceAccount("billing", "myapp", &tr)},
+	}}
+	got := RBACDrift{}.Run(context.Background(), src)
+	if len(got) != 1 {
+		t.Errorf("explicit automount=true unbound SA must still fire; got %d: %+v", len(got), got)
+	}
+}
+
+// TestRBACDrift_PodAutomountFalseOverridesSA — Pod-level
+// automountServiceAccountToken=false wins even if the SA defaults to
+// automount=true. Real-world: Helm chart enables automount on the SA
+// for compatibility but workload Pod explicitly disables it.
+func TestRBACDrift_PodAutomountFalseOverridesSA(t *testing.T) {
+	tr := true
+	src := &memSourceRBAC{byResource: map[string][]unstructured.Unstructured{
+		"pods":            {makeRBACPodWithAutomount("billing", "billing-7d", "myapp", false)},
+		"serviceaccounts": {makeServiceAccount("billing", "myapp", &tr)},
+	}}
+	got := RBACDrift{}.Run(context.Background(), src)
+	if len(got) != 0 {
+		t.Errorf("Pod automount=false must override SA automount=true; got %+v", got)
+	}
+}
+
+// TestRBACDrift_PodAutomountTrueOverridesSA — opposite direction.
+// SA defaults to false (chart hardened it) but a Pod explicitly
+// re-enables automount → token IS mounted → must flag.
+func TestRBACDrift_PodAutomountTrueOverridesSA(t *testing.T) {
+	f := false
+	src := &memSourceRBAC{byResource: map[string][]unstructured.Unstructured{
+		"pods":            {makeRBACPodWithAutomount("billing", "billing-7d", "myapp", true)},
+		"serviceaccounts": {makeServiceAccount("billing", "myapp", &f)},
+	}}
+	got := RBACDrift{}.Run(context.Background(), src)
+	if len(got) != 1 {
+		t.Errorf("Pod automount=true must override SA automount=false; got %d: %+v", len(got), got)
+	}
+}
+
+// TestRBACDrift_NoSAObject_DefaultsToFlagging — if the SA object
+// can't be found in the snapshot (RBAC denied or namespace deleted
+// mid-cycle), default to flagging. Conservative: a missing SA object
+// is suspicious; we don't want to silently silence findings on
+// snapshot-mode errors.
+func TestRBACDrift_NoSAObject_DefaultsToFlagging(t *testing.T) {
+	src := &memSourceRBAC{byResource: map[string][]unstructured.Unstructured{
+		"pods": {makeRBACPod("billing", "billing-7d", "myapp")},
+		// no "serviceaccounts" entries — simulate snapshot gap
+	}}
+	got := RBACDrift{}.Run(context.Background(), src)
+	if len(got) != 1 {
+		t.Errorf("missing SA object should default to flag (conservative); got %d: %+v", len(got), got)
 	}
 }
 

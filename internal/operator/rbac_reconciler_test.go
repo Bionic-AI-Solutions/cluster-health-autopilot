@@ -183,6 +183,82 @@ func TestReconcile_ReaderRBACReady_WrongSubject(t *testing.T) {
 	}
 }
 
+// TestBuildReaderClusterRole_DriftReportsWriteVerbs — issue #139 fix.
+// The watcher CREATES and DELETES DriftReports each cycle; pre-1.12.1 the
+// reader role only had get/list/watch, producing a 403 every reconcile
+// ("cannot delete driftreports"). Verify the role now grants the full
+// lifecycle on driftreports + resolutionrecords AND keeps silences
+// read-only (SREs own those via kubectl apply).
+func TestBuildReaderClusterRole_DriftReportsWriteVerbs(t *testing.T) {
+	role := BuildReaderClusterRole()
+
+	type want struct {
+		group, resource string
+		verbs           []string
+	}
+	cases := []want{
+		{"cha.bionicaisolutions.com", "driftreports",
+			[]string{"get", "list", "watch", "create", "update", "patch", "delete"}},
+		{"cha.bionicaisolutions.com", "resolutionrecords",
+			[]string{"get", "list", "watch", "create", "update", "patch", "delete"}},
+		{"cha.bionicaisolutions.com", "silences",
+			[]string{"get", "list", "watch"}}, // read-only; SREs own these
+	}
+	for _, c := range cases {
+		var matched *rbacv1.PolicyRule
+		for i := range role.Rules {
+			r := &role.Rules[i]
+			if containsString(r.APIGroups, c.group) && containsString(r.Resources, c.resource) {
+				matched = r
+				break
+			}
+		}
+		if matched == nil {
+			t.Errorf("no rule found for %s/%s", c.group, c.resource)
+			continue
+		}
+		// Required verbs present
+		for _, v := range c.verbs {
+			if !containsString(matched.Verbs, v) {
+				t.Errorf("%s/%s: missing verb %q (got %v)", c.group, c.resource, v, matched.Verbs)
+			}
+		}
+		// silences must NOT have delete — separation-of-authority guard
+		if c.resource == "silences" && containsString(matched.Verbs, "delete") {
+			t.Errorf("silences must not have 'delete' — SREs own them (got %v)", matched.Verbs)
+		}
+	}
+}
+
+// TestBuildReaderClusterRole_StatusSubresourceVerbs — v1.12.2 patch.
+// v1.12.1 added lifecycle verbs to driftreports/resolutionrecords but
+// missed the /status subresources (K8s treats them as independent
+// RBAC targets). The watcher emitted "cannot patch
+// driftreports/status" each cycle.
+func TestBuildReaderClusterRole_StatusSubresourceVerbs(t *testing.T) {
+	role := BuildReaderClusterRole()
+	for _, sub := range []string{"driftreports/status", "resolutionrecords/status"} {
+		var matched *rbacv1.PolicyRule
+		for i := range role.Rules {
+			r := &role.Rules[i]
+			if containsString(r.APIGroups, "cha.bionicaisolutions.com") &&
+				containsString(r.Resources, sub) {
+				matched = r
+				break
+			}
+		}
+		if matched == nil {
+			t.Errorf("no rule found for %s — watcher will fail on status updates", sub)
+			continue
+		}
+		for _, v := range []string{"update", "patch"} {
+			if !containsString(matched.Verbs, v) {
+				t.Errorf("%s: missing verb %q (got %v)", sub, v, matched.Verbs)
+			}
+		}
+	}
+}
+
 // --- helpers ---
 
 func hasRule(rules []rbacv1.PolicyRule, group, resource string) bool {

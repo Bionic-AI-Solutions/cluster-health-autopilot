@@ -224,10 +224,39 @@ func readerPolicyRules() []rbacv1.PolicyRule {
 			Resources: []string{"backups"},
 			Verbs:     []string{"get", "list", "watch"},
 		},
-		// CHA's own CRDs the watcher reads.
+		// CHA's own CRDs.
+		//
+		// driftreports + resolutionrecords need full lifecycle verbs
+		// because the watcher both creates new instances each cycle
+		// AND deletes stale ones during GC. Pre-1.12.1 the rule was
+		// read-only; the watcher emitted a 403 "cannot delete
+		// driftreports" line on every reconcile and stale reports
+		// accumulated indefinitely.
+		//
+		// silences are SRE-curated (kubectl apply) and only READ by
+		// the watcher to honor matchers. Keep read-only here so the
+		// watcher cannot accidentally clobber a Silence the SRE
+		// applied — separation of authority.
 		{
 			APIGroups: []string{"cha.bionicaisolutions.com"},
-			Resources: []string{"driftreports", "resolutionrecords", "silences"},
+			Resources: []string{"driftreports", "resolutionrecords"},
+			Verbs:     []string{"get", "list", "watch", "create", "update", "patch", "delete"},
+		},
+		{
+			// /status subresources need their own rule — K8s treats
+			// subresources independently for RBAC. Mirrors the helm
+			// chart's clusterrole-driftreport.yaml posture. Without
+			// these verbs the watcher emits "cannot patch resource
+			// driftreports/status" each cycle even after #139 fix
+			// added the parent driftreports verbs (v1.12.2 closes the
+			// status-subresource gap that v1.12.1 missed).
+			APIGroups: []string{"cha.bionicaisolutions.com"},
+			Resources: []string{"driftreports/status", "resolutionrecords/status"},
+			Verbs:     []string{"update", "patch"},
+		},
+		{
+			APIGroups: []string{"cha.bionicaisolutions.com"},
+			Resources: []string{"silences"},
 			Verbs:     []string{"get", "list", "watch"},
 		},
 		// Leader-election: the watcher binary uses controller-runtime's

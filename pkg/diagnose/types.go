@@ -62,6 +62,21 @@ type Diagnostic struct {
 	// ProposedRunbookID links to a VaultRunbook (T3). Mutually exclusive
 	// with ProposedActionID for a given diagnostic.
 	ProposedRunbookID string `json:"proposed_runbook_id,omitempty"`
+
+	// ProposedPolicyYAML is a ready-to-apply Kubernetes manifest the
+	// proposer wants to install (NetworkPolicy, RoleBinding, etc.).
+	// Populated by OSS analyzers (e.g. the v1.12.0 NetworkPolicy
+	// proposer) when they generate a deterministic fix. cha-com aiwatch
+	// wraps this into an ApprovalProposal CR; the approval-server's
+	// /approve endpoint reads it and applies it. OSS doesn't render
+	// Approve/Deny buttons on its own — only the AI tier does that.
+	ProposedPolicyYAML string `json:"proposed_policy_yaml,omitempty"`
+
+	// ProposedPolicyKind is the Kubernetes Kind embedded in
+	// ProposedPolicyYAML — e.g. "NetworkPolicy". Lets the approval-
+	// server route to the right apply path (some kinds need finalizer
+	// dance, owner-ref injection, etc.).
+	ProposedPolicyKind string `json:"proposed_policy_kind,omitempty"`
 }
 
 // Analyzer is the contract every diagnostic analyzer must implement.
