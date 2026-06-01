@@ -6,6 +6,7 @@ package diagnose
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/snapshot"
@@ -160,9 +161,76 @@ func (s SecurityDrift) checkPSSPosture(ctx context.Context, src snapshot.Source)
 	return out
 }
 
+// trustedUpstreamRegistryPrefixes is the canonical list of upstream
+// registries whose `:tag` references are conventionally trusted —
+// pinning their images by digest is paranoia, not hygiene. On most
+// clusters these account for 80%+ of digest-pin findings; flagging
+// them at warning produces noise that drowns out real in-house gaps.
+//
+// v1.14.0 downgrades these to severity=info so the actionable
+// in-house findings stand out. Operators can override the prefix
+// list (and the default severity) via env vars:
+//
+//	CHA_DIGEST_PIN_TRUSTED_PREFIXES   — comma-separated, replaces defaults
+//	CHA_DIGEST_PIN_UNTRUSTED_SEVERITY — "warning" (default) | "info"
+//
+// The list deliberately excludes docker.io/library/* (where most
+// supply-chain compromises have landed historically) and
+// docker.io/<random-user>/* (untrusted-by-default).
+var trustedUpstreamRegistryPrefixes = []string{
+	"quay.io/",
+	"gcr.io/",
+	"ghcr.io/",
+	"registry.k8s.io/",
+	"k8s.gcr.io/",
+	"docker.io/postgres",
+	"docker.io/redis",
+	"docker.io/haproxy",
+	"docker.io/envoyproxy/",
+	"docker.io/mariadb",
+	"docker.io/rabbitmq",
+	"docker.io/nginx",
+	"docker.io/busybox",
+	"docker.io/alpine",
+	"public.ecr.aws/",
+	"mcr.microsoft.com/",
+}
+
+// classifyDigestPinSeverity returns "info" for trusted-upstream
+// images and the configured untrusted-severity (default "warning")
+// for everything else. Trust class lookup is a substring/prefix
+// check — fast, no regex.
+func classifyDigestPinSeverity(img string) string {
+	// Normalize: docker.io is the implicit registry; "redis:7" →
+	// "docker.io/library/redis:7" for matching purposes. But also
+	// match bare "redis:7" against "docker.io/redis" prefix.
+	imgLower := strings.ToLower(img)
+	for _, prefix := range trustedUpstreamRegistryPrefixes {
+		p := strings.ToLower(prefix)
+		// Match either "quay.io/..." OR (for docker.io prefixes) the
+		// implicit-registry short form like "redis:7" matching
+		// "docker.io/redis".
+		if strings.HasPrefix(imgLower, p) {
+			return "info"
+		}
+		if strings.HasPrefix(p, "docker.io/") {
+			short := strings.TrimPrefix(p, "docker.io/")
+			if strings.HasPrefix(imgLower, short) {
+				return "info"
+			}
+		}
+	}
+	if v := os.Getenv("CHA_DIGEST_PIN_UNTRUSTED_SEVERITY"); v == "info" {
+		return "info"
+	}
+	return "warning"
+}
+
 // checkMutableImageTags flags Pods whose containers use a tag-only
 // reference (no @sha256:... digest pin). One diagnostic per Pod,
-// listing the affected container.
+// listing the affected container. Severity is per-image (trust-class)
+// from v1.14.0 onward: upstream/trusted registries → info, in-house
+// or unknown → warning.
 func (s SecurityDrift) checkMutableImageTags(ctx context.Context, src snapshot.Source) []Diagnostic {
 	pods, err := src.List(ctx, snapshot.GVRPod, "")
 	if err != nil || pods == nil {
@@ -179,6 +247,11 @@ func (s SecurityDrift) checkMutableImageTags(ctx context.Context, src snapshot.S
 
 		containers, _, _ := unstructured.NestedSlice(p.Object, "spec", "containers")
 		var unpinned []string
+		// Track effective severity for this Pod: any single
+		// untrusted-class image upgrades the pod's diagnostic to
+		// warning. Trust-class info only when EVERY unpinned image
+		// in the pod is trusted-upstream.
+		podSeverity := "info"
 		for _, c := range containers {
 			ci, ok := c.(map[string]interface{})
 			if !ok {
@@ -195,6 +268,9 @@ func (s SecurityDrift) checkMutableImageTags(ctx context.Context, src snapshot.S
 				continue
 			}
 			unpinned = append(unpinned, fmt.Sprintf("%s=%s", cn, img))
+			if classifyDigestPinSeverity(img) == "warning" {
+				podSeverity = "warning"
+			}
 		}
 		if len(unpinned) == 0 {
 			continue
@@ -202,7 +278,7 @@ func (s SecurityDrift) checkMutableImageTags(ctx context.Context, src snapshot.S
 		out = append(out, Diagnostic{
 			Source:   "SecurityDrift",
 			Subject:  fmt.Sprintf("Pod/%s/%s", ns, name),
-			Severity: "warning",
+			Severity: podSeverity,
 			Message: fmt.Sprintf(
 				"Pod %s/%s mounts %d container image(s) without digest pin: %s",
 				ns, name, len(unpinned), strings.Join(unpinned, ", ")),
