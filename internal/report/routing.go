@@ -32,8 +32,29 @@ func renderAIBlocks(b *strings.Builder, d DeltaDiag) {
 		fmt.Fprintf(b, "  🤖 _%s_\n", d.Enrichment)
 	}
 	if d.ApprovalURL != "" {
-		fmt.Fprintf(b, "  <%s|Apply Fix> · <%s&action=info|Details>\n", d.ApprovalURL, d.ApprovalURL)
+		// Symmetric Approve / Deny pair (cha-com #17 one-shot tokens).
+		// Whichever the SRE clicks first wins, the other is burned.
+		// Denial records a RAG outcome so the proposer learns from
+		// rejections.
+		denyURL := strings.Replace(d.ApprovalURL, "/approve?", "/deny?", 1)
+		fmt.Fprintf(b, "  ✅ <%s|Approve> · ❌ <%s|Deny> · 📄 <%s&action=info|Details>\n",
+			d.ApprovalURL, denyURL, d.ApprovalURL)
 	}
+}
+
+// renderSilenceSnippet emits the inline kubectl heredoc that creates a
+// Silence CR for THIS finding's subject for 24h. Lets SREs distinguish
+// "fix this" from "noisy, mute" without hunting for the CRD schema.
+// Subject-scoped (exact match); edit spec.matcher to `source` for
+// class-wide suppression. Mirrors what `slack_delta.go` does for the
+// watcher delta path so both production renderers stay in sync.
+func renderSilenceSnippet(b *strings.Builder, d DeltaDiag) {
+	fmt.Fprintf(b, "  🔕 silence 24h: ```kubectl apply -f - <<EOF\n"+
+		"apiVersion: cha.bionicaisolutions.com/v1alpha1\n"+
+		"kind: Silence\nmetadata:\n  name: %s\n  namespace: cluster-health-autopilot\n"+
+		"spec:\n  matcher:\n    subject: %q\n  until: %q\n  reason: silenced-from-slack\nEOF```\n",
+		slackSilenceName(d.Subject), d.Subject,
+		time.Now().UTC().Add(24*time.Hour).Format("2006-01-02T15:04:05Z"))
 }
 
 // FormatAlertsPayload renders the #ceph-alerts message for a watcher cycle
@@ -108,6 +129,7 @@ func FormatCriticalPayload(unfixable []DeltaDiag, resolved []ResolvedDiag) Slack
 			if d.Remediation != "" {
 				fmt.Fprintf(&b, "  _→ %s_\n", d.Remediation)
 			}
+			renderSilenceSnippet(&b, d)
 			renderAIBlocks(&b, d)
 		}
 	}
@@ -122,6 +144,7 @@ func FormatCriticalPayload(unfixable []DeltaDiag, resolved []ResolvedDiag) Slack
 			if d.Remediation != "" {
 				fmt.Fprintf(&b, "  _→ %s_\n", d.Remediation)
 			}
+			renderSilenceSnippet(&b, d)
 			renderAIBlocks(&b, d)
 		}
 	}
