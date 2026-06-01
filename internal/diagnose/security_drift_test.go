@@ -242,8 +242,14 @@ func TestSecurityDrift_PodInSystemNamespace_Skipped(t *testing.T) {
 // --- NetworkPolicy coverage ---
 
 func TestSecurityDrift_NamespaceWithPodsNoNetpol_Warning(t *testing.T) {
+	// v1.12.0: NetPol coverage warning is gated on CNI enforcement.
+	// Fixture includes calico-node DaemonSet so CNI detection sees an
+	// enforcing CNI and emits the per-namespace warning. Without this,
+	// the analyzer correctly downgrades to a cluster-scope info
+	// finding (covered by TestSecurityDrift_NoNetpolOnNonEnforcingCNI_InfoOnly).
 	src := &memSourceSec{byResource: map[string][]unstructured.Unstructured{
 		"namespaces": {makeNamespace("app", map[string]string{"pod-security.kubernetes.io/enforce": "baseline"})},
+		"daemonsets": {makeDaemonSetSec("calico-system", "calico-node")},
 		"pods": {makePodWithContainers("app", "x-1", map[string]string{
 			"main": "ghcr.io/org/app@sha256:abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
 		})},
@@ -258,6 +264,43 @@ func TestSecurityDrift_NamespaceWithPodsNoNetpol_Warning(t *testing.T) {
 	if !strings.Contains(got[0].Remediation, "default-deny") {
 		t.Errorf("remediation lacks default-deny guidance: %s", got[0].Remediation)
 	}
+}
+
+// TestSecurityDrift_NoNetpolOnNonEnforcingCNI_InfoOnly — the v1.12.0
+// gate. On Flannel-only / unknown-CNI clusters, even when a namespace
+// has pods + no NetPol, the analyzer emits a single info-level
+// cluster-scope finding instead of per-namespace warnings. Adding
+// NetPols on a non-enforcing CNI is decorative-only.
+func TestSecurityDrift_NoNetpolOnNonEnforcingCNI_InfoOnly(t *testing.T) {
+	src := &memSourceSec{byResource: map[string][]unstructured.Unstructured{
+		"namespaces": {makeNamespace("app", map[string]string{"pod-security.kubernetes.io/enforce": "baseline"})},
+		"daemonsets": {makeDaemonSetSec("kube-flannel", "kube-flannel-ds")}, // Flannel-only, doesn't enforce
+		"pods": {makePodWithContainers("app", "x-1", map[string]string{
+			"main": "ghcr.io/org/app@sha256:abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
+		})},
+	}}
+	got := SecurityDrift{}.Run(context.Background(), src)
+	if len(got) != 1 {
+		t.Fatalf("expected 1 cluster-scope info finding; got %d: %+v", len(got), got)
+	}
+	if got[0].Severity != "info" {
+		t.Errorf("severity=%q want info", got[0].Severity)
+	}
+	if got[0].Subject != "Cluster/cni-no-netpol-enforcement" {
+		t.Errorf("subject=%q want Cluster/cni-no-netpol-enforcement", got[0].Subject)
+	}
+	if !strings.Contains(got[0].Message, "flannel-only") {
+		t.Errorf("message should name flannel-only CNI; got %q", got[0].Message)
+	}
+}
+
+func makeDaemonSetSec(ns, name string) unstructured.Unstructured {
+	u := unstructured.Unstructured{}
+	u.SetAPIVersion("apps/v1")
+	u.SetKind("DaemonSet")
+	u.SetNamespace(ns)
+	u.SetName(name)
+	return u
 }
 
 func TestSecurityDrift_NamespaceWithNetpol_Silent(t *testing.T) {

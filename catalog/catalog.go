@@ -188,6 +188,15 @@ func RegisterOSS(r *registry.Registry) {
 	if os.Getenv("CHA_ANALYZER_SECURITY_DRIFT") != "off" {
 		r.RegisterAnalyzer(diagnose.SecurityDrift{})
 	}
+	// NetworkPolicyProposer is the Phase 2d-β OSS-side hook. Silent on
+	// CNIs that don't enforce NetworkPolicy (k3s-Flannel-only); on
+	// enforcing CNIs it emits one warning per uncovered namespace with
+	// a deterministic ProposedPolicyYAML attached. cha-com aiwatch
+	// turns the proposal into an ApprovalProposal CR + Slack
+	// Approve/Deny pair. Toggle off via CHA_ANALYZER_NETPOL_PROPOSER=off.
+	if os.Getenv("CHA_ANALYZER_NETPOL_PROPOSER") != "off" {
+		r.RegisterAnalyzer(diagnose.NetworkPolicyProposer{})
+	}
 	r.RegisterFixer(
 		fix.StaleErrorPods{},
 		fix.StuckJobsWithBadSecretRef{},

@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/snapshot"
+	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/netpol"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )
@@ -217,6 +218,14 @@ func (s SecurityDrift) checkMutableImageTags(ctx context.Context, src snapshot.S
 // checkNetworkPolicyCoverage flags user namespaces that run pods but
 // have zero NetworkPolicies. Default K8s networking is fully open
 // without at least one policy.
+//
+// v1.12.0: GATED on CNI enforcement. Clusters whose CNI doesn't
+// actually enforce NetworkPolicy (Flannel-only is the canonical case)
+// SKIP per-namespace warnings AND emit a single cluster-scope info
+// finding explaining the gap — but ONLY when at least one user
+// namespace would have been flagged under the old logic. Empty
+// clusters / clusters where every user namespace already has a
+// NetPol stay silent.
 func (s SecurityDrift) checkNetworkPolicyCoverage(ctx context.Context, src snapshot.Source) []Diagnostic {
 	nsList, err := src.List(ctx, gvrNamespace, "")
 	if err != nil || nsList == nil {
@@ -244,7 +253,10 @@ func (s SecurityDrift) checkNetworkPolicyCoverage(ctx context.Context, src snaps
 		}
 	}
 
-	var out []Diagnostic
+	// First pass: collect candidate namespaces (have pods, no NetPol,
+	// not system). We need the count both to decide whether to emit the
+	// CNI info finding AND to know what to flag if CNI enforces.
+	var candidates []string
 	for i := range nsList.Items {
 		ns := &nsList.Items[i]
 		name := ns.GetName()
@@ -257,6 +269,37 @@ func (s SecurityDrift) checkNetworkPolicyCoverage(ctx context.Context, src snaps
 		if _, hasPolicies := netpolNamespaces[name]; hasPolicies {
 			continue
 		}
+		candidates = append(candidates, name)
+	}
+	if len(candidates) == 0 {
+		return nil
+	}
+
+	// v1.12.0 CNI gate: if the runtime doesn't enforce NetPol, emit
+	// ONE info-level finding explaining why we're not flagging the
+	// per-namespace gaps as warnings. Applies on barebones k3s
+	// (Flannel-only) and any cluster where CNI detection comes up
+	// "unknown".
+	cni := netpol.DetectCNI(ctx, src)
+	if !cni.Enforces {
+		return []Diagnostic{{
+			Source:   "SecurityDrift",
+			Subject:  "Cluster/cni-no-netpol-enforcement",
+			Severity: "info",
+			Message: fmt.Sprintf(
+				"%d namespace(s) have no NetworkPolicy, but CNI %q does NOT enforce them. "+
+					"%s. Adding NetworkPolicies here would be decorative-only.",
+				len(candidates), cni.CNIName, cni.Evidence),
+			Remediation: "For real zero-trust enforcement: add Calico-for-policy alongside Flannel, " +
+				"or swap to Cilium. The CHA NetworkPolicy proposer (Phase 2d-β) only activates on " +
+				"CNIs that enforce — barebones k3s with Flannel-only is intentionally left alone. " +
+				"See docs/design/2026-06-rag-networkpolicy-proposer.md.",
+		}}
+	}
+
+	// CNI enforces — emit the per-namespace warnings (original behaviour).
+	var out []Diagnostic
+	for _, name := range candidates {
 		out = append(out, Diagnostic{
 			Source:   "SecurityDrift",
 			Subject:  fmt.Sprintf("Namespace/cluster/%s", name),
