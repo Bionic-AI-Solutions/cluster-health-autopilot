@@ -57,8 +57,13 @@ type CNIDetection struct {
 //     ENABLE_NETWORK_POLICY=true env; assumed for now — refine later)
 //  4. GKE Dataplane V2: `anetd` DaemonSet (Cilium-based; enforces)
 //  5. Azure CNI with policy plugin: `azure-npm` DaemonSet
-//  6. Flannel DaemonSet present and none of the above → Flannel-only
-//  7. Otherwise → unknown
+//  6. Flannel + kube-router as NetPol enforcer: a real production
+//     pattern (k3s clusters often layer kube-router on Flannel for
+//     enforcement). Add-on enforcement matters even when the
+//     base CNI doesn't enforce by itself. v1.12.3 added this after
+//     2026-06-01 outage caused by missed kube-router detection.
+//  7. Flannel DaemonSet present and none of the above → Flannel-only
+//  8. Otherwise → unknown
 func DetectCNI(ctx context.Context, src snapshot.Source) CNIDetection {
 	dsList, err := src.List(ctx, snapshot.GVRDaemonSet, "")
 	if err != nil || dsList == nil {
@@ -66,6 +71,10 @@ func DetectCNI(ctx context.Context, src snapshot.Source) CNIDetection {
 	}
 
 	hasFlannel := false
+	var flannelEvidence string
+	hasKubeRouter := false
+	var kubeRouterEvidence string
+
 	for i := range dsList.Items {
 		ds := &dsList.Items[i]
 		ns := ds.GetNamespace()
@@ -100,16 +109,38 @@ func DetectCNI(ctx context.Context, src snapshot.Source) CNIDetection {
 				Enforces: true, CNIName: "azure-cni",
 				Evidence: "DaemonSet " + ns + "/" + name,
 			}
+		case strings.Contains(lname, "kube-router"):
+			// kube-router is commonly LAYERED on Flannel as a
+			// NetPol enforcement add-on (k3s + kube-router pattern).
+			// Even when present alongside Flannel, NetPol IS
+			// enforced. Don't return immediately — record and
+			// continue to see what base CNI is present too.
+			hasKubeRouter = true
+			kubeRouterEvidence = "DaemonSet " + ns + "/" + name
 		case strings.Contains(lname, "flannel"):
 			hasFlannel = true
+			flannelEvidence = "DaemonSet " + ns + "/" + name
+		}
+	}
+
+	// kube-router enforces NetPol regardless of base CNI.
+	if hasKubeRouter {
+		base := "(standalone)"
+		if hasFlannel {
+			base = "+ Flannel (" + flannelEvidence + ")"
+		}
+		return CNIDetection{
+			Enforces: true, CNIName: "kube-router",
+			Evidence: kubeRouterEvidence + " " + base +
+				". kube-router enforces NetworkPolicy via its KUBE-ROUTER-FORWARD chain.",
 		}
 	}
 
 	if hasFlannel {
 		return CNIDetection{
 			Enforces: false, CNIName: "flannel-only",
-			Evidence: "Flannel DaemonSet present; no Calico/Cilium/AWS-VPC-CNI/Azure-NPM signal. " +
-				"Flannel does not enforce NetworkPolicy.",
+			Evidence: flannelEvidence + ". Flannel-only (no Calico/Cilium/AWS-VPC-CNI/Azure-NPM/" +
+				"kube-router signal). Flannel does not enforce NetworkPolicy.",
 		}
 	}
 	return CNIDetection{

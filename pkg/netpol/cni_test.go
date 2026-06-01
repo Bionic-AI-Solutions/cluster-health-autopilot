@@ -5,6 +5,7 @@ package netpol
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/snapshot"
@@ -117,6 +118,45 @@ func TestDetectCNI_AzureCNI(t *testing.T) {
 	d := DetectCNI(context.Background(), src)
 	if !d.Enforces || d.CNIName != "azure-cni" {
 		t.Errorf("expected azure-cni; got %+v", d)
+	}
+}
+
+// TestDetectCNI_KubeRouterAddOn — v1.12.3 fix for a real production
+// outage (2026-06-01). kube-router is commonly layered on Flannel as
+// a NetPol enforcement add-on. When BOTH are present, NetPol IS
+// enforced and any "flannel-only → no enforcement" assumption is
+// wrong. The proposer activating on these clusters is correct; the
+// SecurityDrift downgrade to info is wrong; and (critically) any
+// SRE who APPLIES a NetworkPolicy expecting it to be inert will
+// instead break their cluster.
+func TestDetectCNI_KubeRouterAddOn(t *testing.T) {
+	src := &memSourceNet{byResource: map[string][]unstructured.Unstructured{
+		"daemonsets": {
+			makeDS("kube-flannel", "kube-flannel-ds"),
+			makeDS("kube-system", "kube-router"),
+		},
+	}}
+	d := DetectCNI(context.Background(), src)
+	if !d.Enforces {
+		t.Errorf("kube-router add-on must enforce; got %+v", d)
+	}
+	if d.CNIName != "kube-router" {
+		t.Errorf("CNIName=%q want kube-router", d.CNIName)
+	}
+	if !strings.Contains(d.Evidence, "Flannel") {
+		t.Errorf("evidence should mention base CNI (Flannel) too; got %q", d.Evidence)
+	}
+}
+
+// TestDetectCNI_KubeRouterStandalone — kube-router alone (no Flannel)
+// also enforces.
+func TestDetectCNI_KubeRouterStandalone(t *testing.T) {
+	src := &memSourceNet{byResource: map[string][]unstructured.Unstructured{
+		"daemonsets": {makeDS("kube-system", "kube-router")},
+	}}
+	d := DetectCNI(context.Background(), src)
+	if !d.Enforces || d.CNIName != "kube-router" {
+		t.Errorf("expected kube-router/Enforces=true standalone; got %+v", d)
 	}
 }
 
