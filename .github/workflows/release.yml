@@ -21,11 +21,13 @@ permissions:
 jobs:
   release:
     runs-on: ubuntu-latest
-    # 60 minutes — multi-arch buildx (linux/amd64 + linux/arm64) for both
-    # Docker Hub and GHCR consistently took 25-35 min on hosted runners as
-    # of 2026-05; the v1.6.0 release was cancelled at the previous 30-min
-    # cap. Headroom for goreleaser archives + checksums + release notes.
-    timeout-minutes: 60
+    # 120 minutes — multi-arch buildx (linux/amd64 + linux/arm64) for both
+    # Docker Hub and GHCR. The 60-min cap from v1.6.0 era was too tight:
+    # v1.11.1-v1.12.2 were clocking 54-55min steady-state, and v1.12.3
+    # tipped over to 60m1s and got killed mid-build. 120min gives 2×
+    # headroom for transient ghcr.io / Docker Hub slowness without
+    # re-tagging the world.
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v5
         with:
