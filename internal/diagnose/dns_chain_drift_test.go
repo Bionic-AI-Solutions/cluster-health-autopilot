@@ -524,7 +524,9 @@ func TestDNSChainDrift_NoIngresses(t *testing.T) {
 	}
 }
 
-// TestDNSChainDrift_DuplicateIngressHost — two Ingresses claim same host → duplicate-ingress-host warn.
+// TestDNSChainDrift_DuplicateIngressHost — two Ingresses claim same host on
+// the SAME path → duplicate-ingress-host warn. Real collision: both default
+// to `/` (Prefix) so the router can't disambiguate.
 func TestDNSChainDrift_DuplicateIngressHost(t *testing.T) {
 	const host = "dup.example.com"
 
@@ -548,6 +550,92 @@ func TestDNSChainDrift_DuplicateIngressHost(t *testing.T) {
 	}
 	if !found {
 		t.Errorf("expected duplicate-ingress-host diagnostic, got: %+v", diags)
+	}
+}
+
+// makeIngressWithPath builds an Ingress with ONE custom (path, pathType) rule.
+// Lets the duplicate-host path-overlap test create the path-disjoint pattern
+// CHA must NOT flag as duplicate.
+func makeIngressWithPath(ns, name, host, path, pathType, svcName string, svcPort int64) unstructured.Unstructured {
+	u := unstructured.Unstructured{}
+	u.SetAPIVersion("networking.k8s.io/v1")
+	u.SetKind("Ingress")
+	u.SetNamespace(ns)
+	u.SetName(name)
+	rule := map[string]any{
+		"host": host,
+		"http": map[string]any{
+			"paths": []any{
+				map[string]any{
+					"path":     path,
+					"pathType": pathType,
+					"backend": map[string]any{
+						"service": map[string]any{
+							"name": svcName,
+							"port": map[string]any{"number": svcPort},
+						},
+					},
+				},
+			},
+		},
+	}
+	_ = unstructured.SetNestedSlice(u.Object, []any{rule}, "spec", "rules")
+	return u
+}
+
+// TestDNSChainDrift_DuplicateIngressHost_PathDisjointIsNotDuplicate — two
+// Ingresses on the same host but with NON-OVERLAPPING (path, pathType) pairs
+// MUST NOT fire duplicate-ingress-host. This is the production pattern
+// observed on comfy.baisoln.com (`/` oauth + `/mcp` bypass), wa.baisoln.com
+// (HTTP webhooks split from WebSocket), and mcp.baisoln.com (19 MCPs each on
+// their own path prefix). Pre-1.10.4 the analyzer flagged all of these as
+// duplicate-host noise.
+func TestDNSChainDrift_DuplicateIngressHost_PathDisjointIsNotDuplicate(t *testing.T) {
+	const host = "shared.example.com"
+
+	src := newMemSourceDNS()
+	src.add(makeIngressWithPath("ns1", "oauth", host, "/", "Prefix", "oauth-proxy", 4180))
+	src.add(makeIngressWithPath("ns1", "mcp", host, "/mcp", "Prefix", "mcp-backend", 8080))
+	src.add(makeService("ns1", "oauth-proxy"))
+	src.add(makeEndpoints("ns1", "oauth-proxy", 1))
+
+	a := DNSChainDrift{Client: nil}
+	diags := a.Run(context.Background(), src)
+
+	for _, d := range diags {
+		if strings.Contains(d.Subject, "duplicate-ingress-host") {
+			t.Errorf("path-disjoint co-tenancy must NOT fire duplicate-ingress-host; got: %+v", d)
+		}
+	}
+}
+
+// TestDNSChainDrift_DuplicateIngressHost_SameExactPathFires — two Ingresses
+// claiming the SAME exact (path, pathType) on the same host IS a real
+// collision (router picks non-deterministically) and MUST still fire.
+func TestDNSChainDrift_DuplicateIngressHost_SameExactPathFires(t *testing.T) {
+	const host = "collide.example.com"
+
+	src := newMemSourceDNS()
+	src.add(makeIngressWithPath("ns1", "ing-a", host, "/api", "Prefix", "svc-a", 80))
+	src.add(makeIngressWithPath("ns2", "ing-b", host, "/api", "Prefix", "svc-b", 80))
+	src.add(makeService("ns1", "svc-a"))
+	src.add(makeEndpoints("ns1", "svc-a", 1))
+
+	a := DNSChainDrift{Client: nil}
+	diags := a.Run(context.Background(), src)
+
+	var dup *Diagnostic
+	for i := range diags {
+		if strings.Contains(diags[i].Subject, "duplicate-ingress-host") {
+			dup = &diags[i]
+			break
+		}
+	}
+	if dup == nil {
+		t.Fatalf("expected duplicate-ingress-host for exact-path collision; got: %+v", diags)
+	}
+	if !strings.Contains(dup.Message, "/api") || !strings.Contains(dup.Message, "ns1/ing-a") || !strings.Contains(dup.Message, "ns2/ing-b") {
+		t.Errorf("message must call out the colliding path AND both ingresses; got: %s", dup.Message)
 	}
 }
 

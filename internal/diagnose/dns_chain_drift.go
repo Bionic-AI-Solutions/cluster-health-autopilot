@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"net/url"
+	"sort"
 	"strings"
 
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/snapshot"
@@ -122,8 +123,18 @@ func (a DNSChainDrift) Run(ctx context.Context, src snapshot.Source) []Diagnosti
 	// hostBackend maps lowercased host → ingressBackend (first Ingress wins for
 	// de-dup purposes; duplicates are flagged separately).
 	hostBackend := make(map[string]*ingressBackend)
-	// hostClaimants counts how many Ingresses claim a given host (for duplicate detection).
-	hostClaimants := make(map[string][]string) // host → list of "ns/name"
+	// hostPathClaimants records WHICH (path, pathType) keys are claimed under
+	// each host and by which Ingresses. Path-disjoint co-tenancy on a single
+	// host is a legitimate pattern (oauth2-proxy on `/` + MCP on `/mcp`, or
+	// HTTP webhooks + WebSocket split across two Ingresses for distinct Kong
+	// plugins/timeouts) — flagging those as "duplicate hosts" is a false
+	// positive. Real duplication = the SAME (path, pathType) pair appearing
+	// on ≥2 Ingresses for the same host.
+	type pathKey struct{ path, pathType string }
+	hostPathClaimants := make(map[string]map[pathKey][]string) // host → key → list of "ns/name"
+	// hostAllClaimants tracks every Ingress that lists this host on any rule,
+	// independent of paths. Used for the duplicate message context.
+	hostAllClaimants := make(map[string]map[string]struct{})
 
 	for i := range ingresses.Items {
 		ing := ingresses.Items[i]
@@ -152,7 +163,42 @@ func (a DNSChainDrift) Run(ctx context.Context, src snapshot.Source) []Diagnosti
 			}
 
 			claimant := ns + "/" + ingName
-			hostClaimants[host] = append(hostClaimants[host], claimant)
+			if hostAllClaimants[host] == nil {
+				hostAllClaimants[host] = map[string]struct{}{}
+			}
+			hostAllClaimants[host][claimant] = struct{}{}
+
+			// Record every (path, pathType) this Ingress claims on this host
+			// so the duplicate detector can find real collisions.
+			httpMap, _ := rm["http"].(map[string]any)
+			var pathsSlice []any
+			if httpMap != nil {
+				pathsSlice, _ = httpMap["paths"].([]any)
+			}
+			if hostPathClaimants[host] == nil {
+				hostPathClaimants[host] = map[pathKey][]string{}
+			}
+			if len(pathsSlice) == 0 {
+				// No paths under this rule — treat as "/" Prefix (default).
+				k := pathKey{path: "/", pathType: "Prefix"}
+				hostPathClaimants[host][k] = append(hostPathClaimants[host][k], claimant)
+			}
+			for _, rawPath := range pathsSlice {
+				pm, ok := rawPath.(map[string]any)
+				if !ok {
+					continue
+				}
+				p, _ := pm["path"].(string)
+				pt, _ := pm["pathType"].(string)
+				if p == "" {
+					p = "/"
+				}
+				if pt == "" {
+					pt = "Prefix"
+				}
+				k := pathKey{path: p, pathType: pt}
+				hostPathClaimants[host][k] = append(hostPathClaimants[host][k], claimant)
+			}
 
 			// Only record the first Ingress backend per host for chain analysis.
 			if _, seen := hostBackend[host]; seen {
@@ -265,18 +311,48 @@ func (a DNSChainDrift) Run(ctx context.Context, src snapshot.Source) []Diagnosti
 			continue
 		}
 
-		// Duplicate Ingress hosts — warn but continue chain analysis.
-		if claimants, ok := hostClaimants[host]; ok && len(claimants) > 1 {
-			out = append(out, Diagnostic{
-				Subject:  subj("duplicate-ingress-host", host),
-				Severity: "warn",
-				Source:   "DNSChainDrift",
-				Message: fmt.Sprintf(
-					"*%s* is claimed by %d Ingresses: %s. "+
-						"Only the first one (%s) is used for chain analysis; the others may cause routing conflicts.",
-					host, len(claimants), strings.Join(claimants, ", "), claimants[0],
-				),
-			})
+		// Duplicate Ingress hosts — warn ONLY when the SAME (path, pathType)
+		// pair appears on ≥2 Ingresses. Co-tenancy where each Ingress claims
+		// distinct paths under one host is a legitimate pattern (Kong path-
+		// based routing, MCP gateway fan-out, oauth2-proxy on `/` + bypass
+		// on `/<route>`), not a misconfig. Flagging those caused
+		// false-positive noise on production multi-tenant hosts pre-1.10.4.
+		if pathMap, ok := hostPathClaimants[host]; ok {
+			var colliding []string // human-readable "/path (pathType) ↔ ns1/ing-a + ns2/ing-b"
+			for k, ings := range pathMap {
+				if len(ings) <= 1 {
+					continue
+				}
+				// dedupe + stable order so the message is deterministic
+				seen := map[string]struct{}{}
+				uniq := make([]string, 0, len(ings))
+				for _, n := range ings {
+					if _, dup := seen[n]; dup {
+						continue
+					}
+					seen[n] = struct{}{}
+					uniq = append(uniq, n)
+				}
+				if len(uniq) <= 1 {
+					continue
+				}
+				sort.Strings(uniq)
+				colliding = append(colliding,
+					fmt.Sprintf("`%s` (%s) on %s", k.path, k.pathType, strings.Join(uniq, " + ")))
+			}
+			sort.Strings(colliding)
+			if len(colliding) > 0 {
+				out = append(out, Diagnostic{
+					Subject:  subj("duplicate-ingress-host", host),
+					Severity: "warn",
+					Source:   "DNSChainDrift",
+					Message: fmt.Sprintf(
+						"*%s* has %d colliding path(s) claimed by multiple Ingresses: %s. "+
+							"Pick one Ingress per (path, pathType); the router otherwise picks non-deterministically.",
+						host, len(colliding), strings.Join(colliding, "; "),
+					),
+				})
+			}
 		}
 
 		// Ingress references a Service — verify the Service exists.
