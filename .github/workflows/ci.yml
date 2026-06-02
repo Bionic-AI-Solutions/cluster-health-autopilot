@@ -17,7 +17,14 @@ jobs:
   build-test:
     name: build + test
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # 20 minutes — the 10-min cap from earlier worked while the suite
+    # was small. As of v1.15.0 the suite + race-detector + coverage
+    # output runs in 7-10 min steady-state, and PR #149 tipped over to
+    # 10m5s. 20min gives 2× headroom without inviting runaway tests.
+    # Mirrors the same fix made to release.yml in PR #145
+    # (60→120 min) — same class of pattern: tight cap on a steadily-
+    # growing pipeline.
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v5
 
