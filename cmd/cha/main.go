@@ -37,6 +37,7 @@ import (
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/summarize"
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/vault"
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/watcher"
+	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/ai"
 	cloudpkg "github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/cloud"
 	cloudpkgaws "github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/cloud/aws"
 	cloudpkgazure "github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/cloud/azure"
@@ -477,6 +478,17 @@ func watchCmd() *cobra.Command {
 		cloudIncludeCloud        bool
 		cloudExcludeCloud        bool
 		cloudCadence             time.Duration
+
+		// Approval URL minting (v1.16.0). When both flags are set, the
+		// watcher loads the Ed25519 signing key, registers an
+		// ai.ManifestBridge FixProposer for ProposedPolicyYAML-bearing
+		// diagnostics, and mints signed approve/deny URLs that flow
+		// through the existing Slack / Alertmanager / DriftReport /
+		// OpenProject-ticketing adapters. Before v1.16.0 this lived
+		// only in cha-com's aiwatch process, which posted URLs to
+		// stdout but never to the user-facing delivery surfaces.
+		approvalServerURL string
+		signingKeyPath    string
 	)
 	c := &cobra.Command{
 		Use:   "watch",
@@ -584,6 +596,40 @@ the post-fix cluster state.`,
 				)
 			}
 
+			// v1.16.0 — Approval URL minting. When --approval-server-url
+			// is set, load the signing key, register an ai.SignerImpl,
+			// and register ai.ManifestBridge as a fallback FixProposer
+			// (only fires on diagnostics carrying ProposedPolicyYAML).
+			// Soft-fail: missing key just disables URL minting; the
+			// watcher continues without click-to-fix URLs. Failures here
+			// MUST NOT block the watcher's primary diagnostics flow.
+			if approvalServerURL != "" {
+				keyPath := signingKeyPath
+				if keyPath == "" {
+					keyPath = ai.DefaultSigningKeyPath
+				}
+				priv, kerr := ai.LoadSigningKey(keyPath)
+				if kerr != nil {
+					fmt.Fprintf(os.Stderr,
+						"watcher: --approval-server-url set but signing key not loaded (%v); proceeding without URL minting\n",
+						kerr)
+				} else if signer, serr := ai.NewSigner(ai.SignerConfig{PrivateKey: priv}); serr != nil {
+					fmt.Fprintf(os.Stderr,
+						"watcher: signing key loaded but signer init failed (%v); proceeding without URL minting\n",
+						serr)
+				} else {
+					reg.RegisterSigner(signer)
+					// Register the ManifestBridge as a FixProposer only
+					// when none has been programmatically pre-registered.
+					// This keeps cha-com (which registers its own
+					// LLM-backed FixProposer with broader coverage) free
+					// to retain control.
+					if reg.FixProposer() == nil {
+						reg.RegisterFixProposer(ai.ManifestBridge{})
+					}
+				}
+			}
+
 			cfg := watcher.Config{
 				Debounce:     debounce,
 				ResyncPeriod: resyncPeriod,
@@ -602,6 +648,7 @@ the post-fix cluster state.`,
 				Ticketing:              ticketingCfg,
 				CloudSource:            cloudSrc,
 				CloudCadence:           cloudCadence,
+				ApprovalBaseURL:        approvalServerURL,
 			}
 			w := watcher.New(lv, reg, mut, cfg)
 			// Wire the Silence lister so the watcher drops matched
@@ -676,6 +723,12 @@ the post-fix cluster state.`,
 	c.Flags().BoolVar(&cloudIncludeCloud, "include-cloud", false, "Force-enable cloud probes even when per-provider flags are off (uses defaults)")
 	c.Flags().BoolVar(&cloudExcludeCloud, "exclude-cloud", false, "Force-disable cloud probes regardless of per-provider flags (debugging / rate-limit fire drill)")
 	c.Flags().DurationVar(&cloudCadence, "cloud-cadence", 10*time.Minute, "Minimum interval between cloud-probe runs. Cloud probes don't fire on K8s events.")
+
+	// v1.16.0 — Approval URL minting in the OSS watcher.
+	c.Flags().StringVar(&approvalServerURL, "approval-server-url", "",
+		"Base URL of the approval-server (e.g. https://cha-approve.example.com). When set AND --signing-key-path resolves to a valid Ed25519 key, the watcher registers an ai.ManifestBridge FixProposer + signer and mints signed approve/deny URLs that ride through Slack / Alertmanager / DriftReport / ticketing adapters. Empty = no URL minting (pre-v1.16.0 behavior).")
+	c.Flags().StringVar(&signingKeyPath, "signing-key-path", os.Getenv(ai.EnvSigningKeyPath),
+		"Path to the Ed25519 signing key file (base64-encoded raw bytes). Defaults to $CHA_SIGNING_KEY_PATH or "+ai.DefaultSigningKeyPath+". Required when --approval-server-url is set; missing key falls back to URL-less mode (text-only proposal, no click-to-fix).")
 
 	return c
 }

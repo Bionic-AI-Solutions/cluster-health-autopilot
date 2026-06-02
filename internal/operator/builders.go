@@ -223,6 +223,39 @@ func BuildWatcherDeployment(cr *chav1alpha1.ClusterHealthAutopilot) *appsv1.Depl
 	}
 	env = append(env, alertingEnv(cr.Spec.Alerting)...)
 
+	// v1.16.0 — When the CR's AI tier has approvalServerUrl set, hand
+	// it to the watcher so the OSS binary itself can mint signed
+	// approve/deny URLs via the ManifestBridge FixProposer registered
+	// by cmd/cha/main.go. Before v1.16.0 only the aiwatch (cha-com)
+	// pod minted URLs, but they never reached the watcher's Slack /
+	// Alertmanager / ticketing adapters — leaving the SRE without
+	// click-to-fix on otherwise-actionable findings.
+	var watcherVolumes []corev1.Volume
+	var watcherVolumeMounts []corev1.VolumeMount
+	if cr.Spec.AI != nil && cr.Spec.AI.ApprovalServerURL != "" && cr.Spec.Approval != nil && cr.Spec.Approval.SigningKey != nil && cr.Spec.Approval.SigningKey.SecretName != "" {
+		args = append(args,
+			"--approval-server-url="+cr.Spec.AI.ApprovalServerURL,
+			"--signing-key-path=/etc/cha/keys/signing.key",
+		)
+		watcherVolumes = []corev1.Volume{{
+			Name: "signing-key",
+			VolumeSource: corev1.VolumeSource{
+				Secret: &corev1.SecretVolumeSource{
+					SecretName: cr.Spec.Approval.SigningKey.SecretName,
+					Items: []corev1.KeyToPath{{
+						Key:  "signing.key",
+						Path: "signing.key",
+					}},
+				},
+			},
+		}}
+		watcherVolumeMounts = []corev1.VolumeMount{{
+			Name:      "signing-key",
+			MountPath: "/etc/cha/keys",
+			ReadOnly:  true,
+		}}
+	}
+
 	return &appsv1.Deployment{
 		TypeMeta: metav1.TypeMeta{APIVersion: "apps/v1", Kind: "Deployment"},
 		ObjectMeta: metav1.ObjectMeta{
@@ -245,6 +278,7 @@ func BuildWatcherDeployment(cr *chav1alpha1.ClusterHealthAutopilot) *appsv1.Depl
 				Spec: corev1.PodSpec{
 					ServiceAccountName: ServiceAccountNameFor(cr),
 					ImagePullSecrets:   pullSecretRefs(cr.Spec.Image.PullSecrets),
+					Volumes:            watcherVolumes,
 					Containers: []corev1.Container{
 						{
 							Name:            "watcher",
@@ -252,6 +286,7 @@ func BuildWatcherDeployment(cr *chav1alpha1.ClusterHealthAutopilot) *appsv1.Depl
 							ImagePullPolicy: pullPolicy(cr.Spec.Image),
 							Args:            args,
 							Env:             env,
+							VolumeMounts:    watcherVolumeMounts,
 						},
 					},
 				},

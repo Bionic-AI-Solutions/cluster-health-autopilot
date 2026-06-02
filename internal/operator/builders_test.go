@@ -143,6 +143,64 @@ func TestBuildWatcherDeployment_AlertingArgs(t *testing.T) {
 	mustContain(t, args, "--slack-critical=$(SLACK_CRITICAL_URL)")
 }
 
+// v1.16.0 — when the CR sets both ai.approvalServerUrl and
+// approval.signingKey.secretName, the watcher gets the new flags +
+// signing-key mount so it can mint approve/deny URLs directly (rather
+// than the pre-v1.16.0 architecture where URLs only existed in the
+// separate aiwatch pod's stdout).
+func TestBuildWatcherDeployment_ApprovalURLMintingWiring(t *testing.T) {
+	cr := sampleCR()
+	cr.Spec.Watcher = &chav1alpha1.WatcherSpec{Enabled: true}
+	cr.Spec.AI = &chav1alpha1.AISpec{
+		ApprovalServerURL: "https://cha-approve.example.com",
+	}
+	cr.Spec.Approval = &chav1alpha1.ApprovalSpec{
+		SigningKey: &chav1alpha1.ApprovalSigningKeySpec{
+			SecretName: "cha-approval-signing-key",
+		},
+	}
+	d := BuildWatcherDeployment(cr)
+	if d == nil {
+		t.Fatal("watcher deploy must build")
+	}
+	args := d.Spec.Template.Spec.Containers[0].Args
+	mustContain(t, args, "--approval-server-url=https://cha-approve.example.com")
+	mustContain(t, args, "--signing-key-path=/etc/cha/keys/signing.key")
+	// Volume + mount wired
+	vols := d.Spec.Template.Spec.Volumes
+	if len(vols) != 1 || vols[0].Name != "signing-key" || vols[0].Secret == nil ||
+		vols[0].Secret.SecretName != "cha-approval-signing-key" {
+		t.Errorf("signing-key volume not wired correctly: %+v", vols)
+	}
+	mounts := d.Spec.Template.Spec.Containers[0].VolumeMounts
+	if len(mounts) != 1 || mounts[0].Name != "signing-key" || mounts[0].MountPath != "/etc/cha/keys" {
+		t.Errorf("signing-key mount not wired correctly: %+v", mounts)
+	}
+}
+
+// When only ai.approvalServerUrl is set but no signing key is
+// configured, the watcher does NOT get the new flags (because URL
+// minting requires the key). This guards against half-configured
+// installs producing broken pods.
+func TestBuildWatcherDeployment_NoApprovalSignerNoFlags(t *testing.T) {
+	cr := sampleCR()
+	cr.Spec.Watcher = &chav1alpha1.WatcherSpec{Enabled: true}
+	cr.Spec.AI = &chav1alpha1.AISpec{
+		ApprovalServerURL: "https://cha-approve.example.com",
+	}
+	// no cr.Spec.Approval
+	d := BuildWatcherDeployment(cr)
+	args := d.Spec.Template.Spec.Containers[0].Args
+	for _, a := range args {
+		if a == "--approval-server-url=https://cha-approve.example.com" {
+			t.Errorf("watcher should NOT get --approval-server-url when no signing key is configured; args=%v", args)
+		}
+	}
+	if len(d.Spec.Template.Spec.Volumes) != 0 {
+		t.Errorf("watcher should have no volumes when signing key not configured; got %+v", d.Spec.Template.Spec.Volumes)
+	}
+}
+
 // --- Diagnose CronJob ---
 
 func TestBuildDiagnoseCronJob_DisabledReturnsNil(t *testing.T) {
