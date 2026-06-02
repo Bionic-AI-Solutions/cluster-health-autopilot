@@ -60,6 +60,18 @@ func (a *AIProposedAction) Validate() error {
 	if len(a.PatchPayload) > 0 && a.ActionKind != ActionPatchDeployment {
 		return ErrInvalidActionKind
 	}
+	// v1.15.0: ManifestYAML must be paired with ActionApplyManifest, and
+	// when present must pass the safe-apply validator. Per the design,
+	// the validator is the load-bearing check: it refuses any YAML that
+	// would let an Approve click apply a dangerous mutation.
+	if len(a.ManifestYAML) > 0 && a.ActionKind != ActionApplyManifest {
+		return ErrInvalidActionKind
+	}
+	if a.ActionKind == ActionApplyManifest {
+		if err := ValidateManifest(a.ManifestYAML); err != nil {
+			return err
+		}
+	}
 	if a.CreatedAt.IsZero() || a.ExpiresAt.IsZero() || !a.ExpiresAt.After(a.CreatedAt) {
 		return ErrTokenExpired
 	}

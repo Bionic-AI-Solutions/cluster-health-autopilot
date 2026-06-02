@@ -73,13 +73,25 @@ const (
 	ActionPatchDeployment   ActionKind = "PatchDeployment"
 	ActionDeleteCertRequest ActionKind = "DeleteCertRequest"
 	ActionDeleteACMEOrder   ActionKind = "DeleteACMEOrder"
+
+	// ActionApplyManifest is v1.15.0 (Phase 2d-δ). It accepts a
+	// pre-rendered Kubernetes manifest in `ManifestYAML` and applies
+	// it via `kubectl apply -f -`. The safe-apply validator enforces
+	// a STRICT whitelist of allowed Kinds + per-Kind shape rules
+	// (see pkg/ai/validate_manifest.go) so the LLM (or an OSS
+	// analyzer) cannot smuggle arbitrary mutations.
+	//
+	// Initial allowed Kinds: NetworkPolicy. Extending to additional
+	// Kinds requires a per-Kind security review + validator update.
+	ActionApplyManifest ActionKind = "ApplyManifest"
 )
 
 // IsValid reports whether ak is in the whitelist.
 func (ak ActionKind) IsValid() bool {
 	switch ak {
 	case ActionDeletePod, ActionDeleteJob, ActionPatchDeployment,
-		ActionDeleteCertRequest, ActionDeleteACMEOrder:
+		ActionDeleteCertRequest, ActionDeleteACMEOrder,
+		ActionApplyManifest:
 		return true
 	}
 	return false
@@ -161,6 +173,21 @@ type AIProposedAction struct {
 	// kubectl.kubernetes.io/restartedAt annotation but not the image
 	// or env vars).
 	PatchPayload []byte `json:"patch_payload,omitempty"`
+
+	// ManifestYAML is set only when ActionKind == ActionApplyManifest
+	// (Phase 2d-δ). It is a ready-to-apply Kubernetes manifest, parsed
+	// + safety-checked by the validator before any approval URL is
+	// minted. Initial allowed Kinds: NetworkPolicy. Each new Kind
+	// requires a security-reviewed validator extension.
+	//
+	// Use cases:
+	//   - OSS analyzer (NetworkPolicyProposer) produces a default-deny
+	//     NetPol stub; aiwatch bridges it into an ApplyManifest action
+	//     so the SRE can Approve/Deny in Slack rather than copy-paste
+	//     kubectl.
+	//   - Future analyzers that emit deterministic remediation YAML
+	//     (RoleBinding-fix, ConfigMap repair) extend the allow list.
+	ManifestYAML []byte `json:"manifest_yaml,omitempty"`
 
 	// Rationale is the LLM-generated explanation for the proposal.
 	// Surfaced in the approval UI so the approver can decide.
