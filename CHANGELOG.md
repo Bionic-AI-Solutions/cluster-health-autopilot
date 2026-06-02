@@ -13,6 +13,16 @@ serves the latest tagged chart cut.
 
 ## [Unreleased]
 
+### Added — Watcher mints approve/deny URLs directly (Path B)
+
+- **`pkg/ai/manifest_bridge.go`** — new public `ManifestBridge` (implements `FixProposer`) that converts `Diagnostic.ProposedPolicyYAML` into a signed `ApplyManifest` `AIProposedAction` via the existing safe-apply validator (closed Kind whitelist + per-Kind shape; NetworkPolicy is the v1.15.0 entry). Refusal classes — egress in `policyTypes`, unsupported Kind, protected namespace, non-yaml — quietly return `nil` (no URL minted on dangerous YAML).
+- **`pkg/ai/signer.go`** — Ed25519 signer ported from cha-com (was proprietary, now Apache-2.0). Disk-backed (base64 raw bytes), trailing-whitespace tolerant, env-var fallback (`CHA_SIGNING_KEY_PATH`), `ErrSigningKeyMissing` sentinel for graceful fall-through. `GenerateAndPersistSigningKey()` for bootstrap.
+- **`cmd/cha/main.go`** — `cha watch` gains `--approval-server-url` + `--signing-key-path` flags. When both resolve, loads signer + registers `ManifestBridge` as fallback `FixProposer` (only when registry has no programmatically-registered proposer — keeps cha-com's LLM-backed proposer primary). Wires `Config.ApprovalBaseURL` so `enrichDiagnostics` mints URLs in the existing T1 path.
+- **`internal/operator/builders.go`** — `BuildWatcherDeployment` passes the new flags + mounts the signing-key Secret when both `cr.Spec.AI.ApprovalServerURL` AND `cr.Spec.Approval.SigningKey.SecretName` are set. Guards against half-configured installs (no key → no flags → no broken pod).
+- **Closes the architectural gap** where ProposedPolicyYAML-bearing diagnostics (NetworkPolicyProposer) had URLs minted in the cha-com aiwatch process but NEVER reached the user-facing Slack / Alertmanager / OpenProject surfaces — those are written by the OSS watcher, which had no URL-minting capability. After this change the OSS watcher mints URLs itself; they flow through the existing `d.ApprovalURL` field every adapter already renders.
+- **22 new test cases**: `pkg/ai/manifest_bridge_test.go` (10 — happy path, FixProposer compliance, empty-YAML → nil, refusal classes, missing-metadata variants), `pkg/ai/signer_test.go` (10 — construction, sign happy path, validation errors, key load round-trip with trailing whitespace / missing / bad / wrong-size, env-var fallback, generate-and-persist), `internal/operator/builders_test.go` (2 — watcher wires flags + volume when both spec fields set; watcher omits flags when only ApprovalServerURL set without signing key).
+- **Backward compatible**: watcher built from a CR without `ai.approvalServerUrl` stays byte-identical to v1.15.0; new flags default empty; existing scripts/manifests unaffected.
+
 ### Added — Cloud Monitoring wiring, P4/G9
 
 - **GCP Cloud SQL disk utilization** — `internal/cloud/gcp`: new `monitoringQuerier` interface + `cloudMonitoringQuerier` impl backed by `google.golang.org/api/monitoring/v3`. Queries `cloudsql.googleapis.com/database/disk/utilization` (ALIGN_MEAN over a 5-min window). `LiveClient.ListCloudSQLInstances` now populates `DiskUsedPercent` from the querier, falling back to `-1` "not measured" on failure. Non-fatal `monitoring.NewService` errors keep install working on partial credential grants.
