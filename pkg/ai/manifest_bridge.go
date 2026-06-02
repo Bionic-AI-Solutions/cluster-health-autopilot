@@ -66,13 +66,9 @@ func BuildApplyManifestProposal(d diagnose.Diagnostic) *AIProposedAction {
 	}
 	now := time.Now().UTC()
 	action := AIProposedAction{
-		ActionID:   d.Subject + ":apply-manifest",
-		ActionKind: ActionApplyManifest,
-		Target: ObjectRef{
-			Kind:      target.Kind,
-			Namespace: target.Namespace,
-			Name:      target.Name,
-		},
+		ActionID:     d.Subject + ":apply-manifest",
+		ActionKind:   ActionApplyManifest,
+		Target:       ObjectRef(target),
 		ManifestYAML: yamlBytes,
 		Rationale:    fmt.Sprintf("Apply %s emitted by %s analyzer", kindLabel, d.Source),
 		Rollback: RollbackInfo{
