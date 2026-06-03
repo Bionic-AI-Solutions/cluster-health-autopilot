@@ -13,6 +13,16 @@ serves the latest tagged chart cut.
 
 ## [Unreleased]
 
+### Added — Workload feeder (Phase 2d-γ-2, RAG foundation slice)
+
+- **`internal/feeder/workload.go`** — new `WorkloadFeeder` walks Deployments / StatefulSets / DaemonSets each cycle and upserts one `rag.Entry{Kind: KindWorkload}` per workload. Features captured: `kind` (controller type), `namespace`, `name`, `replicas`, `containers: [{name, image, image_digest}, ...]`, and best-effort `owner_kind`/`owner_release`/`owner_release_namespace`/`owner_chart` derived from the conventional Helm + Argo CD annotations.
+- **Digest resolution** — `image_digest` is read from the owning Pod's `status.containerStatuses[].imageID` (kubelet writes the resolved `sha256:` after a successful pull). Pods that haven't pulled yet (ImagePullBackOff, pending) contribute nothing, and that container's `image_digest` is simply omitted — the correct signal for a downstream proposer to skip the cycle and retry next time. Extraction tolerates `docker.io/`, `docker-pullable://`, and private-registry imageID formats.
+- **Owner detection** — reads `meta.helm.sh/release-name` + `meta.helm.sh/release-namespace` for Helm-managed workloads; `argocd.argoproj.io/instance` for Argo CD (`<namespace>_<name>` form). The `helm.sh/chart` label is parsed to extract the chart name with the trailing version stripped. Empty when neither annotation is set — the proposer slice will fall back to a PR-template path.
+- **System-namespace skip list** — `kube-system`, `kube-public`, `kube-node-lease`, `cnpg-system`, `rook-ceph`, `vault`, `external-secrets`, `calico-system`, `tigera-operator`, `calico-apiserver`, `local-path-storage`. Matches the digest-pin analyzer's system-namespace set so feeder and analyzer agree on "is this workload SRE-relevant".
+- **Fail-open everywhere** — nil receiver / missing Source / missing Writer errors at the contract boundary; per-workload parse + Upsert failures are silently skipped so one bad workload can't stall the sweep. Mirrors the cha-com `CloudflareFeeder` discipline.
+- **13 test cases** — happy path with digest, no-pod-no-digest, three-controller-kinds sweep, system-namespace skip, Helm annotations populate owner, Argo CD annotation parses `<ns>_<name>` form, no-annotations omits owner, multi-container with partial digests, degenerate empty workload skipped, writer error doesn't abort sweep, digest extraction across 5 imageID formats, default importance fallback, nil-guards table.
+- **Not yet wired** into `cha watch` — pure library slice. Next slice activates it via `cfg.RAGWriter rag.Writer` + a `--workload-feeder` flag on cmd/cha + an operator `spec.feeder.workload.enabled` knob on the CR. Foundation for Phase 2d-γ-3 (release-source detection enrichment) and Phase 2d-γ-4 (digest-pin proposer that consumes these entries).
+
 ### Added — Watcher mints approve/deny URLs directly (Path B)
 
 - **`pkg/ai/manifest_bridge.go`** — new public `ManifestBridge` (implements `FixProposer`) that converts `Diagnostic.ProposedPolicyYAML` into a signed `ApplyManifest` `AIProposedAction` via the existing safe-apply validator (closed Kind whitelist + per-Kind shape; NetworkPolicy is the v1.15.0 entry). Refusal classes — egress in `policyTypes`, unsupported Kind, protected namespace, non-yaml — quietly return `nil` (no URL minted on dangerous YAML).
