@@ -13,6 +13,17 @@ serves the latest tagged chart cut.
 
 ## [Unreleased]
 
+### Added — Raw-YAML inline-image detector (`releasesrc.DetectInRawManifests`, v1.18.2)
+
+- **Problem**: many in-house repos ship plain Kubernetes YAML (Deployment / StatefulSet specs with `image: <repo>:<tag>` inline) instead of a Helm chart with `image.repository`/`tag` keys. The v1.18.1 `DetectInHelmValues` returned `ErrNotFound` for those, causing the digest-pin proposer to silently skip — the gap that prevented buttons from appearing on `docker4zerocool/storethesoup-wordpress` even after the cluster rolled to v1.18.1.
+- **New `DetectInRawManifests(ctx, files, expectRepository)`** — lists every `*.yaml`/`*.yml` in the repo (via `RepoFiles.List(["**/*.yaml", "**/*.yml"])` with no-pattern fallback for forge backends that ignore the glob), scans each for an `image: <repo>:<tag>` line, returns first hit with `File` + 1-based `Line` + `CurrentTag`. Anchors on `^\s*-?\s*image\s*:` so it doesn't match keys whose name happens to end in `image:`. Accepts both quoted (`image: "repo:tag"`) and unquoted forms; tag charset matches OCI (`a-z A-Z 0-9 . - _`). Skips non-YAML files (a `Dockerfile` or `README.md` with an `image:` line is not a K8s manifest).
+- **New `Detect(ctx, files, chartName, expectRepository)`** — single entry that tries `DetectInHelmValues` first (preferred edit anchor; tag value substitutes cleanly into the chart template), then falls back to `DetectInRawManifests`. Transport errors from the Helm probe propagate — Detect does NOT silently paper over genuine forge outages by trying the raw scan.
+- **9 new tests**: storethesoup-k8s shape (wordpress Deployment), quoted image, multi-document YAML (matches first), no-match repo, empty repo, nil-args guards, non-YAML file skip, Helm priority over raw, Helm transport error propagation through `Detect`.
+- **Chart bump 1.18.1 → 1.18.2** (patch — new function, no behavior change in existing API).
+
+---
+
+
 ### Changed — Promoted `internal/feeder` → `pkg/feeder` (v1.18.1)
 
 - **The workload feeder is now importable from external Go modules** (the paid cha-com binary in particular). Go's `internal/` visibility rule was blocking the cha-com aiwatch from instantiating `WorkloadFeeder` — meaning `kind=workload` entries were never being written to RAG, meaning the v1.11.0 cha-com `DigestPinProposer` would always miss its RAG lookup, meaning **no Approve/Deny buttons would have appeared on digest-pin findings even after the cluster rolled to v1.11.0**.
