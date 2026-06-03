@@ -11,7 +11,7 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/feeder"
+	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/feeder"
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/rag"
 	pkgsnapshot "github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/snapshot"
 )

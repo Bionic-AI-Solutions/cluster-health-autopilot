@@ -26,8 +26,18 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/snapshot"
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/rag"
+	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/snapshot"
+)
+
+// GVRs the feeder needs. Defined locally so pkg/feeder doesn't depend
+// on internal/snapshot — pkg/ packages can't import internal/. These
+// match the canonical Kubernetes GVRs.
+var (
+	gvrPod         = schema.GroupVersionResource{Group: "", Version: "v1", Resource: "pods"}
+	gvrDeployment  = schema.GroupVersionResource{Group: "apps", Version: "v1", Resource: "deployments"}
+	gvrStatefulSet = schema.GroupVersionResource{Group: "apps", Version: "v1", Resource: "statefulsets"}
+	gvrDaemonSet   = schema.GroupVersionResource{Group: "apps", Version: "v1", Resource: "daemonsets"}
 )
 
 // defaultWorkloadImportance seeds every fresh workload entry. Above the
@@ -42,9 +52,9 @@ var workloadGVRs = []struct {
 	gvr  schema.GroupVersionResource
 	kind string
 }{
-	{snapshot.GVRDeployment, "Deployment"},
-	{snapshot.GVRStatefulSet, "StatefulSet"},
-	{snapshot.GVRDaemonSet, "DaemonSet"},
+	{gvrDeployment, "Deployment"},
+	{gvrStatefulSet, "StatefulSet"},
+	{gvrDaemonSet, "DaemonSet"},
 }
 
 // systemNamespaces are infrastructure namespaces whose workloads are
@@ -182,7 +192,7 @@ type digestKey struct {
 // leaves drift detection to the next slice.
 func (f *WorkloadFeeder) buildDigestIndex(ctx context.Context) map[digestKey]string {
 	idx := map[digestKey]string{}
-	pods, err := f.Source.List(ctx, snapshot.GVRPod, "")
+	pods, err := f.Source.List(ctx, gvrPod, "")
 	if err != nil || pods == nil {
 		return idx
 	}

@@ -13,6 +13,13 @@ serves the latest tagged chart cut.
 
 ## [Unreleased]
 
+### Changed — Promoted `internal/feeder` → `pkg/feeder` (v1.18.1)
+
+- **The workload feeder is now importable from external Go modules** (the paid cha-com binary in particular). Go's `internal/` visibility rule was blocking the cha-com aiwatch from instantiating `WorkloadFeeder` — meaning `kind=workload` entries were never being written to RAG, meaning the v1.11.0 cha-com `DigestPinProposer` would always miss its RAG lookup, meaning **no Approve/Deny buttons would have appeared on digest-pin findings even after the cluster rolled to v1.11.0**.
+- **Mechanical move**: `git mv internal/feeder pkg/feeder`. The 4 Kubernetes GVRs (`Pod`, `Deployment`, `StatefulSet`, `DaemonSet`) the feeder needs are now defined locally in `pkg/feeder/workload.go` since `pkg/snapshot` doesn't carry them and `pkg/` cannot import `internal/snapshot`. No logic changes.
+- All 13 existing feeder tests still pass.
+
+
 ### Added — `spec.ai.extraArgs` + `spec.ai.extraEnv` escape hatches on the operator (v1.18.0)
 
 - **`api/v1alpha1/clusterhealthautopilot_types.go`** — new `AISpec.ExtraArgs []string` + `AISpec.ExtraEnv []AIExtraEnv` (with `AIExtraEnvSource` + `AIExtraEnvSecretKeyRef`).
