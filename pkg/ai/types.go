@@ -84,6 +84,28 @@ const (
 	// Initial allowed Kinds: NetworkPolicy. Extending to additional
 	// Kinds requires a per-Kind security review + validator update.
 	ActionApplyManifest ActionKind = "ApplyManifest"
+
+	// ActionProposePullRequest is v1.17.0 (Phase 2d-γ). The proposer
+	// has ALREADY opened a PR in a release-source repo (Helm chart,
+	// Argo CD Application, Kustomize overlay) and embeds the PR URL
+	// in `PullRequestURL`. The action carries no cluster mutation;
+	// the cluster is only changed when the PR is merged + the next
+	// normal deploy runs.
+	//
+	// Approve semantics (cha-com executor):
+	//   - default: post an "SRE approved" comment on the PR; SRE
+	//     completes the merge by hand
+	//   - opt-in (per-CR): auto-merge the PR via the forge API
+	// Deny semantics:
+	//   - close the PR + record the outcome to RAG memory so the
+	//     proposer doesn't re-propose the same workload until the
+	//     running digest changes
+	//
+	// Used by the v1.17.0+ digest-pin proposer that consumes
+	// `kind=workload` entries (pkg/feeder) + release-source
+	// detection (pkg/releasesrc) to construct a one-line `:tag` →
+	// `@sha256:<digest>` patch.
+	ActionProposePullRequest ActionKind = "ProposePullRequest"
 )
 
 // IsValid reports whether ak is in the whitelist.
@@ -91,7 +113,7 @@ func (ak ActionKind) IsValid() bool {
 	switch ak {
 	case ActionDeletePod, ActionDeleteJob, ActionPatchDeployment,
 		ActionDeleteCertRequest, ActionDeleteACMEOrder,
-		ActionApplyManifest:
+		ActionApplyManifest, ActionProposePullRequest:
 		return true
 	}
 	return false
@@ -188,6 +210,23 @@ type AIProposedAction struct {
 	//   - Future analyzers that emit deterministic remediation YAML
 	//     (RoleBinding-fix, ConfigMap repair) extend the allow list.
 	ManifestYAML []byte `json:"manifest_yaml,omitempty"`
+
+	// PullRequestURL is set only when ActionKind == ActionProposePullRequest
+	// (Phase 2d-γ, v1.17.0+). It is the URL of the PR the proposer
+	// already opened against the workload's release-source repo
+	// (Helm chart, Argo CD Application, Kustomize overlay) —
+	// typically a one-line `:tag` → `@sha256:<digest>` patch produced
+	// by the digest-pin proposer.
+	//
+	// The validator requires this URL to use the https scheme and to
+	// resolve to a well-formed PR/MR path so the approval-server can
+	// safely link out from the Approve UI.
+	//
+	// The action carries NO cluster mutation: the cluster is only
+	// changed when the PR is merged + the next normal deploy runs.
+	// Approve = post a comment / auto-merge (per CR policy); Deny =
+	// close the PR + record the outcome to RAG memory.
+	PullRequestURL string `json:"pull_request_url,omitempty"`
 
 	// Rationale is the LLM-generated explanation for the proposal.
 	// Surfaced in the approval UI so the approver can decide.
@@ -316,4 +355,8 @@ var (
 	ErrSameApprover        = errors.New("ai: T3 requires two distinct approvers")
 	ErrT3DelayNotElapsed   = errors.New("ai: T3 second approval before 30-minute window")
 	ErrEnrichmentTooLong   = errors.New("ai: enrichment exceeds maximum length")
+
+	// v1.17.0 — ActionProposePullRequest validation.
+	ErrPullRequestURLEmpty   = errors.New("ai: action ProposePullRequest requires pull_request_url")
+	ErrPullRequestURLInvalid = errors.New("ai: pull_request_url must be a well-formed HTTPS URL")
 )

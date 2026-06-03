@@ -13,6 +13,21 @@ serves the latest tagged chart cut.
 
 ## [Unreleased]
 
+### Added — `ActionProposePullRequest` ActionKind (Phase 2d-γ-3 slice 3a)
+
+- **`pkg/ai/types.go`** — new `ActionProposePullRequest ActionKind = "ProposePullRequest"` for proposals that carry a forge PR URL instead of a cluster-side mutation. The cluster itself is NOT changed when the proposal is approved; only when the PR is merged + the next normal deploy runs.
+- **`AIProposedAction.PullRequestURL string`** — new field holding the forge URL the proposer already opened (the digest-pin proposer in slice 3b will populate it via the cha-com forge client).
+- **`Validate()` rules for the new kind** —
+  - `PullRequestURL` non-empty (rejects with `ErrPullRequestURLEmpty`)
+  - URL must parse as a well-formed HTTPS URL with a non-empty host (`ErrPullRequestURLInvalid`) — guards against an `http://` downgrade or a `https:///path` malformed link rendering as a phishing target in Slack
+  - `Target.Namespace` still subject to the protected-NS check — CHA never proposes PRs that would mutate `kube-system` / `vault` / `cnpg-system` infra
+  - `Rollback.Description` still required (PR rollback = "close PR + delete branch")
+  - Tier still must be `T1`/`T2`/`T3` (T0 = narration-only)
+  - `ManifestYAML` and `PatchPayload` MUST be empty on a `ProposePullRequest` (else `ErrInvalidActionKind` — proposer can't smuggle a cluster mutation through this kind)
+- **Self-hosted forges supported** — no OSS-side host allowlist; operators run self-hosted GitLab / Gitea / Forgejo with arbitrary hostnames. Allowlist enforcement (if needed for a specific deployment) belongs in the approval-server's per-CR policy layer in a future slice.
+- **12 test cases** (`pkg/ai/propose_pull_request_test.go`) — happy path, empty/whitespace URL, http downgrade, missing host, garbled URL, self-hosted-GitLab accepted, protected-namespace rejection, missing rollback, wrong-kind URL field, T0-tier rejection, ManifestYAML-on-PR-kind rejection.
+- Not yet wired into an executor — `pkg/ai` types only. cha-com slice 3b/3c lands the approval-server executor handler (Approve → post-merge comment / auto-merge per CR policy; Deny → close PR + record outcome to RAG) plus the `DigestPinProposer` that emits proposals of this kind.
+
 ### Added — Release-source detection (`pkg/releasesrc`, Phase 2d-γ-3 slice 1)
 
 - **`pkg/releasesrc`** — new public package finds the file + line in a release-source repo where a workload's image tag is declared. Keystone for the paid-tier digest-pin proposer: without knowing which `values.yaml` line holds `image.tag`, the proposer can't construct a one-line patch.

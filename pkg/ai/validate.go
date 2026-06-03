@@ -4,6 +4,7 @@
 package ai
 
 import (
+	"net/url"
 	"regexp"
 	"strings"
 	"time"
@@ -69,6 +70,19 @@ func (a *AIProposedAction) Validate() error {
 	}
 	if a.ActionKind == ActionApplyManifest {
 		if err := ValidateManifest(a.ManifestYAML); err != nil {
+			return err
+		}
+	}
+	// v1.17.0: ActionProposePullRequest carries a URL the
+	// approval-server links the SRE to. The URL is opaque from CHA's
+	// point of view (we don't fetch it), but we MUST insist it's a
+	// well-formed HTTPS URL — a malformed value would render as a
+	// broken / phishing-shaped link in Slack.
+	if len(a.PullRequestURL) > 0 && a.ActionKind != ActionProposePullRequest {
+		return ErrInvalidActionKind
+	}
+	if a.ActionKind == ActionProposePullRequest {
+		if err := validatePullRequestURL(a.PullRequestURL); err != nil {
 			return err
 		}
 	}
@@ -189,6 +203,35 @@ func ValidateT3DualApproval(d DualApproval) error {
 	}
 	if d.Second.ApprovedAt.Sub(d.First.ApprovedAt) < MinT3Delay {
 		return ErrT3DelayNotElapsed
+	}
+	return nil
+}
+
+// validatePullRequestURL enforces the shape rules for an
+// ActionProposePullRequest URL. Defensive checks:
+//   - non-empty
+//   - parseable as a URL
+//   - https scheme (never http; downgrades a JWT-signed message to
+//     a man-in-the-middle target)
+//   - host non-empty (rules out "https:///path" style malformed inputs)
+//
+// We DON'T enforce a forge host allowlist here — operators run
+// self-hosted GitLab / Gitea / Forgejo instances with arbitrary
+// hostnames. Allowlist enforcement (if needed) belongs in the
+// approval-server's per-CR policy layer.
+func validatePullRequestURL(s string) error {
+	if strings.TrimSpace(s) == "" {
+		return ErrPullRequestURLEmpty
+	}
+	u, err := url.Parse(s)
+	if err != nil {
+		return ErrPullRequestURLInvalid
+	}
+	if u.Scheme != "https" {
+		return ErrPullRequestURLInvalid
+	}
+	if u.Host == "" {
+		return ErrPullRequestURLInvalid
 	}
 	return nil
 }
