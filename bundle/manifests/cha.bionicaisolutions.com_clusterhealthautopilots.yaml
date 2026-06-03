@@ -260,6 +260,39 @@ spec:
                         topK:
                           type: integer
                           minimum: 0
+                    extraArgs:
+                      # v1.18.0 — escape hatch for cha-com flags not yet
+                      # modeled as typed fields (--cloudflare-feeder,
+                      # --rag-store-url, --digest-pin-*).
+                      type: array
+                      items:
+                        type: string
+                    extraEnv:
+                      # v1.18.0 — escape hatch for env vars
+                      # (GITHUB_PAT, CLOUDFLARE_API_TOKEN).
+                      type: array
+                      items:
+                        type: object
+                        required: [name]
+                        properties:
+                          name:
+                            type: string
+                            minLength: 1
+                          value:
+                            type: string
+                          valueFrom:
+                            type: object
+                            properties:
+                              secretKeyRef:
+                                type: object
+                                required: [name, key]
+                                properties:
+                                  name:
+                                    type: string
+                                    minLength: 1
+                                  key:
+                                    type: string
+                                    minLength: 1
                 approval:
                   # ApprovalSpec — CHA-com approval-server (in-namespace
                   # HTTPS endpoint that validates SRE approve/deny clicks

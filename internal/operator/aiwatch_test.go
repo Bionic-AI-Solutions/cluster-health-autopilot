@@ -503,3 +503,94 @@ func readCondition(t *testing.T, c client.Client, cr *chav1alpha1.ClusterHealthA
 	}
 	return nil
 }
+
+// v1.18.0 — extraArgs escape hatch: arbitrary flag list appended
+// AFTER the typed args so the operator can pass cha-com flags it
+// doesn't yet model (e.g. --cloudflare-feeder, --digest-pin-*).
+func TestBuildAIWatchDeployment_ExtraArgs_AppendedAfterTypedArgs(t *testing.T) {
+	cr := aiCR()
+	cr.Spec.AI.ExtraArgs = []string{
+		"--cloudflare-feeder=true",
+		"--rag-store-url=http://bionic-rag.cluster-health-autopilot.svc:6333",
+		"--digest-pin-proposer=true",
+		"--digest-pin-repo-map=docker4zerocool/voice-studio-frontend=Bionic-AI-Solutions/voice-studio-frontend:main",
+	}
+	d := BuildAIWatchDeployment(cr)
+	args := d.Spec.Template.Spec.Containers[0].Args
+
+	for _, want := range cr.Spec.AI.ExtraArgs {
+		mustContain(t, args, want)
+	}
+	// Ordering: extraArgs must come AFTER --ai-tier (typed arg).
+	tierIdx := -1
+	cfIdx := -1
+	for i, a := range args {
+		if strings.HasPrefix(a, "--ai-tier=") {
+			tierIdx = i
+		}
+		if a == "--cloudflare-feeder=true" {
+			cfIdx = i
+		}
+	}
+	if tierIdx < 0 || cfIdx < 0 || cfIdx < tierIdx {
+		t.Errorf("extraArgs must appear AFTER typed args; tierIdx=%d cfIdx=%d", tierIdx, cfIdx)
+	}
+}
+
+// v1.18.0 — extraEnv escape hatch: secret-backed env vars appended
+// after the typed downward-API + APIKey envs.
+func TestBuildAIWatchDeployment_ExtraEnv_SecretRefAppended(t *testing.T) {
+	cr := aiCR()
+	cr.Spec.AI.ExtraEnv = []chav1alpha1.AIExtraEnv{
+		{
+			Name: "GITHUB_PAT",
+			ValueFrom: &chav1alpha1.AIExtraEnvSource{
+				SecretKeyRef: &chav1alpha1.AIExtraEnvSecretKeyRef{Name: "cha-github-pat", Key: "PAT"},
+			},
+		},
+		{
+			Name:  "LITERAL_VAR",
+			Value: "literal-value",
+		},
+	}
+	d := BuildAIWatchDeployment(cr)
+	env := d.Spec.Template.Spec.Containers[0].Env
+
+	var foundPAT, foundLiteral bool
+	for _, e := range env {
+		switch e.Name {
+		case "GITHUB_PAT":
+			foundPAT = true
+			if e.ValueFrom == nil || e.ValueFrom.SecretKeyRef == nil {
+				t.Errorf("GITHUB_PAT: want SecretKeyRef; got %+v", e)
+			} else if e.ValueFrom.SecretKeyRef.Name != "cha-github-pat" || e.ValueFrom.SecretKeyRef.Key != "PAT" {
+				t.Errorf("GITHUB_PAT ref: got name=%q key=%q", e.ValueFrom.SecretKeyRef.Name, e.ValueFrom.SecretKeyRef.Key)
+			}
+		case "LITERAL_VAR":
+			foundLiteral = true
+			if e.Value != "literal-value" || e.ValueFrom != nil {
+				t.Errorf("LITERAL_VAR: want literal Value; got %+v", e)
+			}
+		}
+	}
+	if !foundPAT {
+		t.Error("GITHUB_PAT not in env")
+	}
+	if !foundLiteral {
+		t.Error("LITERAL_VAR not in env")
+	}
+}
+
+// Nil receiver / empty list — defensive coverage.
+func TestBuildAIWatchDeployment_ExtraArgsEmpty_NoChange(t *testing.T) {
+	cr := aiCR()
+	cr.Spec.AI.ExtraArgs = nil
+	cr.Spec.AI.ExtraEnv = nil
+	d := BuildAIWatchDeployment(cr)
+	if d == nil {
+		t.Fatal("aiwatch deploy must build with empty extras")
+	}
+	// args still contain the typed defaults.
+	args := d.Spec.Template.Spec.Containers[0].Args
+	mustContain(t, args, "--ai-tier=t0")
+}

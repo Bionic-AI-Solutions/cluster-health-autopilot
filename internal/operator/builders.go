@@ -587,6 +587,12 @@ func aiArgs(cr *chav1alpha1.ClusterHealthAutopilot) []string {
 		}
 		args = append(args, fmt.Sprintf("--memory-topk=%d", topK))
 	}
+	// v1.18.0 — extraArgs escape hatch. Append AFTER typed args so a
+	// typed flag (e.g. --ai-tier) wins on duplicate keys (later args
+	// override earlier ones in pflag). Useful for cha-com flags the
+	// operator schema hasn't typed yet (e.g. --cloudflare-feeder,
+	// --rag-store-url, --digest-pin-*).
+	args = append(args, ai.ExtraArgs...)
 	return args
 }
 
@@ -626,6 +632,28 @@ func aiEnv(cr *chav1alpha1.ClusterHealthAutopilot) []corev1.EnvVar {
 				},
 			},
 		})
+	}
+	// v1.18.0 — extraEnv escape hatch. Used for cha-com env vars the
+	// operator schema doesn't model yet (e.g. GITHUB_PAT for the
+	// digest-pin proposer's forge calls, CLOUDFLARE_API_TOKEN for the
+	// zone-feeder). Validation enforces Value XOR ValueFrom at the
+	// CR-admission layer (kubebuilder validators on the AIExtraEnv type).
+	for _, ee := range cr.Spec.AI.ExtraEnv {
+		if ee.Name == "" {
+			continue
+		}
+		v := corev1.EnvVar{Name: ee.Name}
+		if ee.ValueFrom != nil && ee.ValueFrom.SecretKeyRef != nil && ee.ValueFrom.SecretKeyRef.Name != "" {
+			v.ValueFrom = &corev1.EnvVarSource{
+				SecretKeyRef: &corev1.SecretKeySelector{
+					LocalObjectReference: corev1.LocalObjectReference{Name: ee.ValueFrom.SecretKeyRef.Name},
+					Key:                  ee.ValueFrom.SecretKeyRef.Key,
+				},
+			}
+		} else {
+			v.Value = ee.Value
+		}
+		env = append(env, v)
 	}
 	return env
 }

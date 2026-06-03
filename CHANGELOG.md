@@ -13,6 +13,15 @@ serves the latest tagged chart cut.
 
 ## [Unreleased]
 
+### Added — `spec.ai.extraArgs` + `spec.ai.extraEnv` escape hatches on the operator (v1.18.0)
+
+- **`api/v1alpha1/clusterhealthautopilot_types.go`** — new `AISpec.ExtraArgs []string` + `AISpec.ExtraEnv []AIExtraEnv` (with `AIExtraEnvSource` + `AIExtraEnvSecretKeyRef`).
+- **Why**: cha-com v1.11.0 ships new flags (`--cloudflare-feeder`, `--rag-store-url`, `--cluster-name`, `--digest-pin-proposer`, `--forge-token-env`, `--digest-pin-repo-map`) and env vars (`GITHUB_PAT`, `CLOUDFLARE_API_TOKEN`) that the operator's typed schema doesn't yet model. The escape hatches let operators wire them today via the existing CR-patch flow while typed fields land in subsequent minor releases.
+- **`internal/operator/builders.go::aiArgs`** — appends `ai.ExtraArgs` AFTER the typed args so a typed flag wins on duplicate keys (later args override earlier in pflag).
+- **`internal/operator/builders.go::aiEnv`** — appends `ai.ExtraEnv` entries as `corev1.EnvVar`, supporting either literal `Value` or `ValueFrom.SecretKeyRef`. ConfigMapKeyRef / FieldRef / ResourceFieldRef are deliberately out of scope (aiwatch never needs them).
+- **CRD schema updated** — both the chart-managed `crd-clusterhealthautopilot.yaml` and the bundled `bundle/manifests/cha.bionicaisolutions.com_clusterhealthautopilots.yaml` accept the new fields with kubebuilder validators (`minLength=1` on `name`/`key`).
+- **3 new operator builder tests** — `ExtraArgs_AppendedAfterTypedArgs` (order check), `ExtraEnv_SecretRefAppended` (both `ValueFrom.SecretKeyRef` + literal `Value` paths), `ExtraArgsEmpty_NoChange` (defensive baseline).
+
 ### Added — `ActionProposePullRequest` ActionKind (Phase 2d-γ-3 slice 3a)
 
 - **`pkg/ai/types.go`** — new `ActionProposePullRequest ActionKind = "ProposePullRequest"` for proposals that carry a forge PR URL instead of a cluster-side mutation. The cluster itself is NOT changed when the proposal is approved; only when the PR is merged + the next normal deploy runs.

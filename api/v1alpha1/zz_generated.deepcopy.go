@@ -242,6 +242,38 @@ func (in *AISpec) DeepCopyInto(out *AISpec) {
 		out.Memory = new(AIMemorySpec)
 		in.Memory.DeepCopyInto(out.Memory)
 	}
+	if in.ExtraArgs != nil {
+		out.ExtraArgs = make([]string, len(in.ExtraArgs))
+		copy(out.ExtraArgs, in.ExtraArgs)
+	}
+	if in.ExtraEnv != nil {
+		out.ExtraEnv = make([]AIExtraEnv, len(in.ExtraEnv))
+		for i := range in.ExtraEnv {
+			in.ExtraEnv[i].DeepCopyInto(&out.ExtraEnv[i])
+		}
+	}
+}
+
+// DeepCopyInto for AIExtraEnv.
+func (in *AIExtraEnv) DeepCopyInto(out *AIExtraEnv) {
+	*out = *in
+	if in.ValueFrom != nil {
+		out.ValueFrom = new(AIExtraEnvSource)
+		if in.ValueFrom.SecretKeyRef != nil {
+			out.ValueFrom.SecretKeyRef = new(AIExtraEnvSecretKeyRef)
+			*out.ValueFrom.SecretKeyRef = *in.ValueFrom.SecretKeyRef
+		}
+	}
+}
+
+// DeepCopy returns a deep copy of the receiver.
+func (in *AIExtraEnv) DeepCopy() *AIExtraEnv {
+	if in == nil {
+		return nil
+	}
+	out := new(AIExtraEnv)
+	in.DeepCopyInto(out)
+	return out
 }
 
 // DeepCopy returns a deep copy of the receiver.

@@ -413,6 +413,73 @@ type AISpec struct {
 	// the aiwatch grounds proposals in prior verified resolutions.
 	// +optional
 	Memory *AIMemorySpec `json:"memory,omitempty"`
+
+	// ExtraArgs are passed verbatim as additional command-line
+	// arguments to the aiwatch container. Order-preserving append
+	// AFTER the typed args (--ai-tier, --ai-endpoint, etc).
+	//
+	// Escape hatch for cha-com flags the operator's typed schema
+	// doesn't yet model — currently used for the v1.11.0+ runtime
+	// activations (--cloudflare-feeder, --rag-store-url,
+	// --cluster-name, --digest-pin-proposer, --forge-token-env,
+	// --digest-pin-repo-map, etc). Each entry is one full CLI token,
+	// e.g. ["--cloudflare-feeder=true", "--rag-store-url=http://...",
+	// "--digest-pin-repo-map=foo/bar=Org/Bar:main"].
+	//
+	// Will be replaced by typed fields in future minor releases as
+	// the corresponding cha-com surfaces stabilize; the escape hatch
+	// stays for forward-compat with experimental flags.
+	// +optional
+	ExtraArgs []string `json:"extraArgs,omitempty"`
+
+	// ExtraEnv are extra environment variables appended to the
+	// aiwatch container. Mirrors the structure of corev1.EnvVar
+	// (subset: Name + Value OR Name + ValueFrom.SecretKeyRef).
+	//
+	// Used for v1.11.0+ external-token references (GITHUB_PAT for
+	// the digest-pin proposer's forge calls, CLOUDFLARE_API_TOKEN
+	// for the zone-feeder). Each entry must specify EITHER Value
+	// OR ValueFrom (not both); the operator rejects the CR at
+	// validation time otherwise.
+	// +optional
+	ExtraEnv []AIExtraEnv `json:"extraEnv,omitempty"`
+}
+
+// AIExtraEnv is a minimal env-var spec — supports literal Value or a
+// secretKeyRef. ConfigMapKeyRef + FieldRef + ResourceFieldRef are out
+// of scope (the aiwatch never needs them in production).
+type AIExtraEnv struct {
+	// Name is the env var name as seen by the binary.
+	// +kubebuilder:validation:MinLength=1
+	Name string `json:"name"`
+
+	// Value is a literal value. Mutually exclusive with ValueFrom.
+	// +optional
+	Value string `json:"value,omitempty"`
+
+	// ValueFrom pulls from a K8s Secret. Mutually exclusive with Value.
+	// +optional
+	ValueFrom *AIExtraEnvSource `json:"valueFrom,omitempty"`
+}
+
+// AIExtraEnvSource is the secretKeyRef shape — only the fields the
+// aiwatch consumes (no ConfigMap / FieldRef / ResourceFieldRef in
+// scope for the operator surface).
+type AIExtraEnvSource struct {
+	// SecretKeyRef references a K8s Secret in the install namespace.
+	// +kubebuilder:validation:Required
+	SecretKeyRef *AIExtraEnvSecretKeyRef `json:"secretKeyRef"`
+}
+
+// AIExtraEnvSecretKeyRef identifies a (Secret, key) pair.
+type AIExtraEnvSecretKeyRef struct {
+	// Name of the K8s Secret in the install namespace.
+	// +kubebuilder:validation:MinLength=1
+	Name string `json:"name"`
+
+	// Key inside the Secret.
+	// +kubebuilder:validation:MinLength=1
+	Key string `json:"key"`
 }
 
 // AIAPIKeySpec references the LLM-bearer-token Secret.

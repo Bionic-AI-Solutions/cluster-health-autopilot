@@ -256,6 +256,43 @@ spec:
                         topK:
                           type: integer
                           minimum: 0
+                    extraArgs:
+                      # v1.18.0 — escape hatch for cha-com flags not yet
+                      # modeled as typed fields (e.g. --cloudflare-feeder,
+                      # --rag-store-url, --digest-pin-proposer,
+                      # --digest-pin-repo-map). Appended verbatim AFTER
+                      # the typed args.
+                      type: array
+                      items:
+                        type: string
+                    extraEnv:
+                      # v1.18.0 — escape hatch for env vars not yet modeled
+                      # (e.g. GITHUB_PAT for digest-pin forge calls,
+                      # CLOUDFLARE_API_TOKEN for the zone-feeder). Each
+                      # entry has Name + (Value XOR ValueFrom.SecretKeyRef).
+                      type: array
+                      items:
+                        type: object
+                        required: [name]
+                        properties:
+                          name:
+                            type: string
+                            minLength: 1
+                          value:
+                            type: string
+                          valueFrom:
+                            type: object
+                            properties:
+                              secretKeyRef:
+                                type: object
+                                required: [name, key]
+                                properties:
+                                  name:
+                                    type: string
+                                    minLength: 1
+                                  key:
+                                    type: string
+                                    minLength: 1
                 approval:
                   # ApprovalSpec — CHA-com approval-server (in-namespace
                   # HTTPS endpoint that validates SRE approve/deny clicks

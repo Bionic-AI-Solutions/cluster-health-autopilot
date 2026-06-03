@@ -45,11 +45,10 @@ func TestAISpec_DeepCopy_AllFields(t *testing.T) {
 	if dst == src {
 		t.Fatal("DeepCopy should return a new pointer")
 	}
-	if *dst != *src {
-		// Pointer-equality fields will differ; field-by-field check.
-		if dst.Tier != src.Tier || dst.Endpoint != src.Endpoint {
-			t.Errorf("scalar fields not copied: dst=%+v src=%+v", dst, src)
-		}
+	// Field-by-field scalar check (AISpec now contains a []string —
+	// struct value comparison is no longer supported in Go).
+	if dst.Tier != src.Tier || dst.Endpoint != src.Endpoint {
+		t.Errorf("scalar fields not copied: dst=%+v src=%+v", dst, src)
 	}
 
 	// Mutate the copy's nested pointers + slices; the original must be
