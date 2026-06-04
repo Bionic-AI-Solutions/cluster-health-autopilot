@@ -90,13 +90,24 @@ func DetectInRawManifests(ctx context.Context, files RepoFiles, expectRepository
 // Returns the first hit. Operators don't need to know which detector
 // matched — the resulting ImageRef carries enough context for the
 // proposer to construct the patch.
+//
+// Fall-through rules:
+//   - Helm match → return.
+//   - Helm ErrNotFound → try raw scan.
+//   - Helm transport error → ALSO try raw scan, then propagate the
+//     raw scan's outcome. GitHub returns HTTP 403 under secondary rate
+//     limit conditions that look indistinguishable from "scope denied"
+//     to the forge layer; if we surfaced 403 here we'd block all
+//     downstream digest-pin work whenever a transient burst of API
+//     calls overlapped a single Helm probe (observed 2026-06-04 with
+//     35 of 41 candidates spuriously erroring on `charts/X/values.yaml`
+//     while the same paths returned a clean 404 seconds later). The
+//     raw scan re-tries through a different path, surfaces real auth
+//     failures via its own ListRepoFiles call, and converges to
+//     ErrNotFound when neither shape matches.
 func Detect(ctx context.Context, files RepoFiles, chartName, expectRepository string) (*ImageRef, error) {
 	if ref, err := DetectInHelmValues(ctx, files, chartName, expectRepository); err == nil {
 		return ref, nil
-	} else if !errors.Is(err, ErrNotFound) {
-		// Real transport error — surface it; don't paper over with the
-		// raw-manifests fallback.
-		return nil, err
 	}
 	return DetectInRawManifests(ctx, files, expectRepository)
 }
