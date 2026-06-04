@@ -314,3 +314,54 @@ func TestHasActions_NilEmpty(t *testing.T) {
 		t.Error("hasActions(nil) should be false")
 	}
 }
+
+// TestSeenEntryToDeltaDiag_CarriesApprovalFields is the regression test
+// for the silent Slack-button outage: prior to this fix, the Slack-bound
+// mapping in runCycle dropped ProposedActionID + ApprovalURL while the
+// Alertmanager-bound mapping kept them. The result was that every
+// AI-tier proposal got an Alertmanager annotation but the Slack post
+// rendered without the "✅ Approve · ❌ Deny" line — invisible to
+// operators who use Slack as the primary surface. The collapsed helper
+// guarantees every destination gets every field.
+func TestSeenEntryToDeltaDiag_CarriesApprovalFields(t *testing.T) {
+	e := &seenEntry{
+		subject:          "Pod/ns/app-xyz",
+		severity:         "warning",
+		message:          "missing digest pin",
+		remediation:      "pin via @sha256:...",
+		investigation:    "rule R-IMG-01 flagged this",
+		enrichment:       "LLM narrative addendum",
+		proposedActionID: "Pod/ns/app-xyz:digest-pin:abcdef012345",
+		approvalURL:      "https://cha-approve.example.com/approve?token=eyJ...",
+	}
+	got := seenEntryToDeltaDiag(e)
+	if got.Subject != e.subject ||
+		got.Severity != e.severity ||
+		got.Message != e.message ||
+		got.Remediation != e.remediation ||
+		got.Investigation != e.investigation ||
+		got.Enrichment != e.enrichment {
+		t.Errorf("base fields not propagated: got %+v", got)
+	}
+	if got.ProposedActionID != e.proposedActionID {
+		t.Errorf("ProposedActionID dropped: got %q want %q", got.ProposedActionID, e.proposedActionID)
+	}
+	if got.ApprovalURL != e.approvalURL {
+		t.Errorf("ApprovalURL dropped: got %q want %q (this is the bug that silently disabled Slack Approve/Deny buttons)", got.ApprovalURL, e.approvalURL)
+	}
+}
+
+// TestSeenEntryToDeltaDiag_AllowsEmptyAIFields confirms a non-AI-tier
+// seenEntry (no Enricher / FixProposer registered) still renders cleanly:
+// the AI-tier fields are zero values, not garbage.
+func TestSeenEntryToDeltaDiag_AllowsEmptyAIFields(t *testing.T) {
+	e := &seenEntry{
+		subject:  "Pod/ns/legacy",
+		severity: "critical",
+		message:  "container OOMKilled",
+	}
+	got := seenEntryToDeltaDiag(e)
+	if got.Enrichment != "" || got.ProposedActionID != "" || got.ApprovalURL != "" {
+		t.Errorf("non-AI entry leaked AI fields: %+v", got)
+	}
+}
