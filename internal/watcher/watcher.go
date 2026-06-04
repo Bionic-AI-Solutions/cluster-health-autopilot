@@ -393,16 +393,7 @@ func (w *Watcher) runCycle(ctx context.Context) {
 		ttl := 2*w.cfg.ResyncPeriod + time.Minute
 		allActive := make([]report.DeltaDiag, 0, len(postFix))
 		for _, e := range postFix {
-			allActive = append(allActive, report.DeltaDiag{
-				Subject:          e.subject,
-				Severity:         e.severity,
-				Message:          e.message,
-				Remediation:      e.remediation,
-				Investigation:    e.investigation,
-				Enrichment:       e.enrichment,
-				ProposedActionID: e.proposedActionID,
-				ApprovalURL:      e.approvalURL,
-			})
+			allActive = append(allActive, seenEntryToDeltaDiag(e))
 		}
 		report.PostActiveStateToAM(nil, w.cfg.AlertmanagerURL, allActive, fixResults, clusterName, ttl)
 	}
@@ -414,14 +405,7 @@ func (w *Watcher) runCycle(ctx context.Context) {
 	}
 	toPostDiags := make([]report.DeltaDiag, 0, len(toPost))
 	for _, e := range toPost {
-		toPostDiags = append(toPostDiags, report.DeltaDiag{
-			Subject:       e.subject,
-			Severity:      e.severity,
-			Message:       e.message,
-			Remediation:   e.remediation,
-			Investigation: e.investigation,
-			Enrichment:    e.enrichment,
-		})
+		toPostDiags = append(toPostDiags, seenEntryToDeltaDiag(e))
 	}
 	toResolveDiags := make([]report.ResolvedDiag, 0, len(toResolve))
 	for _, e := range toResolve {
@@ -570,6 +554,28 @@ func buildCurrentState(results []probe.Result, diags []diagnose.Diagnostic) map[
 		}
 	}
 	return m
+}
+
+// seenEntryToDeltaDiag projects a seenEntry into the wire-format
+// DeltaDiag used by the Slack / Alertmanager / ticketing emitters.
+//
+// Single source of truth so the per-destination call sites can't drift —
+// a regression in PR #59 (ticketing M1) dropped ProposedActionID +
+// ApprovalURL from the Slack-bound mapping while leaving them on the
+// Alertmanager-bound one, silently breaking the "✅ Approve · ❌ Deny"
+// line for every AI-tier proposal. The collapsed helper makes future
+// field additions automatically reach every destination.
+func seenEntryToDeltaDiag(e *seenEntry) report.DeltaDiag {
+	return report.DeltaDiag{
+		Subject:          e.subject,
+		Severity:         e.severity,
+		Message:          e.message,
+		Remediation:      e.remediation,
+		Investigation:    e.investigation,
+		Enrichment:       e.enrichment,
+		ProposedActionID: e.proposedActionID,
+		ApprovalURL:      e.approvalURL,
+	}
 }
 
 // attachApprovalURLs walks state and fills approvalURL from the watcher's
