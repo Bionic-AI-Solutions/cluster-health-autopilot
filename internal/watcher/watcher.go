@@ -156,6 +156,14 @@ type seenEntry struct {
 	enrichment       string
 	proposedActionID string
 	approvalURL      string
+
+	// isNewThisCycle is set by diff() when the entry is being posted
+	// because it's a new subject or its fingerprint changed since the
+	// last cycle (as opposed to a repeat-interval re-post of a stable
+	// finding). The routing layer surfaces these in a dedicated "🆕 New
+	// this cycle" section so operators can tell at-a-glance what
+	// changed since their last look at #ceph-critical.
+	isNewThisCycle bool
 }
 
 // Watcher runs an event-driven diagnose loop against a live cluster.
@@ -575,6 +583,7 @@ func seenEntryToDeltaDiag(e *seenEntry) report.DeltaDiag {
 		Enrichment:       e.enrichment,
 		ProposedActionID: e.proposedActionID,
 		ApprovalURL:      e.approvalURL,
+		IsNewThisCycle:   e.isNewThisCycle,
 	}
 }
 
@@ -609,11 +618,16 @@ func (w *Watcher) diff(current map[string]*seenEntry) (toPost, toResolve []*seen
 	for subject, entry := range current {
 		existing, seen := w.seen[subject]
 		if !seen || existing.fp != entry.fp {
+			// First sighting OR fingerprint changed — flag so the
+			// routing layer can surface this under "🆕 New this cycle".
+			entry.isNewThisCycle = true
 			toPost = append(toPost, entry)
 			continue
 		}
 		interval := w.repeatIntervalFor(entry.severity)
 		if interval > 0 && now.Sub(existing.lastPosted) >= interval {
+			// Re-post of a stable finding — NOT new this cycle.
+			entry.isNewThisCycle = false
 			toPost = append(toPost, entry)
 		}
 	}

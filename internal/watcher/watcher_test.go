@@ -198,6 +198,55 @@ func TestDiff_RepeatIntervalElapsed_ToPost(t *testing.T) {
 	}
 }
 
+// Per-cycle delta render (Phase 1.E): the routing layer needs to know
+// whether each posted entry is freshly-appeared OR a re-post of a
+// stable finding. diff() must set isNewThisCycle accordingly.
+
+func TestDiff_NewSubject_MarksIsNewThisCycle(t *testing.T) {
+	w := &Watcher{seen: map[string]*seenEntry{}}
+	cur := map[string]*seenEntry{
+		"S": {subject: "S", fp: "fp-1", severity: "critical", message: "broken"},
+	}
+	toPost, _ := w.diff(cur)
+	if len(toPost) != 1 {
+		t.Fatalf("expected 1 toPost; got %d", len(toPost))
+	}
+	if !toPost[0].isNewThisCycle {
+		t.Errorf("new subject must be marked isNewThisCycle=true")
+	}
+}
+
+func TestDiff_ChangedFingerprint_MarksIsNewThisCycle(t *testing.T) {
+	w := &Watcher{seen: map[string]*seenEntry{
+		"S": {subject: "S", fp: "fp-old", lastPosted: time.Now()},
+	}}
+	cur := map[string]*seenEntry{
+		"S": {subject: "S", fp: "fp-new", severity: "critical"},
+	}
+	toPost, _ := w.diff(cur)
+	if len(toPost) != 1 || !toPost[0].isNewThisCycle {
+		t.Errorf("changed-fp re-post must be marked isNewThisCycle=true; got %+v", toPost)
+	}
+}
+
+func TestDiff_RepeatIntervalElapsed_NotIsNewThisCycle(t *testing.T) {
+	old := time.Now().Add(-2 * time.Hour)
+	w := &Watcher{
+		seen: map[string]*seenEntry{
+			"S": {subject: "S", fp: "fp-1", lastPosted: old},
+		},
+		cfg: Config{RepeatInterval: time.Hour},
+	}
+	cur := map[string]*seenEntry{"S": {subject: "S", fp: "fp-1", severity: "critical"}}
+	toPost, _ := w.diff(cur)
+	if len(toPost) != 1 {
+		t.Fatalf("expected 1 toPost; got %d", len(toPost))
+	}
+	if toPost[0].isNewThisCycle {
+		t.Errorf("repeat-interval re-post (same fp) must be marked isNewThisCycle=false; got true")
+	}
+}
+
 // Per-severity repeat interval (v1.6.1):
 // critical alerts re-post at the critical interval; warnings stay quiet
 // until the (longer) regular interval elapses.

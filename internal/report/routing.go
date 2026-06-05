@@ -122,7 +122,11 @@ const maxSlackAttachmentChars = 35000
 // last chunk (they're typically small).
 func SplitCriticalPayloads(unfixable []DeltaDiag, resolved []ResolvedDiag) []SlackPayload {
 	// Render each finding to its own string so we can group greedily.
+	// Phase 1.E: also partition by IsNewThisCycle so the renderer can
+	// surface a "🆕 New this cycle" section ABOVE the steady-state list.
 	var critRendered, diagRendered []string
+	var newRendered []string
+	var newCount int
 	for _, d := range unfixable {
 		var b strings.Builder
 		if d.Severity == "critical" {
@@ -135,6 +139,11 @@ func SplitCriticalPayloads(unfixable []DeltaDiag, resolved []ResolvedDiag) []Sla
 		}
 		renderSilenceSnippet(&b, d)
 		renderAIBlocks(&b, d)
+		if d.IsNewThisCycle {
+			newRendered = append(newRendered, b.String())
+			newCount++
+			continue
+		}
 		if d.Severity == "critical" {
 			critRendered = append(critRendered, b.String())
 		} else {
@@ -157,16 +166,35 @@ func SplitCriticalPayloads(unfixable []DeltaDiag, resolved []ResolvedDiag) []Sla
 	}
 
 	headerLine := fmt.Sprintf("*CHA Alert — Human Action Required* — %s\n", time.Now().UTC().Format("2006-01-02 15:04:05 UTC"))
+	newHeader := fmt.Sprintf("\n*🆕 New this cycle (%d):*\n", newCount)
 	critHeader := fmt.Sprintf("\n*🔴 Critical (%d):*\n", len(critRendered))
 	diagHeader := fmt.Sprintf("\n*⚠️ Diagnostics (%d):*\n", len(diagRendered))
 
 	// Stream findings into chunks. Each chunk begins with the global
-	// header + (when it's the first chunk) any critical findings;
-	// subsequent chunks continue diagnostics with a (part N/M) note.
+	// header + (when it's the first chunk) any new-this-cycle findings,
+	// then the steady-state critical + diagnostics list. Subsequent
+	// chunks add a (part N/M) marker.
 	var chunks []string
 	var cur strings.Builder
 	cur.WriteString(headerLine)
+	if newCount > 0 {
+		cur.WriteString(newHeader)
+		for _, r := range newRendered {
+			if cur.Len()+len(r) > maxSlackAttachmentChars {
+				chunks = append(chunks, cur.String())
+				cur.Reset()
+				cur.WriteString(headerLine)
+				cur.WriteString(newHeader)
+			}
+			cur.WriteString(r)
+		}
+	}
 	if len(critRendered) > 0 {
+		if cur.Len()+len(critHeader) > maxSlackAttachmentChars {
+			chunks = append(chunks, cur.String())
+			cur.Reset()
+			cur.WriteString(headerLine)
+		}
 		cur.WriteString(critHeader)
 		for _, r := range critRendered {
 			if cur.Len()+len(r) > maxSlackAttachmentChars {

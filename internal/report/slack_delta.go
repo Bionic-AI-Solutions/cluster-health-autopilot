@@ -18,6 +18,18 @@ type DeltaDiag struct {
 	Message     string
 	Remediation string
 
+	// IsNewThisCycle distinguishes findings that just appeared (new
+	// subject OR fingerprint changed since the prior cycle) from
+	// findings being re-posted because the repeat-interval elapsed.
+	// SplitCriticalPayloads surfaces the new-this-cycle subset in a
+	// dedicated "🆕 New this cycle (N)" section that renders BEFORE
+	// the steady-state list, so operators reading Slack can tell at-a-
+	// glance what changed since their last look. Populated by the
+	// watcher's diff() — false on legacy callers (e.g. tests not yet
+	// migrated, pkg/report consumers that snapshot DeltaDiag from
+	// DriftReport CRs).
+	IsNewThisCycle bool
+
 	// Investigation is the Layer-2 investigator's summary. Populated by
 	// the OSS rule-based investigator or any registered pkg/ai.Investigator.
 	Investigation string

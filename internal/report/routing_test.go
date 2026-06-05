@@ -206,3 +206,80 @@ func TestRouteAndPost_ActionableFindingsBubbleToTop(t *testing.T) {
 		t.Errorf("actionable finding should appear BEFORE noise; actionable@%d noise@%d", firstActionable, firstNoise)
 	}
 }
+
+// --- Per-cycle delta render (Phase 1.E) ---
+//
+// Operators reading #ceph-critical can't tell at-a-glance which findings
+// are new this cycle vs. stale-and-re-posted. With 50+ findings per
+// digest, the "what should I look at right now" signal drowns. The
+// DeltaDiag.IsNewThisCycle flag, set by the watcher's diff(), drives
+// a "🆕 New this cycle (N)" section that renders BEFORE the steady-state
+// section.
+
+func TestSplitCriticalPayloads_NewThisCycleSectionAppears(t *testing.T) {
+	// Two new + three stable critical findings. The chunk text must
+	// contain a "🆕 New this cycle (2)" section ABOVE the rest, and the
+	// two new subjects must appear in that section.
+	unfixable := []DeltaDiag{
+		{Subject: "Pod/ns/stable-1", Severity: "critical", Message: "still broken"},
+		{Subject: "Pod/ns/stable-2", Severity: "critical", Message: "still broken"},
+		{Subject: "Pod/ns/new-a", Severity: "critical", Message: "just appeared", IsNewThisCycle: true},
+		{Subject: "Pod/ns/stable-3", Severity: "critical", Message: "still broken"},
+		{Subject: "Pod/ns/new-b", Severity: "critical", Message: "just appeared", IsNewThisCycle: true},
+	}
+	payloads := SplitCriticalPayloads(unfixable, nil)
+	if len(payloads) == 0 {
+		t.Fatal("expected ≥ 1 payload")
+	}
+	chunk1 := payloads[0].Attachments[0].Text
+	if !strings.Contains(chunk1, "🆕 New this cycle (2)") {
+		t.Errorf("missing '🆕 New this cycle (2)' header; got:\n%s", chunk1)
+	}
+	// "new-a" must appear before "stable-1" in the rendered text.
+	idxNewA := strings.Index(chunk1, "Pod/ns/new-a")
+	idxStable1 := strings.Index(chunk1, "Pod/ns/stable-1")
+	if idxNewA < 0 || idxStable1 < 0 {
+		t.Fatalf("missing subjects in chunk; new-a=%d stable-1=%d", idxNewA, idxStable1)
+	}
+	if idxNewA > idxStable1 {
+		t.Errorf("new-this-cycle finding should render BEFORE stable; new-a@%d stable-1@%d", idxNewA, idxStable1)
+	}
+	idxNewB := strings.Index(chunk1, "Pod/ns/new-b")
+	if idxNewB < 0 || idxNewB > idxStable1 {
+		t.Errorf("new-this-cycle 'new-b' should render BEFORE stable; new-b@%d stable-1@%d", idxNewB, idxStable1)
+	}
+}
+
+func TestSplitCriticalPayloads_AllStable_NoNewSection(t *testing.T) {
+	// When nothing is new this cycle, the "🆕 New this cycle" section
+	// must NOT appear at all — no zero-count clutter.
+	unfixable := []DeltaDiag{
+		{Subject: "Pod/ns/x", Severity: "critical", Message: "still broken"},
+		{Subject: "Pod/ns/y", Severity: "warning", Message: "still broken"},
+	}
+	payloads := SplitCriticalPayloads(unfixable, nil)
+	chunk1 := payloads[0].Attachments[0].Text
+	if strings.Contains(chunk1, "🆕 New this cycle") {
+		t.Errorf("no new findings should mean no '🆕 New this cycle' section; got:\n%s", chunk1)
+	}
+}
+
+func TestSplitCriticalPayloads_AllNew_AllUnderNewSection(t *testing.T) {
+	// When every finding is new, all of them belong in the new-section
+	// and there should be no leftover stable-section header.
+	unfixable := []DeltaDiag{
+		{Subject: "Pod/ns/a", Severity: "critical", Message: "just appeared", IsNewThisCycle: true},
+		{Subject: "Pod/ns/b", Severity: "warning", Message: "just appeared", IsNewThisCycle: true},
+	}
+	payloads := SplitCriticalPayloads(unfixable, nil)
+	chunk1 := payloads[0].Attachments[0].Text
+	if !strings.Contains(chunk1, "🆕 New this cycle (2)") {
+		t.Errorf("expected '🆕 New this cycle (2)' header; got:\n%s", chunk1)
+	}
+	// The legacy "🔴 Critical (...)" + "⚠️ Diagnostics (...)" headers
+	// should NOT appear independently when there are 0 stable findings —
+	// they'd just show "(0)" which is clutter.
+	if strings.Contains(chunk1, "Critical (0)") || strings.Contains(chunk1, "Diagnostics (0)") {
+		t.Errorf("zero-count section headers should be suppressed; got:\n%s", chunk1)
+	}
+}
