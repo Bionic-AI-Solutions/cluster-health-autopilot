@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 
@@ -100,9 +101,162 @@ func FormatAlertsPayload(fixedIssues []DeltaDiag, fixResults []fix.Result) Slack
 	}
 }
 
+// maxSlackAttachmentChars is the safe cap before Slack silently truncates
+// the "text" field of an incoming-webhook attachment. The documented limit
+// is 40,000 characters; we leave a margin so the renderer's header +
+// per-finding footer text always fits.
+const maxSlackAttachmentChars = 35000
+
+// SplitCriticalPayloads renders the unfixable/resolved set into one or
+// more SlackPayloads, chunking findings so each payload's attachment
+// text stays under maxSlackAttachmentChars.
+//
+// Without this, posts with >40K rendered chars (≈ 40 digest-pin findings)
+// were silently truncated by Slack — alphabetically-late findings + their
+// "✅ Approve" links never reached the channel even though the OSS render
+// included them correctly. (Discovered 2026-06-04 with a 115K render.)
+//
+// The first chunk carries the "*CHA Alert — Human Action Required*"
+// header and any critical findings; subsequent chunks add a "(part N/M)"
+// indicator and continue with diagnostics. Resolved findings stay in the
+// last chunk (they're typically small).
+func SplitCriticalPayloads(unfixable []DeltaDiag, resolved []ResolvedDiag) []SlackPayload {
+	// Render each finding to its own string so we can group greedily.
+	var critRendered, diagRendered []string
+	for _, d := range unfixable {
+		var b strings.Builder
+		if d.Severity == "critical" {
+			fmt.Fprintf(&b, "• ❌ *%s*\n  %s\n", d.Subject, d.Message)
+		} else {
+			fmt.Fprintf(&b, "• ⚠️ *%s*\n  %s\n", d.Subject, d.Message)
+		}
+		if d.Remediation != "" {
+			fmt.Fprintf(&b, "  _→ %s_\n", d.Remediation)
+		}
+		renderSilenceSnippet(&b, d)
+		renderAIBlocks(&b, d)
+		if d.Severity == "critical" {
+			critRendered = append(critRendered, b.String())
+		} else {
+			diagRendered = append(diagRendered, b.String())
+		}
+	}
+
+	// Resolved section: small, kept whole.
+	var resolvedSection string
+	if len(resolved) > 0 {
+		var b strings.Builder
+		fmt.Fprintf(&b, "\n*✅ Resolved (%d):*\n", len(resolved))
+		for _, r := range resolved {
+			fmt.Fprintf(&b, "• `%s`\n", r.Subject)
+			if r.Message != "" {
+				fmt.Fprintf(&b, "  _%s_\n", r.Message)
+			}
+		}
+		resolvedSection = b.String()
+	}
+
+	headerLine := fmt.Sprintf("*CHA Alert — Human Action Required* — %s\n", time.Now().UTC().Format("2006-01-02 15:04:05 UTC"))
+	critHeader := fmt.Sprintf("\n*🔴 Critical (%d):*\n", len(critRendered))
+	diagHeader := fmt.Sprintf("\n*⚠️ Diagnostics (%d):*\n", len(diagRendered))
+
+	// Stream findings into chunks. Each chunk begins with the global
+	// header + (when it's the first chunk) any critical findings;
+	// subsequent chunks continue diagnostics with a (part N/M) note.
+	var chunks []string
+	var cur strings.Builder
+	cur.WriteString(headerLine)
+	if len(critRendered) > 0 {
+		cur.WriteString(critHeader)
+		for _, r := range critRendered {
+			if cur.Len()+len(r) > maxSlackAttachmentChars {
+				chunks = append(chunks, cur.String())
+				cur.Reset()
+				cur.WriteString(headerLine)
+				cur.WriteString(critHeader)
+			}
+			cur.WriteString(r)
+		}
+	}
+	if len(diagRendered) > 0 {
+		// Start the diagnostics header inside the current chunk if
+		// there's headroom; otherwise flush + start a new chunk.
+		if cur.Len()+len(diagHeader) > maxSlackAttachmentChars {
+			chunks = append(chunks, cur.String())
+			cur.Reset()
+			cur.WriteString(headerLine)
+		}
+		cur.WriteString(diagHeader)
+		for _, r := range diagRendered {
+			if cur.Len()+len(r) > maxSlackAttachmentChars {
+				chunks = append(chunks, cur.String())
+				cur.Reset()
+				cur.WriteString(headerLine)
+				cur.WriteString(diagHeader)
+			}
+			cur.WriteString(r)
+		}
+	}
+	if resolvedSection != "" {
+		if cur.Len()+len(resolvedSection) > maxSlackAttachmentChars {
+			chunks = append(chunks, cur.String())
+			cur.Reset()
+			cur.WriteString(headerLine)
+		}
+		cur.WriteString(resolvedSection)
+	}
+	if cur.Len() > 0 {
+		chunks = append(chunks, cur.String())
+	}
+
+	// Annotate (part N/M) when there's more than one.
+	if len(chunks) > 1 {
+		for i := range chunks {
+			marker := fmt.Sprintf(" _(part %d/%d)_", i+1, len(chunks))
+			// Insert the marker right after the first newline (just
+			// after the header line) so it stays adjacent to the
+			// "CHA Alert" title.
+			if nl := strings.Index(chunks[i], "\n"); nl > 0 {
+				chunks[i] = chunks[i][:nl] + marker + chunks[i][nl:]
+			}
+		}
+	}
+
+	// Pick color per chunk: danger if any critical, warning if only
+	// diagnostics, good if neither (resolved-only).
+	color := "danger"
+	if len(critRendered) == 0 && len(diagRendered) > 0 {
+		color = "warning"
+	}
+	if len(critRendered) == 0 && len(diagRendered) == 0 {
+		color = "good"
+	}
+
+	now := time.Now().UTC().Unix()
+	out := make([]SlackPayload, 0, len(chunks))
+	for _, text := range chunks {
+		out = append(out, SlackPayload{
+			Username:  "Cluster Health Monitor",
+			IconEmoji: ":rotating_light:",
+			Attachments: []SlackAttachment{{
+				Color:    color,
+				Text:     text,
+				Footer:   "CHA — Human action required",
+				Ts:       now,
+				MrkdwnIn: []string{"text"},
+			}},
+		})
+	}
+	return out
+}
+
 // FormatCriticalPayload renders the #ceph-critical message for a watcher cycle
 // where issues require human intervention — either unfixable by CHA or still
 // active after fixers ran.
+//
+// Retained for callers that want a single payload (tests, OSS examples).
+// New code should prefer SplitCriticalPayloads which avoids Slack's
+// silent 40K-char truncation.
 func FormatCriticalPayload(unfixable []DeltaDiag, resolved []ResolvedDiag) SlackPayload {
 	now := time.Now().UTC()
 	var b strings.Builder
@@ -214,15 +368,47 @@ func RouteAndPost(
 
 	if channels.Alerts != "" && (len(fixedIssues) > 0 || hasFixerActions) {
 		payload := FormatAlertsPayload(fixedIssues, fixResults)
+		urlCount := 0
+		for _, d := range fixedIssues {
+			if d.ApprovalURL != "" {
+				urlCount++
+			}
+		}
+		log.Printf("report: posting to alerts channel: fixedIssues=%d with_url=%d fixerActions=%d", len(fixedIssues), urlCount, len(fixResults))
 		if err := PostSlack(client, channels.Alerts, payload); err != nil {
 			log.Printf("report: slack post to alerts channel: %v", err)
 		}
 	}
 
 	if channels.Critical != "" && (len(unfixable) > 0 || len(toResolve) > 0) {
-		payload := FormatCriticalPayload(unfixable, toResolve)
-		if err := PostSlack(client, channels.Critical, payload); err != nil {
-			log.Printf("report: slack post to critical channel: %v", err)
+		// Sort unfixable so actionable findings (those carrying a signed
+		// ApprovalURL) surface first within each severity block. Slack's
+		// UI auto-collapses long attachments to a ~3-4K inline preview
+		// with a "Show more" expand; without this sort the lone
+		// approvable finding can land below the fold inside a 34K chunk
+		// of digest-pin noise. Alphabetical-by-subject is the
+		// secondary key so cycles remain deterministic.
+		sort.Slice(unfixable, func(i, j int) bool {
+			iHasURL := unfixable[i].ApprovalURL != ""
+			jHasURL := unfixable[j].ApprovalURL != ""
+			if iHasURL != jHasURL {
+				return iHasURL
+			}
+			return unfixable[i].Subject < unfixable[j].Subject
+		})
+		payloads := SplitCriticalPayloads(unfixable, toResolve)
+		urlCount := 0
+		for _, d := range unfixable {
+			if d.ApprovalURL != "" {
+				urlCount++
+			}
+		}
+		log.Printf("report: posting to critical channel: unfixable=%d with_url=%d resolved=%d chunks=%d",
+			len(unfixable), urlCount, len(toResolve), len(payloads))
+		for i, payload := range payloads {
+			if err := PostSlack(client, channels.Critical, payload); err != nil {
+				log.Printf("report: slack post to critical channel (chunk %d/%d): %v", i+1, len(payloads), err)
+			}
 		}
 	}
 }
