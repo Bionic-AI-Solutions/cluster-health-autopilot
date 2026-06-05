@@ -13,6 +13,29 @@ serves the latest tagged chart cut.
 
 ## [Unreleased]
 
+## [1.18.3] — 2026-06-05
+
+### Fixed — Slack-bound AI tier fields restored via seenEntryToDeltaDiag helper (PR #160)
+
+- `internal/watcher/watcher.go::runCycle` had two inline mappings from `seenEntry → DeltaDiag` — one for Alertmanager and one for Slack-bound `toPostDiags`. PR #59 (ticketing M1) updated the AM path to carry `ProposedActionID` + `ApprovalURL` but missed the Slack path. No test pinned the AI-field flow through to Slack so it went unnoticed.
+- **Operator impact (diagnosed 2026-06-04)**: every AI-tier proposal (NetworkPolicy ManifestBridge, DigestPin) had a working signed approve/deny URL at AM but no `✅ Approve · ❌ Deny` line in Slack. Operators couldn't action proposals.
+- Fix: collapse both mappings into single `seenEntryToDeltaDiag` helper. 2 regression tests added.
+
+### Added — SplitCriticalPayloads chunking + actionable-first sort (PR #161)
+
+- **Chunking**: Slack silently truncates webhook attachment text past ~40K chars. A cycle with 118 findings rendered to 115K → alphabetically-late findings (incl. storethesoup with a real Approve URL) cut from displayed message. `SplitCriticalPayloads(unfixable, resolved)` greedily packs per-finding strings into chunks ≤ 35K, posts each as own SlackPayload, adds `_(part N/M)_` marker.
+- **Actionable-first sort**: within each severity block, findings with `ApprovalURL` sort ahead of findings without — promotes them into Slack's ~3-4K inline-preview window. Alphabetical-by-subject is secondary key.
+- `FormatCriticalPayload` retained for backwards-compat. 3 regression tests added.
+
+### Fixed — Detect always falls through to raw scan on Helm probe error (PR #162)
+
+- Previous: `Detect` halted on any non-`ErrNotFound` error from `DetectInHelmValues`. GitHub's secondary rate limit returns HTTP 403 indistinguishably from real auth scope failure to the forge layer, so transient bursts blocked all downstream digest-pin work.
+- Diagnosed 2026-06-04: 35 of 41 candidates erroring on `charts/X/values.yaml: HTTP 403` while direct curl returned clean 404 seconds later.
+- Fix: `Detect` always falls through to `DetectInRawManifests` regardless of Helm's error. Real auth failures still surface via raw scan's own `ListRepoFiles` call.
+- Test renamed `TestDetect_HelmTransportError_FallsThroughToRaw` with updated contract.
+
+---
+
 ### Added — Raw-YAML inline-image detector (`releasesrc.DetectInRawManifests`, v1.18.2)
 
 - **Problem**: many in-house repos ship plain Kubernetes YAML (Deployment / StatefulSet specs with `image: <repo>:<tag>` inline) instead of a Helm chart with `image.repository`/`tag` keys. The v1.18.1 `DetectInHelmValues` returned `ErrNotFound` for those, causing the digest-pin proposer to silently skip — the gap that prevented buttons from appearing on `docker4zerocool/storethesoup-wordpress` even after the cluster rolled to v1.18.1.
