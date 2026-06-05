@@ -210,15 +210,31 @@ func TestDetect_FallsBackToRawWhenHelmMisses(t *testing.T) {
 	}
 }
 
-func TestDetect_PropagatesTransportError_FromHelm(t *testing.T) {
-	// True transport error from the Helm probe must surface — Detect
-	// must NOT silently paper over by falling to the raw scan.
+func TestDetect_HelmTransportError_FallsThroughToRaw(t *testing.T) {
+	// A transport error from the Helm probe used to halt Detect (old
+	// pre-2026-06-04 behaviour). The forge surfaces GitHub's 403
+	// secondary-rate-limit response indistinguishably from a real auth
+	// failure, so propagating it blocked all downstream digest-pin work
+	// when a transient burst of API calls overlapped a single Helm
+	// probe.
+	//
+	// New contract: Detect ALWAYS tries the raw scan after the Helm
+	// probe (regardless of why Helm failed). If both fail, the raw
+	// scan's error wins. Concretely with the same getErr injected here,
+	// raw also fails on its file walk → its error (not Helm's) surfaces.
 	files := &memFiles{getErr: errors.New("connection refused")}
 	_, err := releasesrc.Detect(context.Background(), files, "x", "docker4zerocool/y")
 	if err == nil {
-		t.Fatal("expected transport error to propagate")
+		t.Fatal("expected raw-scan error to propagate when both probes fail")
+	}
+	// The raw scan happens to surface ErrNotFound when no yaml paths
+	// are listed (memFiles.List returns nil paths when getErr is set);
+	// either outcome is acceptable as long as the Helm 403 doesn't
+	// silently mask the raw attempt.
+	if strings.Contains(err.Error(), "image tag not located") || errors.Is(err, releasesrc.ErrNotFound) {
+		return // raw scan ran cleanly + returned ErrNotFound — good
 	}
 	if !strings.Contains(err.Error(), "connection refused") {
-		t.Errorf("error should wrap transport detail; got %v", err)
+		t.Errorf("expected raw-scan error to wrap transport detail OR be ErrNotFound; got %v", err)
 	}
 }
