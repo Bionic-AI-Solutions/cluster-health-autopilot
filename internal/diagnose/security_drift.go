@@ -282,13 +282,92 @@ func (s SecurityDrift) checkMutableImageTags(ctx context.Context, src snapshot.S
 			Message: fmt.Sprintf(
 				"Pod %s/%s mounts %d container image(s) without digest pin: %s",
 				ns, name, len(unpinned), strings.Join(unpinned, ", ")),
-			Remediation: "Replace mutable :tag references with @sha256:<digest> in the workload's manifest. " +
-				"Get the digest from `crane digest <image>:<tag>` or `docker pull <image>:<tag>` (the digest line). " +
-				"This pins the runtime image immutably and preserves the image-attestation signature chain — " +
-				"the workload can be re-verified against the original sigstore signature at any point.",
+			Remediation: renderDigestPinRemediation(p, unpinned),
 		})
 	}
 	return out
+}
+
+// renderDigestPinRemediation produces a remediation string with the
+// actual observed digest substituted from each container's
+// status.containerStatuses[].imageID — kubelet has already resolved the
+// `:tag` to a digest at pull time, so we don't need the operator to run
+// `crane digest` (which the AI tier cannot do).
+//
+// Fallback paths:
+//   - status.containerStatuses missing or empty (Pod not yet scheduled,
+//     image not pulled) → render a concrete `crane digest <repo>:<tag>`
+//     command with the actual repo + tag substituted, NOT a literal
+//     `<image>:<tag>` token.
+//   - imageID for a specific container missing → fall back to
+//     `crane digest` for that container only; other containers still get
+//     the direct substitution.
+func renderDigestPinRemediation(pod *unstructured.Unstructured, unpinned []string) string {
+	imageIDs := podContainerImageIDs(pod)
+
+	// unpinned entries have the shape "<containerName>=<image>:<tag>".
+	var lines []string
+	for _, u := range unpinned {
+		eq := strings.IndexByte(u, '=')
+		if eq < 0 {
+			continue
+		}
+		cn := u[:eq]
+		img := u[eq+1:]
+		repo := img
+		if c := strings.LastIndexByte(img, ':'); c >= 0 {
+			repo = img[:c]
+		}
+		if iid, ok := imageIDs[cn]; ok && iid != "" {
+			digest := extractDigestFromImageID(iid)
+			if digest != "" {
+				lines = append(lines, fmt.Sprintf(
+					"  `%s` → replace `%s` with `%s@%s` in the workload manifest.",
+					cn, img, repo, digest))
+				continue
+			}
+		}
+		// Fallback: kubelet hasn't recorded the digest yet. Render a
+		// concrete `crane digest` invocation with the actual image:tag.
+		lines = append(lines, fmt.Sprintf(
+			"  `%s` → run `crane digest %s` to fetch the digest, then replace `%s` with `%s@<resulting-sha256>` in the workload manifest.",
+			cn, img, img, repo))
+	}
+	body := "Replace each container's `:tag` reference with the resolved `@sha256:` digest so the runtime image is immutable + the image-attestation signature chain stays verifiable.\n" +
+		strings.Join(lines, "\n")
+	return body
+}
+
+// podContainerImageIDs maps container-name → status.containerStatuses[].imageID.
+// Empty map when status.containerStatuses is missing (Pod not yet scheduled
+// or image not pulled).
+func podContainerImageIDs(pod *unstructured.Unstructured) map[string]string {
+	out := map[string]string{}
+	cs, _, _ := unstructured.NestedSlice(pod.Object, "status", "containerStatuses")
+	for _, c := range cs {
+		ci, ok := c.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		name, _ := ci["name"].(string)
+		iid, _ := ci["imageID"].(string)
+		if name != "" && iid != "" {
+			out[name] = iid
+		}
+	}
+	return out
+}
+
+// extractDigestFromImageID pulls the `sha256:...` digest out of a
+// kubelet imageID. Kubelet writes imageID as one of:
+//   - `docker-pullable://<repo>@sha256:<hex>` (containerd-shim/docker)
+//   - `<repo>@sha256:<hex>` (cri-o, modern containerd)
+//   - `<repo>:<tag>` (rare — no digest recorded; returns empty)
+func extractDigestFromImageID(imageID string) string {
+	if i := strings.Index(imageID, "@sha256:"); i >= 0 {
+		return imageID[i+1:] // drop the leading `@`, keep `sha256:...`
+	}
+	return ""
 }
 
 // checkNetworkPolicyCoverage flags user namespaces that run pods but
