@@ -63,12 +63,27 @@ func AssembleEntries(
 		}
 	}
 	for _, d := range diagnostics {
+		// Severity from the diagnostic, falling back to "warning" for
+		// backwards compat with analyzers that don't set it.
+		sev := d.Severity
+		if sev == "" {
+			sev = "warning"
+		}
+		// Source: prefer the analyzer's own ID (`SecurityDrift`,
+		// `CapacityDrift`, …) so the DriftReport's `spec.source` is
+		// useful for filtering. Fall back to the legacy literal
+		// "analyzer" string only when the analyzer hasn't set it.
+		src := d.Source
+		if src == "" {
+			src = "analyzer"
+		}
 		out = append(out, DriftReportEntry{
 			Subject:       d.Subject,
-			Severity:      "warning",
-			Source:        "analyzer",
+			Severity:      sev,
+			Source:        src,
 			Category:      "analyzer",
 			Message:       d.Message,
+			Remediation:   d.Remediation,
 			Investigation: d.Investigation,
 		})
 	}

@@ -132,6 +132,31 @@ func TestAssembleEntries(t *testing.T) {
 	}
 }
 
+// TestAssembleEntries_DiagnosticRemediationCarriedThrough — analyzers
+// compute rich Remediation text (e.g. PR #169's per-container digest
+// substitution). The DriftReport reconciler previously dropped it on
+// the analyzer→entry mapping, leaving spec.remediation empty on every
+// digest-pin/etc DriftReport even though Slack/AM rendered it.
+func TestAssembleEntries_DiagnosticRemediationCarriedThrough(t *testing.T) {
+	diag := []diagnose.Diagnostic{{
+		Subject:     "Pod/app/x-1",
+		Source:      "SecurityDrift",
+		Severity:    "warning",
+		Message:     "Pod mounts container image(s) without digest pin",
+		Remediation: "Replace `foo:1.2.3` with `foo@sha256:abc123…`",
+	}}
+	entries := AssembleEntries(nil, diag, nil)
+	if len(entries) != 1 {
+		t.Fatalf("want 1 entry; got %d", len(entries))
+	}
+	if entries[0].Remediation == "" {
+		t.Errorf("remediation should be carried through; got empty")
+	}
+	if !strings.Contains(entries[0].Remediation, "sha256:abc123") {
+		t.Errorf("remediation should contain the analyzer's text; got %q", entries[0].Remediation)
+	}
+}
+
 func TestReconcile_CreateNew(t *testing.T) {
 	src := &fakeSrc{}
 	m := &fakeMutator{}
