@@ -67,6 +67,29 @@ func makePodWithContainers(ns, name string, containerImages map[string]string) u
 	return u
 }
 
+// makePodWithContainersAndStatus is makePodWithContainers plus a
+// `status.containerStatuses[]` block. imageIDs maps container name →
+// status.containerStatuses[].imageID (the runtime-resolved digest in
+// `registry/image@sha256:...` form, possibly with the `docker-pullable://`
+// kubelet prefix).
+func makePodWithContainersAndStatus(ns, name string, containerImages, imageIDs map[string]string) unstructured.Unstructured {
+	u := makePodWithContainers(ns, name, containerImages)
+	if len(imageIDs) == 0 {
+		return u
+	}
+	statuses := make([]interface{}, 0, len(imageIDs))
+	for cn, iid := range imageIDs {
+		img := containerImages[cn]
+		statuses = append(statuses, map[string]interface{}{
+			"name":    cn,
+			"image":   img,
+			"imageID": iid,
+		})
+	}
+	_ = unstructured.SetNestedSlice(u.Object, statuses, "status", "containerStatuses")
+	return u
+}
+
 func makeNetworkPolicy(ns, name string) unstructured.Unstructured {
 	u := unstructured.Unstructured{}
 	u.SetAPIVersion("networking.k8s.io/v1")
@@ -312,6 +335,106 @@ func TestSecurityDrift_PodInSystemNamespace_Skipped(t *testing.T) {
 	got := SecurityDrift{}.Run(context.Background(), src)
 	if len(got) != 0 {
 		t.Errorf("kube-system pods skipped; got: %+v", got)
+	}
+}
+
+// --- Digest-pin remediation: substitute the observed digest (Phase 1.B.2) ---
+//
+// The legacy remediation contained literal `<digest>` / `<image>:<tag>`
+// tokens the operator was expected to fill in by hand. The AI tier
+// reading the diagnostic has no way to interpret those tokens, and
+// operators reading Slack alerts have no way to act without `crane
+// digest` round-trips. Kubelet has already resolved every running
+// image to a digest and stamped it on `status.containerStatuses[].imageID`
+// — substitute that directly.
+
+func TestSecurityDrift_DigestPinRemediation_SubstitutesObservedDigest(t *testing.T) {
+	src := secureBaseline()
+	src.byResource["pods"] = []unstructured.Unstructured{
+		makePodWithContainersAndStatus(
+			"app", "x-1",
+			map[string]string{"main": "docker4zerocool/cha-com:1.10.0"},
+			// kubelet's standard imageID shape: docker-pullable://<repo>@sha256:<hex>
+			map[string]string{"main": "docker-pullable://docker4zerocool/cha-com@sha256:abc123def456789012345678901234567890abcd"},
+		),
+	}
+	got := SecurityDrift{}.Run(context.Background(), src)
+	if len(got) != 1 {
+		t.Fatalf("expected 1 diagnostic; got %d: %+v", len(got), got)
+	}
+	rem := got[0].Remediation
+	// The placeholder tokens must NOT leak.
+	for _, tok := range []string{"<digest>", "<image>:<tag>"} {
+		if strings.Contains(rem, tok) {
+			t.Errorf("remediation must not contain literal %q; got: %s", tok, rem)
+		}
+	}
+	// The actual digest MUST appear, and the `docker-pullable://` prefix
+	// MUST be stripped (operators paste the digest into manifest files,
+	// not the kubelet prefix).
+	if !strings.Contains(rem, "sha256:abc123def456789012345678901234567890abcd") {
+		t.Errorf("remediation should embed the observed digest; got: %s", rem)
+	}
+	if strings.Contains(rem, "docker-pullable://") {
+		t.Errorf("remediation must strip the docker-pullable:// prefix from imageID; got: %s", rem)
+	}
+	// And the original image:tag must appear so operators see what to replace.
+	if !strings.Contains(rem, "docker4zerocool/cha-com:1.10.0") {
+		t.Errorf("remediation should name the original tag-pinned reference; got: %s", rem)
+	}
+}
+
+func TestSecurityDrift_DigestPinRemediation_MultipleContainers_SubstitutesAll(t *testing.T) {
+	src := secureBaseline()
+	src.byResource["pods"] = []unstructured.Unstructured{
+		makePodWithContainersAndStatus(
+			"app", "x-1",
+			map[string]string{
+				"main":    "docker4zerocool/cha-com:1.10.0",
+				"sidecar": "docker4zerocool/sidecar:0.9",
+			},
+			map[string]string{
+				"main":    "docker4zerocool/cha-com@sha256:1111111111111111111111111111111111111111111111111111111111111111",
+				"sidecar": "docker4zerocool/sidecar@sha256:2222222222222222222222222222222222222222222222222222222222222222",
+			},
+		),
+	}
+	got := SecurityDrift{}.Run(context.Background(), src)
+	if len(got) != 1 {
+		t.Fatalf("expected 1 diagnostic; got %d", len(got))
+	}
+	rem := got[0].Remediation
+	if !strings.Contains(rem, "1111111111111111111111111111111111111111111111111111111111111111") ||
+		!strings.Contains(rem, "2222222222222222222222222222222222222222222222222222222222222222") {
+		t.Errorf("multi-container remediation should embed both observed digests; got: %s", rem)
+	}
+}
+
+func TestSecurityDrift_DigestPinRemediation_NoStatus_FallsBackWithoutLeakingPlaceholders(t *testing.T) {
+	// status.containerStatuses missing (pod not yet scheduled, or
+	// image not yet pulled) — the remediation must fall back to a
+	// concrete command the operator can run, NOT leak `<digest>` /
+	// `<image>:<tag>` as bare tokens.
+	src := secureBaseline()
+	src.byResource["pods"] = []unstructured.Unstructured{
+		makePodWithContainers("app", "x-1", map[string]string{
+			"main": "docker4zerocool/cha-com:1.10.0",
+		}),
+	}
+	got := SecurityDrift{}.Run(context.Background(), src)
+	if len(got) != 1 {
+		t.Fatalf("expected 1 diagnostic; got %d", len(got))
+	}
+	rem := got[0].Remediation
+	for _, tok := range []string{"<digest>", "<image>:<tag>"} {
+		if strings.Contains(rem, tok) {
+			t.Errorf("fallback remediation must not contain literal %q; got: %s", tok, rem)
+		}
+	}
+	// Should reference the actual image to make crane/skopeo invocation
+	// directly copy-pasteable.
+	if !strings.Contains(rem, "docker4zerocool/cha-com:1.10.0") {
+		t.Errorf("fallback remediation should name the actual image; got: %s", rem)
 	}
 }
 

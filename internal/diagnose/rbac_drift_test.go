@@ -224,8 +224,13 @@ func TestRBACDrift_UnboundSA_Warning(t *testing.T) {
 	if !strings.Contains(got[0].Subject, "ServiceAccount/billing/myapp") {
 		t.Errorf("subject should name SA; got %q", got[0].Subject)
 	}
-	if !strings.Contains(got[0].Remediation, "kubectl create rolebinding") {
+	if !strings.Contains(got[0].Remediation, "create rolebinding") {
 		t.Errorf("remediation should show fix command; got %q", got[0].Remediation)
+	}
+	// Phase 1.B.4: the legacy `--role=<role-name>` placeholder is gone;
+	// rendered remediation must use a NAME-substitute hint instead.
+	if strings.Contains(got[0].Remediation, "<role-name>") {
+		t.Errorf("remediation must not contain literal <role-name>; got %q", got[0].Remediation)
 	}
 }
 
