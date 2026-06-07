@@ -264,9 +264,12 @@ func (r RBACDrift) checkUnboundServiceAccounts(ctx context.Context, src snapshot
 			Remediation: fmt.Sprintf(
 				"Workloads using this ServiceAccount run with default-token permissions only. "+
 					"Symptoms: intermittent 'forbidden' errors, controller cannot watch its own CRD, etc. "+
-					"Either bind a Role: `kubectl create rolebinding %s-binding --serviceaccount=%s:%s --role=<role-name> -n %s`, "+
-					"or change the Pod to use `serviceAccountName: default` if the workload doesn't need API access.",
-				ref.name, ref.ns, ref.name, ref.ns),
+					"Pick a Role appropriate for what the workload needs (list candidates with "+
+					"`kubectl -n %s get role,clusterrole`), then bind it via `kubectl -n %s create rolebinding "+
+					"%s-binding --serviceaccount=%s:%s --role=NAME` (substitute NAME with your chosen role). "+
+					"Or, if the workload doesn't need API access at all, switch the Pod to "+
+					"`serviceAccountName: default`.",
+				ref.ns, ref.ns, ref.name, ref.ns, ref.name),
 		})
 	}
 	return out

@@ -302,11 +302,7 @@ func (a DNSChainDrift) Run(ctx context.Context, src snapshot.Source) []Diagnosti
 						"or mark this host external-only by removing it from the static target list.",
 					host, host,
 				),
-				Remediation: fmt.Sprintf(
-					"Create an Ingress for %s, e.g.:\n"+
-						"  kubectl create ingress %s-ingress --rule=%s/*=<svc-name>:<port>",
-					host, sanitizeForName(host), host,
-				),
+				Remediation: renderMissingIngressRemediation(host),
 			})
 			continue
 		}
@@ -729,4 +725,38 @@ func sortedBackendKeys(m map[string]*ingressBackend) []string {
 // fragment (replaces dots with dashes, strips invalid chars).
 func sanitizeForName(host string) string {
 	return strings.NewReplacer(".", "-", "_", "-").Replace(host)
+}
+
+// renderMissingIngressRemediation describes the operator's next step
+// without leaking template tokens (`<svc-name>`, `<port>`) the AI tier
+// can't fill in. The backend Service + port are genuine operator-intent
+// inputs — no analyzer state can supply them — so the remediation
+// guides discovery rather than templating a half-formed command. The
+// previous text leaked a literal `<svc-name>:<port>` token that
+// neither operators (no obvious next step) nor the AI tier (no parse
+// path) could action.
+func renderMissingIngressRemediation(host string) string {
+	return fmt.Sprintf(
+		"Create an Ingress for %s pointing at the Service that should serve traffic. "+
+			"List candidates with `kubectl get svc -A`, then write a manifest like:\n\n"+
+			"  apiVersion: networking.k8s.io/v1\n"+
+			"  kind: Ingress\n"+
+			"  metadata:\n"+
+			"    name: %s-ingress\n"+
+			"    namespace: <namespace-of-target-service>\n"+
+			"  spec:\n"+
+			"    rules:\n"+
+			"      - host: %s\n"+
+			"        http:\n"+
+			"          paths:\n"+
+			"            - path: /\n"+
+			"              pathType: Prefix\n"+
+			"              backend:\n"+
+			"                service:\n"+
+			"                  name: <target-service-name>\n"+
+			"                  port:\n"+
+			"                    number: <target-service-port>\n\n"+
+			"If %s is intentionally external (Cloudflare-only, no K8s backend), remove it from the static endpoint target list instead.",
+		host, sanitizeForName(host), host, host,
+	)
 }

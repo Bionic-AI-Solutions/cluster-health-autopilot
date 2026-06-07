@@ -138,7 +138,9 @@ func (w WorkloadStateDrift) checkCNPGClusters(ctx context.Context, src snapshot.
 					ns, name, ready, desired),
 				Remediation: fmt.Sprintf(
 					"A follower is degraded while the cluster phase hasn't flipped yet (transient or about to). "+
-						"`kubectl get pods -n %s -l cnpg.io/cluster=%s` and `kubectl logs <follower-pod> -n %s -c postgres`.",
+						"List the cluster's pods with `kubectl get pods -n %s -l cnpg.io/cluster=%s`, "+
+						"identify the non-Ready follower, then inspect its postgres container with "+
+						"`kubectl -n %s logs <that-pod-name> -c postgres` (substitute the pod name from the prior list).",
 					ns, name, ns),
 			})
 		}

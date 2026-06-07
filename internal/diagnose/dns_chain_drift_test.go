@@ -674,3 +674,43 @@ func TestDNSChainDrift_SnapshotModeSkipsCF(t *testing.T) {
 		t.Errorf("expected external-dns-not-verified in snapshot mode, got: %+v", diags)
 	}
 }
+
+// --- missing-ingress remediation (Phase 1.B.3) ---
+//
+// Direct unit test for renderMissingIngressRemediation. The legacy
+// remediation leaked `<svc-name>` / `<port>` as bare tokens — the AI
+// tier couldn't parse them and operators saw a broken kubectl example.
+// The new remediation renders a copy-pasteable Ingress YAML skeleton
+// with the actual host substituted, and named template fields the
+// operator fills in (no `<svc-name>` / `<port>` bare tokens).
+
+func TestRenderMissingIngressRemediation_NoBareTokens(t *testing.T) {
+	rem := renderMissingIngressRemediation("foo.example.com")
+	for _, tok := range []string{"<svc-name>", "<port>"} {
+		if strings.Contains(rem, tok) {
+			t.Errorf("remediation must not contain bare token %q; got:\n%s", tok, rem)
+		}
+	}
+}
+
+func TestRenderMissingIngressRemediation_SubstitutesHost(t *testing.T) {
+	rem := renderMissingIngressRemediation("foo.bar.example.com")
+	// Actual host appears (multiple times: prose + manifest host line).
+	if strings.Count(rem, "foo.bar.example.com") < 2 {
+		t.Errorf("remediation should reference the host at least twice (prose + manifest); got:\n%s", rem)
+	}
+	// Ingress name is sanitized (dots → dashes).
+	if !strings.Contains(rem, "foo-bar-example-com-ingress") {
+		t.Errorf("remediation should derive a valid Ingress name from the host; got:\n%s", rem)
+	}
+}
+
+func TestRenderMissingIngressRemediation_IncludesEscapeHatch(t *testing.T) {
+	// The legacy text told the operator they could mark the host
+	// external-only — the new text must preserve that escape hatch so
+	// operators with intentionally-Cloudflare-only hosts know what to do.
+	rem := renderMissingIngressRemediation("ext.example.com")
+	if !strings.Contains(rem, "external") {
+		t.Errorf("remediation should mention the external-only escape hatch; got:\n%s", rem)
+	}
+}
