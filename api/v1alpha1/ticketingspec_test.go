@@ -116,10 +116,10 @@ func TestTicketingSpec_RoundTripThroughClusterHealthAutopilot(t *testing.T) {
 		Spec: ClusterHealthAutopilotSpec{
 			Image: ImageSpec{Repository: "x/y", Tag: "1.0"},
 			Ticketing: &TicketingSpec{
-				Enabled:  true,
-				Provider: "openproject",
-				Project:  "6",
-				Labels:   []string{"a", "b"},
+				Enabled:          true,
+				Provider:         "openproject",
+				Project:          "6",
+				Labels:           []string{"a", "b"},
 				SeverityPriority: &TicketingPrioritySpec{Critical: "75"},
 			},
 		},
