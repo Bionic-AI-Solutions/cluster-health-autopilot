@@ -13,6 +13,23 @@ serves the latest tagged chart cut.
 
 ## [Unreleased]
 
+## [1.20.1] — 2026-06-07
+
+### Fixed — Finish Phase 1.B placeholder substitution across analyzers (PR #169)
+
+PR #164 (shipped in v1.18.3 / re-stated in v1.19.0) addressed Phase 1.B by substituting `<name>` / `<selector>` placeholders in `capacity_drift.go` + `config_drift.go`. The post-Phase-1 adversarial audit caught 4 more analyzers still leaking literal `<placeholder>` tokens that neither the AI tier could parse nor operators could action without manual lookups:
+
+  - **`security_drift.go`** digest-pin remediation — now reads `status.containerStatuses[].imageID` (kubelet has already resolved every running image to a sha256 at pull time) and renders per-container substitution `Replace foo:1.2.3 with foo@sha256:…`. Strips the `docker-pullable://` kubelet prefix. Falls back to a concrete `crane digest <actual-image>` invocation when the Pod hasn't been scheduled.
+  - **`dns_chain_drift.go`** missing-ingress remediation — refactored into `renderMissingIngressRemediation(host)` helper that renders a copy-pasteable Ingress YAML skeleton with the actual host substituted.
+  - **`rbac_drift.go`** unbound-SA remediation — reworded "Pick a Role (list candidates with `kubectl get role`) … `--role=NAME (substitute NAME …)`" — no bare `<role-name>` token.
+  - **`workload_state_drift.go`** CNPG follower remediation — reworded "Identify the non-Ready follower, then `<that-pod-name>` (substitute the pod name from the prior list)" — no bare `<follower-pod>` token.
+
+Audit grep across `internal/diagnose/*.go` (non-test) Remediation strings for the strict token set `<name>|<placeholder>|<image>:<tag>|<selector>|<digest>|<svc-name>|<port>|<role-name>|<follower-pod>` now returns **0 hits**.
+
+### Fixed — Align ticketing values shape with CRD (PR #170)
+
+Chart values block used nested `ticketing.openproject.{mcpURL, projectID, …}`; CRD uses flat `ticketing.{mcpURL, project, …}`. Users could not move YAML between `helm upgrade -f values.yaml` and `kubectl patch cha …` without reshaping. Fixed by flattening the chart shape to mirror the CRD exactly; legacy nested form honored as a fallback (will be removed in the next major chart bump).
+
 ## [1.20.0] — 2026-06-07
 
 ### Added — Operator-managed `spec.ticketing` (Phase 1.D, PR #167)
