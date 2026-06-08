@@ -329,6 +329,11 @@ running the OSS image + operational loop. See docs/DEPLOYMENT.md.
 - --leader-election-namespace={{ .Release.Namespace }}
 - --leader-election-name={{ include "cha.fullname" . }}-aiwatch-leader
 {{- end }}
+{{- /* Phase 2.G — Prometheus /metrics endpoint. Empty addr = disabled
+       (legacy single-binary deploy with no scrape sidecar). */ -}}
+{{- with (.Values.ai.metrics).addr }}
+- --metrics-addr={{ . }}
+{{- end }}
 {{- end -}}
 
 {{- /*

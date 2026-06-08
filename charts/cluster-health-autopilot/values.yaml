@@ -454,6 +454,27 @@ ai:
   # --leader-election=true and binds the SA to the Lease Role; exactly
   # one replica runs tick() at a time, failover within ~30s on lease loss.
   replicas: 1
+  # Phase 2.G — Prometheus /metrics endpoint. Empty addr = disabled
+  # (no /metrics route registered; legacy single-binary deploy).
+  # ":9090" turns on the listener; the chart then renders a matching
+  # containerPort + Service + (optional) ServiceMonitor.
+  metrics:
+    addr: ""                # e.g. ":9090" to enable
+    port: 9090              # container/service port (must match the :NNNN in addr)
+    serviceMonitor:
+      enabled: false        # set true when prometheus-operator is installed
+      interval: "30s"       # scrape interval
+      scrapeTimeout: "10s"
+    grafanaDashboard:
+      # When true, ship a ConfigMap with the CHA overview dashboard
+      # tagged for kube-prometheus-stack's sidecar discovery.
+      enabled: false
+      extraLabels: {}       # e.g. {"app.kubernetes.io/instance": "monitoring"} for non-default Grafana
+    prometheusRule:
+      # When true, ship a PrometheusRule with the canary alerts:
+      # ChaWatcherStuck, ChaBreakerOpen, ChaAutonomyRejectionSpike.
+      enabled: false
+      labels: {}            # e.g. {"prometheus": "k8s"} when prometheus-operator uses non-default selectors
   allowSaas: false        # set true to allow api.openai.com / api.anthropic.com endpoints
   llmFixerMatcher: false  # t1+: use the LLM-classified fixer matcher (falls back to keyword on error)
   auditLog: ""            # AI-event audit sink: "" (off) | "-" (stdout) | "/path/to.jsonl". Set for t1+ compliance.

@@ -68,6 +68,12 @@ spec:
           imagePullPolicy: {{ (.Values.ai.image).pullPolicy | default "IfNotPresent" }}
           args:
             {{- include "cha.aiArgs" . | nindent 12 }}
+          {{- if (.Values.ai.metrics).addr }}
+          ports:
+            - name: metrics
+              containerPort: {{ (.Values.ai.metrics).port | default 9090 }}
+              protocol: TCP
+          {{- end }}
           env:
             - name: MY_POD_NAMESPACE
               valueFrom:
