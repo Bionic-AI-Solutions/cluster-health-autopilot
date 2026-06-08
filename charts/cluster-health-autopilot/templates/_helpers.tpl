@@ -334,6 +334,15 @@ running the OSS image + operational loop. See docs/DEPLOYMENT.md.
 {{- with (.Values.ai.metrics).addr }}
 - --metrics-addr={{ . }}
 {{- end }}
+{{- /* Phase 2.H — DigestPin PR attestation. Empty secretName = no
+       attestation block (legacy PR body). The attestation key
+       mounts at /etc/cha/attestation/ (not /etc/cha/keys/) to
+       avoid colliding with the approval-server signing key's
+       Secret mount when both are enabled. */ -}}
+{{- if (.Values.ai.digestPinAttestation).secretName }}
+- --digest-pin-attestation-key=/etc/cha/attestation/{{ (.Values.ai.digestPinAttestation).secretKey | default "attestation.key" }}
+- --digest-pin-attestation-kid={{ (.Values.ai.digestPinAttestation).keyID | default "cha-digest-pin" }}
+{{- end }}
 {{- end -}}
 
 {{- /*

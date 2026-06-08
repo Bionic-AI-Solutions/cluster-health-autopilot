@@ -256,6 +256,28 @@ func (in *AISpec) DeepCopyInto(out *AISpec) {
 			in.ExtraEnv[i].DeepCopyInto(&out.ExtraEnv[i])
 		}
 	}
+	if in.DigestPinAttestation != nil {
+		out.DigestPinAttestation = new(DigestPinAttestationSpec)
+		*out.DigestPinAttestation = *in.DigestPinAttestation
+	}
+}
+
+// DeepCopyInto for DigestPinAttestationSpec — all fields are value
+// types (strings) so a flat assignment suffices. Hand-written to
+// match the hand-written DeepCopyInto pattern for the surrounding
+// v1alpha1 types.
+func (in *DigestPinAttestationSpec) DeepCopyInto(out *DigestPinAttestationSpec) {
+	*out = *in
+}
+
+// DeepCopy returns a copy of *in.
+func (in *DigestPinAttestationSpec) DeepCopy() *DigestPinAttestationSpec {
+	if in == nil {
+		return nil
+	}
+	out := new(DigestPinAttestationSpec)
+	in.DeepCopyInto(out)
+	return out
 }
 
 // DeepCopyInto for AIExtraEnv.

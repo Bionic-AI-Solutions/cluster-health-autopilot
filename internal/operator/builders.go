@@ -661,6 +661,23 @@ func aiArgs(cr *chav1alpha1.ClusterHealthAutopilot) []string {
 			"--leader-election-name="+names.AIWatch+"-leader",
 		)
 	}
+	// Phase 2.H — DigestPin PR attestation args. Mirrors the chart's
+	// cha.aiArgs template gate. Mount path matches the chart's
+	// attestation-key Volume.
+	if att := ai.DigestPinAttestation; att != nil && att.SecretName != "" {
+		secretKey := att.SecretKey
+		if secretKey == "" {
+			secretKey = "attestation.key"
+		}
+		kid := att.KeyID
+		if kid == "" {
+			kid = "cha-digest-pin"
+		}
+		args = append(args,
+			"--digest-pin-attestation-key=/etc/cha/attestation/"+secretKey,
+			"--digest-pin-attestation-kid="+kid,
+		)
+	}
 	// v1.18.0 — extraArgs escape hatch. Append AFTER typed args so a
 	// typed flag (e.g. --ai-tier) wins on duplicate keys (later args
 	// override earlier ones in pflag). Useful for cha-com flags the
@@ -803,6 +820,34 @@ func BuildAIWatchDeployment(cr *chav1alpha1.ClusterHealthAutopilot) *appsv1.Depl
 		c.VolumeMounts = append(c.VolumeMounts, corev1.VolumeMount{
 			Name:      "signing-key",
 			MountPath: "/etc/cha/keys",
+			ReadOnly:  true,
+		})
+	}
+
+	// Phase 2.H — DigestPin attestation key mount. Independent of
+	// approval-server's signing key (different secrets, different
+	// mount paths). Mounts at /etc/cha/attestation to avoid
+	// colliding with /etc/cha/keys when both are enabled.
+	if att := cr.Spec.AI.DigestPinAttestation; att != nil && att.SecretName != "" {
+		secretKey := att.SecretKey
+		if secretKey == "" {
+			secretKey = "attestation.key"
+		}
+		pod.Volumes = append(pod.Volumes, corev1.Volume{
+			Name: "attestation-key",
+			VolumeSource: corev1.VolumeSource{
+				Secret: &corev1.SecretVolumeSource{
+					SecretName: att.SecretName,
+					Items: []corev1.KeyToPath{
+						{Key: secretKey, Path: secretKey, Mode: int32Ptr(0o444)},
+					},
+				},
+			},
+		})
+		c := &pod.Containers[0]
+		c.VolumeMounts = append(c.VolumeMounts, corev1.VolumeMount{
+			Name:      "attestation-key",
+			MountPath: "/etc/cha/attestation",
 			ReadOnly:  true,
 		})
 	}

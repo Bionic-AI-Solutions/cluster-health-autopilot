@@ -49,11 +49,20 @@ type DeltaDiag struct {
 	ApprovalURL string
 
 	// Phase 2.B.6 — class-action URLs. Pre-signed with class-scoped
-	// JWTs by the CHA-com aiwatch when the "Approve+remember class"
-	// workflow is enabled. Each URL targets a separate approval-server
-	// endpoint; the operator's one click writes a policy AND
-	// (for approve-class) executes the action. Empty in the OSS-only
-	// path or any deploy with memory unconfigured.
+	// JWTs that target separate approval-server endpoints; the
+	// operator's one click writes a policy AND (for approve-class)
+	// executes the action.
+	//
+	// IMPORTANT: in v1.21.0 these fields are render-only on the OSS
+	// watcher path — the OSS internal/watcher/enrich pipeline does NOT
+	// yet mint class-action JWTs (the class_token signer lives in
+	// CHA-com's ai/approval package). The CHA-com aiwatch emits class
+	// buttons via its OWN renderer (cmd/cha-com/render.go), which IS
+	// fully wired and verified live since v1.16.0. These fields land
+	// here so a future OSS hook (or a shared signer extraction) can
+	// populate them without re-touching the render path; until then
+	// they stay empty in pure-OSS deploys and the render gates the
+	// class-button row on non-empty values.
 	ApproveClassURL string
 	DenyClassURL    string
 	SilenceClassURL string

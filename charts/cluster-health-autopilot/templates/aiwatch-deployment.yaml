@@ -90,18 +90,26 @@ spec:
             - name: CHA_SIGNING_KEY_PATH
               value: /etc/cha/keys/signing.key
             {{- end }}
-          {{- if (.Values.approval).enabled }}
+          {{- if or (.Values.approval).enabled (.Values.ai.digestPinAttestation).secretName }}
           volumeMounts:
+            {{- if (.Values.approval).enabled }}
             - name: signing-key
               mountPath: /etc/cha/keys
               readOnly: true
+            {{- end }}
+            {{- if (.Values.ai.digestPinAttestation).secretName }}
+            - name: attestation-key
+              mountPath: /etc/cha/attestation
+              readOnly: true
+            {{- end }}
           {{- end }}
           resources:
             {{- toYaml (.Values.ai.resources | default .Values.resources) | nindent 12 }}
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
-      {{- if (.Values.approval).enabled }}
+      {{- if or (.Values.approval).enabled (.Values.ai.digestPinAttestation).secretName }}
       volumes:
+        {{- if (.Values.approval).enabled }}
         - name: signing-key
           secret:
             secretName: {{ .Values.approval.signingKey.secretName | default "cha-approval-signing-key" }}
@@ -110,5 +118,16 @@ spec:
                 path: signing.key
                 mode: 0400
             optional: false
+        {{- end }}
+        {{- if (.Values.ai.digestPinAttestation).secretName }}
+        - name: attestation-key
+          secret:
+            secretName: {{ .Values.ai.digestPinAttestation.secretName }}
+            items:
+              - key: {{ .Values.ai.digestPinAttestation.secretKey | default "attestation.key" }}
+                path: {{ .Values.ai.digestPinAttestation.secretKey | default "attestation.key" }}
+                mode: 0400
+            optional: false
+        {{- end }}
       {{- end }}
 {{- end }}

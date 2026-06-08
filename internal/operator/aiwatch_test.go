@@ -645,3 +645,85 @@ func TestBuildAIWatchDeployment_ReplicasPropagatesArbitraryValue(t *testing.T) {
 		t.Errorf("Replicas=3 should propagate; got %v", d.Spec.Replicas)
 	}
 }
+
+// ----- Phase 2.H: digestPinAttestation propagation --------------------
+
+func TestBuildAIWatchDeployment_NoAttestation_NoMountOrArg(t *testing.T) {
+	cr := aiCR()
+	d := BuildAIWatchDeployment(cr)
+	if d == nil {
+		t.Fatal("expected non-nil deployment")
+	}
+	args := strings.Join(d.Spec.Template.Spec.Containers[0].Args, " ")
+	if strings.Contains(args, "--digest-pin-attestation") {
+		t.Errorf("no attestation should not emit --digest-pin-attestation* args; got: %s", args)
+	}
+	for _, v := range d.Spec.Template.Spec.Volumes {
+		if v.Name == "attestation-key" {
+			t.Errorf("no attestation should not mount attestation-key Volume")
+		}
+	}
+}
+
+func TestBuildAIWatchDeployment_Attestation_AddsMountAndArgs(t *testing.T) {
+	cr := aiCR()
+	cr.Spec.AI.DigestPinAttestation = &chav1alpha1.DigestPinAttestationSpec{
+		SecretName: "cha-digest-pin-attestation-key",
+	}
+	d := BuildAIWatchDeployment(cr)
+	if d == nil {
+		t.Fatal("expected non-nil deployment")
+	}
+	args := strings.Join(d.Spec.Template.Spec.Containers[0].Args, " ")
+	for _, w := range []string{
+		"--digest-pin-attestation-key=/etc/cha/attestation/attestation.key",
+		"--digest-pin-attestation-kid=cha-digest-pin",
+	} {
+		if !strings.Contains(args, w) {
+			t.Errorf("missing arg %q; have: %s", w, args)
+		}
+	}
+	// Volume present.
+	var foundVol bool
+	for _, v := range d.Spec.Template.Spec.Volumes {
+		if v.Name == "attestation-key" {
+			foundVol = true
+			if v.Secret == nil || v.Secret.SecretName != "cha-digest-pin-attestation-key" {
+				t.Errorf("attestation-key Volume: wrong Secret ref: %+v", v.Secret)
+			}
+		}
+	}
+	if !foundVol {
+		t.Errorf("missing attestation-key Volume")
+	}
+	// VolumeMount present.
+	var foundMount bool
+	for _, m := range d.Spec.Template.Spec.Containers[0].VolumeMounts {
+		if m.Name == "attestation-key" {
+			foundMount = true
+			if m.MountPath != "/etc/cha/attestation" {
+				t.Errorf("attestation-key mount path: got %q want /etc/cha/attestation", m.MountPath)
+			}
+		}
+	}
+	if !foundMount {
+		t.Errorf("missing attestation-key VolumeMount")
+	}
+}
+
+func TestBuildAIWatchDeployment_Attestation_CustomKeyAndKid(t *testing.T) {
+	cr := aiCR()
+	cr.Spec.AI.DigestPinAttestation = &chav1alpha1.DigestPinAttestationSpec{
+		SecretName: "custom-secret",
+		SecretKey:  "my-key.pem",
+		KeyID:      "rotated-2026-06",
+	}
+	d := BuildAIWatchDeployment(cr)
+	args := strings.Join(d.Spec.Template.Spec.Containers[0].Args, " ")
+	if !strings.Contains(args, "--digest-pin-attestation-key=/etc/cha/attestation/my-key.pem") {
+		t.Errorf("custom key not honored; have: %s", args)
+	}
+	if !strings.Contains(args, "--digest-pin-attestation-kid=rotated-2026-06") {
+		t.Errorf("custom kid not honored; have: %s", args)
+	}
+}

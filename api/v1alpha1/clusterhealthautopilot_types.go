@@ -471,6 +471,40 @@ type AISpec struct {
 	// +kubebuilder:validation:Maximum=5
 	// +optional
 	Replicas int32 `json:"replicas,omitempty"`
+
+	// DigestPinAttestation enables Phase 2.H cosign-style PR-body
+	// attestation on DigestPin-proposer PRs. When set + secretName
+	// resolves, the aiwatch container mounts the Ed25519 private key
+	// at /etc/cha/keys/attestation.key and signs a canonical payload
+	// per PR. Signature + embedded public-key PEM are appended to the
+	// PR body so reviewers can verify with `openssl` before approving.
+	//
+	// nil → no attestation (legacy body; PAT-based auth still gates).
+	// Soft-fail on key-read errors: PR opens, just without the block.
+	// +optional
+	DigestPinAttestation *DigestPinAttestationSpec `json:"digestPinAttestation,omitempty"`
+}
+
+// DigestPinAttestationSpec configures the Phase 2.H attestation
+// signer for DigestPin-proposer PRs. Phase 2.H.
+type DigestPinAttestationSpec struct {
+	// SecretName references the K8s Secret holding the Ed25519
+	// private key. The Secret MUST carry an `attestation.key` data
+	// key whose value is the base64-encoded 64-byte ed25519 private
+	// key (same on-disk format the approval-server signing key uses).
+	// ESO + Vault is the recommended provisioning path.
+	// +kubebuilder:validation:MinLength=1
+	SecretName string `json:"secretName"`
+
+	// SecretKey is the data key inside SecretName that carries the
+	// base64 key. Defaults to "attestation.key" when empty.
+	// +optional
+	SecretKey string `json:"secretKey,omitempty"`
+
+	// KeyID is the kid stamped into every attestation. Defaults to
+	// "cha-digest-pin" when empty.
+	// +optional
+	KeyID string `json:"keyID,omitempty"`
 }
 
 // AIExtraEnv is a minimal env-var spec — supports literal Value or a
