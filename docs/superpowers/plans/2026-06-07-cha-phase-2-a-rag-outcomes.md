@@ -1,126 +1,106 @@
-# Phase 2.A — RAG Memory Write Path on Action Outcomes
+# Phase 2.A — RAG Memory READ Path on Action Outcomes
 
-**Status:** active — execution started 2026-06-07 immediately after Phase 1 close and the master Phase 2 plan.
+**Status:** active — execution started 2026-06-07; sub-plan REVISED 2026-06-08 after pre-execution survey discovered the WRITE path is already shipped.
 
 **Parent:** [2026-06-07-cha-phase-2-master.md](2026-06-07-cha-phase-2-master.md)
 
-**Branch:** `phase2a/rag-outcomes` (CHA-com) + `phase2a/rag-outcomes` (OSS, if any analyzer-side wiring needed)
+**Branch:** `phase2a/rag-outcomes` (CHA-com)
 
 ---
 
-## Goal
+## Goal (revised)
 
-Every applied / denied / reverted action writes a structured outcome to Qdrant `kind=outcome`. One proposer (DigestPin) reads memory before proposing and surfaces "we tried this before" rationale. Sets up 2.B (policy reads) and 2.C (confidence reads).
+The original 2.A plan assumed both write and read paths needed building. **Pre-execution survey caught that the WRITE path is already wired end-to-end:**
+
+| Site | Status | Evidence |
+|---|---|---|
+| `OutcomeRecorder` interface | ✅ exists | `ai/approval/executor.go:57` |
+| Approve handler records | ✅ wired | `ai/approval/server.go:450` |
+| Deny handler records | ✅ wired | `ai/approval/server.go:496` |
+| Autonomy auto-apply records | ✅ wired | `cmd/cha-com/autonomy_engine.go:130` |
+| `memoryOutcomeRecorder` adapter | ✅ exists | `cmd/cha-com/ai_wiring.go:300` |
+| Helm/operator hook | ✅ exists | `ai_wiring.go::outcomeRecorder()` |
+
+**The actual gap is the READ side**: nobody queries outcomes back from Qdrant. `Memory.Retrieve` exists but it's embedding-similarity by digest, not by-class or by-target lookup. That's what 2.B/2.C/2.D will need.
+
+This revised 2.A ships the read helpers, wires DigestPin to use them, and adds revert detection + per-cycle observability.
 
 ## Anti-goals
 
-- Not a generic event bus. Outcome is a single shape.
-- RAG is for similarity search; canonical truth still K8s events + DriftReport status.
-- Only ONE proposer reads memory in 2.A. Other proposers in 2.D's wave.
-
-## Outcome record shape
-
-```go
-type Outcome struct {
-    AppliedAt     time.Time     // When the action was executed (or denied/reverted)
-    ActionKind    pkgai.ActionKind  // ProposePullRequest | ApplyManifest | RunRunbook | …
-    Target        pkgai.ObjectRef   // What the action operated on
-    DiagSubject   string        // The diagnostic that triggered this
-    DiagSource    string        // SecurityDrift | CapacityDrift | …
-    Decision      string        // "auto-applied" | "approved-by-human" | "denied-by-human"
-    Result        string        // "succeeded" | "reverted" | "failed" | "denied"
-    RevertedAt    *time.Time    // nil unless Result=reverted
-    Approver      string        // X-Forwarded-User; empty for auto-applied
-    Rationale     string        // What the proposer said; for memory-grounded follow-ups
-}
-```
-
-## Sub-tasks (TDD; bite-size)
-
-### 2.A.1 — Outcome type in `ai/memory/outcome.go`
-- [ ] Define `Outcome` struct
-- [ ] Define `kindOutcome rag.EntryKind = "outcome"`
-- [ ] Define helper `OutcomeKey(actionID) string` for deterministic Qdrant point IDs (so re-records overwrite)
-- [ ] Failing test in `ai/memory/outcome_test.go`: `TestOutcome_KeyDeterministic` — same actionID → same key
-- [ ] Run, confirm fail, implement, run, pass
-
-### 2.A.2 — `OutcomeRecorder` implementation
-- [ ] In `ai/memory/outcome.go`: `type Recorder struct { rag rag.Writer }` with method `Record(ctx, Outcome) error`
-- [ ] Record serializes Outcome to a `rag.Entry` (features map) and calls `Upsert` keyed on `OutcomeKey(actionID)`
-- [ ] Failing test `TestRecorder_RoundTrip` — record + read via fake-rag → identical Outcome
-- [ ] Run, confirm fail, implement, run, pass
-
-### 2.A.3 — `OutcomeReader` query helpers
-- [ ] In `ai/memory/outcome.go`: `Reader` with methods:
-  - [ ] `RecentByClass(ctx, source, kind, since) ([]Outcome, error)` — for confidence model
-  - [ ] `RecentByTarget(ctx, target, since) ([]Outcome, error)` — for "we tried this before"
-- [ ] Failing test `TestReader_RecentByClass` — 5 outcomes seeded, query returns expected subset, sorted recent-first
-- [ ] Failing test `TestReader_RecentByTarget` — same shape, target-scoped
-- [ ] Implement (both go through Qdrant scroll + filter), run, pass
-
-### 2.A.4 — Wire `Record` into `approval-server` (Approve handler)
-- [ ] In `ai/approval/server.go::handleApprove`: after `Executor.Apply` succeeds, call `recorder.Record(Outcome{Decision: "approved-by-human", Result: "succeeded", Approver: hdrUser, …})`
-- [ ] Recorder is optional (Server has `recorder OutcomeRecorder` field; nil = no-op — matches existing pattern)
-- [ ] Failing test `TestHandleApprove_RecordsOutcome` — fake recorder asserts a Record call with the right Outcome shape
-- [ ] Implement, pass
-
-### 2.A.5 — Wire `Record` into `approval-server` (Deny handler)
-- [ ] In `ai/approval/server.go::handleDeny`: record `Outcome{Decision: "denied-by-human", Result: "denied", Approver: hdrUser, …}`
-- [ ] Failing test, implement, pass
-
-### 2.A.6 — Wire `Record` into autonomy auto-apply path
-- [ ] In `cmd/cha-com/watch_cmd.go::tick()`: after `autonomy.Consider` returns `Decision.AutoApply=true` AND the apply succeeds, record `Outcome{Decision: "auto-applied", Result: "succeeded", Approver: "", …}`
-- [ ] Failing test in `cmd/cha-com/watch_cmd_test.go`: fake autonomy + fake recorder, assert Record called once per auto-apply
-- [ ] Implement, pass
-
-### 2.A.7 — Wire revert detection
-- [ ] Revert = a finding that was auto-applied/approved in cycle N reappears identically in cycle N+1 within 5 minutes
-- [ ] In `cmd/cha-com/watch_cmd.go::tick()`: after building the new diagnostic set, query recorder for outcomes <5 min old; for any whose DiagSubject re-appears with `Result=succeeded`, write a follow-up `Outcome{Result: "reverted", RevertedAt: time.Now()}`
-- [ ] Failing test, implement, pass
-
-### 2.A.8 — DigestPinProposer reads memory before proposing
-- [ ] In `ai/proposer/digest_pin.go::Propose`: before opening a new PR, query `reader.RecentByTarget(podTarget, 7days)` for prior outcomes
-- [ ] If a prior outcome's Result=reverted within 24h → include "previously attempted, was reverted" in the proposal's Rationale field
-- [ ] Failing test `TestDigestPin_MemoryAwareRationale` — fake reader returns a reverted outcome; assert the new proposal's Rationale mentions it
-- [ ] Implement, pass
-
-### 2.A.9 — Helm + operator wiring
-- [ ] `ai.outcomeRecorder.enabled: true` default-on Helm value
-- [ ] Operator wires the OutcomeRecorder into both watchLoop and approval-server when CR.spec.ai.enabled=true (no new CR field needed — reuses existing RAG store config)
-- [ ] Failing operator test `TestBuildAIWatch_RecorderWiredWhenRAGEnabled`, implement, pass
-
-### 2.A.10 — Per-cycle observability
-- [ ] New log line each cycle: `outcomes: recorded=N (auto-applied=A approved=B denied=C reverted=D)`
-- [ ] Failing test on the log assertion, implement, pass
-
-### 2.A.11 — Field-travels-end-to-end integration test
-- [ ] Per the master plan's Phase-1-lesson refinement: an explicit test asserting a recorded outcome can be queried back by both RecentByClass and RecentByTarget. Catches the DriftReport.spec.remediation class of bug where one side writes and the other side reads but the field is dropped between them.
-- [ ] Test name: `TestOutcome_WrittenByRecorderReadBackByReader`. Lives in `ai/memory/outcome_integration_test.go` (build-tag `integration`).
-
-### 2.A.12 — Local build + dev tag + cluster verify
-- [ ] CGO_ENABLED=0 build cha-com binary
-- [ ] Push docker4zerocool/cha-com:1.15.0-dev1
-- [ ] Patch CR ai.image.tag, wait rollout
-- [ ] Force a few proposals (click Approve on real Slack URLs)
-- [ ] Verify outcomes in Qdrant via `cha rag-debug query --kind=outcome` (new debug subcommand, or curl directly)
-
-### 2.A.13 — Open PR + release
-- [ ] Open CHA-com PR; CI green; merge
-- [ ] Tag v1.15.0; goreleaser (~80 min); confirm multi-arch manifest; cluster roll
+- Don't rewrite the write path. It's done. Touching it only invites regression.
+- Read helpers stay narrow: only what 2.B/2.C/2.D need. Future use-cases get their own helpers.
 
 ---
 
-## Acceptance for 2.A
+## Sub-tasks (TDD; bite-size) — revised numbering
 
-- Auto-applied action → outcome row visible in Qdrant within 1 cycle
-- Approve click → outcome row with Approver populated from `X-Forwarded-User`
-- Deny click → outcome row with Decision=denied
-- Re-appearance within 5 min → outcome row with Result=reverted
-- DigestPin proposal for a previously-reverted target → Rationale mentions the prior attempt
-- `outcomes: recorded=N (…)` log line on every cycle
+### 2.A.1 — `Recent*` query helpers on `*Memory` (or new `OutcomeReader`)
+- [ ] Decide placement: extend `*Memory` with `RecentOutcomesByClass(ctx, source, kind, since)` + `RecentOutcomesByTarget(ctx, target, since)` OR new `ai/memory/outcome_reader.go` wrapper. Lean toward extending `*Memory` (one fewer type).
+- [ ] Failing test `TestMemory_RecentOutcomesByTarget` in `ai/memory/memory_test.go`: AppendSignal 5 outcomes for one target + 3 for another; assert query returns only the 5 sorted recent-first.
+- [ ] Failing test `TestMemory_RecentOutcomesByClass`: same shape but filter by `(source, action_kind)` tuple.
+- [ ] Implement both helpers using `QdrantRAG.List(ctx, rag.Query{Kind: rag.KindFindingOutcome, ...})` + post-filter (Qdrant payload-filter would be ideal but `Query` doesn't expose it yet; post-filter is fine for v1 since outcome volume is ~50/day).
+- [ ] Run, pass.
+
+### 2.A.2 — Revert detection in `cmd/cha-com/watch_cmd.go::tick()`
+- [ ] After building the new diagnostic set for the cycle, for each newly-seen finding query `mem.RecentOutcomesByTarget(target, 24h)`.
+- [ ] If a prior outcome's Verdict=cleared within 24h AND the same finding is back → the prior fix didn't stick. Append a follow-up signal with `Verdict="reverted"`.
+- [ ] Failing test in `watch_cmd_test.go`: fake memory returns a 1h-old cleared outcome for the finding's target; assert a "reverted" signal is appended.
+- [ ] Implement, pass.
+
+### 2.A.3 — DigestPinProposer reads memory before proposing
+- [ ] In `ai/proposer/digest_pin.go::Propose`: after building `workloadKey` but before opening the PR, query `reader.RecentOutcomesByTarget(podTarget, 7days)`.
+- [ ] If a prior outcome's Verdict=reverted within 24h → include "previously attempted, was reverted" in the proposal's Rationale field.
+- [ ] Failing test `TestDigestPin_MemoryAwareRationale_PriorRevert`: fake reader returns a reverted outcome; assert proposal's Rationale contains "previously attempted, was reverted".
+- [ ] Failing test `TestDigestPin_MemoryAwareRationale_PriorSuccess`: fake reader returns a cleared outcome older than 7d; assert Rationale does NOT contain "previously attempted" (stale data).
+- [ ] Implement (pass a Reader into the proposer's struct; thread through wiring), pass.
+
+### 2.A.4 — Per-cycle observability log
+- [ ] In `cmd/cha-com/watch_cmd.go::tick()`: at cycle end, query `mem.RecentOutcomesByClass` for the current cycle window (~1 min) and log:
+  `outcomes: cycle=N applied=A approved=B denied=C reverted=D`
+- [ ] Failing test on the log line presence + counts.
+- [ ] Implement, pass.
+
+### 2.A.5 — Field-travels-end-to-end integration test
+- [ ] Per the master plan's Phase-1-lesson refinement: `TestOutcome_WrittenByApprovalServer_ReadBackByMemory`.
+- [ ] Set up an in-process approval-server with a real (test) QdrantRAG (or fake but using the real Outcome serialization helpers).
+- [ ] Approve a proposal → query `mem.RecentOutcomesByTarget(target, 1h)` → assert exactly one Outcome returned with the expected fields.
+- [ ] Lives in `ai/approval/server_integration_test.go` (build tag `integration`).
+- [ ] Catches the DriftReport.spec.remediation class of bug: write side green + read side green + integration silently dropping the field.
+
+### 2.A.6 — Wire memory into DigestPin's construction in `watch_cmd.go`
+- [ ] In `cmd/cha-com/watch_cmd.go::RunE`: pass the `*Memory` instance into `dp.buildDigestPinProposer(...)`.
+- [ ] Adjust `digest_pin_wiring.go::buildDigestPinProposer` signature to accept a `MemoryReader` interface.
+- [ ] Failing test on the wiring (similar to existing `TestDigestPinFlags_BuildDigestPinProposerWiresEverything`).
+- [ ] Implement, pass.
+
+### 2.A.7 — Local build + dev tag + cluster verify
+- [ ] `CGO_ENABLED=0 go build -o /tmp/cha-com ./cmd/cha-com`
+- [ ] `docker build` + push `docker4zerocool/cha-com:1.15.0-dev1`
+- [ ] Patch CR `ai.image.tag=1.15.0-dev1`; wait rollout
+- [ ] Click Approve/Deny on real Slack URLs in the wild; verify the next cycle's log shows `outcomes: applied=N…`
+- [ ] Verify DigestPin proposal rationale (when one fires) mentions prior outcome if any
+
+### 2.A.8 — Open CHA-com PR + tag canonical release
+- [ ] PR; CI green; merge
+- [ ] Tag `v1.15.0`; goreleaser (~80 min); confirm multi-arch manifest assembled (manual fallback per master-plan refinement); roll cluster
+
+---
+
+## Acceptance for 2.A (revised)
+
+- DigestPin proposal for a recently-reverted target → Rationale carries the prior-revert note
+- Watcher log shows `outcomes: cycle=N applied=A approved=B denied=C reverted=D` once per cycle
+- A click-Approve outcome is queryable back via `RecentOutcomesByTarget` within 1 cycle
+- Revert detection: a finding that was Cleared in cycle N and re-appears in cycle N+1 writes a reverted signal
+
+## Why this is enough for 2.B/2.C/2.D to start
+
+- **2.B (Approve+remember class)**: needs to read per-class outcome history → uses `RecentOutcomesByClass`. ✅
+- **2.C (confidence model)**: needs success rate per `(source, action_kind, namespace)` → trivially derived from `RecentOutcomesByClass` + a namespace filter. ✅
+- **2.D (LLM proposer)**: prompts include "you tried these recently with this outcome" → uses `RecentOutcomesByTarget`. ✅
 
 ## Risk + mitigation
 
-- **Qdrant write failures shouldn't block apply.** Recorder errors are logged, not propagated.
-- **Outcome volume.** ~50 actions/day × 30 days = ~1500 entries; well within Qdrant comfort.
-- **Race between recorder write + reader query.** Recorder uses Upsert (sync to Qdrant before returning); reader queries within next watch cycle (~1 min later). No race in practice.
+- **Qdrant List performance.** Post-filter pulls all outcomes per query. At ~50/day × 30d = 1500 entries, scanning is microseconds. If volume grows >10K, add Qdrant payload-index on `source`+`action_kind`+`target`.
+- **Cold start.** No prior outcomes = empty result = proposers behave exactly as today. Zero regression risk for first deploy.
+- **Memory reader nil safety.** Memory may be nil (RAG disabled). All `Recent*` helpers must return `(nil, nil)` on nil receiver, not panic.
