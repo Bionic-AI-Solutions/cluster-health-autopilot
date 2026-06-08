@@ -13,6 +13,98 @@ serves the latest tagged chart cut.
 
 ## [Unreleased]
 
+## [1.21.1] — 2026-06-08
+
+Follow-up to the v1.21.0 Phase 2 closure. Adds the
+`spec.ai.digestPinAttestation` field that the v1.21.0 merge missed
+(the chart-version bump from v1.20.1 → v1.21.0 was also missed at
+tag time; this release bumps both together).
+
+### Added — `spec.ai.digestPinAttestation` chart wiring (Phase 2.H)
+
+`DigestPinAttestationSpec {SecretName, SecretKey, KeyID}` on AISpec.
+When set, the chart mounts the Secret at `/etc/cha/attestation/` and
+passes `--digest-pin-attestation-key` + `--digest-pin-attestation-kid`
+to the aiwatch container. Operator reconciler mirrors the chart.
+Mount path is separate from `/etc/cha/keys/` so attestation key
+rotation is independent of the approval-server signing key.
+
+### Fixed — `internal/report.DeltaDiag` class-URL docs (Phase 2.B.6)
+
+The render-only class-URL fields shipped in v1.21.0 — `ApproveClassURL`,
+`DenyClassURL`, `SilenceClassURL` — now carry a doc clarifying that
+the OSS enrich pipeline does NOT mint class-action JWTs (the signer
+lives in CHA-com's `ai/approval`). The CHA-com aiwatch's renderer
+(`cmd/cha-com/render.go`) is the active surface; the OSS render is
+preparatory for a future shared-signer extraction.
+
+### Pairs with CHA-com
+
+`v1.16.0+` (binary-side surfaces are unchanged from v1.21.0 →
+v1.21.1; only the chart's wiring of an existing CHA-com flag is new).
+
+## [1.21.0] — 2026-06-08
+
+Phase 2 closure on the OSS side. Pairs with CHA-com `v1.16.0`
+for the paid-tier binary half.
+
+### Added — `spec.ai.replicas` for HA aiwatch (Phase 2.F)
+
+`ClusterHealthAutopilot.spec.ai.replicas` (`int32`, min 1 max 5).
+Default 1 (single-replica, noop elector — byte-identical to pre-2.F).
+When `>1`, the chart turns on `--leader-election=true` + binds the
+SA to a scoped Lease Role; the binary races for a
+`coordination.k8s.io/v1.Lease` named `<release>-aiwatch-leader`.
+Failover within ~30s on lease loss.
+
+### Added — Prometheus instrumentation + Grafana dashboard + canary alerts (Phase 2.G)
+
+`ai.metrics.{addr,port,serviceMonitor,grafanaDashboard,prometheusRule}`
+values opt in to: aiwatch `/metrics:9090` headless Service +
+optional `ServiceMonitor` + `dashboards/cha-overview.json` ConfigMap
+(Grafana sidecar labels) + `PrometheusRule` canaries
+(`ChaWatcherStuck`, `ChaBreakerOpen`, `ChaAutonomyRejectionSpike`).
+
+All gated on `ai.enabled` + non-empty `ai.metrics.addr` — pure-OSS
+deploys see no new resources.
+
+### Added — Slack class-button render row (Phase 2.B.6)
+
+`internal/report.DeltaDiag` gains `ApproveClassURL` /
+`DenyClassURL` / `SilenceClassURL`. When populated, `FormatSlackDelta`
+renders an extra row under the Approve/Deny pair. Render-only on
+OSS — the OSS enrich pipeline does NOT yet mint class-action JWTs
+(the signer lives in CHA-com). CHA-com aiwatch's renderer
+(`cmd/cha-com/render.go`) is the active surface in production.
+
+### Added — `Silence.spec.matcher.messagePattern` (Phase 2.B.9)
+
+Substring-match on `Diagnostic.Message`. Enables class-scoped
+silences from the CHA-com `/silence-class` click. `pkg/silence.Matches`
+ANDs MessagePattern alongside Source + Subject + Severity.
+
+### Added — `DisruptionDrift` analyzer (Phase 2.E)
+
+Three new signals: **PDB blocks all evictions** (`critical`),
+**stuck Indexed Job failed indexes** (`warning`), **stale
+ResourceQuota at 100%** (`warning`). Opts out via
+`CHA_ANALYZER_DISRUPTION_DRIFT=off`.
+
+### Added — `spec.ai.digestPinAttestation` chart wiring (Phase 2.H)
+
+`DigestPinAttestationSpec {SecretName, SecretKey, KeyID}` on AISpec.
+When set, chart mounts the Secret at `/etc/cha/attestation/` and
+passes `--digest-pin-attestation-key` + `--digest-pin-attestation-kid`
+to the aiwatch container. Operator reconciler mirrors the chart.
+Mount path is separate from `/etc/cha/keys/` so attestation key
+rotation is independent of the approval-server signing key.
+
+### Pairs with CHA-com
+
+`v1.16.0+` carries the binary-side surfaces this chart drives:
+class-action JWT routes, `/metrics` endpoint, attestation signer,
+lease elector, LLM proposer, autonomy class-policy bypass.
+
 ## [1.20.1] — 2026-06-07
 
 ### Fixed — Finish Phase 1.B placeholder substitution across analyzers (PR #169)
