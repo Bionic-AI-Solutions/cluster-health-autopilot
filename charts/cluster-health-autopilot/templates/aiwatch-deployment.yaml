@@ -21,7 +21,10 @@ metadata:
     {{- include "cha.labels" . | nindent 4 }}
     cha.bionicaisolutions.com/role: aiwatch
 spec:
-  replicas: 1
+  # Phase 2.F — when ai.replicas > 1, the watcher uses leader-election
+  # so exactly one runs tick() at a time. Default 1 (single-replica
+  # noop path; byte-identical to pre-2.F deploys).
+  replicas: {{ .Values.ai.replicas | default 1 }}
   selector:
     matchLabels:
       {{- include "cha.selectorLabels" . | nindent 6 }}

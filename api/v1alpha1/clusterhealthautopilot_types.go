@@ -452,6 +452,25 @@ type AISpec struct {
 	// validation time otherwise.
 	// +optional
 	ExtraEnv []AIExtraEnv `json:"extraEnv,omitempty"`
+
+	// Replicas is the aiwatch deployment replica count. v1.21.0
+	// (Phase 2.F) — when >1, the watcher uses coordination.k8s.io/v1
+	// leader-election so exactly one replica runs tick() at a time;
+	// the others stand by ready to take over within ~30s on lease
+	// loss. Default 1 (single-replica, byte-identical to pre-2.F).
+	//
+	// The chart turns on the --leader-election flag on the aiwatch
+	// container when Replicas > 1; with Replicas == 1, the watcher
+	// takes the noop elector path (no Lease object created, no RBAC
+	// dependency on coordination.k8s.io). RBAC required for >1:
+	// the aiwatch ServiceAccount needs verbs {get, list, watch,
+	// create, update, patch} on coordination.k8s.io/leases in the
+	// install namespace. The chart adds these only when Replicas > 1.
+	//
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=5
+	// +optional
+	Replicas int32 `json:"replicas,omitempty"`
 }
 
 // AIExtraEnv is a minimal env-var spec — supports literal Value or a

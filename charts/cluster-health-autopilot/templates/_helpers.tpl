@@ -322,6 +322,13 @@ running the OSS image + operational loop. See docs/DEPLOYMENT.md.
 - --memory-embeddings-model={{ required "ai.memory.embeddings.model is required when ai.memory.enabled" (.Values.ai.memory.embeddings).model }}
 - --memory-topk={{ (.Values.ai.memory).topK | default 5 }}
 {{- end }}
+{{- /* Phase 2.F — leader election when replicas > 1. Single-replica
+       deploys take the noop path (no Lease, no RBAC dependency). */ -}}
+{{- if gt (int (.Values.ai.replicas | default 1)) 1 }}
+- --leader-election=true
+- --leader-election-namespace={{ .Release.Namespace }}
+- --leader-election-name={{ include "cha.fullname" . }}-aiwatch-leader
+{{- end }}
 {{- end -}}
 
 {{- /*
