@@ -30,6 +30,7 @@ var CaptureGVRs = []schema.GroupVersionResource{
 	GVRPod,
 	GVRNode,
 	GVRPVC,
+	GVRPV,
 	GVREvent,
 	GVRDeployment,
 	GVRReplicaSet,

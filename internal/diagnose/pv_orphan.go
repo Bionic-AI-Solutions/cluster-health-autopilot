@@ -10,7 +10,6 @@ import (
 
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/snapshot"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
 // PVOrphan surfaces PersistentVolumes that have been in the
@@ -36,8 +35,7 @@ const pvOrphanGrace = 7 * 24 * time.Hour
 
 // Run walks every PersistentVolume and emits a warning per orphan.
 func (a PVOrphan) Run(ctx context.Context, src snapshot.Source) []Diagnostic {
-	gvr := schema.GroupVersionResource{Group: "", Version: "v1", Resource: "persistentvolumes"}
-	list, err := src.List(ctx, gvr, "")
+	list, err := src.List(ctx, snapshot.GVRPV, "")
 	if err != nil {
 		return nil
 	}

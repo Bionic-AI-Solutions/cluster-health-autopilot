@@ -13,6 +13,17 @@ serves the latest tagged chart cut.
 
 ## [Unreleased]
 
+## [1.22.1] — 2026-06-09
+
+### Fixed — PVOrphan needs `persistentvolumes` in CaptureGVRs
+
+The v1.22.0 PVOrphan analyzer was silent on live clusters because
+`internal/snapshot.CaptureGVRs` didn't include PVs (PVCs were
+captured separately; PVs are their own cluster-scoped GVR). Adds
+`GVRPV` to the capture list and refactors PVOrphan to consume the
+shared constant. Verified live: with 117 Released PVs on the dev
+cluster, the analyzer now fires the expected warnings.
+
 ## [1.22.0] — 2026-06-09
 
 Phase 3.E + 3.D bundled.

@@ -42,6 +42,7 @@ var (
 	GVRPod         = schema.GroupVersionResource{Group: "", Version: "v1", Resource: "pods"}
 	GVRNode        = schema.GroupVersionResource{Group: "", Version: "v1", Resource: "nodes"}
 	GVRPVC         = schema.GroupVersionResource{Group: "", Version: "v1", Resource: "persistentvolumeclaims"}
+	GVRPV          = schema.GroupVersionResource{Group: "", Version: "v1", Resource: "persistentvolumes"}
 	GVREvent       = schema.GroupVersionResource{Group: "", Version: "v1", Resource: "events"}
 	GVRDeployment  = schema.GroupVersionResource{Group: "apps", Version: "v1", Resource: "deployments"}
 	GVRReplicaSet  = schema.GroupVersionResource{Group: "apps", Version: "v1", Resource: "replicasets"}
