@@ -170,3 +170,78 @@ func TestEndpoints_RetryRecoversFlake(t *testing.T) {
 		t.Errorf("expected exactly 2 attempts; got %d", got)
 	}
 }
+
+// ---- M4: Layer-7 body assertion ---------------------------------------
+
+func TestReadL7Annotations_NoAnnotation_Nil(t *testing.T) {
+	if got := readL7Annotations(nil); got != nil {
+		t.Errorf("nil map should yield nil; got %+v", got)
+	}
+	if got := readL7Annotations(map[string]string{"unrelated": "x"}); got != nil {
+		t.Errorf("missing path annotation should yield nil; got %+v", got)
+	}
+}
+
+func TestReadL7Annotations_PathOnly(t *testing.T) {
+	got := readL7Annotations(map[string]string{
+		"cha.bionicaisolutions.com/probe-l7-path": "/healthz",
+	})
+	if got == nil || got.Path != "/healthz" || got.ExpectBody != "" || got.ExpectStatus != 0 {
+		t.Errorf("path-only L7 spec misparsed: %+v", got)
+	}
+}
+
+func TestReadL7Annotations_FullAnnotation(t *testing.T) {
+	got := readL7Annotations(map[string]string{
+		"cha.bionicaisolutions.com/probe-l7-path":   "healthz", // missing leading /
+		"cha.bionicaisolutions.com/probe-l7-expect": `"status":"ok"`,
+		"cha.bionicaisolutions.com/probe-l7-status": "200",
+	})
+	if got == nil {
+		t.Fatal("expected non-nil L7 spec")
+	}
+	if got.Path != "/healthz" {
+		t.Errorf("path should be normalized with /; got %q", got.Path)
+	}
+	if got.ExpectBody != `"status":"ok"` {
+		t.Errorf("body expect: %q", got.ExpectBody)
+	}
+	if got.ExpectStatus != 200 {
+		t.Errorf("status expect: %d", got.ExpectStatus)
+	}
+}
+
+func TestMatchBody_Substring(t *testing.T) {
+	if !matchBody(`{"status":"ok"}`, `"status":"ok"`) {
+		t.Errorf("substring match should succeed")
+	}
+	if matchBody(`{"status":"degraded"}`, `"status":"ok"`) {
+		t.Errorf("substring match should fail when not present")
+	}
+}
+
+func TestMatchBody_Regex(t *testing.T) {
+	if !matchBody(`HTTP/1.1 200 OK`, `regex:^HTTP/[12]\.[0-9]+\s+\d{3}`) {
+		t.Errorf("regex should match HTTP status line")
+	}
+	if matchBody(`hello world`, `regex:^goodbye`) {
+		t.Errorf("regex should fail when not matching")
+	}
+}
+
+func TestMatchBody_BadRegex_FailsClosed(t *testing.T) {
+	// Invalid regex pattern → should NOT match (fail-closed) so
+	// operator typos don't falsely pass the assertion.
+	if matchBody(`anything`, `regex:[invalid`) {
+		t.Errorf("invalid regex must fail-closed")
+	}
+}
+
+func TestTruncate_Bounds(t *testing.T) {
+	if got := truncate("short", 10); got != "short" {
+		t.Errorf("short string should pass through; got %q", got)
+	}
+	if got := truncate("0123456789abcdef", 5); got != "01234…" {
+		t.Errorf("truncate output: %q", got)
+	}
+}

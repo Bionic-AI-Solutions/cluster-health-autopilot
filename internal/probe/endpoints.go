@@ -8,8 +8,10 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -27,6 +29,40 @@ type EndpointTarget struct {
 	// ExpectStatus is the required HTTP response code after following redirects.
 	// Zero accepts any HTTP response (connection success + valid TLS is sufficient).
 	// Non-zero requires an exact match; mismatches fire as CRITICAL findings.
+	ExpectStatus int `yaml:"expectStatus,omitempty" json:"expectStatus,omitempty"`
+
+	// L7 is the optional Layer-7 body assertion (M4). Populated by
+	// IngressDiscovery from these Ingress annotations:
+	//
+	//   cha.bionicaisolutions.com/probe-l7-path     → L7.Path
+	//   cha.bionicaisolutions.com/probe-l7-expect   → L7.ExpectBody (substring or "regex:<pattern>")
+	//   cha.bionicaisolutions.com/probe-l7-status   → L7.ExpectStatus (overrides top-level)
+	//
+	// When L7.Path != "", the probe issues a second GET against
+	// scheme://host<path> after the base reachability check passes,
+	// and asserts both the status code AND the body content.
+	//
+	// Closes the "Kong returns 200 but body is wrong" failure class —
+	// the one that masked the search-mcp-server async-httpx bug for
+	// hours during the 2026-05-16 investigation.
+	L7 *EndpointL7Spec `yaml:"l7,omitempty" json:"l7,omitempty"`
+}
+
+// EndpointL7Spec configures the optional Layer-7 body-assertion check
+// run after the base reachability probe succeeds. M4.
+type EndpointL7Spec struct {
+	// Path is the request path (must start with "/"). Empty disables L7.
+	Path string `yaml:"path" json:"path"`
+
+	// ExpectBody is asserted against the response body:
+	//   - Plain text   → substring match (Strings.Contains)
+	//   - "regex:..."  → regular-expression match
+	// Empty = no body assertion (status-only).
+	ExpectBody string `yaml:"expectBody,omitempty" json:"expectBody,omitempty"`
+
+	// ExpectStatus, when non-zero, overrides EndpointTarget.ExpectStatus
+	// for the L7 check. Useful when /healthz returns 200 but the home
+	// page returns 302.
 	ExpectStatus int `yaml:"expectStatus,omitempty" json:"expectStatus,omitempty"`
 }
 
@@ -314,6 +350,78 @@ func checkEndpoint(ctx context.Context, client *http.Client, t EndpointTarget) (
 			Remediation: "Check Kong ingress rules, backend deployment readiness, and cert-manager TLS secrets",
 		}, false
 	}
+	// M4 — Layer-7 body assertion. Only runs when the Ingress has
+	// the cha.bionicaisolutions.com/probe-l7-* annotation set. Closes
+	// the "200 OK but body is wrong" class.
+	if t.L7 != nil && t.L7.Path != "" {
+		if f, ok := checkEndpointL7(ctx, client, t); !ok {
+			return f, false
+		}
+	}
+	return Finding{}, true
+}
+
+// checkEndpointL7 performs the optional Layer-7 body+status assertion
+// described by t.L7. Issues a GET against scheme://host<path>; checks
+// status (L7.ExpectStatus, falling back to t.ExpectStatus when zero)
+// then optionally the body (substring or regex:<pattern> when prefixed).
+//
+// Soft-fail semantics match checkEndpoint — connection/TLS errors get
+// the same wording and remediation hints.
+func checkEndpointL7(ctx context.Context, client *http.Client, t EndpointTarget) (Finding, bool) {
+	// Resolve scheme + host from the base URL; append the L7 path.
+	base, err := url.Parse(t.URL)
+	if err != nil || base.Host == "" {
+		return Finding{
+			Component: "Endpoint(L7): " + t.Name,
+			Severity:  SeverityWarning,
+			Message:   fmt.Sprintf("L7 check skipped — invalid base URL %q", t.URL),
+		}, false
+	}
+	u := *base
+	u.Path = t.L7.Path
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
+	if err != nil {
+		return Finding{
+			Component: "Endpoint(L7): " + t.Name,
+			Severity:  SeverityWarning,
+			Message:   fmt.Sprintf("L7 check: build request: %v", err),
+		}, false
+	}
+	req.Header.Set("User-Agent", "cha-endpoint-probe-l7/1.0")
+	resp, err := client.Do(req)
+	if err != nil {
+		return Finding{
+			Component: "Endpoint(L7): " + t.Name,
+			Severity:  SeverityWarning,
+			Message:   fmt.Sprintf("%s: L7 connection failed — %v", u.String(), unwrapErr(err)),
+		}, false
+	}
+	defer func() { _ = resp.Body.Close() }()
+	// Status check.
+	expectStatus := t.L7.ExpectStatus
+	if expectStatus == 0 {
+		expectStatus = t.ExpectStatus
+	}
+	if expectStatus != 0 && resp.StatusCode != expectStatus {
+		return Finding{
+			Component: "Endpoint(L7): " + t.Name,
+			Severity:  SeverityCritical,
+			Message:   fmt.Sprintf("%s: L7 HTTP %d (expected %d)", u.String(), resp.StatusCode, expectStatus),
+		}, false
+	}
+	// Body assertion.
+	if t.L7.ExpectBody != "" {
+		body, _ := readBoundedBody(resp.Body)
+		if !matchBody(body, t.L7.ExpectBody) {
+			return Finding{
+				Component:   "Endpoint(L7): " + t.Name,
+				Severity:    SeverityCritical,
+				Message:     fmt.Sprintf("%s: L7 body assertion failed — expected %q, got first 200 chars %q", u.String(), t.L7.ExpectBody, truncate(body, 200)),
+				Remediation: "Backend returned 2xx but body content drifted — inspect the workload's recent deploy or feature-flag state",
+			}, false
+		}
+	}
 	return Finding{}, true
 }
 
@@ -416,4 +524,55 @@ func DefaultEndpointHostnames() []string {
 		hosts = append(hosts, h)
 	}
 	return hosts
+}
+
+// readBoundedBody reads up to 64 KiB of the response body. Larger
+// payloads are truncated — the L7 check is meant for /healthz-style
+// endpoints, not for ingesting arbitrary downloads.
+func readBoundedBody(r io.Reader) (string, error) {
+	const maxBytes = 64 * 1024
+	buf := make([]byte, 0, 4096)
+	tmp := make([]byte, 4096)
+	for {
+		if len(buf) >= maxBytes {
+			break
+		}
+		n, err := r.Read(tmp)
+		if n > 0 {
+			buf = append(buf, tmp[:n]...)
+		}
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return string(buf), err
+		}
+	}
+	return string(buf), nil
+}
+
+// matchBody returns true when body satisfies the expect spec:
+//   - "regex:<pattern>"      → regular-expression match
+//   - any other text         → substring match (case-sensitive)
+// Patterns that don't compile fall back to substring match.
+func matchBody(body, expect string) bool {
+	if strings.HasPrefix(expect, "regex:") {
+		pattern := strings.TrimPrefix(expect, "regex:")
+		re, err := regexp.Compile(pattern)
+		if err != nil {
+			// Operator typo → fail closed (we don't want to claim
+			// success when the assertion itself is malformed).
+			return false
+		}
+		return re.MatchString(body)
+	}
+	return strings.Contains(body, expect)
+}
+
+// truncate caps a string for use in finding messages.
+func truncate(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n] + "…"
 }

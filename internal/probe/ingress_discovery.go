@@ -141,6 +141,7 @@ func DiscoverIngressTargets(
 			out = append(out, EndpointTarget{
 				URL:  fmt.Sprintf("%s://%s", scheme, host),
 				Name: fmt.Sprintf("%s/%s → %s", ns, ing.GetName(), host),
+				L7:   readL7Annotations(ing.GetAnnotations()),
 			})
 		}
 	}
@@ -294,4 +295,40 @@ func DiscoverTraefikRouteTargets(
 	// Stable order — same snapshot must produce the same target list.
 	sort.Slice(out, func(i, j int) bool { return out[i].URL < out[j].URL })
 	return out
+}
+
+// readL7Annotations parses the M4 L7-probe annotations from an Ingress
+// and returns a populated EndpointL7Spec when path is set. Returns nil
+// when no L7 annotation is present so the discovered target retains
+// its existing TCP+TLS-only check semantics.
+//
+// Annotation keys:
+//
+//	cha.bionicaisolutions.com/probe-l7-path     → L7.Path (required)
+//	cha.bionicaisolutions.com/probe-l7-expect   → L7.ExpectBody (optional)
+//	cha.bionicaisolutions.com/probe-l7-status   → L7.ExpectStatus (optional integer)
+func readL7Annotations(anns map[string]string) *EndpointL7Spec {
+	const (
+		annPath   = "cha.bionicaisolutions.com/probe-l7-path"
+		annExpect = "cha.bionicaisolutions.com/probe-l7-expect"
+		annStatus = "cha.bionicaisolutions.com/probe-l7-status"
+	)
+	if anns == nil {
+		return nil
+	}
+	path := strings.TrimSpace(anns[annPath])
+	if path == "" {
+		return nil
+	}
+	if !strings.HasPrefix(path, "/") {
+		path = "/" + path
+	}
+	spec := &EndpointL7Spec{Path: path, ExpectBody: strings.TrimSpace(anns[annExpect])}
+	if s := strings.TrimSpace(anns[annStatus]); s != "" {
+		var n int
+		if _, err := fmt.Sscanf(s, "%d", &n); err == nil {
+			spec.ExpectStatus = n
+		}
+	}
+	return spec
 }
