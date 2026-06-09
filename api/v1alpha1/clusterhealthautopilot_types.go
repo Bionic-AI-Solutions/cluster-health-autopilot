@@ -483,6 +483,49 @@ type AISpec struct {
 	// Soft-fail on key-read errors: PR opens, just without the block.
 	// +optional
 	DigestPinAttestation *DigestPinAttestationSpec `json:"digestPinAttestation,omitempty"`
+
+	// Metrics promotes the Phase 2.G chart-only `ai.metrics` fields
+	// into the CR so operator-managed installs (ArgoCD/Flux) don't
+	// need `--metrics-addr` in extraArgs. The operator reconciler
+	// renders the matching container port + Service when set.
+	// nil → no /metrics endpoint (legacy single-binary deploy).
+	// Phase 3.D.
+	// +optional
+	Metrics *AIMetricsSpec `json:"metrics,omitempty"`
+
+	// LLMProposer enables the Phase 2.D LLM-driven fallback proposer
+	// for diagnostics outside FixProposer's keyword set. nil = off
+	// (legacy click-to-fix only path). When `enabled: true`, the
+	// proposer uses the same LLM endpoint + API key as the rest of
+	// the AI tier — no additional config required.
+	// Phase 3.D — promotes the existing CLI flag into a typed field.
+	// +optional
+	LLMProposer *AILLMProposerSpec `json:"llmProposer,omitempty"`
+}
+
+// AIMetricsSpec configures the Phase 2.G /metrics endpoint on the
+// aiwatch container. nil = endpoint off. Phase 3.D.
+type AIMetricsSpec struct {
+	// Addr is the bind address (e.g. ":9090"). Required when set.
+	// +kubebuilder:validation:MinLength=1
+	Addr string `json:"addr"`
+
+	// Port is the matching container/Service port. Default 9090
+	// when zero. Operator reconciles a same-namespace headless
+	// Service exposing this port labeled for ServiceMonitor selection.
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=65535
+	// +optional
+	Port int32 `json:"port,omitempty"`
+}
+
+// AILLMProposerSpec toggles the Phase 2.D LLM-driven fallback
+// proposer. Phase 3.D.
+type AILLMProposerSpec struct {
+	// Enabled is the master switch. Default false (no fallback;
+	// legacy click-to-fix-only behaviour for non-FixProposer
+	// diagnostics).
+	Enabled bool `json:"enabled"`
 }
 
 // DigestPinAttestationSpec configures the Phase 2.H attestation

@@ -13,6 +13,50 @@ serves the latest tagged chart cut.
 
 ## [Unreleased]
 
+## [1.22.0] — 2026-06-09
+
+Phase 3.E + 3.D bundled.
+
+### Added — 3 new workload-tier analyzers (Phase 3.E)
+
+The 3 most-requested signals from the deferred wishlist:
+
+- **`OOMKillRecurrence`** (warning) — Pod container with ≥3 OOMKilled
+  restarts in 24h. Catches the sizing problem masquerading as a crash
+  loop. One finding per pod (operator's edit pass fixes all containers
+  simultaneously). Opts out via `CHA_ANALYZER_OOMKILL_RECURRENCE=off`.
+- **`PVOrphan`** (warning) — PersistentVolume in `Released` phase for
+  >7d. Underlying cloud disk (EBS / GCE-PD / Azure-Disk) may still be
+  billing. Message surfaces storageClass + capacity + reclaimPolicy
+  for cost-sizing. Opts out via `CHA_ANALYZER_PV_ORPHAN=off`.
+- **`CronJobStuck`** (warning/critical) — CronJob whose lastSuccessfulTime
+  is >24h old OR has never succeeded OR is suspended. Each cause gets
+  tailored remediation guidance. Opts out via `CHA_ANALYZER_CRONJOB_STUCK=off`.
+
+### Added — `spec.ai.metrics` + `spec.ai.llmProposer` typed CR fields (Phase 3.D)
+
+Promotes two Phase 2 surfaces from chart-only / extraArgs-hatch into
+typed CR fields so operator-managed installs (ArgoCD/Flux/kubectl apply)
+don't need escape hatches.
+
+- `AIMetricsSpec {Addr, Port}` — operator renders `--metrics-addr` arg +
+  named container port + headless Service. Selectors target aiwatch pods
+  so Prometheus pod-discovery sees per-pod endpoints (leader vs follower
+  stay distinct in `cha_cycle_total{leader=...}`).
+- `AILLMProposerSpec {Enabled}` — typed switch for the Phase 2.D LLM
+  fallback proposer.
+
+CRD schema additions on both chart-side template and OLM bundle manifest.
+3 helm-template invariants preserved: legacy installs (no Metrics / no
+LLMProposer fields) render byte-identical to v1.21.1.
+
+### Pairs with CHA-com
+
+The CHA-com binary `--metrics-addr` + `--llm-proposer` flags ship since
+v1.16.0; this release wires them through the operator schema. Cluster
+operators can now drop their `extraArgs: ["--metrics-addr=:9090"]`
+escape hatch in favor of `spec.ai.metrics.addr: ":9090"`.
+
 ## [1.21.1] — 2026-06-08
 
 Follow-up to the v1.21.0 Phase 2 closure. Adds the

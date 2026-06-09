@@ -194,6 +194,19 @@ func RegisterOSS(r *registry.Registry) {
 	if os.Getenv("CHA_ANALYZER_DISRUPTION_DRIFT") != "off" {
 		r.RegisterAnalyzer(diagnose.DisruptionDrift{})
 	}
+	// v1.22.0 (Phase 3.E) — workload-tier signals: OOMKill recurrence
+	// (sizing problem masquerading as crash loop), PV orphan (cost
+	// leak), CronJob stuck (silent scheduling failure). Each opts
+	// out via its own env var.
+	if os.Getenv("CHA_ANALYZER_OOMKILL_RECURRENCE") != "off" {
+		r.RegisterAnalyzer(diagnose.OOMKillRecurrence{})
+	}
+	if os.Getenv("CHA_ANALYZER_PV_ORPHAN") != "off" {
+		r.RegisterAnalyzer(diagnose.PVOrphan{})
+	}
+	if os.Getenv("CHA_ANALYZER_CRONJOB_STUCK") != "off" {
+		r.RegisterAnalyzer(diagnose.CronJobStuck{})
+	}
 	// NetworkPolicyProposer is the Phase 2d-β OSS-side hook. Silent on
 	// CNIs that don't enforce NetworkPolicy (k3s-Flannel-only); on
 	// enforcing CNIs it emits one warning per uncovered namespace with

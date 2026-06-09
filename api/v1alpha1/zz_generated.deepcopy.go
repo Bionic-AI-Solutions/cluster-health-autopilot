@@ -260,6 +260,40 @@ func (in *AISpec) DeepCopyInto(out *AISpec) {
 		out.DigestPinAttestation = new(DigestPinAttestationSpec)
 		*out.DigestPinAttestation = *in.DigestPinAttestation
 	}
+	if in.Metrics != nil {
+		out.Metrics = new(AIMetricsSpec)
+		*out.Metrics = *in.Metrics
+	}
+	if in.LLMProposer != nil {
+		out.LLMProposer = new(AILLMProposerSpec)
+		*out.LLMProposer = *in.LLMProposer
+	}
+}
+
+// DeepCopyInto for AIMetricsSpec — value types only.
+func (in *AIMetricsSpec) DeepCopyInto(out *AIMetricsSpec) { *out = *in }
+
+// DeepCopy returns a copy of *in.
+func (in *AIMetricsSpec) DeepCopy() *AIMetricsSpec {
+	if in == nil {
+		return nil
+	}
+	out := new(AIMetricsSpec)
+	in.DeepCopyInto(out)
+	return out
+}
+
+// DeepCopyInto for AILLMProposerSpec — value types only.
+func (in *AILLMProposerSpec) DeepCopyInto(out *AILLMProposerSpec) { *out = *in }
+
+// DeepCopy returns a copy of *in.
+func (in *AILLMProposerSpec) DeepCopy() *AILLMProposerSpec {
+	if in == nil {
+		return nil
+	}
+	out := new(AILLMProposerSpec)
+	in.DeepCopyInto(out)
+	return out
 }
 
 // DeepCopyInto for DigestPinAttestationSpec — all fields are value

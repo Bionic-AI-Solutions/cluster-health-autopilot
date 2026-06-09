@@ -727,3 +727,105 @@ func TestBuildAIWatchDeployment_Attestation_CustomKeyAndKid(t *testing.T) {
 		t.Errorf("custom kid not honored; have: %s", args)
 	}
 }
+
+// ----- Phase 3.D: AISpec.Metrics + AISpec.LLMProposer ------------------
+
+func TestBuildAIWatchDeployment_Metrics_AddsArgAndPort(t *testing.T) {
+	cr := aiCR()
+	cr.Spec.AI.Metrics = &chav1alpha1.AIMetricsSpec{Addr: ":9090"}
+	d := BuildAIWatchDeployment(cr)
+	if d == nil {
+		t.Fatal("expected non-nil deployment")
+	}
+	args := strings.Join(d.Spec.Template.Spec.Containers[0].Args, " ")
+	if !strings.Contains(args, "--metrics-addr=:9090") {
+		t.Errorf("missing --metrics-addr arg; have: %s", args)
+	}
+	var foundPort bool
+	for _, p := range d.Spec.Template.Spec.Containers[0].Ports {
+		if p.Name == "metrics" && p.ContainerPort == 9090 {
+			foundPort = true
+		}
+	}
+	if !foundPort {
+		t.Errorf("missing metrics containerPort; have: %+v", d.Spec.Template.Spec.Containers[0].Ports)
+	}
+}
+
+func TestBuildAIWatchDeployment_Metrics_CustomPort(t *testing.T) {
+	cr := aiCR()
+	cr.Spec.AI.Metrics = &chav1alpha1.AIMetricsSpec{Addr: ":7777", Port: 7777}
+	d := BuildAIWatchDeployment(cr)
+	var port int32
+	for _, p := range d.Spec.Template.Spec.Containers[0].Ports {
+		if p.Name == "metrics" {
+			port = p.ContainerPort
+		}
+	}
+	if port != 7777 {
+		t.Errorf("custom port not honored; got %d want 7777", port)
+	}
+}
+
+func TestBuildAIWatchDeployment_NoMetrics_NoArgOrPort(t *testing.T) {
+	cr := aiCR()
+	d := BuildAIWatchDeployment(cr)
+	args := strings.Join(d.Spec.Template.Spec.Containers[0].Args, " ")
+	if strings.Contains(args, "--metrics-addr") {
+		t.Errorf("no metrics should not emit --metrics-addr; have: %s", args)
+	}
+	for _, p := range d.Spec.Template.Spec.Containers[0].Ports {
+		if p.Name == "metrics" {
+			t.Errorf("no metrics should not declare a metrics port; got %+v", p)
+		}
+	}
+}
+
+func TestBuildAIWatchDeployment_LLMProposerEnabled_AddsArg(t *testing.T) {
+	cr := aiCR()
+	cr.Spec.AI.LLMProposer = &chav1alpha1.AILLMProposerSpec{Enabled: true}
+	d := BuildAIWatchDeployment(cr)
+	args := strings.Join(d.Spec.Template.Spec.Containers[0].Args, " ")
+	if !strings.Contains(args, "--llm-proposer=true") {
+		t.Errorf("missing --llm-proposer=true arg; have: %s", args)
+	}
+}
+
+func TestBuildAIWatchDeployment_LLMProposerDisabled_NoArg(t *testing.T) {
+	cr := aiCR()
+	cr.Spec.AI.LLMProposer = &chav1alpha1.AILLMProposerSpec{Enabled: false}
+	d := BuildAIWatchDeployment(cr)
+	args := strings.Join(d.Spec.Template.Spec.Containers[0].Args, " ")
+	if strings.Contains(args, "--llm-proposer") {
+		t.Errorf("disabled LLMProposer should not emit arg; have: %s", args)
+	}
+}
+
+func TestBuildAIWatchMetricsService_NilWhenDisabled(t *testing.T) {
+	cr := aiCR()
+	if svc := BuildAIWatchMetricsService(cr); svc != nil {
+		t.Errorf("metrics off should yield nil Service; got %+v", svc)
+	}
+}
+
+func TestBuildAIWatchMetricsService_HeadlessWithMetricsPort(t *testing.T) {
+	cr := aiCR()
+	cr.Spec.AI.Metrics = &chav1alpha1.AIMetricsSpec{Addr: ":9090"}
+	svc := BuildAIWatchMetricsService(cr)
+	if svc == nil {
+		t.Fatal("expected non-nil Service")
+	}
+	if svc.Spec.ClusterIP != "None" {
+		t.Errorf("Service should be headless (ClusterIP=None); got %q", svc.Spec.ClusterIP)
+	}
+	if len(svc.Spec.Ports) != 1 || svc.Spec.Ports[0].Name != "metrics" {
+		t.Errorf("expected single 'metrics' port; got %+v", svc.Spec.Ports)
+	}
+	if svc.Spec.Ports[0].Port != 9090 {
+		t.Errorf("port: got %d want 9090", svc.Spec.Ports[0].Port)
+	}
+	// Selector should match aiwatch pods, NOT the Service's own labels.
+	if svc.Spec.Selector["cha.bionicaisolutions.com/role"] != "aiwatch" {
+		t.Errorf("selector should target aiwatch pods; got %+v", svc.Spec.Selector)
+	}
+}

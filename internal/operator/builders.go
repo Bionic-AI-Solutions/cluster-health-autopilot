@@ -678,6 +678,16 @@ func aiArgs(cr *chav1alpha1.ClusterHealthAutopilot) []string {
 			"--digest-pin-attestation-kid="+kid,
 		)
 	}
+	// Phase 3.D — Metrics + LLMProposer typed fields. Promoted from
+	// the chart's `ai.metrics.*` + `--llm-proposer=true` extraArgs
+	// hack so operator-managed (ArgoCD/Flux) installs don't need
+	// the escape hatch.
+	if m := ai.Metrics; m != nil && m.Addr != "" {
+		args = append(args, "--metrics-addr="+m.Addr)
+	}
+	if p := ai.LLMProposer; p != nil && p.Enabled {
+		args = append(args, "--llm-proposer=true")
+	}
 	// v1.18.0 — extraArgs escape hatch. Append AFTER typed args so a
 	// typed flag (e.g. --ai-tier) wins on duplicate keys (later args
 	// override earlier ones in pflag). Useful for cha-com flags the
@@ -852,6 +862,23 @@ func BuildAIWatchDeployment(cr *chav1alpha1.ClusterHealthAutopilot) *appsv1.Depl
 		})
 	}
 
+	// Phase 3.D — Metrics containerPort. Surfaced as a named port
+	// so the matching headless Service (BuildAIWatchMetricsService)
+	// targets by name. The /metrics + /healthz routes inside the
+	// binary listen on Addr; we extract the port from it.
+	if m := cr.Spec.AI.Metrics; m != nil && m.Addr != "" {
+		port := m.Port
+		if port == 0 {
+			port = 9090
+		}
+		c := &pod.Containers[0]
+		c.Ports = append(c.Ports, corev1.ContainerPort{
+			Name:          "metrics",
+			ContainerPort: port,
+			Protocol:      corev1.ProtocolTCP,
+		})
+	}
+
 	return &appsv1.Deployment{
 		TypeMeta: metav1.TypeMeta{APIVersion: "apps/v1", Kind: "Deployment"},
 		ObjectMeta: metav1.ObjectMeta{
@@ -867,6 +894,51 @@ func BuildAIWatchDeployment(cr *chav1alpha1.ClusterHealthAutopilot) *appsv1.Depl
 				ObjectMeta: metav1.ObjectMeta{Labels: labels},
 				Spec:       pod,
 			},
+		},
+	}
+}
+
+// BuildAIWatchMetricsService returns the headless Service that exposes
+// the aiwatch /metrics endpoint when spec.ai.metrics.addr is set.
+// Returns nil when metrics are disabled. Phase 3.D.
+//
+// Headless (clusterIP=None) so Prometheus pod-discovery sees per-pod
+// endpoints individually — `cha_cycle_total{leader="true"}` stays
+// distinguishable from the follower's idle counter.
+func BuildAIWatchMetricsService(cr *chav1alpha1.ClusterHealthAutopilot) *corev1.Service {
+	if !AIEnabled(cr) {
+		return nil
+	}
+	m := cr.Spec.AI.Metrics
+	if m == nil || m.Addr == "" {
+		return nil
+	}
+	port := m.Port
+	if port == 0 {
+		port = 9090
+	}
+	names := NamesFor(cr)
+	// Inherit aiwatch labels for selector; add a metrics-role label
+	// so a ServiceMonitor can target this Service without snagging
+	// the aiwatch Deployment's labels directly.
+	selector := CommonLabels(cr, "aiwatch")
+	svcLabels := CommonLabels(cr, "aiwatch-metrics")
+	return &corev1.Service{
+		TypeMeta: metav1.TypeMeta{APIVersion: "v1", Kind: "Service"},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      names.AIWatch + "-metrics",
+			Namespace: cr.Namespace,
+			Labels:    svcLabels,
+		},
+		Spec: corev1.ServiceSpec{
+			ClusterIP: corev1.ClusterIPNone,
+			Selector:  selector,
+			Ports: []corev1.ServicePort{{
+				Name:       "metrics",
+				Port:       port,
+				TargetPort: intstr.FromString("metrics"),
+				Protocol:   corev1.ProtocolTCP,
+			}},
 		},
 	}
 }

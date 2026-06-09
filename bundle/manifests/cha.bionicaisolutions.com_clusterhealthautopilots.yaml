@@ -318,6 +318,29 @@ spec:
                           type: string
                         keyID:
                           type: string
+                    metrics:
+                      # v1.22.0 (Phase 3.D) — Prometheus /metrics endpoint.
+                      # When set, operator renders a containerPort + a
+                      # headless Service exposing the port. nil = no
+                      # endpoint (legacy single-binary deploy).
+                      type: object
+                      required: [addr]
+                      properties:
+                        addr:
+                          type: string
+                          minLength: 1
+                        port:
+                          type: integer
+                          minimum: 1
+                          maximum: 65535
+                    llmProposer:
+                      # v1.22.0 (Phase 3.D) — typed switch for the LLM-
+                      # driven fallback proposer.
+                      type: object
+                      required: [enabled]
+                      properties:
+                        enabled:
+                          type: boolean
                 approval:
                   # ApprovalSpec — CHA-com approval-server (in-namespace
                   # HTTPS endpoint that validates SRE approve/deny clicks
