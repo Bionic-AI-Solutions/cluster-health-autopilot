@@ -414,3 +414,20 @@ func TestSeenEntryToDeltaDiag_AllowsEmptyAIFields(t *testing.T) {
 		t.Errorf("non-AI entry leaked AI fields: %+v", got)
 	}
 }
+
+// ---- M1 (Phase 1.7 trigger expansion) -----------------------------------
+
+func TestWatchedGVRs_M1_IncludesIngressHPAArgoCD(t *testing.T) {
+	want := map[string]struct{}{
+		"networking.k8s.io/v1/ingresses":          {},
+		"autoscaling/v2/horizontalpodautoscalers": {},
+		"argoproj.io/v1alpha1/applications":       {},
+	}
+	for _, gvr := range watchedGVRs {
+		key := gvr.Group + "/" + gvr.Version + "/" + gvr.Resource
+		delete(want, key)
+	}
+	if len(want) > 0 {
+		t.Errorf("watchedGVRs missing M1 entries: %v", want)
+	}
+}

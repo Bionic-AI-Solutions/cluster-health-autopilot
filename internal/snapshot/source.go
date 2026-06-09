@@ -70,6 +70,18 @@ var (
 
 	GVRIngress = schema.GroupVersionResource{Group: "networking.k8s.io", Version: "v1", Resource: "ingresses"}
 
+	// GVRHPA — HorizontalPodAutoscaler. Phase 1.7 (M1). Catches scale-up
+	// failures where HPA wants N replicas but the scheduler can't place
+	// them; the symptom shows in HPA status.conditions, not in Pod events.
+	GVRHPA = schema.GroupVersionResource{Group: "autoscaling", Version: "v2", Resource: "horizontalpodautoscalers"}
+
+	// GVRArgoCDApplication — Argo CD's Application CRD. Phase 1.7 (M1).
+	// Closes the GitOps loop: when a sync goes OutOfSync/Degraded, CHA
+	// picks it up immediately rather than waiting for the underlying pod
+	// symptom to surface. Optional GVR — if Argo CD's CRD isn't installed,
+	// the watcher logs a one-line "skipping" notice and proceeds without it.
+	GVRArgoCDApplication = schema.GroupVersionResource{Group: "argoproj.io", Version: "v1alpha1", Resource: "applications"}
+
 	// GVRConfigMap is used by the K3sDatastore probe to check etcd snapshot
 	// ConfigMaps written by k3s in kube-system.
 	GVRConfigMap = schema.GroupVersionResource{Group: "", Version: "v1", Resource: "configmaps"}

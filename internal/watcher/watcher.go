@@ -35,6 +35,7 @@ import (
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/probe"
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/report"
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/snapshot"
+	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/trigger/prom"
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/cloud"
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/registry"
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/silence"
@@ -125,6 +126,24 @@ type Config struct {
 	// finding. Default false — operators opt in once they're comfortable
 	// the suppression doesn't hide real signal.
 	NoChangeSlackDigest bool
+
+	// PromTriggerURL is the Alertmanager base URL used by the M5 class-C
+	// trigger source. When set, the watcher spawns a goroutine that polls
+	// /api/v2/alerts every PromTriggerInterval and pushes a debounced
+	// signal whenever a NEW firing-alert fingerprint appears. Empty
+	// disables the trigger source. M5.
+	PromTriggerURL string
+
+	// PromTriggerInterval is the polling cadence for the Prometheus
+	// trigger. Default 30s when zero. Clamped to ≥5s by the trigger
+	// client to keep Alertmanager unloaded.
+	PromTriggerInterval time.Duration
+
+	// PromTriggerAlertFilter, when non-empty, limits which alerts fire
+	// the trigger (case-insensitive alertname match). Empty = ANY firing
+	// alert triggers. Useful when the cluster has high-volume alerts
+	// (e.g. node_exporter scraping issues) that shouldn't churn CHA.
+	PromTriggerAlertFilter []string
 }
 
 // watchedGVRs is the set of resource types that trigger a diagnose cycle on change.
@@ -145,6 +164,13 @@ var watchedGVRs = []schema.GroupVersionResource{
 	snapshot.GVRCephCluster,
 	snapshot.GVRSecret,
 	snapshot.GVRCertificate,
+	// Phase 1.7 (M1) — expanded watch set. Each entry is one inform/watch
+	// goroutine; cost is minimal because the watcher debounces all signals
+	// through trigCh. The ArgoCD CRD is optional — the watcher proceeds
+	// without it when the GVR isn't installed.
+	snapshot.GVRIngress,
+	snapshot.GVRHPA,
+	snapshot.GVRArgoCDApplication,
 }
 
 // seenEntry tracks the last-known fingerprint and Slack-post timestamp for one subject.
@@ -249,6 +275,21 @@ func (w *Watcher) Run(ctx context.Context) error {
 
 	for _, gvr := range watchedGVRs {
 		go w.watchGVR(ctx, gvr, trigCh)
+	}
+
+	// M5 — Prometheus class-C trigger. Polls Alertmanager + pushes to
+	// trigCh on new firing-alert fingerprints. No-op when URL is empty.
+	if w.cfg.PromTriggerURL != "" {
+		promClient, err := prom.New(prom.Config{
+			URL:             w.cfg.PromTriggerURL,
+			PollInterval:    w.cfg.PromTriggerInterval,
+			AlertNameFilter: w.cfg.PromTriggerAlertFilter,
+		}, trigCh)
+		if err != nil {
+			log.Printf("watcher: prom trigger init: %v", err)
+		} else {
+			go promClient.Run(ctx)
+		}
 	}
 
 	resync := time.NewTicker(w.cfg.ResyncPeriod)
