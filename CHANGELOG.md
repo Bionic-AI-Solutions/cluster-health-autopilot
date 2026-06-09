@@ -13,6 +13,69 @@ serves the latest tagged chart cut.
 
 ## [Unreleased]
 
+## [1.23.0] — 2026-06-09
+
+Trigger-expansion roadmap M1-M7 bundled. Closes the
+`docs/design/2026-05-trigger-expansion-roadmap.md` plan that v1.6.0
+opened M1 against.
+
+### Added — M1 expanded `watchedGVRs`
+
+Adds `Ingress`, `HorizontalPodAutoscaler`, and `ArgoCD Application`
+to the watcher's inform-loop set.
+
+### Added — M2 `KongRoutes` probe
+
+For each Kong-managed Ingress, verifies the backend Service has ≥1
+ready Endpoint + KongPlugin / KongConsumer annotation references
+resolve. Silent on clusters without Kong-managed Ingresses. Opt out
+via `CHA_PROBE_KONG_ROUTES=off`.
+
+### Added — M3 `GPUNodes` probe + `LogPatternMatcher` analyzer
+
+- **GPUNodes** — critical on NotReady / zero-allocatable, warning
+  on cordoned, for each GPU-advertising Node. Opt out:
+  `CHA_PROBE_GPU_NODES=off`.
+- **LogPatternMatcher** — scans Events for ImagePullBackOff,
+  OOMKilled, probe-failed, volume-attach-failed, RBAC Forbidden.
+  Dedup'd per (involved-object, pattern). Opt out:
+  `CHA_ANALYZER_LOG_PATTERN_MATCHER=off`.
+
+### Added — M4 Endpoints probe Layer-7 mode
+
+`EndpointTarget.L7` populated from three Ingress annotations
+(`cha.bionicaisolutions.com/probe-l7-{path,expect,status}`). When
+set, second GET asserts both status + body content. Closes the
+"Kong returns 200 but body is wrong" failure class.
+
+### Added — M5 Prometheus class-C trigger
+
+`internal/trigger/prom`. Polls Alertmanager `/api/v2/alerts` and
+pushes a debounced signal on new firing-alert fingerprints. Closes
+the slow-drift gap (disk fill, cert expiry creep, error-budget
+burn, GPU ECC accumulation). New `Config` fields:
+`PromTriggerURL`, `PromTriggerInterval` (clamped ≥5s),
+`PromTriggerAlertFilter`.
+
+### Added — M6 external webhook receiver (class E)
+
+`internal/server/webhook`. HMAC-SHA256-authenticated POST to
+`/webhook/<source>` triggers an immediate diagnose cycle. `Sign()`
+exported for external integrators. Closes "rotation → probe within
+seconds" loop.
+
+### Added — M7 `pkg/probe.GVRWatcher` foundation
+
+Optional interface for probes to declare consumed GVRs.
+`GVRsOf(probe)` reads them; nil = "run on every trigger" (back-
+compat). Applied to KongRoutes + GPUNodes as exemplars. Sets up
+phase 2 (per-probe dispatch) and phase 3 (controller-runtime
+migration) without changing today's semantics.
+
+### Tests
+
+35+ new tests across the milestones; full regression green.
+
 ## [1.22.2] — 2026-06-09
 
 ### Fixed — PVOrphan needs `persistentvolumes` in RBAC
