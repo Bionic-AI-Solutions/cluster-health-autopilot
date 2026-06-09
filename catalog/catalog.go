@@ -142,6 +142,12 @@ func RegisterOSS(r *registry.Registry) {
 	if os.Getenv("CHA_PROBE_KONG_ROUTES") != "off" {
 		r.RegisterProbe(probe.KongRoutes{})
 	}
+	// v1.25+ (M3) — GPUNodes detects NotReady / cordoned / zero-
+	// allocatable GPU nodes. Silent on CPU-only clusters. Toggle
+	// off via CHA_PROBE_GPU_NODES=off.
+	if os.Getenv("CHA_PROBE_GPU_NODES") != "off" {
+		r.RegisterProbe(probe.GPUNodes{})
+	}
 	if os.Getenv("CHA_PROBE_HPA_SCALING") != "off" {
 		r.RegisterProbe(probe.HPAScaling{})
 	}
@@ -214,6 +220,14 @@ func RegisterOSS(r *registry.Registry) {
 	}
 	if os.Getenv("CHA_ANALYZER_CRONJOB_STUCK") != "off" {
 		r.RegisterAnalyzer(diagnose.CronJobStuck{})
+	}
+	// v1.25+ (M3) — LogPatternMatcher scans recent Events for
+	// high-signal failure messages (ImagePullBackOff, OOMKilled,
+	// VolumeAttachFailed, ProbeFailed, Forbidden). One finding per
+	// (involved-object, pattern) — dedup'd so noisy event streams
+	// don't dominate. Toggle off via CHA_ANALYZER_LOG_PATTERN_MATCHER=off.
+	if os.Getenv("CHA_ANALYZER_LOG_PATTERN_MATCHER") != "off" {
+		r.RegisterAnalyzer(diagnose.LogPatternMatcher{})
 	}
 	// NetworkPolicyProposer is the Phase 2d-β OSS-side hook. Silent on
 	// CNIs that don't enforce NetworkPolicy (k3s-Flannel-only); on
