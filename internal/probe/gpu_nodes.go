@@ -11,6 +11,7 @@ import (
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/snapshot"
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/probe"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
 // GPUNodes is the M3 probe (trigger-expansion roadmap, v1.7+).
@@ -164,4 +165,12 @@ func nodeReady(n *unstructured.Unstructured) bool {
 		return s == "True"
 	}
 	return false
+}
+
+// GVRs satisfies pkg/probe.GVRWatcher (M7 foundation). GPU node
+// detection only ever reads Nodes; declaring this lets the future
+// per-probe dispatcher skip GPUNodes on Pod / Event / DaemonSet
+// changes.
+func (GPUNodes) GVRs() []schema.GroupVersionResource {
+	return []schema.GroupVersionResource{snapshot.GVRNode}
 }

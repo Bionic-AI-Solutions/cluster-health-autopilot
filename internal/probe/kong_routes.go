@@ -262,3 +262,15 @@ func serviceHasReadyEndpoint(ctx context.Context, src snapshot.Source, ns, name 
 	}
 	return false
 }
+
+// GVRs satisfies pkg/probe.GVRWatcher (M7 foundation). Declares the
+// resource kinds KongRoutes consumes so future per-probe dispatch can
+// gate runs on these triggers only.
+func (KongRoutes) GVRs() []schema.GroupVersionResource {
+	return []schema.GroupVersionResource{
+		snapshot.GVRIngress,
+		kongRoutesPluginGVR,
+		kongRoutesConsumerGVR,
+		{Group: "discovery.k8s.io", Version: "v1", Resource: "endpointslices"},
+	}
+}
