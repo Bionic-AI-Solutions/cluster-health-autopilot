@@ -208,6 +208,12 @@ func readerPolicyRules() []rbacv1.PolicyRule {
 			Resources: []string{"endpointslices"},
 			Verbs:     []string{"get", "list", "watch"},
 		},
+		// v1.24.0 — KEDA ScaledObject (M1 follow-up).
+		{
+			APIGroups: []string{"keda.sh"},
+			Resources: []string{"scaledobjects"},
+			Verbs:     []string{"get", "list", "watch"},
+		},
 		// CloudNativePG.
 		{
 			APIGroups: []string{"postgresql.cnpg.io"},

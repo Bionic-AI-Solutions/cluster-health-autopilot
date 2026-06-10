@@ -75,6 +75,17 @@ var (
 	// them; the symptom shows in HPA status.conditions, not in Pod events.
 	GVRHPA = schema.GroupVersionResource{Group: "autoscaling", Version: "v2", Resource: "horizontalpodautoscalers"}
 
+	// GVRScaledObject — KEDA ScaledObject. v1.24.0 (M1 follow-up).
+	// Sibling to HPA but covers KEDA's autoscaling surface
+	// (event-driven triggers + the paused-annotation case). Memory
+	// `keda-paused-scaledobject` documents the production failure
+	// mode: paused annotation set out-of-band → silent 502-after-
+	// oauth-login cascade. The watcher's event-driven trigger
+	// surfaces ScaledObject mutations within the debounce window
+	// instead of waiting for ResyncPeriod. Optional GVR — watcher
+	// auto-skips when KEDA isn't installed.
+	GVRScaledObject = schema.GroupVersionResource{Group: "keda.sh", Version: "v1alpha1", Resource: "scaledobjects"}
+
 	// GVRArgoCDApplication — Argo CD's Application CRD. Phase 1.7 (M1).
 	// Closes the GitOps loop: when a sync goes OutOfSync/Degraded, CHA
 	// picks it up immediately rather than waiting for the underlying pod

@@ -190,6 +190,11 @@ var watchedGVRs = []schema.GroupVersionResource{
 	snapshot.GVRIngress,
 	snapshot.GVRHPA,
 	snapshot.GVRArgoCDApplication,
+	// v1.24.0 (M1 follow-up) — KEDA ScaledObject. Closes the
+	// paused-annotation production hazard (memory: keda-paused-
+	// scaledobject). Optional CRD: watcher.watchGVR handles
+	// IsNotFound silently when KEDA isn't installed.
+	snapshot.GVRScaledObject,
 }
 
 // seenEntry tracks the last-known fingerprint and Slack-post timestamp for one subject.

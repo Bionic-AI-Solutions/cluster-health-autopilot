@@ -19,6 +19,7 @@ package operator
 
 import (
 	"fmt"
+	"strings"
 
 	chav1alpha1 "github.com/Bionic-AI-Solutions/cluster-health-autopilot/api/v1alpha1"
 	appsv1 "k8s.io/api/apps/v1"
@@ -207,6 +208,7 @@ func BuildWatcherDeployment(cr *chav1alpha1.ClusterHealthAutopilot) *appsv1.Depl
 	}
 	args = append(args, alertingArgs(cr.Spec.Alerting, false)...)
 	args = append(args, ticketingArgs(cr.Spec.Ticketing)...)
+	args = append(args, watcherTriggerArgs(cr.Spec.Watcher)...)
 
 	env := []corev1.EnvVar{
 		{
@@ -224,6 +226,7 @@ func BuildWatcherDeployment(cr *chav1alpha1.ClusterHealthAutopilot) *appsv1.Depl
 	}
 	env = append(env, alertingEnv(cr.Spec.Alerting)...)
 	env = append(env, ticketingEnv(cr.Spec.Ticketing)...)
+	env = append(env, watcherTriggerEnv(cr.Spec.Watcher)...)
 
 	// v1.16.0 — When the CR's AI tier has approvalServerUrl set, hand
 	// it to the watcher so the OSS binary itself can mint signed
@@ -397,6 +400,70 @@ func buildCronJobCommon(
 // $(SLACK_*_URL) — the values are injected by alertingEnv() into the
 // container's env.
 //
+// watcherTriggerEnv projects the webhook SecretName's keys into the
+// watcher container so each --webhook-source <name>=<env-var-name>
+// entry resolves at startup. Empty SecretName or empty Sources =
+// no projection. v1.24.0.
+func watcherTriggerEnv(w *chav1alpha1.WatcherSpec) []corev1.EnvVar {
+	if w == nil || w.Triggers == nil || w.Triggers.Webhook == nil {
+		return nil
+	}
+	h := w.Triggers.Webhook
+	if h.SecretName == "" || len(h.Sources) == 0 {
+		return nil
+	}
+	var out []corev1.EnvVar
+	for _, s := range h.Sources {
+		eqIdx := strings.IndexByte(s, '=')
+		if eqIdx < 0 || eqIdx == len(s)-1 {
+			continue
+		}
+		envName := strings.TrimSpace(s[eqIdx+1:])
+		if envName == "" {
+			continue
+		}
+		out = append(out, corev1.EnvVar{
+			Name: envName,
+			ValueFrom: &corev1.EnvVarSource{
+				SecretKeyRef: &corev1.SecretKeySelector{
+					LocalObjectReference: corev1.LocalObjectReference{Name: h.SecretName},
+					Key:                  envName,
+				},
+			},
+		})
+	}
+	return out
+}
+
+// watcherTriggerArgs renders the v1.24.0+ class-C (Prometheus poller)
+// and class-E (webhook receiver) trigger CLI flags from
+// spec.watcher.triggers. nil triggers stanza = no args (legacy
+// behaviour, byte-identical to pre-v1.24.0). Pairs with the chart's
+// watcher.triggers.{prom,webhook}.* values knobs for chart-managed
+// installs.
+func watcherTriggerArgs(w *chav1alpha1.WatcherSpec) []string {
+	if w == nil || w.Triggers == nil {
+		return nil
+	}
+	var out []string
+	if p := w.Triggers.Prom; p != nil && p.URL != "" {
+		out = append(out, "--prom-trigger-url="+p.URL)
+		if p.Interval != "" {
+			out = append(out, "--prom-trigger-interval="+p.Interval)
+		}
+		for _, f := range p.AlertNameFilter {
+			out = append(out, "--prom-trigger-alert-filter="+f)
+		}
+	}
+	if h := w.Triggers.Webhook; h != nil && h.Listen != "" {
+		out = append(out, "--webhook-listen="+h.Listen)
+		for _, s := range h.Sources {
+			out = append(out, "--webhook-source="+s)
+		}
+	}
+	return out
+}
+
 // The `cha watch` subcommand only accepts --slack-alerts and
 // --slack-critical; --slack-healthinfo is exclusive to `cha diagnose`
 // (it posts the daily digest). Pass includeHealthInfo=false for the

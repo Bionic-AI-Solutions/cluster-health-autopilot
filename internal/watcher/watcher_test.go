@@ -431,3 +431,13 @@ func TestWatchedGVRs_M1_IncludesIngressHPAArgoCD(t *testing.T) {
 		t.Errorf("watchedGVRs missing M1 entries: %v", want)
 	}
 }
+
+func TestWatchedGVRs_v1_24_0_IncludesKEDAScaledObject(t *testing.T) {
+	want := "keda.sh/v1alpha1/scaledobjects"
+	for _, gvr := range watchedGVRs {
+		if gvr.Group+"/"+gvr.Version+"/"+gvr.Resource == want {
+			return
+		}
+	}
+	t.Errorf("watchedGVRs missing KEDA ScaledObject (M1 follow-up)")
+}

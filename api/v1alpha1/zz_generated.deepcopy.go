@@ -86,7 +86,7 @@ func (in *ClusterHealthAutopilotSpec) DeepCopyInto(out *ClusterHealthAutopilotSp
 	in.Image.DeepCopyInto(&out.Image)
 	if in.Watcher != nil {
 		out.Watcher = new(WatcherSpec)
-		*out.Watcher = *in.Watcher
+		in.Watcher.DeepCopyInto(out.Watcher)
 	}
 	if in.Diagnose != nil {
 		out.Diagnose = new(DiagnoseSpec)
@@ -671,6 +671,86 @@ func (in *TicketingAuthSpec) DeepCopy() *TicketingAuthSpec {
 		return nil
 	}
 	out := new(TicketingAuthSpec)
+	in.DeepCopyInto(out)
+	return out
+}
+
+// DeepCopyInto for WatcherSpec (v1.24.0 — Triggers nested ptr).
+func (in *WatcherSpec) DeepCopyInto(out *WatcherSpec) {
+	*out = *in
+	if in.Triggers != nil {
+		out.Triggers = new(WatcherTriggersSpec)
+		in.Triggers.DeepCopyInto(out.Triggers)
+	}
+}
+
+// DeepCopy returns a copy of *in.
+func (in *WatcherSpec) DeepCopy() *WatcherSpec {
+	if in == nil {
+		return nil
+	}
+	out := new(WatcherSpec)
+	in.DeepCopyInto(out)
+	return out
+}
+
+// DeepCopyInto for WatcherTriggersSpec.
+func (in *WatcherTriggersSpec) DeepCopyInto(out *WatcherTriggersSpec) {
+	*out = *in
+	if in.Prom != nil {
+		out.Prom = new(WatcherPromTriggerSpec)
+		in.Prom.DeepCopyInto(out.Prom)
+	}
+	if in.Webhook != nil {
+		out.Webhook = new(WatcherWebhookTriggerSpec)
+		in.Webhook.DeepCopyInto(out.Webhook)
+	}
+}
+
+// DeepCopy returns a copy of *in.
+func (in *WatcherTriggersSpec) DeepCopy() *WatcherTriggersSpec {
+	if in == nil {
+		return nil
+	}
+	out := new(WatcherTriggersSpec)
+	in.DeepCopyInto(out)
+	return out
+}
+
+// DeepCopyInto for WatcherPromTriggerSpec.
+func (in *WatcherPromTriggerSpec) DeepCopyInto(out *WatcherPromTriggerSpec) {
+	*out = *in
+	if in.AlertNameFilter != nil {
+		out.AlertNameFilter = make([]string, len(in.AlertNameFilter))
+		copy(out.AlertNameFilter, in.AlertNameFilter)
+	}
+}
+
+// DeepCopy returns a copy of *in.
+func (in *WatcherPromTriggerSpec) DeepCopy() *WatcherPromTriggerSpec {
+	if in == nil {
+		return nil
+	}
+	out := new(WatcherPromTriggerSpec)
+	in.DeepCopyInto(out)
+	return out
+}
+
+// DeepCopyInto for WatcherWebhookTriggerSpec.
+func (in *WatcherWebhookTriggerSpec) DeepCopyInto(out *WatcherWebhookTriggerSpec) {
+	*out = *in
+	if in.Sources != nil {
+		out.Sources = make([]string, len(in.Sources))
+		copy(out.Sources, in.Sources)
+	}
+}
+
+// DeepCopy returns a copy of *in.
+func (in *WatcherWebhookTriggerSpec) DeepCopy() *WatcherWebhookTriggerSpec {
+	if in == nil {
+		return nil
+	}
+	out := new(WatcherWebhookTriggerSpec)
 	in.DeepCopyInto(out)
 	return out
 }

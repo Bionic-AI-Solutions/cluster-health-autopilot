@@ -13,7 +13,34 @@ serves the latest tagged chart cut.
 
 ## [Unreleased]
 
-## [1.23.1] — 2026-06-10
+## [1.24.0] — 2026-06-10
+
+Adversarial-review follow-up: operator-CR triggers + KEDA expansion.
+
+### Added — `spec.watcher.triggers.{prom,webhook}` typed CR fields
+
+The chart's v1.23.1 `watcher.triggers.*` values knobs activated M5/M6 for chart-managed installs, but operator-managed (ArgoCD/Flux/kubectl-apply) installs couldn't reach them from the CR — they had to thread Helm values around. This release adds the typed surface:
+
+- `WatcherTriggersSpec.Prom {URL, Interval, AlertNameFilter}` → renders `--prom-trigger-url/interval/alert-filter`
+- `WatcherTriggersSpec.Webhook {Listen, Sources, SecretName, ServiceEnabled, ServicePort}` → renders `--webhook-listen/source` + projects every `<src>=<env-var>` source's env-var from the named Secret + (optionally) a ClusterIP Service
+
+Operator's `BuildWatcherDeployment` reads from `cr.Spec.Watcher.Triggers` via two new helpers (`watcherTriggerArgs`, `watcherTriggerEnv`). Legacy CRs (no Triggers stanza) render byte-identical to v1.23.1.
+
+### Added — KEDA `ScaledObject` in `watchedGVRs` (M1 follow-up)
+
+The v1.6.0 M1 expansion added HPA + Ingress + ArgoCD + DaemonSet to the watcher's inform-loop set but missed KEDA's `keda.sh/v1alpha1/ScaledObject`. The memory note `keda-paused-scaledobject` documents the production failure mode: paused annotation set out-of-band → silent 502-after-oauth-login cascade. This release adds it:
+
+- `GVRScaledObject` constant in `internal/snapshot`
+- `watchedGVRs` includes it (auto-skip when KEDA isn't installed)
+- Chart `clusterrole-reader.yaml` + operator `rbac_builders.go` both grant `keda.sh/scaledobjects` get/list/watch (no-op when KEDA absent)
+
+1 new test asserts the GVR is present.
+
+### Pairs with CHA-com
+
+`v1.21.0+` adds observability log lines for Phase 3.B (auto-merge gate armed at startup) and Phase 3.C (`ai.target_history.applied` audit event when the prompt block fires).
+
+## [1.23.1] — 2026-06-10 — 2026-06-10
 
 Adversarial-review fixes after v1.23.0 went out.
 

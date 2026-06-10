@@ -153,6 +153,74 @@ type WatcherSpec struct {
 	// no events fire. Defaults to 10m.
 	// +optional
 	ResyncPeriod string `json:"resyncPeriod,omitempty"`
+
+	// Triggers configures the v1.23.0+ external trigger sources
+	// (Prometheus poller / webhook receiver). nil = legacy: only
+	// class A (Kubernetes informers) + periodic resync drive the
+	// diagnose cycle. v1.24.0 (Phase 1.7).
+	// +optional
+	Triggers *WatcherTriggersSpec `json:"triggers,omitempty"`
+}
+
+// WatcherTriggersSpec configures the external trigger sources.
+type WatcherTriggersSpec struct {
+	// Prom is the M5 Alertmanager polling consumer. nil = disabled.
+	// +optional
+	Prom *WatcherPromTriggerSpec `json:"prom,omitempty"`
+
+	// Webhook is the M6 HMAC-authed POST receiver. nil = disabled.
+	// +optional
+	Webhook *WatcherWebhookTriggerSpec `json:"webhook,omitempty"`
+}
+
+// WatcherPromTriggerSpec configures the M5 Prometheus class-C trigger.
+type WatcherPromTriggerSpec struct {
+	// URL is the Alertmanager base URL polled for firing alerts.
+	// Required when this stanza is set.
+	// +kubebuilder:validation:MinLength=1
+	URL string `json:"url"`
+
+	// Interval is the polling cadence. Clamped to ≥5s by the trigger
+	// client. Default 30s when zero.
+	// +optional
+	Interval string `json:"interval,omitempty"`
+
+	// AlertNameFilter limits which alertnames fire the trigger
+	// (case-insensitive). Empty = ANY firing alert triggers.
+	// +optional
+	AlertNameFilter []string `json:"alertNameFilter,omitempty"`
+}
+
+// WatcherWebhookTriggerSpec configures the M6 webhook class-E receiver.
+type WatcherWebhookTriggerSpec struct {
+	// Listen is the HTTP listen address (e.g. ":8090"). Required.
+	// +kubebuilder:validation:MinLength=1
+	Listen string `json:"listen"`
+
+	// Sources is the operator-supplied list of registered webhook
+	// sources, each "<name>=<env-var-with-hmac-secret>". The env-var
+	// is looked up at startup; the matching value comes from
+	// SecretName below. Empty env-var disables HMAC verification
+	// (debug-only).
+	// +optional
+	Sources []string `json:"sources,omitempty"`
+
+	// SecretName is the K8s Secret carrying the env-var values for
+	// each --webhook-source entry. Each key in the Secret must match
+	// the env-var name on the right side of <name>=<env-var>.
+	// +optional
+	SecretName string `json:"secretName,omitempty"`
+
+	// ServiceEnabled renders a ClusterIP Service exposing the
+	// receiver inside the cluster. Default false. Set true to make
+	// the receiver reachable from cluster Ingress / Kong route.
+	// +optional
+	ServiceEnabled bool `json:"serviceEnabled,omitempty"`
+
+	// ServicePort is the Service port (when ServiceEnabled).
+	// Default 8090 when zero.
+	// +optional
+	ServicePort int32 `json:"servicePort,omitempty"`
 }
 
 // DiagnoseSpec configures the diagnose CronJob.
