@@ -13,7 +13,17 @@ serves the latest tagged chart cut.
 
 ## [Unreleased]
 
-## [1.24.0] — 2026-06-10
+## [1.24.1] — 2026-06-10
+
+### Fixed — CRD schema for `spec.watcher.triggers` (v1.24.0 was unusable on schema-strict K8s)
+
+v1.24.0 added the Go types + operator reconciler for `spec.watcher.triggers.{prom,webhook}` but did NOT update the CRD's OpenAPIv3 schema. K8s 1.27+ structural-schema pruning stripped the field at the API server, so any `kubectl apply` of a CR with `triggers` set silently dropped the data. The operator then rendered the watcher Deployment with no trigger args.
+
+This patch adds the matching schema to both `bundle/manifests/cha.bionicaisolutions.com_clusterhealthautopilots.yaml` and `charts/cluster-health-autopilot/templates/crd-clusterhealthautopilot.yaml`. Verified live: `kubectl explain clusterhealthautopilots.spec.watcher.triggers` now resolves and the field persists on `kubectl get`.
+
+Caught during live activation of M5 on the dev cluster (kubectl apply succeeded with a warning, but the field was stripped silently — operator rendered no trigger args).
+
+## [1.24.0] — 2026-06-10 — 2026-06-10
 
 Adversarial-review follow-up: operator-CR triggers + KEDA expansion.
 
