@@ -24,6 +24,9 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"log"
+	"net/http"
+	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -34,6 +37,7 @@ import (
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/fix"
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/probe"
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/report"
+	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/server/webhook"
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/snapshot"
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/trigger/prom"
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/cloud"
@@ -144,6 +148,21 @@ type Config struct {
 	// alert triggers. Useful when the cluster has high-volume alerts
 	// (e.g. node_exporter scraping issues) that shouldn't churn CHA.
 	PromTriggerAlertFilter []string
+
+	// WebhookListen is the listen address for the M6 class-E trigger
+	// receiver (e.g. ":8090"). Empty = receiver disabled. When set,
+	// the watcher spawns an HTTP server alongside the inform-loop
+	// goroutines + the Prom poller; POSTs to /webhook/<source> push
+	// a debounced signal that re-runs the diagnose cycle (after HMAC
+	// verification). M6.
+	WebhookListen string
+
+	// WebhookSourceSpec is the operator-supplied list of registered
+	// webhook sources. Each entry is "<name>=<env-var-with-hmac-secret>".
+	// An empty env-var name disables HMAC verification for that source
+	// (debug-only). Cardinality of the slice = number of /webhook/<src>
+	// endpoints the receiver exposes.
+	WebhookSourceSpec []string
 }
 
 // watchedGVRs is the set of resource types that trigger a diagnose cycle on change.
@@ -290,6 +309,50 @@ func (w *Watcher) Run(ctx context.Context) error {
 		} else {
 			go promClient.Run(ctx)
 		}
+	}
+
+	// M6 — webhook class-E receiver. Spawns an HTTP server that
+	// pushes to trigCh on HMAC-verified POSTs. No-op when listen
+	// addr is empty. Sources are parsed from WebhookSourceSpec
+	// ("<name>=<env-var-with-secret>"); the env-var lookup happens
+	// here so secrets never sit in the Config struct.
+	if w.cfg.WebhookListen != "" {
+		h := webhook.New(trigCh)
+		for _, spec := range w.cfg.WebhookSourceSpec {
+			parts := strings.SplitN(spec, "=", 2)
+			name := strings.TrimSpace(parts[0])
+			if name == "" {
+				continue
+			}
+			var secret string
+			if len(parts) == 2 {
+				secret = os.Getenv(strings.TrimSpace(parts[1]))
+			}
+			h.RegisterSource(name, secret)
+		}
+		mux := http.NewServeMux()
+		mux.Handle("/webhook/", h)
+		mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte("ok"))
+		})
+		srv := &http.Server{
+			Addr:              w.cfg.WebhookListen,
+			Handler:           mux,
+			ReadHeaderTimeout: 5 * time.Second,
+		}
+		go func() {
+			log.Printf("watcher: webhook listener on %s", w.cfg.WebhookListen)
+			if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+				log.Printf("watcher: webhook server: %v", err)
+			}
+		}()
+		go func() {
+			<-ctx.Done()
+			shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			_ = srv.Shutdown(shutdownCtx)
+		}()
 	}
 
 	resync := time.NewTicker(w.cfg.ResyncPeriod)

@@ -77,6 +77,27 @@ spec:
             - --alertmanager-url={{ .Values.alertmanager.url }}
             - --cluster-name={{ .Values.alertmanager.clusterName | default "cluster" }}
             {{- end }}
+            {{- /* v1.23.0+ M5 — Prometheus class-C trigger. interval +
+                  filter only render when URL is set so the legacy
+                  no-trigger install renders byte-identical args. */}}
+            {{- if ((.Values.watcher.triggers).prom).url }}
+            - --prom-trigger-url={{ .Values.watcher.triggers.prom.url }}
+            {{- with .Values.watcher.triggers.prom.interval }}
+            - --prom-trigger-interval={{ . }}
+            {{- end }}
+            {{- range .Values.watcher.triggers.prom.alertNameFilter }}
+            - --prom-trigger-alert-filter={{ . }}
+            {{- end }}
+            {{- end }}
+            {{- /* v1.23.0+ M6 — webhook class-E receiver. sources only
+                  render when listen is set; an unauthenticated source
+                  registration without the receiver would be confusing. */}}
+            {{- if ((.Values.watcher.triggers).webhook).listen }}
+            - --webhook-listen={{ .Values.watcher.triggers.webhook.listen }}
+            {{- range .Values.watcher.triggers.webhook.sources }}
+            - --webhook-source={{ . }}
+            {{- end }}
+            {{- end }}
             {{- if ((.Values.watcher.remedy).enabled) }}
             - --remedy
             {{- if ((.Values.watcher.remedy).dryRun) }}
@@ -173,6 +194,30 @@ spec:
                   name: {{ .Values.ticketing.auth.secretName }}
                   key: {{ .Values.ticketing.auth.secretKey }}
             {{- end }}
+            {{- /* v1.23.0+ M6 — project every env-var-bearing key from
+                  the webhook secret into the container so each
+                  --webhook-source <name>=<env-var> entry resolves at
+                  startup. Empty secretName = no projection (debug
+                  installs with no-secret sources). Avoid nested `with`
+                  to keep $.Values reachable inside the range. */}}
+            {{- if and (((.Values.watcher.triggers).webhook).secretName) (((.Values.watcher.triggers).webhook).sources) }}
+            {{- $secretName := .Values.watcher.triggers.webhook.secretName }}
+            {{- range .Values.watcher.triggers.webhook.sources }}
+            {{- $envName := index (regexSplit "=" . -1) 1 }}
+            - name: {{ $envName }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $secretName }}
+                  key: {{ $envName }}
+            {{- end }}
+            {{- end }}
+          {{- /* v1.23.0+ M6 — declare the webhook port when the receiver is on. */}}
+          {{- if ((.Values.watcher.triggers).webhook).listen }}
+          ports:
+            - name: webhook
+              containerPort: {{ ((.Values.watcher.triggers).webhook).service.port | default 8090 }}
+              protocol: TCP
+          {{- end }}
           resources:
             {{- toYaml .Values.watcher.resources | nindent 12 }}
           securityContext:

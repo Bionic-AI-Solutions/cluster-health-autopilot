@@ -13,6 +13,38 @@ serves the latest tagged chart cut.
 
 ## [Unreleased]
 
+## [1.23.1] — 2026-06-10
+
+Adversarial-review fixes after v1.23.0 went out.
+
+### Fixed — webhook HTTP server actually starts now (M6 wiring gap)
+
+v1.23.0 shipped `internal/server/webhook.Handler` + tests but
+nothing in the watcher's `Run()` instantiated an HTTP server, so
+M6 was compiled-but-never-loaded in production. This release wires
+the receiver: `watcher.Config.WebhookListen` + `WebhookSourceSpec`
+fields, `--webhook-listen` + `--webhook-source` CLI flags, an
+`http.Server` mux serving `/webhook/` + `/healthz` with graceful
+shutdown on `ctx.Done()`, Helm `watcher.triggers.webhook.*` values
+knobs, and a new `watcher-webhook-service.yaml` Service template
+with `secretKeyRef` env-var projection per registered source.
+
+### Fixed — Prometheus trigger CLI flags actually exist (M5 wiring gap)
+
+v1.23.0 shipped `Config.PromTriggerURL` but `cmd/cha/watch` never
+registered matching CLI flags, so M5 was unreachable from
+`helm install` or `kubectl apply`. This release adds
+`--prom-trigger-url`, `--prom-trigger-interval`, and
+`--prom-trigger-alert-filter` + Helm `watcher.triggers.prom.*`.
+
+### Fixed — `endpointslices` RBAC for KongRoutes (M2)
+
+KongRoutes prefers `discovery.k8s.io/v1.EndpointSlice` for
+backend-readiness, but neither chart nor operator RBAC granted it.
+Silently fell back to legacy `v1.Endpoints` (still works) so this
+wasn't fatal — but the slice fast-path was dead code. Now granted
+in `clusterrole-reader.yaml` and `internal/operator/rbac_builders.go`.
+
 ## [1.23.0] — 2026-06-09
 
 Trigger-expansion roadmap M1-M7 bundled. Closes the

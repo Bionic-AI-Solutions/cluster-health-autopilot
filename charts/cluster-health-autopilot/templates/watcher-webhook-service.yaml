@@ -1,0 +1,23 @@
+{{- if and (((.Values.watcher.triggers).webhook).listen) (((.Values.watcher.triggers).webhook).service).enabled }}
+# v1.23.0+ M6 — class-E webhook receiver Service. Selects on the
+# watcher Deployment so any pod can serve HTTP POSTs from external
+# integrators (Vault, Argo CD, cert-manager, Cloudflare). The
+# operator-supplied --webhook-source registrations gate which
+# /webhook/<src> paths are valid + verify HMAC signatures.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "cha.fullname" . }}-webhook
+  labels:
+    {{- include "cha.labels" . | nindent 4 }}
+    cha.bionicaisolutions.com/role: watcher-webhook
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "cha.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: webhook
+      port: {{ ((.Values.watcher.triggers).webhook).service.port | default 8090 }}
+      targetPort: webhook
+      protocol: TCP
+{{- end }}

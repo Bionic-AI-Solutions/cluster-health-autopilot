@@ -93,6 +93,13 @@ rules:
   - apiGroups: ["networking.k8s.io"]
     resources: ["ingresses", "networkpolicies"]
     verbs: ["get", "list", "watch"]
+  # M2 (v1.23.0+) — KongRoutes uses the canonical EndpointSlice API
+  # to verify backend readiness (preferred over the legacy v1.Endpoints
+  # path; falls back to v1.Endpoints when slices are unavailable). Same
+  # get/list/watch only; the probe never mutates.
+  - apiGroups: ["discovery.k8s.io"]
+    resources: ["endpointslices"]
+    verbs: ["get", "list", "watch"]
   # Database-operator probe (CloudNativePG).
   - apiGroups: ["postgresql.cnpg.io"]
     resources: ["clusters"]

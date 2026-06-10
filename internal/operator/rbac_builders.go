@@ -201,6 +201,13 @@ func readerPolicyRules() []rbacv1.PolicyRule {
 			Resources: []string{"ingresses", "networkpolicies"},
 			Verbs:     []string{"get", "list", "watch"},
 		},
+		// M2 (v1.23.0+) — KongRoutes prefers EndpointSlice over the
+		// legacy v1.Endpoints path for backend-readiness checks.
+		{
+			APIGroups: []string{"discovery.k8s.io"},
+			Resources: []string{"endpointslices"},
+			Verbs:     []string{"get", "list", "watch"},
+		},
 		// CloudNativePG.
 		{
 			APIGroups: []string{"postgresql.cnpg.io"},

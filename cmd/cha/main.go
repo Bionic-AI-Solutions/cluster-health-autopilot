@@ -490,6 +490,13 @@ func watchCmd() *cobra.Command {
 		// stdout but never to the user-facing delivery surfaces.
 		approvalServerURL string
 		signingKeyPath    string
+
+		// M5 + M6 trigger sources (v1.23.0).
+		promTriggerURL      string
+		promTriggerInterval time.Duration
+		promTriggerFilter   []string
+		webhookListen       string
+		webhookSourceSpec   []string // each entry "<name>=<env-with-secret>"
 	)
 	c := &cobra.Command{
 		Use:   "watch",
@@ -651,6 +658,11 @@ the post-fix cluster state.`,
 				CloudSource:            cloudSrc,
 				CloudCadence:           cloudCadence,
 				ApprovalBaseURL:        approvalServerURL,
+				PromTriggerURL:         promTriggerURL,
+				PromTriggerInterval:    promTriggerInterval,
+				PromTriggerAlertFilter: promTriggerFilter,
+				WebhookListen:          webhookListen,
+				WebhookSourceSpec:      webhookSourceSpec,
 			}
 			w := watcher.New(lv, reg, mut, cfg)
 			// Wire the Silence lister so the watcher drops matched
@@ -687,6 +699,18 @@ the post-fix cluster state.`,
 	c.Flags().DurationVar(&debounce, "debounce", 10*time.Second, "Debounce window after a Kubernetes event before re-running diagnostics")
 	c.Flags().DurationVar(&resyncPeriod, "resync-period", 10*time.Minute, "Full re-diagnose interval regardless of events (catches non-event drift)")
 	c.Flags().StringVar(&alertmanagerURL, "alertmanager-url", os.Getenv("ALERTMANAGER_URL"), "Alertmanager base URL (e.g. http://alertmanager.pg:9093). When set, CHA posts all active issues as Prometheus alerts each cycle; AM handles routing to Slack/PagerDuty/etc.")
+	// M5 — Prometheus class-C trigger (v1.23.0+).
+	c.Flags().StringVar(&promTriggerURL, "prom-trigger-url", os.Getenv("PROM_TRIGGER_URL"),
+		"Alertmanager base URL polled for firing alerts. When set, every new firing-alert fingerprint pushes a debounced signal that re-runs the diagnose cycle (M5 / trigger-class C). Independent of --alertmanager-url, which is the post-cycle ALERT EMISSION endpoint. Empty (default) disables the trigger source.")
+	c.Flags().DurationVar(&promTriggerInterval, "prom-trigger-interval", 30*time.Second,
+		"Polling cadence for --prom-trigger-url. Clamped to ≥5s by the trigger client to keep Alertmanager unloaded.")
+	c.Flags().StringSliceVar(&promTriggerFilter, "prom-trigger-alert-filter", nil,
+		"Comma-separated alertname filter (case-insensitive). Empty = any firing alert triggers; non-empty = only the listed alertnames trigger. Useful when the cluster has high-volume scrape-noise alerts that shouldn't churn CHA.")
+	// M6 — webhook class-E receiver (v1.23.0+).
+	c.Flags().StringVar(&webhookListen, "webhook-listen", os.Getenv("WEBHOOK_LISTEN"),
+		"Listen address for the HMAC-authed webhook trigger receiver (e.g. ':8090'). Empty = receiver disabled. Each registered --webhook-source produces an endpoint at /webhook/<source>; POSTing a body with X-CHA-Signature=sha256=<hex> triggers an immediate diagnose cycle. GET /webhook/health returns 200 for K8s liveness probes.")
+	c.Flags().StringSliceVar(&webhookSourceSpec, "webhook-source", nil,
+		"Repeatable webhook source registration in the form '<name>=<env-var-with-hmac-secret>'. Example: --webhook-source=vault=CHA_WEBHOOK_VAULT_SECRET. An empty env var registers the source with HMAC verification DISABLED (debug-only; production must always set a non-empty secret).")
 	c.Flags().StringVar(&clusterName, "cluster-name", envOrDefault("CLUSTER_NAME", "cluster"), "Cluster name stamped on Alertmanager alert labels (default: $CLUSTER_NAME or 'cluster')")
 	c.Flags().StringVar(&slackAlerts, "slack-alerts", "", "Slack webhook for #ceph-alerts — CHA acted (auto-fixed issues); used as fallback when --alertmanager-url is not set")
 	c.Flags().StringVar(&slackCritical, "slack-critical", "", "Slack webhook for #ceph-critical — human action required; used as fallback when --alertmanager-url is not set")

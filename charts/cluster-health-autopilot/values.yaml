@@ -341,6 +341,38 @@ watcher:
     leaseDuration: 30s
     renewDeadline: 20s
     retryPeriod: 5s
+  # v1.23.0+ — trigger-class C (Prometheus) and class E (webhook).
+  # Empty values keep both off (legacy behaviour: only class A — K8s
+  # informer events — and the periodic resync drive the diagnose cycle).
+  triggers:
+    # M5 — Alertmanager polling consumer. When url is set, the watcher
+    # spawns a goroutine that polls /api/v2/alerts every interval and
+    # pushes a debounced signal on every NEW firing-alert fingerprint.
+    # Closes the slow-drift gap (disk fill, cert expiry creep,
+    # error-budget burn, GPU ECC accumulation) that classes A and B miss.
+    prom:
+      url: ""                  # e.g. "http://alertmanager.pg.svc.cluster.local:9093"
+      interval: 30s            # clamped to ≥5s by the trigger client
+      alertNameFilter: []      # e.g. ["DiskFillUp","CertExpiringSoon"]; empty = any firing alert
+    # M6 — webhook class-E receiver. When listen is set, the watcher
+    # exposes /webhook/<source> endpoints; HMAC-authed POSTs trigger
+    # an immediate diagnose cycle. The chart renders a Service when
+    # webhook.service.enabled=true so the receiver can be reached via
+    # cluster Ingress / Kong route.
+    webhook:
+      listen: ""               # e.g. ":8090" — empty disables receiver
+      # Repeatable list of "<source-name>=<env-var-with-hmac-secret>".
+      # The env var is looked up at startup; a missing/empty secret
+      # registers the source with HMAC verification DISABLED (debug-only).
+      # Production must always set a non-empty secret per source.
+      sources: []              # e.g. ["vault=CHA_WEBHOOK_VAULT_SECRET","cert-manager=CHA_WEBHOOK_CM_SECRET"]
+      service:
+        enabled: false         # render a ClusterIP Service for the receiver
+        port: 8090
+      # Operator typically wires each secret via ESO; the chart accepts
+      # a single Secret name carrying every <env-var>=<value> entry.
+      # Each registered env-var is set on the watcher container.
+      secretName: ""           # e.g. "cha-webhook-secrets"
   resources:
     limits:
       cpu: 500m
