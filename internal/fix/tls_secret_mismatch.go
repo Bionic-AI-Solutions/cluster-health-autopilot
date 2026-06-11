@@ -31,6 +31,11 @@ import (
 //     expiring within the window), AND a cert-manager Certificate in the
 //     same namespace is Ready=True with the same host in dnsNames pointing
 //     at a different Secret.
+//
+// OWASP K8s Top-10 respected: K08 (Secrets Management Failures / TLS) / K01
+// (Insecure Workload Configurations) — only repoints to a Ready cert-manager
+// Secret for the same host (an upgrade, never a downgrade). See
+// docs/OWASP_MAPPING.md and internal/fix/owasp_posture_test.go.
 type TLSSecretMismatch struct {
 	// ExpiryWindow mirrors diagnose.TLSSecretMismatch — only act on certs
 	// already expired or expiring within this window. Default: 14 days.

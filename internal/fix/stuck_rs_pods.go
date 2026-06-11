@@ -23,6 +23,11 @@ import (
 // key" — a rollout would just create another pod against the same broken
 // Secret. The diagnose_secret_key_missing analyzer is the right surface
 // for that class.
+//
+// OWASP K8s Top-10 respected: K01 (Insecure Workload Configurations) — the
+// only field written is a restartedAt timestamp annotation; never touches
+// PodSpec security fields. See docs/OWASP_MAPPING.md and
+// internal/fix/owasp_posture_test.go.
 type StuckRSPods struct{}
 
 // Name returns the fixer's identifier.
