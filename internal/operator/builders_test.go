@@ -227,8 +227,9 @@ func TestBuildWatcherDeployment_TicketingArgsOpenProject(t *testing.T) {
 			Warning:  "74",
 			Info:     "73",
 		},
-		Labels: []string{"cha", "auto-filed"},
-		DryRun: true,
+		Labels:          []string{"cha", "auto-filed"},
+		DryRun:          true,
+		CommentInterval: "2h",
 	}
 	d := BuildWatcherDeployment(cr)
 	if d == nil {
@@ -249,6 +250,25 @@ func TestBuildWatcherDeployment_TicketingArgsOpenProject(t *testing.T) {
 	mustContain(t, args, "--ticketing-labels=auto-filed")
 	// dryRun = true → flag emitted (the absence-by-default means a bool flag with no value).
 	mustContain(t, args, "--ticketing-dry-run")
+	// M2: ResolveOnClear nil → defaults ON (=true emitted); CommentInterval passed through.
+	mustContain(t, args, "--ticketing-resolve-on-clear=true")
+	mustContain(t, args, "--ticketing-comment-interval=2h")
+}
+
+func TestBuildWatcherDeployment_TicketingResolveOnClearOptOut(t *testing.T) {
+	cr := sampleCR()
+	cr.Spec.Watcher = &chav1alpha1.WatcherSpec{Enabled: true}
+	off := false
+	cr.Spec.Ticketing = &chav1alpha1.TicketingSpec{
+		Enabled:        true,
+		Provider:       "openproject",
+		MCPURL:         "http://mcp-openproject-server.mcp.svc:8006/mcp",
+		Project:        "6",
+		ResolveOnClear: &off,
+	}
+	d := BuildWatcherDeployment(cr)
+	args := d.Spec.Template.Spec.Containers[0].Args
+	mustContain(t, args, "--ticketing-resolve-on-clear=false")
 }
 
 func TestBuildWatcherDeployment_TicketingDisabled_NoFlags(t *testing.T) {

@@ -162,6 +162,12 @@ spec:
             {{- if .Values.ticketing.dryRun }}
             - --ticketing-dry-run
             {{- end }}
+            {{- if hasKey .Values.ticketing "resolveOnClear" }}
+            - --ticketing-resolve-on-clear={{ .Values.ticketing.resolveOnClear }}
+            {{- end }}
+            {{- with .Values.ticketing.commentInterval }}
+            - --ticketing-comment-interval={{ . }}
+            {{- end }}
             {{- end }}
             {{- if .Values.cloud.enabled }}
             - --cloud-cadence={{ .Values.cloud.cadence | default "10m" }}

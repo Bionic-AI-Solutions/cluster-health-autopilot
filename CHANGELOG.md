@@ -13,6 +13,16 @@ serves the latest tagged chart cut.
 
 ## [Unreleased]
 
+### Added — ticketing: resolve-on-clear + debounced comment-on-recurrence (M2, P6.5) — tickets now auto-close
+
+`Sink.Resolve` and `Sink.Comment` shipped in M1 with **zero call sites** — tickets never auto-closed and never got a recurrence comment, which trains operators to ignore the ticket sink. M2 wires both.
+
+- **Resolve-on-clear (default ON).** When a previously-ticketed finding is no longer present in the diagnose cycle, CHA closes the ticket with reason `CHA: condition cleared as of <ts>`. The cleared-subject set is computed in the watcher (seen last cycle, absent now) **independently of the Slack `postOnResolved` setting**, and `report.RouteResolves` runs **before** `Reconcile` deletes the DriftReport CR — the only point at which the persisted `TicketRef` on `status.ticket` is still readable. Idempotent: a resolved ticket is stamped `status.ticket.resolved=true` + `resolvedAt`, and CHA never re-resolves it.
+- **Comment-on-recurrence (debounced).** A finding that already has a ticket (still-open, or a resolved ticket whose finding reappeared) now comments on the **existing** ticket instead of the M1 no-op, debounced by `ticketing.commentInterval` (default `1h`) keyed on `status.ticket.lastCommentedAt` so a flapping finding can't spam the tracker. A recurrence after a clear also clears the `resolved` flag so the next clear resolves the ticket again. **After-interval recurrence reuses the existing ticket (no new ticket is opened)** — one ticket per finding keeps the operator's investigation history together.
+- **Severity-transition comment.** A still-open ticketed finding that changes severity gets a transition comment (debounced like recurrence). Severity is stamped on `status.ticket.severity` at open / last comment so the next transition is detectable.
+- **CRD/status:** new `status.ticket` fields `severity`, `resolved`, `resolvedAt`, `lastCommentedAt` (chart DriftReport CRD + bundle CRD).
+- **Config:** new `ticketing.resolveOnClear` (default `true`) and `ticketing.commentInterval` (default `1h`) chart values; binary flags `--ticketing-resolve-on-clear` / `--ticketing-comment-interval` (+ `TICKETING_RESOLVE_ON_CLEAR` / `TICKETING_COMMENT_INTERVAL` env); operator `spec.ticketing.{resolveOnClear,commentInterval}` (chart + bundle CRD, full-surface sample CR, builder emits the flags — `resolveOnClear` nil defaults to `=true`). No-op when no ticketing provider is configured.
+
 ### Added — operator + chart: approval-server NetworkPolicy closes the X-Forwarded-User bypass (P2.6b)
 
 The approval-server trusts the `X-Forwarded-User` header for audit attribution. That header is injected by oauth2-proxy at the OIDC ingress after a successful login — but the approval-server's `ClusterIP` Service is reachable by any pod in the cluster, and a pod hitting it directly bypasses the ingress and can forge an arbitrary `X-Forwarded-User`. The approve/deny click still requires a valid one-time signed token, so this was defense-in-depth for attribution honesty, not an auth bypass — but it let any pod corrupt the audit trail's "who approved this" field.

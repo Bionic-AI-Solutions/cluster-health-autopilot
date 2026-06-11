@@ -644,6 +644,10 @@ func (in *SilenceStatus) DeepCopy() *SilenceStatus {
 // DeepCopyInto copies the receiver into out. in must be non-nil.
 func (in *TicketingSpec) DeepCopyInto(out *TicketingSpec) {
 	*out = *in
+	if in.ResolveOnClear != nil {
+		out.ResolveOnClear = new(bool)
+		*out.ResolveOnClear = *in.ResolveOnClear
+	}
 	if in.SeverityPriority != nil {
 		out.SeverityPriority = new(TicketingPrioritySpec)
 		*out.SeverityPriority = *in.SeverityPriority

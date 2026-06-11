@@ -617,6 +617,17 @@ func (w *Watcher) runCycle(ctx context.Context) {
 
 	w.mu.Lock()
 	toPost, toResolve := w.diff(diffState)
+	// clearedSubjects = subjects seen last cycle but absent now. Computed
+	// independently of PostOnResolved (which only governs the Slack
+	// "resolved" notice) so ticketing resolve-on-clear works regardless of
+	// the Slack setting. Captured under the lock BEFORE updateSeen prunes
+	// w.seen.
+	clearedSubjects := make([]string, 0)
+	for subject := range w.seen {
+		if _, exists := diffState[subject]; !exists {
+			clearedSubjects = append(clearedSubjects, subject)
+		}
+	}
 	w.updateSeen(postFix, toPost)
 	w.mu.Unlock()
 
@@ -663,6 +674,15 @@ func (w *Watcher) runCycle(ctx context.Context) {
 
 	if w.cfg.WriteDriftReports {
 		if mut := snapshot.AsMutator(w.lv); mut != nil {
+			// Resolve-on-clear (M2) MUST run BEFORE Reconcile — Reconcile
+			// deletes the DriftReport CRs for cleared subjects, and the
+			// persisted TicketRef lives on that CR's status.ticket. After
+			// Reconcile the ref is gone. The cleared set is exactly the
+			// diff's toResolve list (subjects seen last cycle, absent now).
+			if w.cfg.Ticketing.Sink != nil && len(clearedSubjects) > 0 {
+				report.RouteResolves(ctx, w.cfg.Ticketing, w.lv, mut, clearedSubjects, time.Now())
+			}
+
 			entries := report.AssembleEntries(probeResults, diagnostics, fixResults)
 			c, u, d, err := report.Reconcile(ctx, w.lv, mut, entries, runID)
 			if err != nil {

@@ -33,6 +33,22 @@ type TicketingConfig struct {
 	// Labels are merged into every Ticket.Labels. Typical values:
 	// ["cha", "auto-filed"].
 	Labels []string
+
+	// ResolveOnClear toggles auto-closing a ticket when its underlying
+	// finding is no longer present in the diagnose cycle. Defaults to ON
+	// (the wiring layer sets it true) now that M2 implements it — M1
+	// intentionally deferred this. A zero value means "disabled"; the
+	// cmd/chart layer is responsible for defaulting it true.
+	ResolveOnClear bool
+
+	// CommentInterval is the debounce window for comment-on-recurrence.
+	// When a previously-ticketed finding reappears (recurs) — whether the
+	// ticket is still open or was already resolved — CHA adds a comment to
+	// the existing ticket instead of opening a new one, but no more often
+	// than once per CommentInterval. Zero disables recurrence commenting
+	// (the already-ticketed path stays a no-op, matching M1). Typical
+	// default: 1h.
+	CommentInterval time.Duration
 }
 
 // RouteTickets is the ticketing analogue of RouteAndPost. It runs AFTER
@@ -42,12 +58,19 @@ type TicketingConfig struct {
 // Behaviour:
 //   - For each unfixable diagnostic with no existing status.ticket,
 //     calls Sink.Upsert and patches the ref onto the DriftReport.
-//   - For each unfixable diagnostic that already has a status.ticket,
-//     this is a no-op for M1 (comment-on-recurrence lands in M2).
-//   - Resolve-on-clear is intentionally NOT implemented in M1 — by the
-//     time RouteTickets runs, the DriftReport for a cleared subject has
-//     already been deleted by Reconcile, so the ref is gone. M2 will
-//     thread the ref through differently.
+//   - For each unfixable diagnostic that already has a status.ticket
+//     (recurrence — still-open or a previously-resolved ticket whose
+//     finding reappeared), calls Sink.Comment instead of opening a new
+//     ticket, debounced by cfg.CommentInterval so a flapping finding
+//     can't spam the tracker. A resolved ticket whose finding recurs is
+//     re-flagged active (status.ticket.resolved cleared) so the next
+//     clear resolves it again. Disabled when CommentInterval == 0 (M1
+//     parity: already-ticketed is then a no-op).
+//   - Resolve-on-clear (M2) is NOT handled here — by the time
+//     RouteTickets runs, Reconcile has already deleted the DriftReport
+//     for a cleared subject, so its ref is gone. The watcher calls
+//     RouteResolves BEFORE Reconcile (while the CR + ref still exist) to
+//     close cleared findings; see RouteResolves below.
 //
 // Failures are logged but never aborted: ticketing is a best-effort
 // sink, exactly like Slack and Alertmanager.
@@ -85,7 +108,11 @@ func RouteTickets(
 			continue
 		}
 		if existing, ok := readTicketRef(cr); ok {
-			log.Printf("ticketing: skip %s (already ticketed: %s/%s)", d.Subject, existing.Provider, existing.Key)
+			// Recurrence: the subject already has a ticket. Comment instead
+			// of opening a new one, debounced by CommentInterval, rather
+			// than the M1 no-op. A ticket marked resolved that recurs is
+			// re-flagged active so the next clear can resolve it again.
+			maybeCommentOnRecurrence(ctx, cfg, mut, cr, d, existing, runID)
 			continue
 		}
 
@@ -96,7 +123,7 @@ func RouteTickets(
 			continue
 		}
 		log.Printf("ticketing: upserted %s -> %s/%s", d.Subject, ref.Provider, ref.Key)
-		if err := writeTicketRef(ctx, mut, cr.GetName(), ref); err != nil {
+		if err := writeTicketRef(ctx, mut, cr.GetName(), ref, d.Severity); err != nil {
 			log.Printf("ticketing: persist ref %s on %s: %v", ref.Key, cr.GetName(), err)
 			continue
 		}
@@ -172,7 +199,7 @@ func readTicketRef(cr *unstructured.Unstructured) (ticketing.TicketRef, bool) {
 	return ticketing.TicketRef{Provider: prov, Key: key, URL: url}, true
 }
 
-func writeTicketRef(ctx context.Context, mut snapshot.Mutator, crName string, ref ticketing.TicketRef) error {
+func writeTicketRef(ctx context.Context, mut snapshot.Mutator, crName string, ref ticketing.TicketRef, severity string) error {
 	now := time.Now().UTC().Format(time.RFC3339)
 	patch, err := json.Marshal(map[string]any{
 		"status": map[string]any{
@@ -181,6 +208,10 @@ func writeTicketRef(ctx context.Context, mut snapshot.Mutator, crName string, re
 				"key":      ref.Key,
 				"url":      ref.URL,
 				"openedAt": now,
+				// severity at open-time so the first severity-transition
+				// comment (M2) is detectable on a later cycle.
+				"severity": severity,
+				"resolved": false,
 			},
 		},
 	})
