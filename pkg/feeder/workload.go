@@ -207,7 +207,11 @@ type digestVal struct {
 // name) is exact anyway: controller names are unique per (namespace,
 // kind), and the Deployment controller always names the ReplicaSet
 // "<deployment>-<pod-template-hash>" and stamps the same hash label on
-// the pod, which recovers the Deployment name without that list. Pods
+// the pod, which recovers the Deployment name without that list. This
+// is a heuristic: a manually-created RS that mimics the convention (a
+// pod-template-hash label equal to the RS name's last hyphen token)
+// is misattributed to a Deployment of the truncated name — the repo
+// guard at lookup is the second fence for that contrived corner. Pods
 // with no controller owner (bare pods) or an owner this feeder doesn't
 // index (Jobs, bare ReplicaSets, CR-direct pods) contribute nothing —
 // fail-closed beats guessing.

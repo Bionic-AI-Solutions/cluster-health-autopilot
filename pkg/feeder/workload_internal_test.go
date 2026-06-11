@@ -18,6 +18,8 @@ func TestImageRepo(t *testing.T) {
 		"hub-explicit":            {"docker.io/myorg/app:v1", "docker.io/myorg/app"},
 		"hub-explicit-official":   {"docker.io/redis:7.2", "docker.io/library/redis"},
 		"index-docker-io":         {"index.docker.io/myorg/app:v1", "docker.io/myorg/app"},
+		"registry-1-docker-io":    {"registry-1.docker.io/library/nginx:1.25", "docker.io/library/nginx"},
+		"localhost-port-registry": {"localhost:5000/app:dev", "localhost:5000/app"},
 		"imageid-digest":          {"docker.io/library/redis@sha256:abc", "docker.io/library/redis"},
 		"imageid-docker-pullable": {"docker-pullable://reg.example/foo@sha256:def", "reg.example/foo"},
 		"private-registry":        {"registry.internal/team/svc:v3", "registry.internal/team/svc"},
