@@ -575,6 +575,21 @@ func ticketingArgs(t *chav1alpha1.TicketingSpec) []string {
 	if t.DryRun {
 		out = append(out, "--ticketing-dry-run")
 	}
+	// M2 lifecycle. ResolveOnClear defaults ON: emit =true when nil so the
+	// operator-managed watcher auto-closes cleared findings unless the
+	// operator explicitly opts out with a pointer-to-false.
+	resolveOnClear := true
+	if t.ResolveOnClear != nil {
+		resolveOnClear = *t.ResolveOnClear
+	}
+	if resolveOnClear {
+		out = append(out, "--ticketing-resolve-on-clear=true")
+	} else {
+		out = append(out, "--ticketing-resolve-on-clear=false")
+	}
+	if t.CommentInterval != "" {
+		out = append(out, "--ticketing-comment-interval="+t.CommentInterval)
+	}
 	return out
 }
 

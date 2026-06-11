@@ -198,6 +198,32 @@ spec:
                       description: |
                         Timestamp when CHA first filed this ticket.
                         Stable across subsequent cycles.
+                    severity:
+                      type: string
+                      description: |
+                        Severity stamped on the ticket at open / last comment.
+                        Lets CHA detect a severity transition (M2) and comment
+                        the change to the existing ticket.
+                      maxLength: 32
+                    resolved:
+                      type: boolean
+                      description: |
+                        True once CHA auto-closed this ticket because the
+                        finding cleared (M2 resolve-on-clear). Idempotency
+                        guard: CHA never re-resolves an already-resolved ticket.
+                        Cleared back to false if the finding recurs.
+                    resolvedAt:
+                      type: string
+                      format: date-time
+                      description: |
+                        Timestamp CHA resolved this ticket on clear (M2).
+                    lastCommentedAt:
+                      type: string
+                      format: date-time
+                      description: |
+                        Timestamp of the most recent recurrence / severity
+                        comment CHA posted. Drives the commentInterval debounce
+                        (M2) so a flapping finding can't spam the tracker.
       additionalPrinterColumns:
         - name: Severity
           type: string

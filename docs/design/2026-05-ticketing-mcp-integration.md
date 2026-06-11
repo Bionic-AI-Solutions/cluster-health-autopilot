@@ -1,10 +1,15 @@
 # CHA Ticketing Integration via MCP
 
-> **STATUS: 🚧 PARTIAL — M1 (OpenProject) SHIPPED; M2/M3/M4 NOT started.**
-> _(P4.1 honest-header pass, 2026-06-11)_
+> **STATUS: 🚧 PARTIAL — M1 + M2 (OpenProject lifecycle) SHIPPED; M3/M4 NOT started.**
+> _(P6.5 M2 ship, 2026-06-11)_
 >
 > - **M1 — MCP-driven OpenProject sink for unfixable items: ✅ SHIPPED.** Landed via PR #59 (`ea63875 feat(ticketing): MCP-driven OpenProject sink for unfixable items (M1)`). Operator wiring (`TicketingSpec` on CR → watcher `--ticketing-*` flags) shipped Phase 1.D (PR #167, v1.20.0); chart values shape aligned in PR #170 (v1.20.1); in-cluster MCP bypasses Kong (no API-key requirement, `aeefa30`).
-> - **M2 — resolve-on-clear (auto-close the ticket when the finding clears): ❌ NOT started.** Now tracked as **P6.5** in the remediation effort.
+> - **M2 — resolve-on-clear + debounced comment-on-recurrence: ✅ SHIPPED (P6.5).** Tickets now auto-close when the finding clears, and a recurring / severity-changed finding comments on the EXISTING ticket (debounced by `ticketing.commentInterval`, default `1h`) instead of opening a new one.
+>   - **Resolve-on-clear**: the watcher detects cleared subjects (seen last cycle, absent now — computed independently of the Slack `postOnResolved` setting) and calls `report.RouteResolves` **before** `Reconcile` deletes the DriftReport CR (the only point at which the persisted `TicketRef` on `status.ticket` is still readable). Default ON via `ticketing.resolveOnClear`.
+>   - **Idempotency**: a resolved ticket is stamped `status.ticket.resolved=true` + `resolvedAt`; CHA never re-resolves it. A recurrence clears the flag so the next clear resolves it again.
+>   - **After-interval recurrence decision**: CHA does **not** open a fresh ticket; it reuses the existing one and comments. Per-flap ticket fragmentation would scatter the operator's investigation history; one ticket per finding keeps context together.
+>   - **Severity-transition comment**: a still-open ticketed finding that changes severity gets a transition comment (debounced like recurrence). Severity is stamped on `status.ticket.severity` at open / last comment so the next transition is detectable.
+>   - New `status.ticket` fields: `severity`, `resolved`, `resolvedAt`, `lastCommentedAt`. New knobs: `ticketing.resolveOnClear` (CRD `spec.ticketing.resolveOnClear`, default ON), `ticketing.commentInterval` (CRD `spec.ticketing.commentInterval`, default `1h`).
 > - **M3 — Jira sink (paid): ❌ NOT started.** Now tracked as **P6.3**.
 > - **M4 — ServiceNow sink (paid): ❌ NOT started.** Now tracked as **P6.4**.
 >
@@ -313,14 +318,24 @@ and approval-server.
 produces a real work package in OpenProject, DriftReport carries the
 ref, and re-running the cycle produces no duplicate.
 
-### M2 — Lifecycle polish (OSS v1.8)
+### M2 — Lifecycle polish (OSS v1.8) — ✅ SHIPPED (P6.5)
 
-- Resolve-on-clear (auto-close ticket when DriftReport is auto-deleted)
-- Comment on recurrence (with `commentInterval` debounce)
-- Severity transition handling: post a comment + update priority when
-  severity changes
-- Backfill: scan existing unfixable DriftReports on startup and ensure
-  each has a ticket
+- ✅ Resolve-on-clear. Implemented via `report.RouteResolves`, called by
+  the watcher **before** `Reconcile` deletes the cleared subject's
+  DriftReport (the original design assumed we could hook the delete
+  itself; in practice the ref is only readable pre-delete, so the watcher
+  threads the cleared-subject set in directly). Default ON
+  (`ticketing.resolveOnClear`). Idempotent via `status.ticket.resolved`.
+- ✅ Comment on recurrence (with `commentInterval` debounce, default 1h).
+  Already-ticketed findings comment on the existing ticket instead of the
+  M1 no-op. After-interval recurrence reuses the ticket (no new ticket).
+- ✅ Severity transition handling: comment when a still-open ticketed
+  finding changes severity (priority re-mapping on the provider side is
+  left to the sink's Comment impl; OSS comments the transition).
+- ⏭️ Backfill: scan existing unfixable DriftReports on startup and ensure
+  each has a ticket — NOT shipped in P6.5 (deferred; M1 already files on
+  the first cycle a finding is seen, so the gap is only for findings that
+  predate ticketing being enabled).
 
 **Acceptance:** end-to-end demo: induce drift, ticket opens; clear
 drift, ticket closes with comment "drift cleared by CHA on <ts>".

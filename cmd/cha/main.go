@@ -447,35 +447,37 @@ func versionCmd() *cobra.Command {
 
 func watchCmd() *cobra.Command {
 	var (
-		live                    bool
-		kubeconfig              string
-		debounce                time.Duration
-		resyncPeriod            time.Duration
-		slackAlerts             string
-		slackCritical           string
-		postOnResolved          bool
-		repeatInterval          time.Duration
-		criticalRepeatInterval  time.Duration
-		noChangeSlackDigest     bool
-		writeDriftReports       bool
-		remedy                  bool
-		dryRun                  bool
-		alertmanagerURL         string
-		clusterName             string
-		vaultAddr               string
-		vaultMount              string
-		vaultRole               string
-		ticketingProvider       string
-		ticketingMCPURL         string
-		ticketingProject        string
-		ticketingTypeID         string
-		ticketingClosedStatusID string
-		ticketingPriorityCrit   string
-		ticketingPriorityWarn   string
-		ticketingPriorityInfo   string
-		ticketingWebURLPrefix   string
-		ticketingLabels         []string
-		ticketingDryRun         bool
+		live                     bool
+		kubeconfig               string
+		debounce                 time.Duration
+		resyncPeriod             time.Duration
+		slackAlerts              string
+		slackCritical            string
+		postOnResolved           bool
+		repeatInterval           time.Duration
+		criticalRepeatInterval   time.Duration
+		noChangeSlackDigest      bool
+		writeDriftReports        bool
+		remedy                   bool
+		dryRun                   bool
+		alertmanagerURL          string
+		clusterName              string
+		vaultAddr                string
+		vaultMount               string
+		vaultRole                string
+		ticketingProvider        string
+		ticketingMCPURL          string
+		ticketingProject         string
+		ticketingTypeID          string
+		ticketingClosedStatusID  string
+		ticketingPriorityCrit    string
+		ticketingPriorityWarn    string
+		ticketingPriorityInfo    string
+		ticketingWebURLPrefix    string
+		ticketingLabels          []string
+		ticketingDryRun          bool
+		ticketingResolveOnClear  bool
+		ticketingCommentInterval time.Duration
 
 		// Cloud probe flags
 		cloudAWSEnabled          bool
@@ -570,18 +572,20 @@ the post-fix cluster state.`,
 			}
 
 			ticketingCfg, terr := buildTicketingConfig(ticketingOpts{
-				Provider:       ticketingProvider,
-				MCPURL:         ticketingMCPURL,
-				ProjectID:      ticketingProject,
-				TypeID:         ticketingTypeID,
-				ClosedStatusID: ticketingClosedStatusID,
-				PriorityCrit:   ticketingPriorityCrit,
-				PriorityWarn:   ticketingPriorityWarn,
-				PriorityInfo:   ticketingPriorityInfo,
-				WebURLPrefix:   ticketingWebURLPrefix,
-				Cluster:        clusterName,
-				Labels:         ticketingLabels,
-				DryRun:         ticketingDryRun,
+				Provider:        ticketingProvider,
+				MCPURL:          ticketingMCPURL,
+				ProjectID:       ticketingProject,
+				TypeID:          ticketingTypeID,
+				ClosedStatusID:  ticketingClosedStatusID,
+				PriorityCrit:    ticketingPriorityCrit,
+				PriorityWarn:    ticketingPriorityWarn,
+				PriorityInfo:    ticketingPriorityInfo,
+				WebURLPrefix:    ticketingWebURLPrefix,
+				Cluster:         clusterName,
+				Labels:          ticketingLabels,
+				DryRun:          ticketingDryRun,
+				ResolveOnClear:  ticketingResolveOnClear,
+				CommentInterval: ticketingCommentInterval,
 			})
 			if terr != nil {
 				return terr
@@ -749,6 +753,8 @@ the post-fix cluster state.`,
 	c.Flags().StringVar(&ticketingWebURLPrefix, "ticketing-web-url-prefix", os.Getenv("TICKETING_WEB_URL_PREFIX"), "OpenProject web base URL (e.g. https://op.example.com) — used to build operator-clickable TicketRef.URL")
 	c.Flags().StringSliceVar(&ticketingLabels, "ticketing-labels", []string{"cha", "auto-filed"}, "Labels appended to ticket descriptions for filtering")
 	c.Flags().BoolVar(&ticketingDryRun, "ticketing-dry-run", false, "Log intended ticketing operations without calling the MCP server")
+	c.Flags().BoolVar(&ticketingResolveOnClear, "ticketing-resolve-on-clear", envBool("TICKETING_RESOLVE_ON_CLEAR", true), "Auto-close the ticket when its finding clears (M2). Defaults ON; no-op when ticketing is disabled.")
+	c.Flags().DurationVar(&ticketingCommentInterval, "ticketing-comment-interval", envDurationOrDefault("TICKETING_COMMENT_INTERVAL", time.Hour), "Debounce window for comment-on-recurrence (M2). A recurring/severity-changed finding gets at most one comment per window. 0 disables recurrence commenting.")
 
 	// Cloud probe flags. Per the design (docs/design/2026-05-cloud-probe-framework.md)
 	// each cloud has its own enable + region/project/subscription identifier;
@@ -854,6 +860,8 @@ type ticketingOpts struct {
 	Cluster                                             string
 	Labels                                              []string
 	DryRun                                              bool
+	ResolveOnClear                                      bool
+	CommentInterval                                     time.Duration
 }
 
 // buildTicketingConfig assembles a report.TicketingConfig from CLI flags.
@@ -899,9 +907,11 @@ func buildTicketingConfig(o ticketingOpts) (report.TicketingConfig, error) {
 			DryRun:           o.DryRun,
 		}, client)
 		return report.TicketingConfig{
-			Sink:    sink,
-			Cluster: o.Cluster,
-			Labels:  o.Labels,
+			Sink:            sink,
+			Cluster:         o.Cluster,
+			Labels:          o.Labels,
+			ResolveOnClear:  o.ResolveOnClear,
+			CommentInterval: o.CommentInterval,
 		}, nil
 	default:
 		return report.TicketingConfig{}, fmt.Errorf("unsupported ticketing provider %q (OSS supports: openproject)", o.Provider)
@@ -1079,6 +1089,17 @@ func buildVaultClient(addr, mount, role string) (vault.Client, error) {
 func envOrDefault(envVar, def string) string {
 	if v := os.Getenv(envVar); v != "" {
 		return v
+	}
+	return def
+}
+
+// envDurationOrDefault parses a Go duration (e.g. "1h", "30m") from envVar,
+// falling back to def when unset or unparseable.
+func envDurationOrDefault(envVar string, def time.Duration) time.Duration {
+	if v := os.Getenv(envVar); v != "" {
+		if d, err := time.ParseDuration(v); err == nil {
+			return d
+		}
 	}
 	return def
 }
