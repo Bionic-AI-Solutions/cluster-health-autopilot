@@ -1,0 +1,179 @@
+# Full-surface sample CR used by the bundle-smoke CI job — PRUNING
+# detection, not reconcile verification.
+#
+# Purpose: exercise every optional spec subtree the CRD schema declares
+# (watcher.triggers.{prom,webhook}, externalDNS, alerting, ai.*, approval.*,
+# ticketing.*) so the smoke catches the v1.24.0 bug class: a field present
+# in the Go types / chart CRD but missing from the bundle CRD gets
+# SILENTLY PRUNED by a schema-strict apiserver on apply. The workflow
+# applies this CR and then jsonpath-reads the deep fields back — an empty
+# read = the installed CRD's schema is missing that subtree.
+#
+# All feature master-switches are OFF (enabled: false) — this CR must not
+# spawn additional workloads or trip reconciler validation; the smoke
+# only asserts the apiserver STORED every field. sample-cr.yaml and
+# sample-cr-ai.yaml cover the reconcile paths.
+#
+# Every secretName / secretKeyRef below is an obviously-fake REFERENCE to
+# a Secret that does not exist. No secret VALUES appear here, ever.
+apiVersion: cha.bionicaisolutions.com/v1alpha1
+kind: ClusterHealthAutopilot
+metadata:
+  name: smoke-full
+  namespace: cha-system
+spec:
+  image:
+    repository: cluster-health-autopilot
+    tag: "smoke"
+    pullPolicy: IfNotPresent
+    pullSecrets: ["fake-pull-secret"]
+  # BYO SA name — the operator binds it to the reader ClusterRole but
+  # does NOT create it (and nothing waits on it; all workloads are off).
+  serviceAccountName: "smoke-full-byo-sa"
+  watcher:
+    enabled: false
+    replicas: 1
+    debounce: "10s"
+    resyncPeriod: "10m"
+    triggers:
+      prom:
+        url: "http://alertmanager.monitoring.svc:9093"
+        interval: "30s"
+        alertNameFilter: ["KubePodCrashLooping"]
+      webhook:
+        listen: ":8090"
+        sources: ["grafana=FAKE_GRAFANA_HMAC"]
+        secretName: "fake-webhook-hmac-secret"
+        serviceEnabled: true
+        servicePort: 8090
+  diagnose:
+    enabled: false
+    schedule: "0 9 * * *"
+    backoffLimit: 1
+    activeDeadlineSeconds: 120
+  remediate:
+    enabled: false
+    schedule: "*/30 * * * *"
+    dryRun: true
+    activeDeadlineSeconds: 120
+  alerting:
+    slack:
+      alerts:
+        secretName: "fake-slack-alerts-secret"
+        secretKey: "WEBHOOK_URL"
+      critical:
+        secretName: "fake-slack-critical-secret"
+        secretKey: "WEBHOOK_URL"
+      healthInfo:
+        secretName: "fake-slack-healthinfo-secret"
+        secretKey: "WEBHOOK_URL"
+    alertmanager:
+      url: "http://alertmanager.monitoring.svc:9093"
+      clusterName: "smoke"
+  ai:
+    enabled: false
+    tier: t1
+    endpoint: "http://fake-llm.cha-system.svc:8000/v1"
+    model: "fake-model"
+    interval: "3600s"
+    allowSaas: false
+    llmFixerMatcher: true
+    auditLog: "-"
+    approvalServerUrl: "http://smoke-full-approval-server.cha-system.svc:8443"
+    image:
+      repository: cha-com
+      tag: "smoke"
+      pullPolicy: IfNotPresent
+      pullSecrets: ["fake-pull-secret"]
+    apiKey:
+      secretName: "fake-llm-api-key-secret"
+      secretKey: "API_KEY"
+      envName: "AI_API_KEY"
+      header: "X-API-Key"
+    t3:
+      vaultAllowedPrefixes: ["secret/fake/"]
+    memory:
+      enabled: false
+      image:
+        repository: qdrant/qdrant
+        tag: "v1.12.4"
+        pullPolicy: IfNotPresent
+      storage:
+        size: "1Gi"
+        className: "standard"
+      embeddings:
+        endpoint: "http://fake-llm.cha-system.svc:8000/v1"
+        model: "fake-embedding-model"
+      storeUrl: "http://smoke-full-rag.cha-system.svc:6333"
+      topK: 5
+    extraArgs: ["--fake-flag=true"]
+    extraEnv:
+      - name: FAKE_LITERAL
+        value: "literal"
+      - name: FAKE_FROM_SECRET
+        valueFrom:
+          secretKeyRef:
+            name: "fake-extra-env-secret"
+            key: "token"
+    replicas: 1
+    digestPinAttestation:
+      secretName: "fake-attestation-key-secret"
+      secretKey: "attestation.key"
+      keyID: "smoke-kid"
+    metrics:
+      addr: ":9090"
+      port: 9090
+    llmProposer:
+      enabled: false
+  approval:
+    enabled: false
+    replicas: 1
+    auditNamespace: "cha-system"
+    image:
+      repository: cha-com
+      tag: "smoke"
+      pullPolicy: IfNotPresent
+      pullSecrets: ["fake-pull-secret"]
+    signingKey:
+      secretName: "fake-signing-key-secret"
+    store:
+      backend: configmap
+      namespace: "cha-system"
+      replayConfigMap: "smoke-approval-replay"
+      runbookConfigMap: "smoke-approval-runbooks"
+    ingress:
+      enabled: false
+      ingressClassName: "nginx"
+      host: "approve.smoke.example.com"
+      annotations:
+        smoke/annotation: "value"
+      tls:
+        enabled: false
+        secretName: "fake-approval-tls-secret"
+  externalDNS:
+    cloudflare:
+      enabled: false
+      apiTokenSecretRef:
+        name: "fake-cloudflare-token-secret"
+        key: "token"
+      zoneIDs: ["0000000000000000000000000000fake"]
+      expectedTargets: ["smoke.example.com"]
+  ticketing:
+    enabled: false
+    provider: openproject
+    cluster: "smoke"
+    mcpURL: "http://fake-mcp.cha-system.svc:8006/mcp"
+    project: "1"
+    typeID: "36"
+    closedStatusID: "82"
+    webURLPrefix: "https://op.smoke.example.com"
+    severityPriority:
+      critical: "75"
+      warning: "74"
+      info: "73"
+    labels: ["cha", "smoke"]
+    dryRun: true
+    auth:
+      enabled: false
+      secretName: "fake-ticketing-api-key-secret"
+      secretKey: "api-key"
