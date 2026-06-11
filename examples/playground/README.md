@@ -85,7 +85,8 @@ helm install cha-playground charts/cluster-health-autopilot \
 
 # 5. apply the isolated namespace, injector, and viewer
 #    (point the viewer Deployment at your loaded tag first)
-sed -i 's#docker4zerocool/cha-playground-viewer:dev#cha-playground-viewer:dev#' examples/playground/viewer.yaml
+# (kind quick-try uses a locally-loaded viewer image; edit viewer.yaml's image tag
+# for prod, or override via kustomize — do not commit the local-tag edit)
 kubectl apply -k examples/playground/
 
 # 6. fire one injection immediately (the CronJob runs every 15 min otherwise)

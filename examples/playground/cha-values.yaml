@@ -25,10 +25,15 @@
 #     -n cha-playground --create-namespace \
 #     -f examples/playground/cha-values.yaml
 
-# Use the published OSS image (or your own mirror). Pin a real tag in prod.
+# The watcher MUST run the OSS `cha` image — its `cha watch --live
+# --write-driftreports` flags are what the chart renders. Do NOT point this
+# at the commercial `cha-com` image: that binary's reduced flag surface
+# REJECTS `--live`/`--write-driftreports`/`--remedy` and the watcher would
+# crash-loop on an unknown flag (see CHANGELOG v1.8.4 / the v1.23.0 flag-drift
+# class). Pin a real current OSS tag in prod (>= v1.9; v1.25.x current).
 image:
-  repository: docker4zerocool/cha-com
-  tag: "1.9.3"
+  repository: docker4zerocool/cluster-health-autopilot
+  tag: "1.25.1"
   pullPolicy: IfNotPresent
 
 # Single diagnose-only watcher.
