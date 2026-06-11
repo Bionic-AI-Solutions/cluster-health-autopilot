@@ -256,6 +256,14 @@ type RemediateSpec struct {
 	// mutating cluster state.
 	// +optional
 	DryRun bool `json:"dryRun,omitempty"`
+
+	// ActiveDeadlineSeconds caps the per-Job wall-clock budget. Default
+	// 120s — fine for healthy clusters where remediate has 0–5 actions.
+	// Bump to 600–900s on busy clusters with many SecurityDrift
+	// proposals + DigestPin candidates queued up; the analyzer pass
+	// inside remediate scales with finding count. v1.25.1.
+	// +optional
+	ActiveDeadlineSeconds int64 `json:"activeDeadlineSeconds,omitempty"`
 }
 
 // AlertingSpec configures the watcher's outbound notification paths.

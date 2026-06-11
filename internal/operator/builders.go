@@ -324,7 +324,7 @@ func BuildRemediateCronJob(cr *chav1alpha1.ClusterHealthAutopilot) *batchv1.Cron
 		args = append(args, "--dry-run=true")
 	}
 	return buildCronJobCommon(cr, "remediate", NamesFor(cr).Remediate, cr.Spec.Remediate.Schedule,
-		0, 0, args,
+		0, cr.Spec.Remediate.ActiveDeadlineSeconds, args,
 		defaultRemediateSchedule, defaultRemediateBackoffLimit, defaultRemediateActiveDeadlineS,
 	)
 }

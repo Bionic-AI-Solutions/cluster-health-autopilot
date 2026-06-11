@@ -158,6 +158,10 @@ spec:
                       type: string
                     dryRun:
                       type: boolean
+                    # v1.25.1 — per-Job wall-clock budget (default 120s).
+                    activeDeadlineSeconds:
+                      type: integer
+                      minimum: 0
                 alerting:
                   type: object
                   properties:
