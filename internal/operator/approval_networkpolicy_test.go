@@ -67,7 +67,7 @@ func TestBuildApprovalServerNetworkPolicy_Shape(t *testing.T) {
 
 	// podSelector MUST match the Deployment's pod labels exactly.
 	dep := BuildApprovalServerDeployment(cr)
-	podLabels := dep.Spec.Template.ObjectMeta.Labels
+	podLabels := dep.Spec.Template.Labels
 	if len(np.Spec.PodSelector.MatchLabels) != len(podLabels) {
 		t.Fatalf("podSelector %v does not match Deployment pod labels %v",
 			np.Spec.PodSelector.MatchLabels, podLabels)
@@ -129,7 +129,7 @@ func TestReconcile_ApprovalNetworkPolicy_Created(t *testing.T) {
 	}
 	// podSelector must match the reconciled Deployment's pod labels.
 	dep := BuildApprovalServerDeployment(cr)
-	for k, v := range dep.Spec.Template.ObjectMeta.Labels {
+	for k, v := range dep.Spec.Template.Labels {
 		if np.Spec.PodSelector.MatchLabels[k] != v {
 			t.Errorf("reconciled podSelector missing %s=%s", k, v)
 		}
