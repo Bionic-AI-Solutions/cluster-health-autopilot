@@ -1,5 +1,16 @@
 # Phase 2d — RAG-Driven Cluster Knowledge Layer
 
+> **STATUS: 🚧 PARTIAL — RAG substrate + READ/outcome layer SHIPPED; full learned-knowledge replay is the open moat.**
+> _(P4.1 honest-header pass, 2026-06-11)_
+>
+> Shipped substrate (OSS + CHA-com): the `pkg/rag` store with typed entry kinds including `KindWorkload` and `KindFindingOutcome` (`pkg/rag/types.go`); the workload feeder upserting per-workload entries each cycle (`internal/feeder` → promoted to `pkg/feeder`, PR #152/#158); CHA-com **Phase 2.A — RAG memory READ + revert detection + per-cycle observability (v1.15.0)** per the consolidated roadmap; and the Approve/Deny/Silence outcome signal captured as `finding_outcome` entries. v1.10.5 (PR #132) removed the hardcoded cluster-specific defaults this doc motivates.
+>
+> **DELTA — still open:** the doc's core promise — **learned per-cluster knowledge replayed each cycle into the probe/analyzer pipeline and revised continuously from SRE-action signals** (the "moat") — is only partially realized. The store + outcome capture exist; full closed-loop replay (outcomes re-grounding future proposals) is the genuinely-open strategic work tracked under `cha-ai-remediation-direction` / Phase P6 and the Q3 forward plan. Treat the prose below as the target architecture, not as fully-delivered behavior.
+>
+> Body below is the original design, preserved for context.
+
+---
+
 **Status:** Design draft
 **Tier:** Paid (CHA-com / AI tier, gated on `spec.ai.enabled`)
 **Author:** opened 2026-06-01

@@ -1,8 +1,10 @@
-# Design: Investigator Agent (Layer 2)  ✅ SHIPPED v1.6.0
+# Design: Investigator Agent (Layer 2)  ✅ SHIPPED v1.5.0
 
-Status: **✅ Shipped** in OSS v1.6.0 (Sprint 3). The investigator interface, harness, 6-tool action space (DNS / HTTP / TLS / `kubectl describe` / `kubectl logs` / `kubectl events`), safety guardrails (prompt-injection scrubbing, hard deadline, token budget, RBAC narrowing, `pkg/ai/redact` Kubernetes-Event scrubber), and watcher-post-probe wiring are all live. Helm config surface (`ai.investigator.*`) ships with the chart; audit trail events emit under `ai.investigation.*`.
+> **VERSION-ATTRIBUTION CORRECTION (P4.1, 2026-06-11):** This doc previously claimed the Layer-2 investigator shipped in **v1.6.0**. Git and CHANGELOG disagree: it shipped in **OSS v1.5.0** via PR #55 (`f0912e3 feat(ai): Layer-2 investigator — read-only deep-dive on critical findings (v1.5.0) (#55)`; CHANGELOG [1.5.0] 2026-05-12 lists "Layer-2 Investigator: read-only deep-dive on CRITICAL findings"). Follow-ups: investigation field persisted on the CR in v1.5.1/v1.5.2 (#56/#57). The version references in this header have been corrected from 1.6.0 → 1.5.0.
 
-Live in cluster as of v1.6.2; T0 Enricher / T1 Fix Proposer / T2 Planner / T3 Vault Runbook shipped subsequently in CHA-com v1.1.0–v1.4.0 and verified end-to-end on 2026-05-27.
+Status: **✅ Shipped** in OSS v1.5.0 (PR #55). The investigator interface, harness, 6-tool action space (DNS / HTTP / TLS / `kubectl describe` / `kubectl logs` / `kubectl events`), safety guardrails (prompt-injection scrubbing, hard deadline, token budget, RBAC narrowing, `pkg/ai/redact` Kubernetes-Event scrubber), and watcher-post-probe wiring are all live. Helm config surface (`ai.investigator.*`) ships with the chart; audit trail events emit under `ai.investigation.*`.
+
+Live in cluster as of v1.5.2; T0 Enricher / T1 Fix Proposer / T2 Planner / T3 Vault Runbook shipped subsequently in CHA-com v1.1.0–v1.4.0 and verified end-to-end on 2026-05-27.
 
 Original design (pre-implementation) preserved below for context.
 

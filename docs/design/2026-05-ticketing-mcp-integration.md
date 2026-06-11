@@ -1,5 +1,17 @@
 # CHA Ticketing Integration via MCP
 
+> **STATUS: 🚧 PARTIAL — M1 (OpenProject) SHIPPED; M2/M3/M4 NOT started.**
+> _(P4.1 honest-header pass, 2026-06-11)_
+>
+> - **M1 — MCP-driven OpenProject sink for unfixable items: ✅ SHIPPED.** Landed via PR #59 (`ea63875 feat(ticketing): MCP-driven OpenProject sink for unfixable items (M1)`). Operator wiring (`TicketingSpec` on CR → watcher `--ticketing-*` flags) shipped Phase 1.D (PR #167, v1.20.0); chart values shape aligned in PR #170 (v1.20.1); in-cluster MCP bypasses Kong (no API-key requirement, `aeefa30`).
+> - **M2 — resolve-on-clear (auto-close the ticket when the finding clears): ❌ NOT started.** Now tracked as **P6.5** in the remediation effort.
+> - **M3 — Jira sink (paid): ❌ NOT started.** Now tracked as **P6.3**.
+> - **M4 — ServiceNow sink (paid): ❌ NOT started.** Now tracked as **P6.4**.
+>
+> Body below is the original design, preserved for context.
+
+---
+
 **Status:** Draft
 **Author:** skadam
 **Date:** 2026-05-22

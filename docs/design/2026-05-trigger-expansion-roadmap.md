@@ -1,5 +1,21 @@
 # Design: Trigger-Class Expansion Roadmap
 
+> **STATUS: 🚧 PARTIAL — M1–M7 SHIPPED, but M3 shipped with scope-shrink.**
+> _(P4.1 honest-header pass, 2026-06-11)_
+>
+> M1 (expanded `watchedGVRs`: Ingress/DaemonSet/HPA/ArgoCD) → **v1.23.0** (PR #179, "Trigger-expansion roadmap M1–M7 bundled"); M5 (Class C PrometheusRule/Alertmanager consumer) + M6 (Class E webhook receiver) wired in **v1.23.1** (PR #180); operator-CR trigger surface (`spec.watcher.triggers.{prom,webhook}`) + KEDA in `watchedGVRs` → **v1.24.0** (PR #182), CRD schema fix **v1.24.1** (PR #183). M2 Kong/HPA/ArgoCD/Velero probes shipped earlier in **v1.7.0**. M3 GPUNodes + LogPatternMatcher shipped bundled in v1.23.0.
+>
+> **DELTA — as-shipped differs from this design (verified against code 2026-06-11):**
+> - **M3 `LogPatternMatcher` shipped as an EVENTS scanner, NOT a pod-log tailer.** `internal/diagnose/log_pattern_matcher.go` scans recent **Event `.Message` strings** cluster-wide (ImagePullBackOff / OOMKilled / probe-failed / volume-attach / Forbidden). It does **NOT** use `Pod.GetLogs` / `tailLines: 500`, has **no** per-Deployment `watch-logs` annotation, and the motivating built-in patterns from this doc — `cumem_allocator.cpp:145` (the 2026-05-14 vLLM FP8-KV bug), `CUDA out of memory`, `Killed process … total-vm`, `i/o timeout` rate spike — are **NOT catchable as shipped** because those strings live in container stdout, not K8s Events. → **Follow-up: M3-LogPatternMatcher-v2** (real pod-log tailing) is genuinely open; tracked in the consolidated roadmap Q3 2026 forward plan.
+> - **M3 `probe.GPUNodes` shipped Ready/cordoned/zero-allocatable only.** `internal/probe/gpu_nodes.go` checks (1) node Ready=True, (2) not cordoned, (3) allocatable `nvidia.com/gpu`/`amd.com/gpu` count non-zero. It does **NOT** verify nvidia-device-plugin Pod presence, driver-version drift across nodes, DCGM ECC/XID error counts, or per-GPU memory >95% — all four are in the design below but un-shipped. → **Follow-up: GPUNodes-v2** (device-plugin / driver-drift / DCGM coverage) is genuinely open; tracked in the consolidated roadmap.
+> - The "Asset-class coverage after this roadmap" table below (rows "GPU health +M3", "Workload log signals +M3 LogPatternMatcher", "Deployments/Pods/Jobs ✓ +M3 log patterns") **overstates as-shipped depth** — those rows reflect the design, not the events-scanner that landed. Read them as roadmap targets, not delivered coverage.
+>
+> Body below is the original design (preserved verbatim for context); do not read its M3 section or coverage table as a description of what shipped.
+
+---
+
+# Design: Trigger-Class Expansion Roadmap
+
 Status: **Partially shipped (v1.6.0) — see "v1.6 status" below**
 Tracked: v1.6.0 closed the M1 asset-class gap (6 net-new probes);
 M2+ (Kong / HPA / ArgoCD / Velero / trigger-class B/C/E) remain
