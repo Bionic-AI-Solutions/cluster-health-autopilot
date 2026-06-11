@@ -98,6 +98,7 @@ spec:
         repository: qdrant/qdrant
         tag: "v1.12.4"
         pullPolicy: IfNotPresent
+        pullSecrets: ["fake-pull-secret"]
       storage:
         size: "1Gi"
         className: "standard"
