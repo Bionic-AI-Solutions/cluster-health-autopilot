@@ -240,6 +240,65 @@ no-target list cycle on clusters that don't host the asset class.
   value: "off"
 {{- end }}
 {{- end }}
+{{- /* v1.21 disruption-tier + v1.22 workload-tier + v1.25 log/netpol/dns
+       analyzers. Each defaults ON in catalog.go (opt-out via
+       CHA_ANALYZER_<NAME>=off). */ -}}
+{{- if (.Values.analyzers).disruptionDrift }}
+{{- if not .Values.analyzers.disruptionDrift.enabled }}
+- name: CHA_ANALYZER_DISRUPTION_DRIFT
+  value: "off"
+{{- end }}
+{{- end }}
+{{- if (.Values.analyzers).oomkillRecurrence }}
+{{- if not .Values.analyzers.oomkillRecurrence.enabled }}
+- name: CHA_ANALYZER_OOMKILL_RECURRENCE
+  value: "off"
+{{- end }}
+{{- end }}
+{{- if (.Values.analyzers).pvOrphan }}
+{{- if not .Values.analyzers.pvOrphan.enabled }}
+- name: CHA_ANALYZER_PV_ORPHAN
+  value: "off"
+{{- end }}
+{{- end }}
+{{- if (.Values.analyzers).cronjobStuck }}
+{{- if not .Values.analyzers.cronjobStuck.enabled }}
+- name: CHA_ANALYZER_CRONJOB_STUCK
+  value: "off"
+{{- end }}
+{{- end }}
+{{- if (.Values.analyzers).logPatternMatcher }}
+{{- if not .Values.analyzers.logPatternMatcher.enabled }}
+- name: CHA_ANALYZER_LOG_PATTERN_MATCHER
+  value: "off"
+{{- end }}
+{{- end }}
+{{- if (.Values.analyzers).netpolProposer }}
+{{- if not .Values.analyzers.netpolProposer.enabled }}
+- name: CHA_ANALYZER_NETPOL_PROPOSER
+  value: "off"
+{{- end }}
+{{- end }}
+{{- if (.Values.analyzers).dnsChainDrift }}
+{{- if not .Values.analyzers.dnsChainDrift.enabled }}
+- name: CHA_ANALYZER_DNS_CHAIN_DRIFT
+  value: "off"
+{{- end }}
+{{- end }}
+{{- end -}}
+
+{{- /*
+cha.investigatorEnv — the layer-2 deterministic investigator defaults
+ON (catalog.go opt-out via CHA_INVESTIGATOR=off). Flip
+investigator.enabled=false to silence it.
+*/ -}}
+{{- define "cha.investigatorEnv" -}}
+{{- if (.Values.investigator) }}
+{{- if not .Values.investigator.enabled }}
+- name: CHA_INVESTIGATOR
+  value: "off"
+{{- end }}
+{{- end }}
 {{- end -}}
 
 {{- /*
@@ -274,6 +333,107 @@ probes.<name>.enabled=false in values.yaml to emit CHA_PROBE_<NAME>=off.
 - name: CHA_PROBE_VELERO
   value: "off"
 {{- end }}
+{{- end }}
+{{- /* Sprint-2 / v1.10 / v1.23 / v1.25 probe additions. Each defaults
+       ON in catalog.go and auto-skips on clusters that don't host the
+       asset class (opt-out via CHA_PROBE_<NAME>=off). */ -}}
+{{- if (.Values.probes).nodePressure }}
+{{- if not .Values.probes.nodePressure.enabled }}
+- name: CHA_PROBE_NODE_PRESSURE
+  value: "off"
+{{- end }}
+{{- end }}
+{{- if (.Values.probes).daemonsets }}
+{{- if not .Values.probes.daemonsets.enabled }}
+- name: CHA_PROBE_DAEMONSETS
+  value: "off"
+{{- end }}
+{{- end }}
+{{- if (.Values.probes).pendingPods }}
+{{- if not .Values.probes.pendingPods.enabled }}
+- name: CHA_PROBE_PENDING_PODS
+  value: "off"
+{{- end }}
+{{- end }}
+{{- if (.Values.probes).crashloop }}
+{{- if not .Values.probes.crashloop.enabled }}
+- name: CHA_PROBE_CRASHLOOP
+  value: "off"
+{{- end }}
+{{- end }}
+{{- if (.Values.probes).etcd }}
+{{- if not .Values.probes.etcd.enabled }}
+- name: CHA_PROBE_ETCD
+  value: "off"
+{{- end }}
+{{- end }}
+{{- if (.Values.probes).failedMounts }}
+{{- if not .Values.probes.failedMounts.enabled }}
+- name: CHA_PROBE_FAILED_MOUNTS
+  value: "off"
+{{- end }}
+{{- end }}
+{{- if (.Values.probes).kongRoutes }}
+{{- if not .Values.probes.kongRoutes.enabled }}
+- name: CHA_PROBE_KONG_ROUTES
+  value: "off"
+{{- end }}
+{{- end }}
+{{- if (.Values.probes).gpuNodes }}
+{{- if not .Values.probes.gpuNodes.enabled }}
+- name: CHA_PROBE_GPU_NODES
+  value: "off"
+{{- end }}
+{{- end }}
+{{- if (.Values.probes).traefikRoutes }}
+{{- if not .Values.probes.traefikRoutes.enabled }}
+- name: CHA_PROBE_TRAEFIK_ROUTES
+  value: "off"
+{{- end }}
+{{- end }}
+{{- if (.Values.probes).k3sLocalPathStorage }}
+{{- if not .Values.probes.k3sLocalPathStorage.enabled }}
+- name: CHA_PROBE_K3S_LOCALPATH
+  value: "off"
+{{- end }}
+{{- end }}
+{{- if (.Values.probes).k3sDatastore }}
+{{- if not .Values.probes.k3sDatastore.enabled }}
+- name: CHA_PROBE_K3S_DATASTORE
+  value: "off"
+{{- end }}
+{{- end }}
+{{- end -}}
+
+{{- /*
+cha.externalDNSEnv — projects the Cloudflare API token for the
+DNSChainDrift analyzer's external-hop verification. ALWAYS a
+secretKeyRef (the token value never appears in the manifest). Empty
+when externalDNS.cloudflare is disabled or unset. Mirrors the operator
+builder externalDNSEnv() shape (P1.5). The analyzer still runs its
+K8s-chain hops without this; the token only enables the external DNS
+verification leg.
+*/ -}}
+{{- define "cha.externalDNSEnv" -}}
+{{- if (((.Values.externalDNS).cloudflare).enabled) }}
+{{- $ref := required "externalDNS.cloudflare.apiTokenSecretRef is required when externalDNS.cloudflare.enabled=true" .Values.externalDNS.cloudflare.apiTokenSecretRef }}
+- name: CHA_CLOUDFLARE_TOKEN
+  valueFrom:
+    secretKeyRef:
+      name: {{ required "externalDNS.cloudflare.apiTokenSecretRef.name is required" $ref.name }}
+      key: {{ $ref.key | default "token" }}
+{{- end }}
+{{- end -}}
+
+{{- /*
+cha.extraEnv — passthrough for arbitrary additional env vars on the
+watcher / diagnose containers so future binary toggles never require a
+chart fork. Accepts the standard k8s env list shape (each entry is
+{name,value} or {name,valueFrom}). Empty by default.
+*/ -}}
+{{- define "cha.extraEnv" -}}
+{{- with (.Values.watcher).extraEnv }}
+{{- toYaml . }}
 {{- end }}
 {{- end -}}
 

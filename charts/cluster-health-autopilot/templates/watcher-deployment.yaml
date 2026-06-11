@@ -187,6 +187,9 @@ spec:
             {{- include "cha.optionalFixerEnv" . | nindent 12 }}
             {{- include "cha.analyzerToggleEnv" . | nindent 12 }}
             {{- include "cha.probeToggleEnv" . | nindent 12 }}
+            {{- include "cha.investigatorEnv" . | nindent 12 }}
+            {{- include "cha.externalDNSEnv" . | nindent 12 }}
+            {{- include "cha.extraEnv" . | nindent 12 }}
             {{- if and .Values.ticketing.enabled .Values.ticketing.auth.enabled }}
             - name: TICKETING_MCP_API_KEY
               valueFrom:

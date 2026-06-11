@@ -318,6 +318,18 @@ watcher:
   enabled: false
   debounce: 10s                    # Debounce window after a Kubernetes event.
   resyncPeriod: 10m                # Periodic full re-diagnose regardless of events.
+  # extraEnv — arbitrary additional env vars on the watcher AND diagnose
+  # containers. Escape hatch so a new binary env toggle (CHA_*) can be set
+  # without a chart fork. Standard k8s env list shape; each entry is
+  # {name, value} or {name, valueFrom: {...}}. Used for free-form config
+  # toggles that aren't a simple enabled/disabled boolean — e.g.
+  # CHA_CRITICAL_SERVICES, CHA_CRITICAL_SERVICES_REPLACE,
+  # CHA_DIGEST_PIN_UNTRUSTED_SEVERITY, CHA_K3S_SINGLE_NODE_OK.
+  extraEnv: []
+    # - name: CHA_CRITICAL_SERVICES
+    #   value: "pg/postgres,vault/vault"
+    # - name: CHA_K3S_SINGLE_NODE_OK
+    #   value: "true"
   slack:
     postOnResolved: true           # Post when a diagnostic disappears.
     repeatInterval: 4h             # Re-post still-active warning/info at this cadence (0=never).
@@ -702,6 +714,48 @@ analyzers:
     # (Kyverno, Gatekeeper, Sigstore) that already produce these
     # alerts independently.
     enabled: true
+  disruptionDrift:
+    # Disruption-tier drift (v1.21) — ResourceQuota near-exhaustion,
+    # PodDisruptionBudget blocking voluntary disruption (drains stuck),
+    # and Jobs past their activeDeadline / backoffLimit. Each sub-signal
+    # handles its own GVR-absence case. Set to false to silence.
+    enabled: true
+  oomkillRecurrence:
+    # Workload-tier (v1.22) — containers OOMKilled repeatedly (a sizing
+    # problem masquerading as a crash loop). Set to false to silence.
+    enabled: true
+  pvOrphan:
+    # Workload-tier (v1.22) — Released/Available PersistentVolumes with no
+    # bound PVC (a cost leak). Set to false to silence.
+    enabled: true
+  cronjobStuck:
+    # Workload-tier (v1.22) — CronJobs that have not scheduled a Job within
+    # their expected window (silent scheduling failure). Set to false to
+    # silence.
+    enabled: true
+  logPatternMatcher:
+    # v1.25 — scans recent Events for high-signal failure messages
+    # (ImagePullBackOff, OOMKilled, VolumeAttachFailed, ProbeFailed,
+    # Forbidden). Dedup'd one finding per (object, pattern). Set to false
+    # to silence.
+    enabled: true
+  netpolProposer:
+    # Phase 2d-β — on NetworkPolicy-enforcing CNIs, emits one warning per
+    # uncovered namespace with a deterministic ProposedPolicyYAML. Silent
+    # on Flannel-only k3s. Set to false to silence.
+    enabled: true
+  dnsChainDrift:
+    # v1.10 — verifies the DNS chain (Service → Ingress → external host)
+    # for the seeded endpoint hostnames. Runs the K8s-chain hops with no
+    # config; external-hop verification requires externalDNS.cloudflare.
+    # Set to false to silence.
+    enabled: true
+
+# Layer-2 investigator (deterministic, rule-based; ships in OSS). Defaults
+# ON. The paid binary may replace it with an LLM-backed implementation.
+# Set enabled: false to disable (CHA_INVESTIGATOR=off).
+investigator:
+  enabled: true
 
 # M2 probe-class additions (v1.8). Each defaults to ON and AUTO-SKIPS
 # when its CRD is absent (Kong / ArgoCD / Velero) or no-ops on an empty
@@ -727,6 +781,49 @@ probes:
     # Velero backup freshness / last-backup status. Auto-skips when
     # velero.io CRDs are absent.
     enabled: true
+  # Sprint-2 core probes — each no-ops on a cluster that doesn't host the
+  # asset class. Set enabled: false only to silence a probe explicitly.
+  nodePressure:
+    # Node MemoryPressure / DiskPressure / PIDPressure conditions.
+    enabled: true
+  daemonsets:
+    # DaemonSets with unavailable/misscheduled pods.
+    enabled: true
+  pendingPods:
+    # Pods stuck Pending past the scheduling grace window.
+    enabled: true
+  crashloop:
+    # Containers in CrashLoopBackOff.
+    enabled: true
+  etcd:
+    # etcd member health / quorum.
+    enabled: true
+  failedMounts:
+    # Pods blocked on FailedMount / FailedAttachVolume events.
+    enabled: true
+  # v1.10 / v1.23 / v1.25 additions — each auto-skips when not applicable
+  # (no Kong-managed Ingress, CPU-only cluster, non-k3s, no local-path PVCs).
+  kongRoutes:
+    # Kong-managed Ingress backend-Endpoint + plugin/consumer reference
+    # readiness. Silent on clusters without Kong-managed Ingresses.
+    enabled: true
+  gpuNodes:
+    # NotReady / cordoned / zero-allocatable GPU nodes. Silent on
+    # CPU-only clusters.
+    enabled: true
+  traefikRoutes:
+    # k3s Traefik IngressRoute backend readiness. Auto-skips on non-k3s
+    # or when the Traefik CRD is absent.
+    enabled: true
+  k3sLocalPathStorage:
+    # k3s local-path-provisioner PVC health. No-ops when there are no
+    # local-path PVCs.
+    enabled: true
+  k3sDatastore:
+    # k3s datastore (sqlite/etcd) health. Auto-skips on non-k3s. Set
+    # CHA_K3S_SINGLE_NODE_OK=true (via watcher.extraEnv) to suppress the
+    # single-node datastore warning on intentional single-node clusters.
+    enabled: true
 
 # Optional fixers — off by default. Each entry adds RBAC verbs and exposes
 # an env var the binary reads to enable the matching Fixer registration.
@@ -738,3 +835,19 @@ fixers:
     # (ArgoCD / Flux / Helm release labels) are SKIPPED automatically — the
     # patch would just be reverted on the next reconcile.
     enabled: false
+
+# External-DNS verification for the DNSChainDrift analyzer. When enabled,
+# the watcher + diagnose containers receive CHA_CLOUDFLARE_TOKEN via a
+# secretKeyRef (NEVER a literal) so the analyzer can verify the external
+# DNS hop (Cloudflare record → Ingress host). Without this the analyzer
+# still runs the in-cluster chain hops and emits "external DNS hop not
+# verified". Mirrors the operator-managed spec.externalDNS.cloudflare
+# (wired in P1.5). Create the Secret out-of-band (ESO recommended).
+externalDNS:
+  cloudflare:
+    enabled: false
+    # apiTokenSecretRef.{name,key} — the Secret carrying the Cloudflare
+    # API token. key defaults to "token".
+    apiTokenSecretRef: {}
+      # name: cha-cloudflare-token
+      # key: token
