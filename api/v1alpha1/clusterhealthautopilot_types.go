@@ -1062,6 +1062,21 @@ type TicketingSpec struct {
 	// +optional
 	DryRun bool `json:"dryRun,omitempty"`
 
+	// ResolveOnClear toggles auto-closing a ticket when its finding
+	// clears (M2). Defaults ON: nil → the operator emits
+	// `--ticketing-resolve-on-clear=true`. Set to a pointer-to-false to
+	// disable. No-op when ticketing is disabled.
+	// +optional
+	ResolveOnClear *bool `json:"resolveOnClear,omitempty"`
+
+	// CommentInterval is the debounce window for comment-on-recurrence
+	// (M2), as a Go duration string (e.g. "1h"). A recurring or
+	// severity-changed finding comments on the EXISTING ticket at most
+	// once per window. "0" disables recurrence commenting. Empty →
+	// chart/binary default ("1h").
+	// +optional
+	CommentInterval string `json:"commentInterval,omitempty"`
+
 	// Auth optionally configures an MCP API key (typically used when
 	// the MCP server is fronted by Kong key-auth). Leave nil for
 	// in-cluster HTTP traffic.

@@ -178,6 +178,8 @@ spec:
       info: "73"
     labels: ["cha", "smoke"]
     dryRun: true
+    resolveOnClear: true
+    commentInterval: "1h"
     auth:
       enabled: false
       secretName: "fake-ticketing-api-key-secret"

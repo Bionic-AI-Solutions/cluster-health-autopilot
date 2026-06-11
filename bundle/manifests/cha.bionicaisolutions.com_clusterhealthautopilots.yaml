@@ -530,6 +530,16 @@ spec:
                         type: string
                     dryRun:
                       type: boolean
+                    resolveOnClear:
+                      type: boolean
+                      description: |
+                        Auto-close the ticket when its finding clears (M2).
+                        Omit to default ON; set false to disable.
+                    commentInterval:
+                      type: string
+                      description: |
+                        Debounce window (Go duration, e.g. "1h") for
+                        comment-on-recurrence (M2). "0" disables it.
                     auth:
                       type: object
                       properties:

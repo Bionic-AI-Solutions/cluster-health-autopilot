@@ -289,6 +289,11 @@ ticketing:
     warning:  ""                         # e.g. "74" for High
     info:     ""                         # e.g. "73" for Normal
   dryRun: false                          # Log intended ops without calling the MCP server
+  # --- M2 lifecycle (resolve-on-clear + comment-on-recurrence) ---
+  resolveOnClear: true                   # Auto-close the ticket when its finding clears. Default ON (M2 shipped).
+  commentInterval: "1h"                  # Debounce for comment-on-recurrence: at most one comment per window.
+                                         # A recurring or severity-changed finding comments on the EXISTING
+                                         # ticket instead of opening a new one. "0" disables recurrence comments.
   # Optional API key when talking to the MCP server through Kong
   # (provider URL on mcp.baisoln.com). For in-cluster traffic leave
   # auth.enabled=false. When enabled, the secret is expected to be
