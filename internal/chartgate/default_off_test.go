@@ -3,7 +3,7 @@
 
 // default_off_test.go (P3.3a) — default-off discipline gate.
 //
-// WHY THIS EXISTS
+// # WHY THIS EXISTS
 //
 // Three same-week production regressions traced back to one abandoned habit:
 // the roadmap's own done-criteria said new triggers ship DEFAULT-OFF, soak for
@@ -13,7 +13,7 @@
 // a unit test, so we approximate the gate with a committed GOLDEN of every
 // catalog registration toggle and its default polarity.
 //
-// HOW IT WORKS
+// # HOW IT WORKS
 //
 // The test scans catalog/catalog.go for every CHA_* env toggle that GATES a
 // probe / analyzer / fixer / investigator registration, derives its default
