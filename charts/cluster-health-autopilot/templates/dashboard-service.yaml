@@ -1,0 +1,20 @@
+{{- if ((.Values.dashboard).enabled) }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "cha.fullname" . }}-dashboard
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "cha.labels" . | nindent 4 }}
+    cha.bionicaisolutions.com/role: dashboard
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 8444
+      targetPort: http
+      protocol: TCP
+  selector:
+    {{- include "cha.selectorLabels" . | nindent 4 }}
+    cha.bionicaisolutions.com/role: dashboard
+{{- end }}

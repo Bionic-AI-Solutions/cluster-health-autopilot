@@ -1,0 +1,71 @@
+{{- if ((.Values.dashboard).enabled) }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "cha.fullname" . }}-dashboard
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "cha.labels" . | nindent 4 }}
+    cha.bionicaisolutions.com/role: dashboard
+spec:
+  replicas: {{ .Values.dashboard.replicas | default 1 }}
+  selector:
+    matchLabels:
+      {{- include "cha.selectorLabels" . | nindent 6 }}
+      cha.bionicaisolutions.com/role: dashboard
+  template:
+    metadata:
+      labels:
+        {{- include "cha.selectorLabels" . | nindent 8 }}
+        cha.bionicaisolutions.com/role: dashboard
+    spec:
+      serviceAccountName: {{ include "cha.fullname" . }}-dashboard
+      {{- with .Values.image.pullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.dashboard.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: dashboard
+          image: {{ .Values.dashboard.image.repository }}:{{ .Values.dashboard.image.tag | default (printf "v%s" .Chart.AppVersion) }}
+          imagePullPolicy: {{ .Values.dashboard.image.pullPolicy | default "IfNotPresent" }}
+          args:
+            - dashboard
+            - --listen=:8444
+            - --approval-base-url={{ required ".Values.dashboard.approvalBaseURL is required when dashboard.enabled=true (the existing approval-server endpoint the Approve/Deny/Ignore links target)" .Values.dashboard.approvalBaseURL }}
+            - --auth-header={{ .Values.dashboard.authHeader | default "X-Forwarded-User" }}
+            {{- with .Values.dashboard.auditLogPath }}
+            - --ai-audit-log={{ . }}
+            {{- end }}
+            {{- with .Values.dashboard.historyLimit }}
+            - --history-limit={{ . }}
+            {{- end }}
+            {{- with .Values.dashboard.approvalsLimit }}
+            - --approvals-limit={{ . }}
+            {{- end }}
+          ports:
+            - name: http
+              containerPort: 8444
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            initialDelaySeconds: 2
+            periodSeconds: 10
+          resources:
+            {{- toYaml (.Values.dashboard.resources | default .Values.resources) | nindent 12 }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+{{- end }}

@@ -1,0 +1,41 @@
+{{- if and ((.Values.dashboard).enabled) (((.Values.dashboard).networkPolicy).enabled) }}
+{{- if not ((.Values.dashboard).networkPolicy).gatewayNamespaceSelector }}
+{{- fail "dashboard.networkPolicy.gatewayNamespaceSelector is REQUIRED when dashboard.networkPolicy.enabled=true. A NetworkPolicy is fail-closed: an empty selector would block ALL ingress to the dashboard (making it unreachable) or match every namespace (defeating the control). Set it to the gateway/oauth2-proxy namespace's labels, e.g. {kubernetes.io/metadata.name: <gateway-namespace>}." }}
+{{- end }}
+# dashboard NetworkPolicy (P6.6, mirrors approval-server P2.6b) —
+# restricts ingress to the dashboard pods to ONLY the gateway/oauth2-proxy
+# namespace.
+#
+# Why: the dashboard reads the X-Forwarded-User header (injected by
+# oauth2-proxy at the OIDC ingress after login) to DISPLAY the operator
+# identity. A pod reaching the ClusterIP directly bypasses the ingress and
+# could forge an arbitrary X-Forwarded-User. The dashboard never mutates,
+# so this is defense-in-depth for display honesty — same trust posture as
+# the approval-server, so it reuses the same NetworkPolicy class.
+#
+# REQUIRES the cluster CNI to enforce NetworkPolicy AND the gateway
+# namespace to carry the labels named in gatewayNamespaceSelector.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "cha.fullname" . }}-dashboard
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "cha.labels" . | nindent 4 }}
+    cha.bionicaisolutions.com/role: dashboard
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "cha.selectorLabels" . | nindent 6 }}
+      cha.bionicaisolutions.com/role: dashboard
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              {{- toYaml .Values.dashboard.networkPolicy.gatewayNamespaceSelector | nindent 14 }}
+      ports:
+        - protocol: TCP
+          port: 8444
+{{- end }}

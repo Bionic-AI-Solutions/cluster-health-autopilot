@@ -23,8 +23,9 @@ import (
 //     in sequence (bounded by enrichmentTimeout). Failures are silent —
 //     the deterministic diagnostic still flows; only the enrichment
 //     block is omitted.
-//   - FixProposer registered: TODO in P4 — produces ProposedActionID +
-//     ApprovalURL fields when the diagnostic matches a whitelisted fixer.
+//   - FixProposer registered: produces ProposedActionID + ApprovalURL
+//     fields when the diagnostic matches a whitelisted fixer (implemented
+//     below: Propose → Sign → recordApprovalURL).
 //
 // Enrichment is bounded to enrichmentTimeout total per cycle. Beyond
 // that, remaining diagnostics flow without enrichment.

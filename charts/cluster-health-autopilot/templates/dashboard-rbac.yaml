@@ -1,0 +1,48 @@
+{{- if ((.Values.dashboard).enabled) }}
+# dashboard-rbac.yaml (P6.6) — READ-ONLY RBAC for the hosted dashboard.
+#
+# The dashboard renders findings live from the cluster. Its ONLY cluster
+# access is get/list/watch on DriftReports (cluster-scoped CRD). It holds
+# NO signing key, has NO mutate verbs, and reads NO Secrets. For any
+# action it links out to the EXISTING approval-server endpoints (built
+# from --approval-base-url), so it never needs the remediator/fixer role.
+#
+# resolutionrecords read is included ONLY when resolutionRecord.enabled —
+# a future /history page may surface them; still get/list only, no writes.
+#
+# The binding targets the DASHBOARD's OWN ServiceAccount
+# (<fullname>-dashboard), NOT the watcher SA — the dashboard runs under a
+# distinct, narrower identity than the watcher.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "cha.fullname" . }}-dashboard-reader
+  labels:
+    {{- include "cha.labels" . | nindent 4 }}
+    cha.bionicaisolutions.com/role: dashboard
+rules:
+  - apiGroups: ["cha.bionicaisolutions.com"]
+    resources: ["driftreports"]
+    verbs: ["get", "list", "watch"]
+  {{- if (.Values.resolutionRecord).enabled }}
+  - apiGroups: ["cha.bionicaisolutions.com"]
+    resources: ["resolutionrecords"]
+    verbs: ["get", "list", "watch"]
+  {{- end }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "cha.fullname" . }}-dashboard-reader
+  labels:
+    {{- include "cha.labels" . | nindent 4 }}
+    cha.bionicaisolutions.com/role: dashboard
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "cha.fullname" . }}-dashboard-reader
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "cha.fullname" . }}-dashboard
+    namespace: {{ .Release.Namespace }}
+{{- end }}

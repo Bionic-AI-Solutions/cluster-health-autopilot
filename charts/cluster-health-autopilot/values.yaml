@@ -715,6 +715,71 @@ approval:
       memory: 32Mi
   nodeSelector: {}
 
+# P6.6 — the read-only hosted dashboard. A separate Deployment + Service
+# running the `cha-com dashboard` subcommand: a server-rendered HTML view
+# of findings (live DriftReports), pending approvals, and remediation
+# history. It NEVER mutates the cluster — for any action it links out to
+# the EXISTING approval-server endpoints (built from approvalBaseURL).
+#
+# RBAC posture: a DEDICATED ServiceAccount (<release>-dashboard) carrying
+# ONLY get/list/watch on driftreports (and resolutionrecords when that
+# CRD is enabled) — no signing key, no mutate verbs, no Secret access.
+# Distinct from, and narrower than, both the watcher SA and the
+# approval-server SA.
+#
+# Trust posture mirrors the approval-server: meant to sit behind
+# oauth2-proxy at the Ingress (which sets X-Forwarded-User, read purely
+# for display) and to be covered by the same NetworkPolicy class
+# (default-off, gatewayNamespaceSelector REQUIRED when enabled).
+dashboard:
+  enabled: false
+  replicas: 1
+  image:
+    repository: docker4zerocool/cha-com
+    tag: ""                 # default = v<.Chart.AppVersion>
+    pullPolicy: IfNotPresent
+  # approvalBaseURL is REQUIRED when dashboard.enabled=true: the externally
+  # reachable base URL of the approval-server (e.g.
+  # https://cha-approve.example.com). The /approvals page builds
+  # Approve/Deny/Ignore links against it, so the action links work.
+  approvalBaseURL: ""
+  # authHeader is the HTTP header carrying the oauth2-proxy-authenticated
+  # operator identity, displayed in the page header. Default matches the
+  # approval-server convention.
+  authHeader: "X-Forwarded-User"
+  # auditLogPath optionally points at the approval-server's tamper-evident
+  # audit JSONL (its --ai-audit-log output) to power /history and
+  # /approvals. Empty = those pages render an empty state.
+  auditLogPath: ""
+  historyLimit: 100         # max rows on /history (most-recent first)
+  approvalsLimit: 50        # max rows on /approvals (most-recent first)
+  ingress:
+    enabled: false
+    host: ""                # REQUIRED if dashboard.ingress.enabled; e.g. cha-dashboard.example.com
+    ingressClassName: ""
+    annotations: {}         # e.g. oauth2-proxy / cert-manager annotations
+    tls:
+      enabled: true
+      secretName: ""        # default: <release>-dashboard-tls
+  # NetworkPolicy restricting ingress to the dashboard pods to ONLY the
+  # gateway/oauth2-proxy namespace — same default-off + required-selector
+  # contract as approval.networkPolicy (P2.6b). Default OFF because a
+  # NetworkPolicy is fail-closed: enabling it with the wrong
+  # gatewayNamespaceSelector (or on a CNI that does not enforce
+  # NetworkPolicy) silently makes the dashboard unreachable. Strongly
+  # RECOMMENDED in production once the gateway namespace's labels are known.
+  networkPolicy:
+    enabled: false
+    gatewayNamespaceSelector: {}   # REQUIRED if enabled; e.g. {kubernetes.io/metadata.name: gateway}
+  resources:                # defaults to top-level resources if unset
+    limits:
+      cpu: 200m
+      memory: 128Mi
+    requests:
+      cpu: 20m
+      memory: 32Mi
+  nodeSelector: {}
+
 # Gatekeeper ConstraintTemplate — third-layer admission policy that rejects
 # mutations against protected namespaces even if a signed approval somehow
 # requested one. Requires OPA Gatekeeper to be installed in the cluster.
