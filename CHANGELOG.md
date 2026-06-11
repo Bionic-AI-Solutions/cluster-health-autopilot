@@ -13,6 +13,16 @@ serves the latest tagged chart cut.
 
 ## [Unreleased]
 
+### Added — chart: deploy the read-only hosted dashboard (P6.6)
+
+P6.6 shipped a `cha-com dashboard` subcommand (a read-only, server-rendered HTML view of findings/approvals/history). This wires the OSS Helm chart to actually deploy it, mirroring the approval-server's chart pattern.
+
+- **values.yaml** — a new `dashboard:` block, default `enabled: false` (byte-identical render for existing installs). Carries `image` (defaults to the `docker4zerocool/cha-com` image like `approval`/`ai`), `replicas`, `approvalBaseURL` (REQUIRED when enabled — the approval-server URL the Approve/Deny/Ignore links target), `authHeader` (default `X-Forwarded-User`), optional `auditLogPath`, `historyLimit`/`approvalsLimit`, `ingress.{host,ingressClassName,annotations,tls}`, and `networkPolicy.{enabled,gatewayNamespaceSelector}` (default-off, required-selector-when-enabled — the same P2.6b fail-closed contract as `approval.networkPolicy`).
+- **Templates** (all gated on `dashboard.enabled`) — `dashboard-deployment.yaml` (runs `cha-com dashboard` with `--approval-base-url` + `--auth-header`), `dashboard-service.yaml` (ClusterIP :8444), `dashboard-serviceaccount.yaml` (a DEDICATED `<release>-dashboard` SA), `dashboard-rbac.yaml` (a **read-only** ClusterRole — `get/list/watch` on `driftreports` only, plus `resolutionrecords` read when that CRD is enabled — bound to the dashboard SA; **no signing key, no mutate verbs, no Secret access**), `dashboard-ingress.yaml`, and `dashboard-networkpolicy.yaml` (mirrors the approval-server P2.6b NetworkPolicy: restricts ingress to the gateway namespace).
+- **Guard test** — `chart_dashboard_binding_sa_test.go` asserts the dashboard ClusterRoleBinding targets the dashboard's OWN SA (`<fullname>-dashboard`, not the watcher SA — the silence-binding-bug class) AND that the ClusterRole carries ONLY `get/list/watch` with no mutate verb and no `secrets` reference.
+
+Operator path: this follow-up is **chart-only by design**. Wiring the operator (a `DashboardSpec` CRD field + DeepCopy + reconcile/teardown + a cluster-scoped ClusterRole/Binding requiring finalizer cleanup) would touch the CRD and trip the CRD/RBAC/bundle parity gates; per the P6.6 deploy note the operator path is tracked as a separate follow-up so the parity gates stay green and the CRD surface is unchanged.
+
 ### Added — chart + operator: ticketing.{jira,servicenow,route} values → CHA-com ticketing env (makes the paid Jira/ServiceNow sinks deployable)
 
 The CHA-com Jira/ServiceNow ticketing sinks just shipped but were undeployable end-to-end: nothing populated the `CHA_JIRA_*` / `CHA_SERVICENOW_*` / `CHA_TICKETING_ROUTE` env vars the aiwatch (cha-com) container reads. This wires them through both render paths the OSS chart/operator own.
