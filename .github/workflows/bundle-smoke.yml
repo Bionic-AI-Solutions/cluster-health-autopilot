@@ -340,7 +340,7 @@ jobs:
             got=$(kubectl -n cha-system get clusterhealthautopilot/smoke-full \
               -o jsonpath="{${path}}" 2>/dev/null || echo "")
             if [ -z "$got" ]; then
-              echo "FAIL: ${path} came back EMPTY — the installed CRD schema is missing this subtree and the apiserver pruned it (the v1.24.0 bug class). Regenerate bundle/manifests/cha.bionicaisolutions.com_clusterhealthautopilots.yaml from the chart CRD."
+              echo "FAIL: ${path} came back EMPTY — the installed CRD schema is missing this subtree and the apiserver pruned it (the v1.24.0 bug class). Hand-port the missing subtree into bundle/manifests/cha.bionicaisolutions.com_clusterhealthautopilots.yaml from the chart CRD."
               exit 1
             fi
             echo "PASS: ${path} = ${got}"

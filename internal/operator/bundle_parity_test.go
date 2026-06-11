@@ -186,13 +186,13 @@ func TestBundle_CRDSchemasMatchChart(t *testing.T) {
 
 			for _, path := range sortedKeys(chartPaths) {
 				if _, ok := bundlePaths[path]; !ok {
-					t.Errorf("CRD %s %s: schema path %q exists in chart CRD (%s) but is MISSING from the bundle CRD — schema-strict clusters will silently prune it on OLM installs; regenerate/port the subtree into %s",
+					t.Errorf("CRD %s %s: schema path %q exists in chart CRD (%s) but is MISSING from the bundle CRD — schema-strict clusters will silently prune it on OLM installs; hand-port the subtree into (no CRD generation tooling exists, by design) %s",
 						bundle.Metadata.Name, bv.Name, path, chart.path, p)
 				}
 			}
 			for _, path := range sortedKeys(bundlePaths) {
 				if _, ok := chartPaths[path]; !ok {
-					t.Errorf("CRD %s %s: schema path %q exists in bundle CRD (%s) but is MISSING from the chart CRD — schema-strict clusters will silently prune it on helm installs; regenerate/port the subtree into %s",
+					t.Errorf("CRD %s %s: schema path %q exists in bundle CRD (%s) but is MISSING from the chart CRD — schema-strict clusters will silently prune it on helm installs; hand-port the subtree into (no CRD generation tooling exists, by design) %s",
 						bundle.Metadata.Name, bv.Name, path, p, chart.path)
 				}
 			}
