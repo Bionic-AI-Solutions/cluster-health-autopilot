@@ -1,0 +1,318 @@
+# drift-injector.yaml — the synthetic-drift generator.
+#
+# A CronJob runs every few minutes, tears down last cycle's broken objects, and
+# recreates four scenarios. Each maps 1:1 to a SHIPPED OSS analyzer/probe so the
+# CHA watcher in this namespace produces a real DriftReport for each. No custom
+# image: we run an inline bash script on the stock alpine/k8s image (kubectl +
+# bash; openssl is apk-added at runtime for the TLS scenario).
+#
+# Scenario -> analyzer/probe (verified against internal/diagnose + internal/probe):
+#
+#   1. ImagePullAuth          -> internal/diagnose/image_pull_auth.go  (ImagePullAuth)
+#        A Deployment whose pod references a non-existent imagePullSecret pulling
+#        from a private registry. Kubelet emits an auth-flavored pull failure
+#        ("pull access denied" / "unauthorized") -> ImagePullBackOff. The analyzer
+#        keys on the auth-signal substrings in the Warning events.
+#
+#   2. SecretKeyMissing       -> internal/diagnose/secret_key_missing.go (SecretKeyMissing)
+#        A Job whose pod env references a key that does NOT exist in an existing
+#        Secret. Kubelet -> CreateContainerConfigError with
+#        "couldn't find key <KEY> in Secret cha-playground/<secret>". This is the
+#        "StuckJobsWithBadSecretRef" scenario from the plan.
+#
+#   3. TLSSecretMismatch      -> internal/diagnose/tls_secret_mismatch.go (TLSSecretMismatch)
+#        An Ingress whose spec.tls[].secretName points at an EXPIRED, hand-made
+#        TLS secret, while a healthy cert-manager-style Certificate-Secret with
+#        the same dnsName exists under a DIFFERENT name. The analyzer reports the
+#        crossed-wires expiry pattern. (We emulate the cert-manager Certificate by
+#        labeling a second TLS secret; the analyzer matches on the expired served
+#        cert + same hostname.)
+#
+#   4. CrashLoopBackOff       -> internal/probe/crashloop.go            (CrashLoopBackOff)
+#        A Deployment whose container exits 1 immediately and loops. The probe
+#        catches any pod in CrashLoopBackOff cluster-wide.
+#
+# The script is idempotent: it deletes by label then recreates, so each tick
+# leaves exactly one live instance of each scenario for the demo.
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cha-playground-injector-script
+  namespace: cha-playground
+data:
+  inject.sh: |
+    #!/usr/bin/env bash
+    set -euo pipefail
+    NS=cha-playground
+    LABEL="cha.bionicaisolutions.com/playground=drift"
+
+    # alpine/k8s ships kubectl + bash but not openssl; add it (egress :443 is
+    # allowed by the namespace NetworkPolicy). If apk is unavailable the TLS
+    # scenario is skipped rather than failing the whole tick.
+    if ! command -v openssl >/dev/null 2>&1; then
+      apk add --no-cache openssl >/dev/null 2>&1 || true
+    fi
+
+    echo "==> resetting previous scenarios"
+    kubectl -n "$NS" delete deploy,job,ingress,secret -l "$LABEL" --ignore-not-found --wait=false || true
+    # give the API a moment so recreated names don't collide with terminating ones
+    sleep 5
+
+    echo "==> [1/4] ImagePullAuth: deployment with bad imagePullSecret + private image"
+    kubectl -n "$NS" create secret docker-registry pg-badcreds-$RANDOM \
+      --docker-server=registry.example.com \
+      --docker-username=nobody --docker-password=wrongpass \
+      --docker-email=nobody@example.com \
+      --dry-run=client -o yaml | kubectl label -f - --local -o yaml \
+      "cha.bionicaisolutions.com/playground=drift" | kubectl apply -f -
+    BADSECRET=$(kubectl -n "$NS" get secret -l "$LABEL" -o name | grep -m1 pg-badcreds | cut -d/ -f2)
+    cat <<EOF | kubectl apply -f -
+    apiVersion: apps/v1
+    kind: Deployment
+    metadata:
+      name: imagepull-auth-drift
+      namespace: $NS
+      labels: { cha.bionicaisolutions.com/playground: drift }
+    spec:
+      replicas: 1
+      selector: { matchLabels: { app: imagepull-auth-drift } }
+      template:
+        metadata: { labels: { app: imagepull-auth-drift, cha.bionicaisolutions.com/playground: drift } }
+        spec:
+          # avoid GPU nodes
+          affinity:
+            nodeAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                nodeSelectorTerms:
+                  - matchExpressions:
+                      - { key: nvidia.com/gpu.present, operator: DoesNotExist }
+          imagePullSecrets:
+            - name: $BADSECRET
+          containers:
+            - name: app
+              # Docker Hub private-style ref that resolves and returns an AUTH
+              # failure ("pull access denied ... denied: requested access to the
+              # resource is denied"). Those substrings are exactly the
+              # authSignals ImagePullAuth keys on (internal/diagnose/image_pull_auth.go),
+              # so this fires the ImagePullAuth analyzer, not just the generic
+              # ImagePullBackOff log-pattern matcher.
+              image: docker.io/chaplayground/private-does-not-exist:latest
+    EOF
+
+    echo "==> [2/4] SecretKeyMissing: job referencing a missing key in an existing Secret"
+    kubectl -n "$NS" create secret generic playground-config \
+      --from-literal=PRESENT_KEY=value \
+      --dry-run=client -o yaml | kubectl label -f - --local -o yaml \
+      "cha.bionicaisolutions.com/playground=drift" | kubectl apply -f -
+    cat <<EOF | kubectl apply -f -
+    apiVersion: batch/v1
+    kind: Job
+    metadata:
+      name: stuck-job-badsecretref-drift
+      namespace: $NS
+      labels: { cha.bionicaisolutions.com/playground: drift }
+    spec:
+      backoffLimit: 6
+      template:
+        metadata: { labels: { app: stuck-job-badsecretref-drift, cha.bionicaisolutions.com/playground: drift } }
+        spec:
+          restartPolicy: Never
+          affinity:
+            nodeAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                nodeSelectorTerms:
+                  - matchExpressions:
+                      - { key: nvidia.com/gpu.present, operator: DoesNotExist }
+          containers:
+            - name: app
+              image: busybox:1.36
+              command: ["sh", "-c", "echo ok"]
+              env:
+                - name: MISSING_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: playground-config
+                      key: ABSENT_KEY   # not present in playground-config -> CreateContainerConfigError
+    EOF
+
+    echo "==> [3/4] TLSSecretMismatch: ingress serving an EXPIRED tls secret while a healthy same-host cert secret exists under another name"
+    HOST="playground-tls-demo.cha-playground.svc"
+    if command -v openssl >/dev/null 2>&1; then
+    # Mint an ALREADY-EXPIRED cert for the Ingress to serve. `req -x509` only
+    # accepts positive -days across OpenSSL versions, so we sign a leaf via
+    # `openssl ca` with explicit past -startdate/-enddate (portable on 1.x+3.x).
+    # Timestamps use epoch arithmetic so busybox `date` (alpine) can format them.
+    NOW=$(date -u +%s)
+    SD=$(date -u -d "@$((NOW - 10*86400))" +%Y%m%d%H%M%SZ)
+    ED=$(date -u -d "@$((NOW -  2*86400))" +%Y%m%d%H%M%SZ)
+    openssl req -x509 -newkey rsa:2048 -nodes -keyout /tmp/ca.key -out /tmp/ca.crt \
+      -days 365 -subj "/CN=playground-ca" 2>/dev/null
+    openssl req -newkey rsa:2048 -nodes -keyout /tmp/exp.key -out /tmp/exp.csr \
+      -subj "/CN=$HOST" -addext "subjectAltName=DNS:$HOST" 2>/dev/null
+    mkdir -p /tmp/ca/newcerts; : > /tmp/ca/index.txt; echo 1000 > /tmp/ca/serial
+    cat > /tmp/ca.cnf <<CNF
+    [ca]
+    default_ca = CA_default
+    [CA_default]
+    dir = /tmp/ca
+    database = /tmp/ca/index.txt
+    serial = /tmp/ca/serial
+    new_certs_dir = /tmp/ca/newcerts
+    certificate = /tmp/ca.crt
+    private_key = /tmp/ca.key
+    default_md = sha256
+    policy = pol
+    copy_extensions = copy
+    [pol]
+    commonName = supplied
+    CNF
+    openssl ca -batch -config /tmp/ca.cnf -in /tmp/exp.csr -out /tmp/exp.crt \
+      -startdate "$SD" -enddate "$ED" -notext 2>/dev/null
+    kubectl -n "$NS" create secret tls expired-served-tls \
+      --cert=/tmp/exp.crt --key=/tmp/exp.key \
+      --dry-run=client -o yaml | kubectl label -f - --local -o yaml \
+      "cha.bionicaisolutions.com/playground=drift" | kubectl apply -f -
+    # Healthy cert-manager-style secret for the SAME host under a DIFFERENT name.
+    openssl req -x509 -newkey rsa:2048 -nodes -keyout /tmp/ok.key -out /tmp/ok.crt \
+      -days 90 -subj "/CN=$HOST" -addext "subjectAltName=DNS:$HOST" 2>/dev/null
+    kubectl -n "$NS" create secret tls healthy-renewed-tls \
+      --cert=/tmp/ok.crt --key=/tmp/ok.key \
+      --dry-run=client -o yaml | kubectl label -f - --local -o yaml \
+      "cha.bionicaisolutions.com/playground=drift" | kubectl apply -f -
+    # A Ready cert-manager Certificate for the SAME host targeting the DIFFERENT
+    # (healthy) secret. TLSSecretMismatch matches the crossed wires ONLY when such
+    # a Ready Certificate exists (findMismatchedManagedCert in the analyzer). This
+    # needs the cert-manager Certificate CRD present (every real cluster has it;
+    # the kind quick-try installs just the CRD — see README). If the CRD is
+    # absent the create no-ops and the scenario degrades to the Endpoints probe.
+    # Attempt the Certificate apply directly (the injector SA can't read
+    # cluster-scoped CRDs, so we probe by trying the apply). A failure means the
+    # CRD is absent and the scenario degrades to the Endpoints probe.
+    if cat <<EOF | kubectl apply -f - 2>/dev/null
+    apiVersion: cert-manager.io/v1
+    kind: Certificate
+    metadata:
+      name: healthy-renewed
+      namespace: $NS
+      labels: { cha.bionicaisolutions.com/playground: drift }
+    spec:
+      secretName: healthy-renewed-tls
+      dnsNames: ["$HOST"]
+      issuerRef: { name: playground-selfsigned, kind: Issuer }
+    EOF
+    then
+      # No cert-manager controller runs in the playground, so stamp Ready=True
+      # ourselves (the analyzer only reads status.conditions).
+      kubectl -n "$NS" patch certificate healthy-renewed --type=merge --subresource=status \
+        -p '{"status":{"conditions":[{"type":"Ready","status":"True","reason":"Playground","message":"synthetic"}]}}' 2>/dev/null \
+        || kubectl -n "$NS" patch certificate healthy-renewed --type=merge \
+             -p '{"status":{"conditions":[{"type":"Ready","status":"True","reason":"Playground","message":"synthetic"}]}}' 2>/dev/null || true
+      echo "    Certificate healthy-renewed created (Ready=True) — TLSSecretMismatch armed"
+    else
+      echo "    (cert-manager Certificate CRD absent — TLSSecretMismatch will degrade to the Endpoints probe)"
+    fi
+    cat <<EOF | kubectl apply -f -
+    apiVersion: networking.k8s.io/v1
+    kind: Ingress
+    metadata:
+      name: tls-mismatch-drift
+      namespace: $NS
+      labels: { cha.bionicaisolutions.com/playground: drift }
+    spec:
+      tls:
+        - hosts: ["$HOST"]
+          secretName: expired-served-tls   # crossed wires: serves the expired cert
+      rules:
+        - host: $HOST
+          http:
+            paths:
+              - path: /
+                pathType: Prefix
+                backend:
+                  service:
+                    name: nonexistent
+                    port: { number: 80 }
+    EOF
+    else
+      echo "    (openssl unavailable — skipping TLSSecretMismatch scenario this tick)"
+    fi
+
+    echo "==> [4/4] CrashLoopBackOff: deployment whose container exits 1 in a loop"
+    cat <<EOF | kubectl apply -f -
+    apiVersion: apps/v1
+    kind: Deployment
+    metadata:
+      name: crashloop-drift
+      namespace: $NS
+      labels: { cha.bionicaisolutions.com/playground: drift }
+    spec:
+      replicas: 1
+      selector: { matchLabels: { app: crashloop-drift } }
+      template:
+        metadata: { labels: { app: crashloop-drift, cha.bionicaisolutions.com/playground: drift } }
+        spec:
+          affinity:
+            nodeAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                nodeSelectorTerms:
+                  - matchExpressions:
+                      - { key: nvidia.com/gpu.present, operator: DoesNotExist }
+          containers:
+            - name: app
+              image: busybox:1.36
+              command: ["sh", "-c", "echo starting; sleep 2; echo crashing; exit 1"]
+    EOF
+
+    echo "==> all four scenarios injected"
+    kubectl -n "$NS" get deploy,job,ingress -l "$LABEL"
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: cha-playground-drift-injector
+  namespace: cha-playground
+  labels:
+    cha.bionicaisolutions.com/role: playground-injector
+spec:
+  # Rotate every 15 minutes so the demo is always live and self-heals if a
+  # visitor (or CHA, if remedy were on) cleans a scenario up.
+  schedule: "*/15 * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 2
+  startingDeadlineSeconds: 120
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      activeDeadlineSeconds: 180
+      template:
+        metadata:
+          labels:
+            cha.bionicaisolutions.com/role: playground-injector
+        spec:
+          serviceAccountName: cha-playground-injector
+          restartPolicy: Never
+          # Keep the injector itself off GPU nodes.
+          affinity:
+            nodeAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                nodeSelectorTerms:
+                  - matchExpressions:
+                      - key: nvidia.com/gpu.present
+                        operator: DoesNotExist
+          containers:
+            - name: inject
+              image: alpine/k8s:1.30.0
+              command: ["bash", "/scripts/inject.sh"]
+              volumeMounts:
+                - name: script
+                  mountPath: /scripts
+              resources:
+                requests: { cpu: 20m, memory: 32Mi }
+                limits: { cpu: 200m, memory: 128Mi }
+          volumes:
+            - name: script
+              configMap:
+                name: cha-playground-injector-script
+                defaultMode: 0755

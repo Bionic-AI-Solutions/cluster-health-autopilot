@@ -1,0 +1,85 @@
+# cha-values.yaml — Helm values for the playground's CHA watcher.
+#
+# Installs the OSS chart (charts/cluster-health-autopilot) INTO the
+# cha-playground namespace as a diagnose-only watcher:
+#
+#   * watcher.enabled=true        — run the live informer-driven watcher.
+#   * watcher.remedy.enabled=false — NEVER mutate (off by default anyway).
+#                                    The playground only DETECTS drift.
+#   * driftReport.enabled=true     — upsert DriftReport CRs (what the viewer reads).
+#   * ai / approval / remediation / ticketing / cloud all OFF — keep it lean & safe.
+#   * leaderElection OFF + replicas=1 — single pod, no Lease needed.
+#   * nodeSelector/affinity avoid GPU nodes.
+#
+# IMPORTANT about scope: the DriftReport CRD is cluster-scoped and the CHA
+# watcher's snapshot Source lists resources cluster-wide (there is no
+# namespace-scope flag on `cha watch`). The reader ClusterRole therefore grants
+# cluster-wide READ-ONLY access. That's safe — the watcher never mutates with
+# remedy off — and in the playground the ONLY namespace that ever contains drift
+# is cha-playground (the injector creates it nowhere else), so every DriftReport
+# you see originates here. If you need hard read-isolation, run the playground on
+# a dedicated cluster (the kind quick-try does exactly that).
+#
+# Install:
+#   helm install cha-playground ./charts/cluster-health-autopilot \
+#     -n cha-playground --create-namespace \
+#     -f examples/playground/cha-values.yaml
+
+# The watcher MUST run the OSS `cha` image — its `cha watch --live
+# --write-driftreports` flags are what the chart renders. Do NOT point this
+# at the commercial `cha-com` image: that binary's reduced flag surface
+# REJECTS `--live`/`--write-driftreports`/`--remedy` and the watcher would
+# crash-loop on an unknown flag (see CHANGELOG v1.8.4 / the v1.23.0 flag-drift
+# class). Pin a real current OSS tag in prod (>= v1.9; v1.25.x current).
+image:
+  repository: docker4zerocool/cluster-health-autopilot
+  tag: "1.25.1"
+  pullPolicy: IfNotPresent
+
+# Single diagnose-only watcher.
+watcher:
+  enabled: true
+  replicas: 1
+  debounce: 10s
+  resyncPeriod: 5m
+  remedy:
+    enabled: false        # detection only — the playground must never mutate
+  leaderElection:
+    enabled: false        # single pod; no Lease
+  slack:
+    postOnResolved: false
+
+# DriftReport CRs are the viewer's data source — keep them on.
+driftReport:
+  enabled: true
+
+# RBAC: provision the reader ClusterRole/binding for the watcher SA.
+rbac:
+  create: true
+
+# Everything heavyweight / mutating stays OFF.
+remediation:
+  enabled: false
+ai:
+  enabled: false
+approval:
+  enabled: false
+ticketing:
+  enabled: false
+cloud:
+  enabled: false
+alertmanager:
+  enabled: false
+
+# Cron diagnose/remediate jobs not needed — the live watcher covers it.
+# (cronjob templates gate on their own toggles; leaving defaults is fine.)
+
+# Keep CHA off GPU nodes.
+nodeSelector: {}
+affinity:
+  nodeAffinity:
+    requiredDuringSchedulingIgnoredDuringExecution:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: nvidia.com/gpu.present
+              operator: DoesNotExist

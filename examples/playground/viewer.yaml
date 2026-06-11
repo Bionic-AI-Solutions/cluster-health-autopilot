@@ -1,0 +1,123 @@
+# viewer.yaml — the live findings viewer (Deployment + Service + Ingress).
+#
+# We ship the tiny OSS read-only viewer (examples/playground/viewer) rather than
+# the CHA-com dashboard image, so the whole playground is self-contained OSS and
+# anyone can `kind`-run it without a private image. The viewer lists the
+# cluster-scoped DriftReport CRs and renders them as an auto-refreshing page.
+# It runs under the cha-playground-viewer SA (driftreports read-only).
+#
+# Image: build + push it as documented in README.md, then set viewer.image here.
+# A pinned digest/tag in your registry is recommended for the hosted playground.
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cha-playground-viewer
+  namespace: cha-playground
+  labels:
+    cha.bionicaisolutions.com/role: playground-viewer
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: cha-playground-viewer
+  template:
+    metadata:
+      labels:
+        app: cha-playground-viewer
+        cha.bionicaisolutions.com/role: playground-viewer
+    spec:
+      serviceAccountName: cha-playground-viewer
+      # Keep the viewer off GPU nodes.
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: nvidia.com/gpu.present
+                    operator: DoesNotExist
+      securityContext:
+        runAsNonRoot: true
+        # distroless:nonroot is UID 65532; pin it numerically so the kubelet can
+        # verify non-root (a non-numeric image user fails runAsNonRoot).
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: viewer
+          # REPLACE with your registry tag (see README.md "Build the viewer").
+          image: docker4zerocool/cha-playground-viewer:dev
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: LISTEN
+              value: ":8080"
+          ports:
+            - name: http
+              containerPort: 8080
+          readinessProbe:
+            httpGet: { path: /healthz, port: http }
+            initialDelaySeconds: 2
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+            initialDelaySeconds: 5
+            periodSeconds: 30
+          resources:
+            requests: { cpu: 20m, memory: 32Mi }
+            limits: { cpu: 200m, memory: 128Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: cha-playground-viewer
+  namespace: cha-playground
+  labels:
+    cha.bionicaisolutions.com/role: playground-viewer
+spec:
+  selector:
+    app: cha-playground-viewer
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+---
+# Ingress for playground.asre.baisoln.com.
+# Mirrors the cluster's website/grafana ingress pattern (deploy repo
+# monitoring/gpu-monitor/25-grafana-ingress.yaml): Kong ingress class +
+# cert-manager letsencrypt-prod cluster-issuer, TLS secret named <host>-tls.
+# Plain HTTP (no Kong key-auth) — this is a public read-only demo page.
+#
+# NOTE: this Ingress is for the PROD/hosted install only. On a kind cluster
+# there is no Kong/cert-manager; use `kubectl port-forward` instead (README).
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: cha-playground-viewer
+  namespace: cha-playground
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    konghq.com/preserve-host: "true"
+    konghq.com/protocols: http,https
+    konghq.com/strip-path: "false"
+spec:
+  ingressClassName: kong
+  tls:
+    - hosts: ["playground.asre.baisoln.com"]
+      secretName: playground-asre-baisoln-com-tls
+  rules:
+    - host: playground.asre.baisoln.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: cha-playground-viewer
+                port:
+                  name: http

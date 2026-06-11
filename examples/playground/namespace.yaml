@@ -1,0 +1,201 @@
+# namespace.yaml — the isolated cha-playground namespace + guardrails.
+#
+# Everything the hosted playground runs lives in ONE namespace so a visitor
+# watching synthetic drift can never disturb a real workload:
+#
+#   * ResourceQuota   — hard cap on pods / cpu / memory the demo can ever use.
+#   * LimitRange      — every container gets a small default request/limit so a
+#                       runaway scenario can't starve a node.
+#   * NetworkPolicy   — default-deny ingress + egress, with the minimum holes
+#                       punched (DNS, in-namespace, and HTTPS-out for image
+#                       pulls). The drift pods are deliberately broken anyway.
+#   * RBAC            — the drift-injector SA can only act INSIDE this namespace
+#                       (a namespaced Role, never a ClusterRole).
+#   * nodeSelector/affinity to avoid GPU nodes is applied per-workload (see
+#     drift-injector.yaml / viewer.yaml), since it cannot live on the Namespace.
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: cha-playground
+  labels:
+    app.kubernetes.io/part-of: cluster-health-autopilot
+    cha.bionicaisolutions.com/role: playground
+    # Pod Security Admission — baseline is enough; the drift pods are
+    # ordinary (broken) workloads, not privileged.
+    pod-security.kubernetes.io/enforce: baseline
+    pod-security.kubernetes.io/warn: baseline
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: cha-playground-quota
+  namespace: cha-playground
+spec:
+  hard:
+    pods: "30"
+    requests.cpu: "1"
+    requests.memory: 1Gi
+    limits.cpu: "2"
+    limits.memory: 2Gi
+    count/jobs.batch: "20"
+    count/deployments.apps: "10"
+---
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: cha-playground-limits
+  namespace: cha-playground
+spec:
+  limits:
+    - type: Container
+      default:
+        cpu: 100m
+        memory: 64Mi
+      defaultRequest:
+        cpu: 20m
+        memory: 32Mi
+      max:
+        cpu: 500m
+        memory: 256Mi
+---
+# Default-deny everything, then re-open the minimum the namespace needs.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: cha-playground-default-deny
+  namespace: cha-playground
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+---
+# Allow DNS resolution (kube-dns / CoreDNS) so image refs + the viewer resolve.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: cha-playground-allow-dns
+  namespace: cha-playground
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+---
+# Allow traffic WITHIN the namespace (viewer <-> nothing else; future-proofing)
+# and HTTPS egress so the injector image (alpine/k8s) and the viewer pull.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: cha-playground-allow-intra-and-https
+  namespace: cha-playground
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # In-namespace traffic (e.g. nothing today, but keeps the viewer reachable
+    # from a same-namespace probe) + the ingress controller reaching the viewer.
+    - from:
+        - podSelector: {}
+    - {} # the cluster ingress controller lives outside; allow it to reach :8080
+  egress:
+    - to:
+        - podSelector: {}
+    - ports:
+        - protocol: TCP
+          port: 443 # image pulls / kube-apiserver over HTTPS
+        - protocol: TCP
+          port: 6443 # kube-apiserver (kind / k3s)
+---
+# The drift-injector ServiceAccount. Namespaced Role only — it can create and
+# delete the synthetic-drift objects ONLY inside cha-playground.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: cha-playground-injector
+  namespace: cha-playground
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: cha-playground-injector
+  namespace: cha-playground
+rules:
+  # Create/rotate the four synthetic-drift scenarios.
+  - apiGroups: [""]
+    resources: ["secrets", "configmaps"]
+    verbs: ["get", "list", "create", "update", "patch", "delete"]
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["get", "list", "create", "update", "patch", "delete"]
+  - apiGroups: ["batch"]
+    resources: ["jobs"]
+    verbs: ["get", "list", "create", "update", "patch", "delete"]
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["ingresses"]
+    verbs: ["get", "list", "create", "update", "patch", "delete"]
+  # cert-manager Certificate for the TLSSecretMismatch scenario (no-op if the
+  # CRD is absent). status patch needs the status subresource too.
+  - apiGroups: ["cert-manager.io"]
+    resources: ["certificates", "certificates/status"]
+    verbs: ["get", "list", "create", "update", "patch", "delete"]
+  # Clean up the pods each scenario spawns when rotating.
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: cha-playground-injector
+  namespace: cha-playground
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: cha-playground-injector
+subjects:
+  - kind: ServiceAccount
+    name: cha-playground-injector
+    namespace: cha-playground
+---
+# Read-only ServiceAccount for the live viewer. It only needs to list the
+# cluster-scoped DriftReport CRD (DriftReports are NOT namespaced — see the
+# CRD: scope: Cluster). We grant the narrowest possible cluster read: just
+# driftreports, get/list/watch. No Secret / Pod / anything-else access.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: cha-playground-viewer
+  namespace: cha-playground
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: cha-playground-viewer-driftreports-read
+rules:
+  - apiGroups: ["cha.bionicaisolutions.com"]
+    resources: ["driftreports"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: cha-playground-viewer-driftreports-read
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cha-playground-viewer-driftreports-read
+subjects:
+  - kind: ServiceAccount
+    name: cha-playground-viewer
+    namespace: cha-playground

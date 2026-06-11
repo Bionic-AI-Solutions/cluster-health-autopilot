@@ -1,0 +1,16 @@
+# kustomization.yaml — the non-Helm half of the playground bundle.
+#
+# The CHA watcher is installed with Helm (cha-values.yaml); everything else
+# (the isolated namespace + guardrails, the drift injector, the viewer) is plain
+# YAML applied with kustomize:
+#
+#   kubectl apply -k examples/playground/
+#
+# Order matters only for the namespace; kubectl apply -k creates the Namespace
+# before namespaced objects in the same apply.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - namespace.yaml
+  - drift-injector.yaml
+  - viewer.yaml
