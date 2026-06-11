@@ -1082,6 +1082,101 @@ type TicketingSpec struct {
 	// in-cluster HTTP traffic.
 	// +optional
 	Auth *TicketingAuthSpec `json:"auth,omitempty"`
+
+	// Route is the CHA-com ticketing route expression (CHA_TICKETING_ROUTE).
+	// Selects which sink a finding is sent to (provider selects the
+	// default). CHA-com only — empty leaves the env var unset.
+	// +optional
+	Route string `json:"route,omitempty"`
+
+	// Jira configures the CHA-com Jira sink. CHA-com only. All fields
+	// optional; the token flows via a secret-ref (never a literal). Empty
+	// leaves the CHA_JIRA_* env vars unset.
+	// +optional
+	Jira *TicketingJiraSpec `json:"jira,omitempty"`
+
+	// ServiceNow configures the CHA-com ServiceNow sink. CHA-com only.
+	// All fields optional; the password / bearer flow via secret-refs
+	// (never literals). Empty leaves the CHA_SERVICENOW_* env vars unset.
+	// +optional
+	ServiceNow *TicketingServiceNowSpec `json:"servicenow,omitempty"`
+}
+
+// TicketingJiraSpec configures the CHA-com Jira sink. CHA-com only — the
+// OSS chart/operator only render these as CHA_JIRA_* env on the aiwatch
+// container; the token flows via TokenSecret (secretKeyRef → CHA_JIRA_TOKEN),
+// never as a literal value.
+type TicketingJiraSpec struct {
+	// URL is the Jira base URL (CHA_JIRA_URL).
+	// +optional
+	URL string `json:"url,omitempty"`
+	// Project is the Jira project key (CHA_JIRA_PROJECT).
+	// +optional
+	Project string `json:"project,omitempty"`
+	// Email is the Jira account email for token auth (CHA_JIRA_EMAIL).
+	// +optional
+	Email string `json:"email,omitempty"`
+	// IssueType is the Jira issue type (CHA_JIRA_ISSUE_TYPE), e.g. "Bug".
+	// +optional
+	IssueType string `json:"issueType,omitempty"`
+	// Priority maps CHA severities → Jira priority names
+	// (CHA_JIRA_PRIORITY_{CRITICAL,WARNING,INFO}).
+	// +optional
+	Priority *TicketingPrioritySpec `json:"priority,omitempty"`
+	// WebURLBase is the Jira web UI base for clickable ticket URLs
+	// (CHA_JIRA_WEB_URL_BASE).
+	// +optional
+	WebURLBase string `json:"webUrlBase,omitempty"`
+	// TokenSecret references the K8s Secret holding the Jira API token,
+	// wired as CHA_JIRA_TOKEN via secretKeyRef. Empty → no token env.
+	// +optional
+	TokenSecret *TicketingSecretRef `json:"tokenSecret,omitempty"`
+}
+
+// TicketingServiceNowSpec configures the CHA-com ServiceNow sink. CHA-com
+// only — the password / bearer flow via secret-refs (CHA_SERVICENOW_PASSWORD
+// / CHA_SERVICENOW_BEARER), never as literals.
+type TicketingServiceNowSpec struct {
+	// URL is the ServiceNow instance base URL (CHA_SERVICENOW_URL).
+	// +optional
+	URL string `json:"url,omitempty"`
+	// User is the ServiceNow username for basic auth (CHA_SERVICENOW_USER).
+	// +optional
+	User string `json:"user,omitempty"`
+	// Urgency maps CHA severities → ServiceNow urgency values
+	// (CHA_SERVICENOW_URGENCY_{CRITICAL,WARNING,INFO}).
+	// +optional
+	Urgency *TicketingPrioritySpec `json:"urgency,omitempty"`
+	// Impact maps CHA severities → ServiceNow impact values
+	// (CHA_SERVICENOW_IMPACT_{CRITICAL,WARNING,INFO}).
+	// +optional
+	Impact *TicketingPrioritySpec `json:"impact,omitempty"`
+	// WebURLBase is the ServiceNow web UI base for clickable ticket URLs
+	// (CHA_SERVICENOW_WEB_URL_BASE).
+	// +optional
+	WebURLBase string `json:"webUrlBase,omitempty"`
+	// PasswordSecret references the K8s Secret holding the ServiceNow
+	// password, wired as CHA_SERVICENOW_PASSWORD via secretKeyRef. Empty →
+	// no password env.
+	// +optional
+	PasswordSecret *TicketingSecretRef `json:"passwordSecret,omitempty"`
+	// BearerSecret references the K8s Secret holding the ServiceNow bearer
+	// token, wired as CHA_SERVICENOW_BEARER via secretKeyRef. Empty → no
+	// bearer env.
+	// +optional
+	BearerSecret *TicketingSecretRef `json:"bearerSecret,omitempty"`
+}
+
+// TicketingSecretRef points a ticketing credential env var at a key inside
+// a K8s Secret. The value never appears in the manifest — it is resolved
+// by the kubelet at pod admission via secretKeyRef.
+type TicketingSecretRef struct {
+	// Name is the K8s Secret name (typically ESO-managed from Vault).
+	// +optional
+	Name string `json:"name,omitempty"`
+	// Key is the key inside the Secret holding the credential.
+	// +optional
+	Key string `json:"key,omitempty"`
 }
 
 // TicketingPrioritySpec maps CHA severities to provider priority IDs.

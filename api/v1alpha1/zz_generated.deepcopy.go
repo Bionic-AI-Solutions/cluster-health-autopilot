@@ -660,6 +660,14 @@ func (in *TicketingSpec) DeepCopyInto(out *TicketingSpec) {
 		out.Auth = new(TicketingAuthSpec)
 		*out.Auth = *in.Auth
 	}
+	if in.Jira != nil {
+		out.Jira = new(TicketingJiraSpec)
+		in.Jira.DeepCopyInto(out.Jira)
+	}
+	if in.ServiceNow != nil {
+		out.ServiceNow = new(TicketingServiceNowSpec)
+		in.ServiceNow.DeepCopyInto(out.ServiceNow)
+	}
 }
 
 // DeepCopy returns a deep copy of the receiver.
@@ -702,6 +710,81 @@ func (in *TicketingAuthSpec) DeepCopy() *TicketingAuthSpec {
 		return nil
 	}
 	out := new(TicketingAuthSpec)
+	in.DeepCopyInto(out)
+	return out
+}
+
+// --- TicketingSecretRef ---
+
+// DeepCopyInto copies the receiver into out. All fields are scalar.
+func (in *TicketingSecretRef) DeepCopyInto(out *TicketingSecretRef) {
+	*out = *in
+}
+
+// DeepCopy returns a deep copy of the receiver.
+func (in *TicketingSecretRef) DeepCopy() *TicketingSecretRef {
+	if in == nil {
+		return nil
+	}
+	out := new(TicketingSecretRef)
+	in.DeepCopyInto(out)
+	return out
+}
+
+// --- TicketingJiraSpec ---
+
+// DeepCopyInto copies the receiver into out. in must be non-nil.
+func (in *TicketingJiraSpec) DeepCopyInto(out *TicketingJiraSpec) {
+	*out = *in
+	if in.Priority != nil {
+		out.Priority = new(TicketingPrioritySpec)
+		*out.Priority = *in.Priority
+	}
+	if in.TokenSecret != nil {
+		out.TokenSecret = new(TicketingSecretRef)
+		*out.TokenSecret = *in.TokenSecret
+	}
+}
+
+// DeepCopy returns a deep copy of the receiver.
+func (in *TicketingJiraSpec) DeepCopy() *TicketingJiraSpec {
+	if in == nil {
+		return nil
+	}
+	out := new(TicketingJiraSpec)
+	in.DeepCopyInto(out)
+	return out
+}
+
+// --- TicketingServiceNowSpec ---
+
+// DeepCopyInto copies the receiver into out. in must be non-nil.
+func (in *TicketingServiceNowSpec) DeepCopyInto(out *TicketingServiceNowSpec) {
+	*out = *in
+	if in.Urgency != nil {
+		out.Urgency = new(TicketingPrioritySpec)
+		*out.Urgency = *in.Urgency
+	}
+	if in.Impact != nil {
+		out.Impact = new(TicketingPrioritySpec)
+		*out.Impact = *in.Impact
+	}
+	if in.PasswordSecret != nil {
+		out.PasswordSecret = new(TicketingSecretRef)
+		*out.PasswordSecret = *in.PasswordSecret
+	}
+	if in.BearerSecret != nil {
+		out.BearerSecret = new(TicketingSecretRef)
+		*out.BearerSecret = *in.BearerSecret
+	}
+}
+
+// DeepCopy returns a deep copy of the receiver.
+func (in *TicketingServiceNowSpec) DeepCopy() *TicketingServiceNowSpec {
+	if in == nil {
+		return nil
+	}
+	out := new(TicketingServiceNowSpec)
 	in.DeepCopyInto(out)
 	return out
 }

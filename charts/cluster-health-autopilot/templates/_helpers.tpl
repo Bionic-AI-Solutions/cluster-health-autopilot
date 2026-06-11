@@ -519,4 +519,123 @@ is unset (in-cluster vLLM with no auth).
       name: {{ .Values.ai.apiKey.secretName }}
       key: {{ .Values.ai.apiKey.secretKey | default "API_KEY" }}
 {{- end }}
+{{- include "cha.ticketingProviderEnv" . }}
+{{- end -}}
+
+{{- /*
+cha.ticketingProviderEnv — renders the CHA-com Jira / ServiceNow / route
+env vars on the aiwatch container. The cha-com binary consumes them; the
+OSS chart only wires them. Plain (non-secret) values render as `value:`;
+credentials (Jira token, ServiceNow password / bearer) render as
+`valueFrom.secretKeyRef` and the literal NEVER appears in the manifest.
+Each var is emitted ONLY when its source is set — an existing install
+(no ticketing.{route,jira,servicenow} set) renders zero new env, no empty
+vars. Mirrors internal/operator builders.go ticketingProviderEnv.
+*/ -}}
+{{- define "cha.ticketingProviderEnv" -}}
+{{- with .Values.ticketing }}
+{{- with .route }}
+- name: CHA_TICKETING_ROUTE
+  value: {{ . | quote }}
+{{- end }}
+{{- with .jira }}
+{{- with .url }}
+- name: CHA_JIRA_URL
+  value: {{ . | quote }}
+{{- end }}
+{{- with .project }}
+- name: CHA_JIRA_PROJECT
+  value: {{ . | quote }}
+{{- end }}
+{{- with .email }}
+- name: CHA_JIRA_EMAIL
+  value: {{ . | quote }}
+{{- end }}
+{{- with .issueType }}
+- name: CHA_JIRA_ISSUE_TYPE
+  value: {{ . | quote }}
+{{- end }}
+{{- with .priority }}
+{{- with .critical }}
+- name: CHA_JIRA_PRIORITY_CRITICAL
+  value: {{ . | quote }}
+{{- end }}
+{{- with .warning }}
+- name: CHA_JIRA_PRIORITY_WARNING
+  value: {{ . | quote }}
+{{- end }}
+{{- with .info }}
+- name: CHA_JIRA_PRIORITY_INFO
+  value: {{ . | quote }}
+{{- end }}
+{{- end }}
+{{- with .webUrlBase }}
+- name: CHA_JIRA_WEB_URL_BASE
+  value: {{ . | quote }}
+{{- end }}
+{{- if and .tokenSecret .tokenSecret.name .tokenSecret.key }}
+- name: CHA_JIRA_TOKEN
+  valueFrom:
+    secretKeyRef:
+      name: {{ .tokenSecret.name }}
+      key: {{ .tokenSecret.key }}
+{{- end }}
+{{- end }}
+{{- with .servicenow }}
+{{- with .url }}
+- name: CHA_SERVICENOW_URL
+  value: {{ . | quote }}
+{{- end }}
+{{- with .user }}
+- name: CHA_SERVICENOW_USER
+  value: {{ . | quote }}
+{{- end }}
+{{- with .urgency }}
+{{- with .critical }}
+- name: CHA_SERVICENOW_URGENCY_CRITICAL
+  value: {{ . | quote }}
+{{- end }}
+{{- with .warning }}
+- name: CHA_SERVICENOW_URGENCY_WARNING
+  value: {{ . | quote }}
+{{- end }}
+{{- with .info }}
+- name: CHA_SERVICENOW_URGENCY_INFO
+  value: {{ . | quote }}
+{{- end }}
+{{- end }}
+{{- with .impact }}
+{{- with .critical }}
+- name: CHA_SERVICENOW_IMPACT_CRITICAL
+  value: {{ . | quote }}
+{{- end }}
+{{- with .warning }}
+- name: CHA_SERVICENOW_IMPACT_WARNING
+  value: {{ . | quote }}
+{{- end }}
+{{- with .info }}
+- name: CHA_SERVICENOW_IMPACT_INFO
+  value: {{ . | quote }}
+{{- end }}
+{{- end }}
+{{- with .webUrlBase }}
+- name: CHA_SERVICENOW_WEB_URL_BASE
+  value: {{ . | quote }}
+{{- end }}
+{{- if and .passwordSecret .passwordSecret.name .passwordSecret.key }}
+- name: CHA_SERVICENOW_PASSWORD
+  valueFrom:
+    secretKeyRef:
+      name: {{ .passwordSecret.name }}
+      key: {{ .passwordSecret.key }}
+{{- end }}
+{{- if and .bearerSecret .bearerSecret.name .bearerSecret.key }}
+- name: CHA_SERVICENOW_BEARER
+  valueFrom:
+    secretKeyRef:
+      name: {{ .bearerSecret.name }}
+      key: {{ .bearerSecret.key }}
+{{- end }}
+{{- end }}
+{{- end }}
 {{- end -}}

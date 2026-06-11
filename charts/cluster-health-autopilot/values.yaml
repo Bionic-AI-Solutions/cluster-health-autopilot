@@ -302,6 +302,49 @@ ticketing:
     enabled: false
     secretName: cha-ticketing-mcp        # K8s Secret with the API key
     secretKey: api-key                   # Key inside the Secret
+  # --- CHA-com ticketing sinks (Jira / ServiceNow) ---
+  # These configure the PAID Jira/ServiceNow sinks read by the CHA-com
+  # aiwatch container (ai.enabled=true). The OSS chart only RENDERS the
+  # CHA_* env; the cha-com binary consumes them. All default empty so
+  # nothing changes for existing installs — an env var is emitted only
+  # when its value/secret-ref is set.
+  #
+  # Tokens/passwords flow via secret-refs ONLY (never literals): set
+  # jira.tokenSecret.{name,key} / servicenow.passwordSecret.{name,key} /
+  # servicenow.bearerSecret.{name,key}, typically ESO-synced from Vault.
+  route: ""                              # CHA_TICKETING_ROUTE — routes a finding to a sink
+                                         # (provider above selects the default sink).
+  jira:
+    url: ""                              # CHA_JIRA_URL
+    project: ""                          # CHA_JIRA_PROJECT (project key)
+    email: ""                            # CHA_JIRA_EMAIL (token-auth account email)
+    issueType: ""                        # CHA_JIRA_ISSUE_TYPE (e.g. "Bug")
+    priority:
+      critical: ""                       # CHA_JIRA_PRIORITY_CRITICAL
+      warning: ""                        # CHA_JIRA_PRIORITY_WARNING
+      info: ""                           # CHA_JIRA_PRIORITY_INFO
+    webUrlBase: ""                       # CHA_JIRA_WEB_URL_BASE (clickable ticket URLs)
+    tokenSecret:                         # CHA_JIRA_TOKEN — secretKeyRef ONLY
+      name: ""                           # K8s Secret name (ESO-synced)
+      key: ""                            # key inside the Secret
+  servicenow:
+    url: ""                              # CHA_SERVICENOW_URL
+    user: ""                             # CHA_SERVICENOW_USER (basic-auth username)
+    urgency:
+      critical: ""                       # CHA_SERVICENOW_URGENCY_CRITICAL
+      warning: ""                        # CHA_SERVICENOW_URGENCY_WARNING
+      info: ""                           # CHA_SERVICENOW_URGENCY_INFO
+    impact:
+      critical: ""                       # CHA_SERVICENOW_IMPACT_CRITICAL
+      warning: ""                        # CHA_SERVICENOW_IMPACT_WARNING
+      info: ""                           # CHA_SERVICENOW_IMPACT_INFO
+    webUrlBase: ""                       # CHA_SERVICENOW_WEB_URL_BASE (clickable ticket URLs)
+    passwordSecret:                      # CHA_SERVICENOW_PASSWORD — secretKeyRef ONLY
+      name: ""
+      key: ""
+    bearerSecret:                        # CHA_SERVICENOW_BEARER — secretKeyRef ONLY
+      name: ""
+      key: ""
   # DEPRECATED (v1.20.0+): nested per-provider sub-trees. Honored only
   # when the equivalent flat field above is unset. New installs should
   # use the flat shape exclusively. Will be removed in the next major

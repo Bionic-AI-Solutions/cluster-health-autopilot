@@ -851,6 +851,77 @@ func aiEnv(cr *chav1alpha1.ClusterHealthAutopilot) []corev1.EnvVar {
 		}
 		env = append(env, v)
 	}
+	// CHA-com ticketing sinks (Jira / ServiceNow / route). These env vars
+	// are read by the cha-com aiwatch binary; the OSS operator only wires
+	// them. Plain values inline; tokens/passwords via secretKeyRef ONLY.
+	env = append(env, ticketingProviderEnv(cr.Spec.Ticketing)...)
+	return env
+}
+
+// ticketingProviderEnv renders the CHA-com Jira / ServiceNow / route env
+// vars on the aiwatch container. Plain (non-secret) values become
+// `value:`; credentials (Jira token, ServiceNow password / bearer) become
+// `valueFrom.secretKeyRef` — the literal NEVER appears in the manifest.
+// Every var is emitted only when its source is set, so an existing install
+// (ticketing nil or no jira/servicenow blocks) renders zero new env.
+func ticketingProviderEnv(t *chav1alpha1.TicketingSpec) []corev1.EnvVar {
+	if t == nil {
+		return nil
+	}
+	var env []corev1.EnvVar
+	plain := func(name, val string) {
+		if val != "" {
+			env = append(env, corev1.EnvVar{Name: name, Value: val})
+		}
+	}
+	secret := func(name string, ref *chav1alpha1.TicketingSecretRef) {
+		if ref != nil && ref.Name != "" && ref.Key != "" {
+			env = append(env, corev1.EnvVar{
+				Name: name,
+				ValueFrom: &corev1.EnvVarSource{
+					SecretKeyRef: &corev1.SecretKeySelector{
+						LocalObjectReference: corev1.LocalObjectReference{Name: ref.Name},
+						Key:                  ref.Key,
+					},
+				},
+			})
+		}
+	}
+
+	plain("CHA_TICKETING_ROUTE", t.Route)
+
+	if j := t.Jira; j != nil {
+		plain("CHA_JIRA_URL", j.URL)
+		plain("CHA_JIRA_PROJECT", j.Project)
+		plain("CHA_JIRA_EMAIL", j.Email)
+		plain("CHA_JIRA_ISSUE_TYPE", j.IssueType)
+		if p := j.Priority; p != nil {
+			plain("CHA_JIRA_PRIORITY_CRITICAL", p.Critical)
+			plain("CHA_JIRA_PRIORITY_WARNING", p.Warning)
+			plain("CHA_JIRA_PRIORITY_INFO", p.Info)
+		}
+		plain("CHA_JIRA_WEB_URL_BASE", j.WebURLBase)
+		secret("CHA_JIRA_TOKEN", j.TokenSecret)
+	}
+
+	if s := t.ServiceNow; s != nil {
+		plain("CHA_SERVICENOW_URL", s.URL)
+		plain("CHA_SERVICENOW_USER", s.User)
+		if u := s.Urgency; u != nil {
+			plain("CHA_SERVICENOW_URGENCY_CRITICAL", u.Critical)
+			plain("CHA_SERVICENOW_URGENCY_WARNING", u.Warning)
+			plain("CHA_SERVICENOW_URGENCY_INFO", u.Info)
+		}
+		if im := s.Impact; im != nil {
+			plain("CHA_SERVICENOW_IMPACT_CRITICAL", im.Critical)
+			plain("CHA_SERVICENOW_IMPACT_WARNING", im.Warning)
+			plain("CHA_SERVICENOW_IMPACT_INFO", im.Info)
+		}
+		plain("CHA_SERVICENOW_WEB_URL_BASE", s.WebURLBase)
+		secret("CHA_SERVICENOW_PASSWORD", s.PasswordSecret)
+		secret("CHA_SERVICENOW_BEARER", s.BearerSecret)
+	}
+
 	return env
 }
 

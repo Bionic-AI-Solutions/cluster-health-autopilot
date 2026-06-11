@@ -549,6 +549,83 @@ spec:
                           type: string
                         secretKey:
                           type: string
+                    # CHA-com ticketing sinks (Jira / ServiceNow / route).
+                    # CHA-com only; the OSS operator renders these as
+                    # CHA_* env on the aiwatch container. Tokens/passwords
+                    # flow via secretKeyRef (the *Secret refs below) — the
+                    # CRD never carries a literal credential.
+                    route:
+                      type: string
+                    jira:
+                      type: object
+                      properties:
+                        url:
+                          type: string
+                        project:
+                          type: string
+                        email:
+                          type: string
+                        issueType:
+                          type: string
+                        priority:
+                          type: object
+                          properties:
+                            critical:
+                              type: string
+                            warning:
+                              type: string
+                            info:
+                              type: string
+                        webUrlBase:
+                          type: string
+                        tokenSecret:
+                          type: object
+                          properties:
+                            name:
+                              type: string
+                            key:
+                              type: string
+                    servicenow:
+                      type: object
+                      properties:
+                        url:
+                          type: string
+                        user:
+                          type: string
+                        urgency:
+                          type: object
+                          properties:
+                            critical:
+                              type: string
+                            warning:
+                              type: string
+                            info:
+                              type: string
+                        impact:
+                          type: object
+                          properties:
+                            critical:
+                              type: string
+                            warning:
+                              type: string
+                            info:
+                              type: string
+                        webUrlBase:
+                          type: string
+                        passwordSecret:
+                          type: object
+                          properties:
+                            name:
+                              type: string
+                            key:
+                              type: string
+                        bearerSecret:
+                          type: object
+                          properties:
+                            name:
+                              type: string
+                            key:
+                              type: string
             status:
               type: object
               x-kubernetes-preserve-unknown-fields: true

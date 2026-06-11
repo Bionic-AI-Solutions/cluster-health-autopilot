@@ -184,3 +184,38 @@ spec:
       enabled: false
       secretName: "fake-ticketing-api-key-secret"
       secretKey: "api-key"
+    # CHA-com sinks — full-surface coverage so the bundle-smoke pruning
+    # gate exercises every Jira/ServiceNow/route path. Credentials are
+    # fake secret-refs (never literal tokens).
+    route: "severity>=critical->servicenow"
+    jira:
+      url: "https://fake.atlassian.net"
+      project: "OPS"
+      email: "cha-bot@example.com"
+      issueType: "Bug"
+      priority:
+        critical: "Highest"
+        warning: "High"
+        info: "Low"
+      webUrlBase: "https://fake.atlassian.net/browse"
+      tokenSecret:
+        name: "fake-jira-token-secret"
+        key: "token"
+    servicenow:
+      url: "https://fake.service-now.com"
+      user: "cha.bot"
+      urgency:
+        critical: "1"
+        warning: "2"
+        info: "3"
+      impact:
+        critical: "1"
+        warning: "2"
+        info: "3"
+      webUrlBase: "https://fake.service-now.com/nav_to.do"
+      passwordSecret:
+        name: "fake-servicenow-password-secret"
+        key: "password"
+      bearerSecret:
+        name: "fake-servicenow-bearer-secret"
+        key: "bearer"
