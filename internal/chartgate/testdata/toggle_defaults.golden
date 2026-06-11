@@ -1,0 +1,54 @@
+# toggle_defaults.golden — P3.3a default-off discipline gate
+#
+# Source of truth for the DEFAULT POLARITY of every catalog CHA_* toggle that
+# gates a probe / analyzer / fixer / investigator REGISTRATION. Format:
+#
+#   CHA_TOGGLE_NAME on|off
+#
+#   on  = trigger is REGISTERED unless the operator opts out (`!= "off"`).
+#         i.e. ships DEFAULT-ON.
+#   off = trigger is registered only when explicitly enabled (`== "true"`).
+#         i.e. ships DEFAULT-OFF.
+#
+# DISCIPLINE (the roadmap done-criteria that were abandoned, causing the
+# v1.23.0 M5/M6 unwired-but-default-on regression): a NET-NEW probe/analyzer
+# toggle should ship DEFAULT-OFF, soak 7 days, then flip to default-on in the
+# next release. The accompanying default_off_test.go FAILS when a toggle is
+# added or a polarity flips, forcing the developer to (1) confirm the new
+# toggle ships default-OFF unless a soak rationale is recorded, and
+# (2) consciously update this golden.
+#
+# GRANDFATHERING: every entry below reflects the CURRENT (pre-discipline)
+# state. The many `on` entries here PREDATE this gate and are grandfathered —
+# the gate only catches NET-NEW additions or polarity FLIPS, not the existing
+# default-on inventory.
+CHA_ANALYZER_CAPACITY_DRIFT on
+CHA_ANALYZER_CONFIG_DRIFT on
+CHA_ANALYZER_CRONJOB_STUCK on
+CHA_ANALYZER_DISRUPTION_DRIFT on
+CHA_ANALYZER_DNS_CHAIN_DRIFT on
+CHA_ANALYZER_GITOPS_DRIFT on
+CHA_ANALYZER_LOG_PATTERN_MATCHER on
+CHA_ANALYZER_NETPOL_PROPOSER on
+CHA_ANALYZER_OOMKILL_RECURRENCE on
+CHA_ANALYZER_PV_ORPHAN on
+CHA_ANALYZER_RBAC_DRIFT on
+CHA_ANALYZER_SECURITY_DRIFT on
+CHA_ANALYZER_WORKLOAD_STATE_DRIFT on
+CHA_FIXER_TLS_SECRET_MISMATCH off
+CHA_INVESTIGATOR on
+CHA_PROBE_ARGOCD_APP on
+CHA_PROBE_CRASHLOOP on
+CHA_PROBE_DAEMONSETS on
+CHA_PROBE_ETCD on
+CHA_PROBE_FAILED_MOUNTS on
+CHA_PROBE_GPU_NODES on
+CHA_PROBE_HPA_SCALING on
+CHA_PROBE_K3S_DATASTORE on
+CHA_PROBE_K3S_LOCALPATH on
+CHA_PROBE_KONG on
+CHA_PROBE_KONG_ROUTES on
+CHA_PROBE_NODE_PRESSURE on
+CHA_PROBE_PENDING_PODS on
+CHA_PROBE_TRAEFIK_ROUTES on
+CHA_PROBE_VELERO on

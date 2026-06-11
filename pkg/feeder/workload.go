@@ -131,10 +131,14 @@ func (f *WorkloadFeeder) RunOnce(ctx context.Context) (Result, error) {
 	}
 
 	// Pod imageID lookup, populated once per sweep — every workload
-	// reuses the same map. Keyed by (namespace, container-name)
-	// across all pods of the owning controller. We pick any ready
-	// pod's imageID for a container; replicas of one Deployment
-	// run identical container images so the choice is deterministic.
+	// reuses the same map. Keyed by (namespace, owning workload
+	// kind+name, container-name): each pod's controller ownerReference
+	// is resolved to the workload it belongs to (ReplicaSet names map
+	// back to their Deployment), so two workloads in one namespace
+	// that both name a container "app" never see each other's digests
+	// (P1.6). We pick the first-observed digest per key; replicas of
+	// one controller run identical container images so the choice is
+	// deterministic outside mid-rollout windows.
 	digestIdx := f.buildDigestIndex(ctx)
 
 	var res Result
@@ -170,28 +174,88 @@ type containerInfo struct {
 	ImageDigest string `json:"image_digest,omitempty"`
 }
 
-// digestKey is the (namespace, container) pair used to look up the
-// kubelet-resolved digest from a Pod's containerStatuses.
+// digestKey scopes a kubelet-resolved digest to the workload that owns
+// the pod it was observed on: (namespace, owning workload kind+name,
+// container-name). The owner MUST be part of the key — keying by
+// (namespace, container-name) alone let two Deployments in one
+// namespace that both name their container "app" read each other's
+// digests (P1.6), which downstream feeds wrong digests into digest-pin
+// PR proposals.
 type digestKey struct {
 	ns        string
+	ownerKind string // "Deployment" | "StatefulSet" | "DaemonSet"
+	ownerName string
 	container string
 }
 
-// buildDigestIndex builds the (namespace, container) → digest map by
-// reading status.containerStatuses[].imageID across every Pod the
-// snapshot Source can see. kubelet writes the resolved digest there
-// after a successful pull; mutable :tag references resolve to a
-// concrete sha256.
+// digestVal carries the digest plus the normalized repo it was pulled
+// from, so the lookup can refuse digests whose image repo doesn't match
+// the workload's declared image (belt and braces on top of owner
+// matching — e.g. a still-running pod from before the spec moved to a
+// new repo).
+type digestVal struct {
+	digest string // "sha256:..."
+	repo   string // normalized registry/repository from the pod imageID
+}
+
+// podWorkloadOwner resolves a pod's controller ownerReference to the
+// workload identity this feeder indexes by. The pod walk only sees the
+// IMMEDIATE owner: StatefulSet / DaemonSet pods are owned by the
+// workload itself, but Deployment pods are owned by an intermediate
+// ReplicaSet whose UID is NOT the Deployment's — the workload UID is
+// unavailable here without an extra ReplicaSet list per sweep. (kind,
+// name) is exact anyway: controller names are unique per (namespace,
+// kind), and the Deployment controller always names the ReplicaSet
+// "<deployment>-<pod-template-hash>" and stamps the same hash label on
+// the pod, which recovers the Deployment name without that list. This
+// is a heuristic: a manually-created RS that mimics the convention (a
+// pod-template-hash label equal to the RS name's last hyphen token)
+// is misattributed to a Deployment of the truncated name — the repo
+// guard at lookup is the second fence for that contrived corner. Pods
+// with no controller owner (bare pods) or an owner this feeder doesn't
+// index (Jobs, bare ReplicaSets, CR-direct pods) contribute nothing —
+// fail-closed beats guessing.
+func podWorkloadOwner(p *unstructured.Unstructured) (kind, name string, ok bool) {
+	for _, ref := range p.GetOwnerReferences() {
+		if ref.Controller == nil || !*ref.Controller {
+			continue
+		}
+		grp, _, _ := splitAPIVersion(ref.APIVersion)
+		if grp != "apps" {
+			return "", "", false
+		}
+		switch ref.Kind {
+		case "StatefulSet", "DaemonSet":
+			return ref.Kind, ref.Name, true
+		case "ReplicaSet":
+			hash := p.GetLabels()["pod-template-hash"]
+			suffix := "-" + hash
+			if hash != "" && strings.HasSuffix(ref.Name, suffix) && len(ref.Name) > len(suffix) {
+				return "Deployment", strings.TrimSuffix(ref.Name, suffix), true
+			}
+		}
+		return "", "", false
+	}
+	return "", "", false
+}
+
+// buildDigestIndex builds the (namespace, owner, container) → digest
+// map by reading status.containerStatuses[].imageID across every Pod
+// the snapshot Source can see, scoped to each pod's owning workload via
+// podWorkloadOwner. kubelet writes the resolved digest there after a
+// successful pull; mutable :tag references resolve to a concrete
+// sha256.
 //
-// Pods that haven't pulled (ImagePullBackOff / pending) contribute
-// nothing — the entry's image_digest field is omitted for those
-// containers, which is the correct signal for a downstream proposer
-// ("we observed the workload but couldn't resolve a digest; come back
-// next cycle"). Two pods of one controller may report different
-// digests if mid-rollout; the feeder takes the first one observed and
-// leaves drift detection to the next slice.
-func (f *WorkloadFeeder) buildDigestIndex(ctx context.Context) map[digestKey]string {
-	idx := map[digestKey]string{}
+// Pods that haven't pulled (ImagePullBackOff / pending) — and pods
+// whose owner can't be resolved to a workload this feeder indexes —
+// contribute nothing: the entry's image_digest field is omitted for
+// those containers, which is the correct signal for a downstream
+// proposer ("we observed the workload but couldn't resolve a digest;
+// come back next cycle"). Two pods of one controller may report
+// different digests if mid-rollout; the feeder takes the first one
+// observed and leaves drift detection to the next slice.
+func (f *WorkloadFeeder) buildDigestIndex(ctx context.Context) map[digestKey]digestVal {
+	idx := map[digestKey]digestVal{}
 	pods, err := f.Source.List(ctx, gvrPod, "")
 	if err != nil || pods == nil {
 		return idx
@@ -200,6 +264,10 @@ func (f *WorkloadFeeder) buildDigestIndex(ctx context.Context) map[digestKey]str
 		p := &pods.Items[i]
 		ns := p.GetNamespace()
 		if _, isSystem := systemNamespaces[ns]; isSystem {
+			continue
+		}
+		ownerKind, ownerName, ok := podWorkloadOwner(p)
+		if !ok {
 			continue
 		}
 		statuses, _, _ := unstructured.NestedSlice(p.Object, "status", "containerStatuses")
@@ -217,13 +285,48 @@ func (f *WorkloadFeeder) buildDigestIndex(ctx context.Context) map[digestKey]str
 			if digest == "" {
 				continue
 			}
-			k := digestKey{ns: ns, container: cn}
+			k := digestKey{ns: ns, ownerKind: ownerKind, ownerName: ownerName, container: cn}
 			if _, seen := idx[k]; !seen {
-				idx[k] = digest
+				idx[k] = digestVal{digest: digest, repo: imageRepo(imgID)}
 			}
 		}
 	}
 	return idx
+}
+
+// imageRepo normalizes an image reference (workload spec image or pod
+// imageID) to its registry/repository: drops any docker-pullable://
+// prefix, @sha256 digest, and :tag suffix, then expands Docker Hub
+// shorthand ("redis" → "docker.io/library/redis", "myorg/app" →
+// "docker.io/myorg/app", "index.docker.io/x/y" → "docker.io/x/y") so a
+// spec image and a kubelet imageID for the same repo compare equal.
+// Returns "" for empty input.
+func imageRepo(ref string) string {
+	ref = strings.TrimPrefix(ref, "docker-pullable://")
+	if i := strings.Index(ref, "@"); i >= 0 {
+		ref = ref[:i]
+	}
+	if i := strings.LastIndex(ref, ":"); i > strings.LastIndex(ref, "/") {
+		ref = ref[:i] // tag, not a registry port (colon after last slash)
+	}
+	if ref == "" {
+		return ""
+	}
+	slash := strings.Index(ref, "/")
+	if slash < 0 {
+		return "docker.io/library/" + ref
+	}
+	host := ref[:slash]
+	if !strings.ContainsAny(host, ".:") && host != "localhost" {
+		return "docker.io/" + ref // Hub shorthand: "myorg/app"
+	}
+	if host == "index.docker.io" || host == "registry-1.docker.io" {
+		ref = "docker.io" + ref[slash:]
+	}
+	if rest, isHub := strings.CutPrefix(ref, "docker.io/"); isHub && !strings.Contains(rest, "/") {
+		return "docker.io/library/" + rest
+	}
+	return ref
 }
 
 // extractDigest pulls the sha256:... portion of an imageID. kubelet
@@ -245,7 +348,7 @@ func extractDigest(imageID string) string {
 
 // buildEntry constructs one rag.Entry from a workload object. Returns
 // nil when the workload has no containers (degenerate manifest).
-func (f *WorkloadFeeder) buildEntry(obj *unstructured.Unstructured, kind string, now time.Time, importance float64, digestIdx map[digestKey]string) *rag.Entry {
+func (f *WorkloadFeeder) buildEntry(obj *unstructured.Unstructured, kind string, now time.Time, importance float64, digestIdx map[digestKey]digestVal) *rag.Entry {
 	ns := obj.GetNamespace()
 	name := obj.GetName()
 	if ns == "" || name == "" {
@@ -267,8 +370,11 @@ func (f *WorkloadFeeder) buildEntry(obj *unstructured.Unstructured, kind string,
 			continue
 		}
 		ci := containerInfo{Name: cn, Image: img}
-		if d, ok := digestIdx[digestKey{ns: ns, container: cn}]; ok {
-			ci.ImageDigest = d
+		// Digest lookup is owner-scoped (this workload's own pods) AND
+		// repo-guarded: a digest only attaches when the repo it was
+		// pulled from matches the workload's declared image repo.
+		if v, ok := digestIdx[digestKey{ns: ns, ownerKind: kind, ownerName: name, container: cn}]; ok && v.repo != "" && v.repo == imageRepo(img) {
+			ci.ImageDigest = v.digest
 		}
 		cinfo = append(cinfo, ci)
 	}

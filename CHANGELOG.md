@@ -13,6 +13,44 @@ serves the latest tagged chart cut.
 
 ## [Unreleased]
 
+### Added — watcher health probes + opt-in multi-replica via leader election (P1.9)
+
+The watcher Deployment shipped with no liveness/readiness probes (every sibling deployment — approval-server, qdrant, operator — had them) because its only HTTP `/healthz` lived inside the `--webhook-listen` branch, so an install without the M6 webhook trigger had no health endpoint to probe. The watcher now starts an **always-on health server** (`--health-listen`, default `:8081`; chart value `watcher.healthListen`) serving `GET /healthz` unconditionally, independent of the webhook receiver, and the chart wires `livenessProbe` + `readinessProbe` against it. The watcher Deployment's hard-coded `replicas: 1` is now `watcher.replicas` (default 1); raising it above 1 is only safe with leader election on, so the chart **fails the render** when `watcher.replicas > 1` and `watcher.leaderElection.enabled=false` (otherwise replicas race on DriftReports and double-post Slack).
+
+### Fixed — watcher: pending approval-URL cache grew unbounded (P1.9)
+
+The `pendingURLs` map (approval URLs keyed by ActionID for the AI tier) evicted entries only on lookup (`approvalURLFor`). A recorded-but-never-rendered ActionID — e.g. a diagnostic that resolved before its next post — persisted for the whole process lifetime, a slow memory leak on long-running watchers with the AI tier enabled. `recordApprovalURL` now sweeps entries older than a 24h TTL on every insert (and lookup still evicts on access), via an injectable clock seam.
+
+### Fixed — operator: cross-namespace approval events Role/RoleBinding leaked on CR deletion (P1.9)
+
+When a CR pinned `spec.approval.auditNamespace` to a namespace other than its own, the operator created the `<name>-events` Role + RoleBinding there **without** an ownerRef (cross-namespace ownerRefs are illegal), so Kubernetes GC never reaped them. Teardown only ran on disable-while-alive — a straight `kubectl delete` of the CR skipped that path, leaking the cross-namespace RBAC pair for the cluster's lifetime. The operator's finalizer now also deletes those objects (NotFound ignored, so the same-namespace owner-ref'd case is a harmless no-op).
+
+### Changed — webhook trigger sources now FAIL CLOSED on missing HMAC secret (P1.1, breaking-ish)
+
+Before this change a `--webhook-source=<name>=<env-var>` whose env var was unset or empty (secret not mounted, ESO key drift, typo, or a spec entry without `=`) silently registered the source with HMAC verification DISABLED — any unauthenticated POST to `/webhook/<name>` triggered a full diagnose cycle (and fixer churn under `--remedy`). Now:
+
+- Registration fails closed: a missing/empty env var or malformed spec logs an `ERROR … source disabled (fail-closed)` and the source is NOT registered (requests 404).
+- Defense in depth: should a source ever be registered with an empty secret, the handler rejects every request for it with 401 instead of skipping verification.
+- Explicit opt-out: the literal spec `<name>=insecure-no-hmac` registers a deliberately unauthenticated source and logs a loud `UNAUTHENTICATED webhook source` warning at startup.
+
+**Migration:** deployments that (knowingly or not) relied on an empty secret to run an unauthenticated source must either mount a real secret or switch the spec to `<name>=insecure-no-hmac`.
+
+### Fixed — feeder: workload digest index collided across workloads in a namespace (P1.6)
+
+The workload feeder's pod-digest index was keyed by (namespace, container-name) only, despite a comment claiming it was scoped to the owning controller. Two workloads in one namespace that both name their container e.g. `app` (extremely common) silently received each other's `image_digest` — first pod observed won — so a digest-pin PR proposal built downstream could previously cite a **sibling workload's digest** and pin the wrong image. The index is now scoped to the owning workload (each pod's controller ownerReference, with Deployment names recovered from the ReplicaSet `<deployment>-<pod-template-hash>` convention), and as a second guard a digest only attaches when the repo it was pulled from matches the workload's declared image repo (so a mid-rollout pod still running the old repo's image can no longer stamp its digest onto the new spec). Pods whose owner can't be resolved (bare pods, Jobs, bare ReplicaSets) now contribute no digest — fail-closed; the entry simply omits `image_digest` until a resolvable pod is observed.
+
+### Fixed — operator: `spec.externalDNS` was accepted but did nothing (P1.5)
+
+The CRD documented `spec.externalDNS.cloudflare.*` (incl. `apiTokenSecretRef`) and the operator accepted it — but consumed it nowhere. The DNSChainDrift analyzer only wires its Cloudflare client when `CHA_CLOUDFLARE_TOKEN` is set at registration time, and nothing supplied that env on operator-managed installs, so external-hop DNS verification silently never ran. The operator's watcher Deployment now injects `CHA_CLOUDFLARE_TOKEN` via `secretKeyRef` from `apiTokenSecretRef.{name,key}` (key defaults to `token`) when `cloudflare.enabled=true`. The token value never appears in any manifest.
+
+### Fixed — operator: `spec.watcher.triggers.webhook.serviceEnabled` was accepted but did nothing (P1.5)
+
+The chart has shipped `watcher-webhook-service.yaml` since v1.23.0, but the operator built neither the ClusterIP Service nor the named `webhook` containerPort — an operator-managed webhook receiver was reachable only by pod IP. The operator now reconciles a `<cr>-webhook` ClusterIP Service (port = `servicePort`, default 8090; `targetPort: webhook`; selects the watcher pods) when `serviceEnabled=true`, owner-ref'd to the CR and torn down when the field flips off or the watcher is disabled, and declares the `webhook` containerPort whenever `webhook.listen` is set — both mirroring the chart's semantics exactly.
+
+### Added — optional timestamped HMAC scheme (replay window)
+
+Webhook senders can now include `X-CHA-Timestamp: <unix-seconds>` and sign `timestamp + "." + body` (`X-CHA-Signature: sha256=hex(hmac-sha256(secret, ts+"."+body))`). Timestamped requests more than 5 minutes from server time are rejected with 401, so a captured request can no longer be replayed forever. Requests without the header keep the legacy body-only HMAC check (existing senders unaffected); a once-per-source log notice recommends adopting the timestamp header. New `webhook.SignWithTimestamp` helper for integrators.
+
 ## [1.25.1] — 2026-06-11
 
 ### Fixed — goreleaser disk-OOM on GH-hosted runner
@@ -29,7 +67,7 @@ The diagnose CronJob already had `spec.diagnose.activeDeadlineSeconds` (default 
 
 Operators can now set `spec.remediate.activeDeadlineSeconds: 900` (or whatever their workload needs). Default 120s preserved for low-finding clusters where it's fine.
 
-## [1.25.0] — 2026-06-11 — 2026-06-11
+## [1.25.0] — 2026-06-11
 
 Two follow-ups after live deployment surfaced operator-managed gaps + Slack-flood symptoms.
 
@@ -59,7 +97,7 @@ Built-in workload parents (apps/v1 ReplicaSet, batch/v1 Job, core/v1) are explic
 
 `detectOwner` no longer early-returns on nil annotations — operator-managed workloads typically have NO annotations at all, so the nil-anns path must still walk the OwnerReferences fallback.
 
-## [1.24.1] — 2026-06-10 — 2026-06-10
+## [1.24.1] — 2026-06-10
 
 ### Fixed — CRD schema for `spec.watcher.triggers` (v1.24.0 was unusable on schema-strict K8s)
 
@@ -69,7 +107,7 @@ This patch adds the matching schema to both `bundle/manifests/cha.bionicaisoluti
 
 Caught during live activation of M5 on the dev cluster (kubectl apply succeeded with a warning, but the field was stripped silently — operator rendered no trigger args).
 
-## [1.24.0] — 2026-06-10 — 2026-06-10
+## [1.24.0] — 2026-06-10
 
 Adversarial-review follow-up: operator-CR triggers + KEDA expansion.
 
@@ -96,7 +134,7 @@ The v1.6.0 M1 expansion added HPA + Ingress + ArgoCD + DaemonSet to the watcher'
 
 `v1.21.0+` adds observability log lines for Phase 3.B (auto-merge gate armed at startup) and Phase 3.C (`ai.target_history.applied` audit event when the prompt block fires).
 
-## [1.23.1] — 2026-06-10 — 2026-06-10
+## [1.23.1] — 2026-06-10
 
 Adversarial-review fixes after v1.23.0 went out.
 
@@ -1015,6 +1053,12 @@ Sprint 1–4 hardening release. Closes 22/23 items from the 2026-05-22 adversari
 ### Fixed
 - Investigation field now persists on the DriftReport CR.
 
+<!-- NOTE (P3.3): date inversion below — [1.5.0] is dated 2026-05-12 yet its
+     patch releases [1.5.1]/[1.5.2] above are dated 2026-05-11. Left as-is:
+     it is ambiguous whether 1.5.0's date or the patch dates are the typo, and
+     the historical tags can't be retro-corrected from the changelog alone.
+     Semver heading order is correct, so changelog-lint.sh (version-order based)
+     does not flag this. -->
 ## [1.5.0] — 2026-05-12
 
 ### Added

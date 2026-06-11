@@ -32,7 +32,7 @@ func (StaleErrorPods) Run(ctx context.Context, src snapshot.Source, m snapshot.M
 	}
 
 	pods, err := src.List(ctx, snapshot.GVRPod, "")
-	if err != nil || len(pods.Items) == 0 {
+	if err != nil || pods == nil || len(pods.Items) == 0 {
 		return r
 	}
 

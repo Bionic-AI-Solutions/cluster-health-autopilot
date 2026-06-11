@@ -138,6 +138,7 @@ func (c CapacityDrift) Run(ctx context.Context, src snapshot.Source) []Diagnosti
 func (c CapacityDrift) checkHPAs(ctx context.Context, src snapshot.Source, now time.Time, grace, satGrace, idleGrace time.Duration) []Diagnostic {
 	list, err := src.List(ctx, gvrHPA, "")
 	if err != nil || list == nil {
+		logListFailure("horizontalpodautoscalers", err, false)
 		return nil
 	}
 	var out []Diagnostic
@@ -253,6 +254,7 @@ func (c CapacityDrift) checkHPAs(ctx context.Context, src snapshot.Source, now t
 func (c CapacityDrift) checkPVCExpansion(ctx context.Context, src snapshot.Source, now time.Time, grace time.Duration) []Diagnostic {
 	list, err := src.List(ctx, snapshot.GVRPVC, "")
 	if err != nil || list == nil {
+		logListFailure("persistentvolumeclaims", err, false)
 		return nil
 	}
 	var out []Diagnostic

@@ -118,7 +118,17 @@ func readerPolicyRules() []rbacv1.PolicyRule {
 		// incorrectly flagged.
 		{
 			APIGroups: []string{""},
-			Resources: []string{"pods", "nodes", "persistentvolumeclaims", "persistentvolumes", "events", "namespaces", "services", "endpoints"},
+			Resources: []string{"pods", "nodes", "persistentvolumeclaims", "persistentvolumes", "events", "namespaces", "services", "endpoints", "resourcequotas"},
+			Verbs:     []string{"get", "list", "watch"},
+		},
+		// DisruptionDrift (P1.2, v1.25.2) — PDB blocked-evictions signal.
+		// resourcequotas (saturated-quota signal) rides the core rule
+		// above. Without these grants the analyzer's list calls return
+		// `forbidden` and its soft-fail made it silently dead on every
+		// real cluster since the Phase 2.E ship.
+		{
+			APIGroups: []string{"policy"},
+			Resources: []string{"poddisruptionbudgets"},
 			Verbs:     []string{"get", "list", "watch"},
 		},
 		// Secrets — names + keys only (ProactiveSecretKeyCheck doesn't

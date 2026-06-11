@@ -38,8 +38,10 @@ func (ProactiveSecretKeyCheck) Run(ctx context.Context, src snapshot.Source) []D
 	// Build the Secret-key inventory: { (ns, name) → set-of-key-names }.
 	secrets, err := src.List(ctx, snapshot.GVRSecret, "")
 	if err != nil {
-		// In snapshot mode, Secrets are intentionally absent (see capture.go).
-		// Without the inventory we can't compute drift, so the analyzer is a no-op.
+		// In snapshot mode, Secrets are intentionally absent (see capture.go),
+		// so NotFound stays silent — but a live RBAC denial must be visible
+		// (the analyzer is otherwise silently dead, the P1.2 failure class).
+		logListFailure("secrets", err, true)
 		return nil
 	}
 	keysBySecret := make(map[string]map[string]struct{}, len(secrets.Items))

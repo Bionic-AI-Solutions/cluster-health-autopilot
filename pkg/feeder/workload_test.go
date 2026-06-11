@@ -8,6 +8,7 @@ import (
 	"errors"
 	"testing"
 
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
@@ -138,6 +139,23 @@ func makePodWithStatus(ns, name string, containerStatuses []map[string]any) unst
 	return u
 }
 
+// makeDeploymentPod returns a Pod exactly as the Deployment controller
+// creates it: controller-owned by ReplicaSet "<deploy>-<hash>" and
+// labeled pod-template-hash=<hash>. The feeder uses that owner chain to
+// scope digests to the owning workload.
+func makeDeploymentPod(ns, deployName, hash string, containerStatuses []map[string]any) unstructured.Unstructured {
+	u := makePodWithStatus(ns, deployName+"-"+hash+"-zzzzz", containerStatuses)
+	ctrl := true
+	u.SetLabels(map[string]string{"pod-template-hash": hash})
+	u.SetOwnerReferences([]metav1.OwnerReference{{
+		APIVersion: "apps/v1",
+		Kind:       "ReplicaSet",
+		Name:       deployName + "-" + hash,
+		Controller: &ctrl,
+	}})
+	return u
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -164,7 +182,7 @@ func TestWorkloadFeeder_HappyPath_DeploymentWithDigestPin(t *testing.T) {
 		"deployments": {makeDeployment("production", "cha-com", 2, []map[string]any{
 			{"name": "cha-com", "image": "docker4zerocool/cha-com:1.10.0"},
 		})},
-		"pods": {makePodWithStatus("production", "cha-com-abc", []map[string]any{
+		"pods": {makeDeploymentPod("production", "cha-com", "6d5f9c9b8d", []map[string]any{
 			{"name": "cha-com", "imageID": "docker.io/docker4zerocool/cha-com@sha256:abc123def456"},
 		})},
 	}}
@@ -381,7 +399,7 @@ func TestWorkloadFeeder_MultipleContainers(t *testing.T) {
 			{"name": "app", "image": "myorg/app:v1"},
 			{"name": "sidecar", "image": "myorg/sidecar:v2"},
 		})},
-		"pods": {makePodWithStatus("ns", "multi-xyz", []map[string]any{
+		"pods": {makeDeploymentPod("ns", "multi", "7c6d8e7a9f", []map[string]any{
 			{"name": "app", "imageID": "myorg/app@sha256:aaa"},
 			// sidecar imageID missing — only app has been pulled
 		})},
@@ -443,23 +461,27 @@ func TestWorkloadFeeder_WriterError_DoesNotAbortSweep(t *testing.T) {
 }
 
 func TestWorkloadFeeder_DigestExtractionVariants(t *testing.T) {
+	// Each case's spec image names the same repo as the imageID (the
+	// repo-match guard intentionally drops digests otherwise — covered
+	// by TestWorkloadFeeder_DigestRepoMismatch_OmitsDigest).
 	cases := map[string]struct {
+		image   string
 		imageID string
 		want    string
 	}{
-		"docker-io":        {"docker.io/library/redis@sha256:abc", "sha256:abc"},
-		"docker-pullable":  {"docker-pullable://reg.example/foo@sha256:def", "sha256:def"},
-		"private-registry": {"registry.internal/team/svc@sha256:123abc", "sha256:123abc"},
-		"no-digest":        {"docker.io/library/redis:7.2", ""},
-		"empty":            {"", ""},
+		"docker-io":        {"redis:7.2", "docker.io/library/redis@sha256:abc", "sha256:abc"},
+		"docker-pullable":  {"reg.example/foo:1", "docker-pullable://reg.example/foo@sha256:def", "sha256:def"},
+		"private-registry": {"registry.internal/team/svc:v3", "registry.internal/team/svc@sha256:123abc", "sha256:123abc"},
+		"no-digest":        {"redis:7.2", "docker.io/library/redis:7.2", ""},
+		"empty":            {"x:tag", "", ""},
 	}
 	for name, c := range cases {
 		t.Run(name, func(t *testing.T) {
 			src := &memSource{byResource: map[string][]unstructured.Unstructured{
 				"deployments": {makeDeployment("ns", "x", 1, []map[string]any{
-					{"name": "c", "image": "x:tag"},
+					{"name": "c", "image": c.image},
 				})},
-				"pods": {makePodWithStatus("ns", "p", []map[string]any{
+				"pods": {makeDeploymentPod("ns", "x", "5f6d7c8b9a", []map[string]any{
 					{"name": "c", "imageID": c.imageID},
 				})},
 			}}
@@ -473,6 +495,135 @@ func TestWorkloadFeeder_DigestExtractionVariants(t *testing.T) {
 				t.Errorf("digest extract: got %q want %q", got, c.want)
 			}
 		})
+	}
+}
+
+func TestWorkloadFeeder_DigestIndex_NoCrossWorkloadCollision(t *testing.T) {
+	// P1.6 regression: two Deployments in ONE namespace, both naming
+	// their container "app" (extremely common), different images. A
+	// (namespace, container-name) digest index let alpha's digest leak
+	// into beta's entry — and a digest-pin PR proposal built from
+	// beta's entry would pin alpha's digest onto beta's image. Each
+	// workload's image_digest must come from its OWN pods.
+	src := &memSource{byResource: map[string][]unstructured.Unstructured{
+		"deployments": {
+			makeDeployment("prod", "alpha", 1, []map[string]any{
+				{"name": "app", "image": "myorg/alpha:v1"},
+			}),
+			makeDeployment("prod", "beta", 1, []map[string]any{
+				{"name": "app", "image": "otherorg/beta:v2"},
+			}),
+		},
+		"pods": {
+			makeDeploymentPod("prod", "alpha", "6d5f9c9b8d", []map[string]any{
+				{"name": "app", "imageID": "docker.io/myorg/alpha@sha256:aaa111"},
+			}),
+			makeDeploymentPod("prod", "beta", "7c6d8e7a9f", []map[string]any{
+				{"name": "app", "imageID": "docker.io/otherorg/beta@sha256:bbb222"},
+			}),
+		},
+	}}
+	w := &captureWriter{}
+	f := feeder.NewWorkloadFeeder(src, w, "c")
+	if _, err := f.RunOnce(context.Background()); err != nil {
+		t.Fatalf("RunOnce: %v", err)
+	}
+	if len(w.upserts) != 2 {
+		t.Fatalf("expected 2 entries, got %d", len(w.upserts))
+	}
+	want := map[string]string{
+		"prod/alpha": "sha256:aaa111",
+		"prod/beta":  "sha256:bbb222",
+	}
+	for _, e := range w.upserts {
+		c := e.Features["containers"].([]any)[0].(map[string]any)
+		got, _ := c["image_digest"].(string)
+		if got != want[e.Key] {
+			t.Errorf("%s: image_digest got %q want %q (cross-workload digest collision)", e.Key, got, want[e.Key])
+		}
+	}
+}
+
+func TestWorkloadFeeder_DigestRepoMismatch_OmitsDigest(t *testing.T) {
+	// Belt and braces: even when owner matching passes (this pod IS
+	// owned by this Deployment — e.g. a still-running pod from before
+	// the spec moved to a new repo), a digest pulled from repo A must
+	// never be stamped onto a workload whose declared image is repo B.
+	// Omitting the digest ("come back next cycle") is the correct
+	// signal; attaching a wrong-repo digest poisons digest-pin PRs.
+	src := &memSource{byResource: map[string][]unstructured.Unstructured{
+		"deployments": {
+			makeDeployment("prod", "web", 1, []map[string]any{
+				{"name": "app", "image": "newrepo.example.com/web:v2"},
+			}),
+		},
+		"pods": {
+			makeDeploymentPod("prod", "web", "5f6d7c8b9a", []map[string]any{
+				{"name": "app", "imageID": "oldrepo.example.com/web@sha256:old111"},
+			}),
+		},
+	}}
+	w := &captureWriter{}
+	f := feeder.NewWorkloadFeeder(src, w, "c")
+	if _, err := f.RunOnce(context.Background()); err != nil {
+		t.Fatalf("RunOnce: %v", err)
+	}
+	if len(w.upserts) != 1 {
+		t.Fatalf("expected 1 entry, got %d", len(w.upserts))
+	}
+	c := w.upserts[0].Features["containers"].([]any)[0].(map[string]any)
+	if d, has := c["image_digest"]; has {
+		t.Errorf("image_digest must be omitted on repo mismatch; got %v", d)
+	}
+}
+
+func TestWorkloadFeeder_BarePod_ContributesNoDigest(t *testing.T) {
+	// A pod with no controller ownerReference does not belong to any
+	// workload this feeder indexes — even if namespace, container name,
+	// and image repo all line up, it must not feed a digest
+	// (fail-closed beats guessing which workload it "probably" is).
+	src := &memSource{byResource: map[string][]unstructured.Unstructured{
+		"deployments": {makeDeployment("ns", "app", 1, []map[string]any{
+			{"name": "app", "image": "myorg/app:v1"},
+		})},
+		"pods": {makePodWithStatus("ns", "app-lookalike", []map[string]any{
+			{"name": "app", "imageID": "docker.io/myorg/app@sha256:bare"},
+		})},
+	}}
+	w := &captureWriter{}
+	f := feeder.NewWorkloadFeeder(src, w, "c")
+	_, _ = f.RunOnce(context.Background())
+	c := w.upserts[0].Features["containers"].([]any)[0].(map[string]any)
+	if d, has := c["image_digest"]; has {
+		t.Errorf("bare pod must not contribute a digest; got %v", d)
+	}
+}
+
+func TestWorkloadFeeder_StatefulSetOwnedPod_ResolvesDigest(t *testing.T) {
+	// StatefulSet (and DaemonSet) pods are owned by the workload
+	// directly — no ReplicaSet hop, no pod-template-hash.
+	pod := makePodWithStatus("data", "db-0", []map[string]any{
+		{"name": "db", "imageID": "docker.io/library/postgres@sha256:pg17"},
+	})
+	ctrl := true
+	pod.SetOwnerReferences([]metav1.OwnerReference{{
+		APIVersion: "apps/v1",
+		Kind:       "StatefulSet",
+		Name:       "db",
+		Controller: &ctrl,
+	}})
+	src := &memSource{byResource: map[string][]unstructured.Unstructured{
+		"statefulsets": {makeStatefulSet("data", "db", []map[string]any{
+			{"name": "db", "image": "postgres:17"},
+		})},
+		"pods": {pod},
+	}}
+	w := &captureWriter{}
+	f := feeder.NewWorkloadFeeder(src, w, "c")
+	_, _ = f.RunOnce(context.Background())
+	c := w.upserts[0].Features["containers"].([]any)[0].(map[string]any)
+	if c["image_digest"] != "sha256:pg17" {
+		t.Errorf("statefulset-owned pod digest: got %v want sha256:pg17", c["image_digest"])
 	}
 }
 

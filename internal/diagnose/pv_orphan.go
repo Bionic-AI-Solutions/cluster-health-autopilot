@@ -37,6 +37,7 @@ const pvOrphanGrace = 7 * 24 * time.Hour
 func (a PVOrphan) Run(ctx context.Context, src snapshot.Source) []Diagnostic {
 	list, err := src.List(ctx, snapshot.GVRPV, "")
 	if err != nil {
+		logListFailure("persistentvolumes", err, false)
 		return nil
 	}
 	now := time.Now()

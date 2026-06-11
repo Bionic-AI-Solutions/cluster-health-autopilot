@@ -39,26 +39,48 @@ func init() {
 	utilruntime.Must(chav1alpha1.AddToScheme(scheme))
 }
 
-func main() {
-	var metricsAddr string
-	var probeAddr string
-	var enableLeaderElection bool
-	var leaderElectionNamespace string
+// operatorFlags holds the parsed flag targets for the cha-operator
+// manager. registerOperatorFlags binds them onto a FlagSet so the same
+// registration is reused by main() and by the chart-args↔binary-flags
+// parity gate (internal/chartgate / cmd tests) — keeping the gate's
+// notion of "valid operator flags" in lockstep with the real binary
+// instead of a hand-maintained copy.
+type operatorFlags struct {
+	metricsAddr             string
+	probeAddr               string
+	enableLeaderElection    bool
+	leaderElectionNamespace string
+}
 
-	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8080",
+// registerOperatorFlags binds the cha-operator flags (excluding the
+// zap logger flags, which are bound separately via zap.Options.BindFlags)
+// onto fs. Exposed so the parity gate can enumerate the real flag set.
+func registerOperatorFlags(fs *flag.FlagSet) *operatorFlags {
+	f := &operatorFlags{}
+	fs.StringVar(&f.metricsAddr, "metrics-bind-address", ":8080",
 		"The address the metric endpoint binds to.")
-	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081",
+	fs.StringVar(&f.probeAddr, "health-probe-bind-address", ":8081",
 		"The address the probe endpoint binds to.")
-	flag.BoolVar(&enableLeaderElection, "leader-elect", true,
+	fs.BoolVar(&f.enableLeaderElection, "leader-elect", true,
 		"Enable leader election for controller manager — recommended even "+
 			"for single-replica installs so a restart sees a clean lease handoff.")
-	flag.StringVar(&leaderElectionNamespace, "leader-election-namespace", "",
+	fs.StringVar(&f.leaderElectionNamespace, "leader-election-namespace", "",
 		"The namespace the leader-election Lease lives in. Defaults to the "+
 			"namespace the operator pod runs in (read from the downward API).")
+	return f
+}
+
+func main() {
+	f := registerOperatorFlags(flag.CommandLine)
 
 	opts := zap.Options{Development: false}
 	opts.BindFlags(flag.CommandLine)
 	flag.Parse()
+
+	metricsAddr := f.metricsAddr
+	probeAddr := f.probeAddr
+	enableLeaderElection := f.enableLeaderElection
+	leaderElectionNamespace := f.leaderElectionNamespace
 
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
 

@@ -78,6 +78,7 @@ func (w WorkloadStateDrift) Run(ctx context.Context, src snapshot.Source) []Diag
 func (w WorkloadStateDrift) checkCNPGClusters(ctx context.Context, src snapshot.Source, grace time.Duration, now time.Time) []Diagnostic {
 	clusters, err := src.List(ctx, snapshot.GVRCNPGCluster, "")
 	if err != nil || clusters == nil || len(clusters.Items) == 0 {
+		logListFailure("clusters.postgresql.cnpg.io", err, true) // optional CRD
 		return nil
 	}
 	var out []Diagnostic
@@ -170,6 +171,7 @@ func (w WorkloadStateDrift) checkCNPGClusters(ctx context.Context, src snapshot.
 func (w WorkloadStateDrift) checkStatefulSets(ctx context.Context, src snapshot.Source, grace time.Duration, now time.Time) []Diagnostic {
 	stsList, err := src.List(ctx, snapshot.GVRStatefulSet, "")
 	if err != nil || stsList == nil || len(stsList.Items) == 0 {
+		logListFailure("statefulsets", err, false)
 		return nil
 	}
 	var out []Diagnostic
@@ -219,6 +221,7 @@ func (w WorkloadStateDrift) checkStatefulSets(ctx context.Context, src snapshot.
 	// Fetch all Pods once; cross-reference.
 	pods, err := src.List(ctx, snapshot.GVRPod, "")
 	if err != nil || pods == nil {
+		logListFailure("pods", err, false)
 		return out
 	}
 

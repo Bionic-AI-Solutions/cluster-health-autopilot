@@ -159,11 +159,24 @@ type Config struct {
 
 	// WebhookSourceSpec is the operator-supplied list of registered
 	// webhook sources. Each entry is "<name>=<env-var-with-hmac-secret>".
-	// An empty env-var name disables HMAC verification for that source
-	// (debug-only). Cardinality of the slice = number of /webhook/<src>
-	// endpoints the receiver exposes.
+	// FAIL-CLOSED: a missing/empty env var disables the SOURCE (not the
+	// verification); the only unauthenticated form is the explicit
+	// literal "<name>=insecure-no-hmac". Cardinality of the slice =
+	// number of /webhook/<src> endpoints the receiver exposes.
 	WebhookSourceSpec []string
+
+	// HealthListen is the listen address for the always-on health
+	// server that serves GET /healthz (200 = process alive). It is
+	// independent of WebhookListen so liveness/readiness probes work
+	// even when the M6 webhook receiver is disabled. Empty = default
+	// defaultHealthListen (":8081").
+	HealthListen string
 }
+
+// defaultHealthListen is the health server's listen address when
+// Config.HealthListen is empty. A dedicated port (not the webhook
+// port) keeps /healthz available unconditionally.
+const defaultHealthListen = ":8081"
 
 // watchedGVRs is the set of resource types that trigger a diagnose cycle on change.
 // This mirrors the CaptureGVRs set used by `cha snapshot capture` plus Secrets.
@@ -242,6 +255,12 @@ type Watcher struct {
 	seen        map[string]*seenEntry
 	pendingURLs map[string]pendingURL // ai-tier approval URLs by ActionID
 
+	// now is the clock seam for TTL-based eviction of pendingURLs.
+	// Defaults to time.Now via New(); tests inject a fixed clock. Nil
+	// is tolerated (callers that build a Watcher literal without New):
+	// nowOrDefault() falls back to time.Now.
+	now func() time.Time
+
 	// lastCloudRun rate-limits cloud-probe iteration. Cloud probes are
 	// expensive (real API calls per provider) and uncorrelated with K8s
 	// events — they run on the initial cycle and then no more often
@@ -257,7 +276,38 @@ func New(lv *snapshot.Live, reg *registry.Registry, mut snapshot.Mutator, cfg Co
 		mut:  mut,
 		cfg:  cfg,
 		seen: make(map[string]*seenEntry),
+		now:  time.Now,
 	}
+}
+
+// nowOrDefault returns the injected clock, falling back to time.Now for
+// Watcher literals built without New() (some tests).
+func (w *Watcher) nowOrDefault() time.Time {
+	if w.now != nil {
+		return w.now()
+	}
+	return time.Now()
+}
+
+// healthListenAddr resolves the effective health listen address.
+func (w *Watcher) healthListenAddr() string {
+	if w.cfg.HealthListen != "" {
+		return w.cfg.HealthListen
+	}
+	return defaultHealthListen
+}
+
+// healthHandler returns the always-on health endpoint. GET /healthz
+// returns 200 unconditionally — it reports process liveness, not
+// readiness of any optional subsystem (webhook/prom triggers are
+// best-effort and must not gate the liveness probe).
+func (w *Watcher) healthHandler() http.Handler {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/healthz", func(rw http.ResponseWriter, _ *http.Request) {
+		rw.WriteHeader(http.StatusOK)
+		_, _ = rw.Write([]byte("ok"))
+	})
+	return mux
 }
 
 // WithSilenceLister sets the per-cycle Silence source. Wired by the
@@ -323,23 +373,16 @@ func (w *Watcher) Run(ctx context.Context) error {
 	// here so secrets never sit in the Config struct.
 	if w.cfg.WebhookListen != "" {
 		h := webhook.New(trigCh)
-		for _, spec := range w.cfg.WebhookSourceSpec {
-			parts := strings.SplitN(spec, "=", 2)
-			name := strings.TrimSpace(parts[0])
-			if name == "" {
-				continue
-			}
-			var secret string
-			if len(parts) == 2 {
-				secret = os.Getenv(strings.TrimSpace(parts[1]))
-			}
-			h.RegisterSource(name, secret)
-		}
+		registerWebhookSources(h, w.cfg.WebhookSourceSpec, os.Getenv)
 		mux := http.NewServeMux()
 		mux.Handle("/webhook/", h)
-		mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
-			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte("ok"))
+		// Keep /healthz reachable on the webhook port too (legacy
+		// /webhook/health probes and any tooling pinned to the webhook
+		// listener). The always-on health server below is the canonical
+		// probe target.
+		mux.HandleFunc("/healthz", func(rw http.ResponseWriter, _ *http.Request) {
+			rw.WriteHeader(http.StatusOK)
+			_, _ = rw.Write([]byte("ok"))
 		})
 		srv := &http.Server{
 			Addr:              w.cfg.WebhookListen,
@@ -357,6 +400,32 @@ func (w *Watcher) Run(ctx context.Context) error {
 			shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
 			_ = srv.Shutdown(shutdownCtx)
+		}()
+	}
+
+	// Always-on health server. Serves GET /healthz unconditionally so
+	// the Deployment's liveness + readiness probes work regardless of
+	// whether the M6 webhook receiver is configured. Independent port
+	// (Config.HealthListen, default :8081) so its lifecycle never
+	// couples to the webhook trigger.
+	{
+		healthAddr := w.healthListenAddr()
+		healthSrv := &http.Server{
+			Addr:              healthAddr,
+			Handler:           w.healthHandler(),
+			ReadHeaderTimeout: 5 * time.Second,
+		}
+		go func() {
+			log.Printf("watcher: health listener on %s", healthAddr)
+			if err := healthSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+				log.Printf("watcher: health server: %v", err)
+			}
+		}()
+		go func() {
+			<-ctx.Done()
+			shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			_ = healthSrv.Shutdown(shutdownCtx)
 		}()
 	}
 
@@ -382,6 +451,49 @@ func (w *Watcher) Run(ctx context.Context) error {
 			log.Println("watcher: resync cycle")
 			w.runCycle(ctx)
 		}
+	}
+}
+
+// insecureNoHMACToken is the literal spec value (in place of an env-var
+// name) that registers a webhook source with HMAC verification disabled.
+const insecureNoHMACToken = "insecure-no-hmac"
+
+// registerWebhookSources parses each "<name>=<env-var-with-secret>"
+// trigger spec and registers it on h. FAIL-CLOSED: a malformed spec
+// (no '='), or an env var that is unset/empty, logs an error and the
+// source is NOT registered — an unauthenticated source must never be
+// created by accident. The only way to register a source without HMAC
+// is the explicit literal "<name>=insecure-no-hmac", which logs a loud
+// warning. getenv is injectable for tests (os.Getenv in production).
+func registerWebhookSources(h *webhook.Handler, specs []string, getenv func(string) string) {
+	seen := make(map[string]bool)
+	for _, spec := range specs {
+		parts := strings.SplitN(spec, "=", 2)
+		name := strings.TrimSpace(parts[0])
+		if name == "" {
+			log.Printf("watcher: ERROR webhook source spec %q has an empty name — source disabled (fail-closed)", spec)
+			continue
+		}
+		if seen[name] {
+			log.Printf("watcher: WARNING webhook source %q registered more than once; last spec wins", name)
+		}
+		seen[name] = true
+		if len(parts) != 2 || strings.TrimSpace(parts[1]) == "" {
+			log.Printf("watcher: ERROR webhook source %q: spec is missing '=<env-var-with-secret>' — source disabled (fail-closed)", name)
+			continue
+		}
+		envVar := strings.TrimSpace(parts[1])
+		if envVar == insecureNoHMACToken {
+			log.Printf("watcher: WARNING UNAUTHENTICATED webhook source %s — anyone who can reach the listener can trigger diagnose cycles", name)
+			h.RegisterInsecureSource(name)
+			continue
+		}
+		secret := getenv(envVar)
+		if secret == "" {
+			log.Printf("watcher: ERROR webhook source %q: env var %s is unset or empty — source disabled (fail-closed); mount the secret or use '%s=%s' to explicitly opt out of HMAC", name, envVar, name, insecureNoHMACToken)
+			continue
+		}
+		h.RegisterSource(name, secret)
 	}
 }
 
@@ -805,6 +917,15 @@ func (w *Watcher) updateSeen(current map[string]*seenEntry, posted []*seenEntry)
 func (w *Watcher) loadSeenFromDriftReports(ctx context.Context) {
 	list, err := w.lv.List(ctx, snapshot.GVRDriftReport, "")
 	if err != nil || list == nil {
+		// Proceed with an empty seen map (same behavior as before), but
+		// say so: a transient apiserver error here means every known
+		// finding re-posts to Slack on the first cycle — without this
+		// log line that flood looks inexplicable.
+		if err == nil {
+			log.Printf("watcher: pre-populating seen map from DriftReports failed (Slack may re-post known findings): empty list response")
+		} else {
+			log.Printf("watcher: pre-populating seen map from DriftReports failed (Slack may re-post known findings): %v", err)
+		}
 		return
 	}
 	w.mu.Lock()

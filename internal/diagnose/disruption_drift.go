@@ -62,6 +62,10 @@ const (
 	graceJobFailedIndexes = 10 * time.Minute // Indexed Job has its own retry backoff
 )
 
+// List-failure logging now lives in listlog.go (logListFailure) — the
+// once-per-(resource, error-reason) helper introduced here in P1.2 was
+// lifted package-wide in P1.7.
+
 // Run executes the three sub-analyzers in order and returns the
 // combined diagnostic slice. Always nil-error per the Analyzer
 // interface contract.
@@ -83,6 +87,7 @@ func (a DisruptionDrift) runPDB(ctx context.Context, src snapshot.Source) []Diag
 	gvr := schema.GroupVersionResource{Group: "policy", Version: "v1", Resource: "poddisruptionbudgets"}
 	list, err := src.List(ctx, gvr, "")
 	if err != nil {
+		logListFailure("poddisruptionbudgets", err, false)
 		return nil
 	}
 	now := time.Now()
@@ -154,6 +159,7 @@ func (a DisruptionDrift) runStuckJobs(ctx context.Context, src snapshot.Source) 
 	gvr := schema.GroupVersionResource{Group: "batch", Version: "v1", Resource: "jobs"}
 	list, err := src.List(ctx, gvr, "")
 	if err != nil {
+		logListFailure("jobs", err, false)
 		return nil
 	}
 	now := time.Now()
@@ -214,6 +220,7 @@ func (a DisruptionDrift) runResourceQuota(ctx context.Context, src snapshot.Sour
 	gvr := schema.GroupVersionResource{Group: "", Version: "v1", Resource: "resourcequotas"}
 	list, err := src.List(ctx, gvr, "")
 	if err != nil {
+		logListFailure("resourcequotas", err, false)
 		return nil
 	}
 	now := time.Now()

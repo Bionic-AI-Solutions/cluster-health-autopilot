@@ -42,6 +42,7 @@ var (
 func (SecretKeyMissing) Run(ctx context.Context, src snapshot.Source) []Diagnostic {
 	pods, err := src.List(ctx, snapshot.GVRPod, "")
 	if err != nil || len(pods.Items) == 0 {
+		logListFailure("pods", err, true) // silent when the CRD/resource is absent; logs Forbidden etc.
 		return nil
 	}
 

@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	pkgai "github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/ai"
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/diagnose"
@@ -141,5 +142,36 @@ func TestEnrichDiagnostics_ContextCancellation(t *testing.T) {
 	// that deterministic flow continues regardless.
 	if len(out) != 2 {
 		t.Errorf("expected 2 diagnostics out; got %d", len(out))
+	}
+}
+
+// P1.9(b) — pendingURLs must not grow unbounded. Entries were only
+// evicted on lookup (approvalURLFor); a recorded-but-never-looked-up
+// ActionID persisted for the whole process lifetime. recordApprovalURL
+// now sweeps entries older than pendingURLTTL on each insert, using the
+// injectable `now` clock seam.
+func TestRecordApprovalURL_TTLEvictsOnInsert(t *testing.T) {
+	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	clk := base
+	w := &Watcher{now: func() time.Time { return clk }}
+
+	w.recordApprovalURL("old-action", "http://example/approve?token=a")
+	if got := len(w.pendingURLs); got != 1 {
+		t.Fatalf("after first insert len=%d, want 1", got)
+	}
+
+	// Advance the clock past the TTL, then insert a fresh entry. The
+	// sweep on insert must drop the stale "old-action".
+	clk = base.Add(pendingURLTTL + time.Minute)
+	w.recordApprovalURL("new-action", "http://example/approve?token=b")
+
+	if _, ok := w.pendingURLs["old-action"]; ok {
+		t.Errorf("stale entry old-action survived TTL sweep")
+	}
+	if _, ok := w.pendingURLs["new-action"]; !ok {
+		t.Errorf("fresh entry new-action missing after insert")
+	}
+	if got := len(w.pendingURLs); got != 1 {
+		t.Errorf("after sweep len=%d, want 1 (only new-action)", got)
 	}
 }

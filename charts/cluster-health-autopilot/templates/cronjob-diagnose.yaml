@@ -61,6 +61,9 @@ spec:
                 {{- include "cha.vaultEnv" . | nindent 16 }}
                 {{- include "cha.analyzerToggleEnv" . | nindent 16 }}
                 {{- include "cha.probeToggleEnv" . | nindent 16 }}
+                {{- include "cha.investigatorEnv" . | nindent 16 }}
+                {{- include "cha.externalDNSEnv" . | nindent 16 }}
+                {{- include "cha.extraEnv" . | nindent 16 }}
               resources:
                 {{- toYaml .Values.resources | nindent 16 }}
               securityContext:

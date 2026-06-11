@@ -48,6 +48,7 @@ func (a OOMKillRecurrence) Run(ctx context.Context, src snapshot.Source) []Diagn
 	gvr := schema.GroupVersionResource{Group: "", Version: "v1", Resource: "pods"}
 	list, err := src.List(ctx, gvr, "")
 	if err != nil {
+		logListFailure("pods", err, false)
 		return nil
 	}
 	now := time.Now()

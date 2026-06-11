@@ -107,6 +107,7 @@ func (r RBACDrift) Run(ctx context.Context, src snapshot.Source) []Diagnostic {
 func (r RBACDrift) checkWildcardVerbs(ctx context.Context, src snapshot.Source, gvr schema.GroupVersionResource, kind string) []Diagnostic {
 	list, err := src.List(ctx, gvr, "")
 	if err != nil || list == nil || len(list.Items) == 0 {
+		logListFailure(gvr.Resource, err, true) // silent when the CRD/resource is absent; logs Forbidden etc.
 		return nil
 	}
 	var out []Diagnostic
@@ -168,6 +169,7 @@ func (r RBACDrift) checkWildcardVerbs(ctx context.Context, src snapshot.Source, 
 func (r RBACDrift) checkUnboundServiceAccounts(ctx context.Context, src snapshot.Source) []Diagnostic {
 	pods, err := src.List(ctx, snapshot.GVRPod, "")
 	if err != nil || pods == nil {
+		logListFailure("pods", err, true) // silent when the CRD/resource is absent; logs Forbidden etc.
 		return nil
 	}
 

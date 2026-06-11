@@ -70,7 +70,12 @@ func buildKubeConfigForSilence(kubeconfigPath string) (*rest.Config, error) {
 // version is overridden at build time via -ldflags "-X main.version=v0.1.0".
 var version = "dev"
 
-func main() {
+// newRootCmd builds the full `cha` cobra command tree (root +
+// subcommands). Factored out of main() so the chart-args↔binary-flags
+// parity gate (cmd/cha/chartflags_test.go) can introspect the real
+// FlagSets instead of a hand-maintained list — keeping the gate's
+// notion of "valid flags" in lockstep with the binary.
+func newRootCmd() *cobra.Command {
 	root := &cobra.Command{
 		Use:   "cha",
 		Short: "Cluster Health Autopilot — detect, fix, re-verify, report.",
@@ -96,6 +101,11 @@ Subcommands:
 	root.AddCommand(anonymizeCmd())
 	root.AddCommand(summarizeCmd())
 	root.AddCommand(versionCmd())
+	return root
+}
+
+func main() {
+	root := newRootCmd()
 
 	if err := root.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
@@ -497,6 +507,7 @@ func watchCmd() *cobra.Command {
 		promTriggerFilter   []string
 		webhookListen       string
 		webhookSourceSpec   []string // each entry "<name>=<env-with-secret>"
+		healthListen        string
 	)
 	c := &cobra.Command{
 		Use:   "watch",
@@ -663,6 +674,7 @@ the post-fix cluster state.`,
 				PromTriggerAlertFilter: promTriggerFilter,
 				WebhookListen:          webhookListen,
 				WebhookSourceSpec:      webhookSourceSpec,
+				HealthListen:           healthListen,
 			}
 			w := watcher.New(lv, reg, mut, cfg)
 			// Wire the Silence lister so the watcher drops matched
@@ -708,9 +720,11 @@ the post-fix cluster state.`,
 		"Comma-separated alertname filter (case-insensitive). Empty = any firing alert triggers; non-empty = only the listed alertnames trigger. Useful when the cluster has high-volume scrape-noise alerts that shouldn't churn CHA.")
 	// M6 — webhook class-E receiver (v1.23.0+).
 	c.Flags().StringVar(&webhookListen, "webhook-listen", os.Getenv("WEBHOOK_LISTEN"),
-		"Listen address for the HMAC-authed webhook trigger receiver (e.g. ':8090'). Empty = receiver disabled. Each registered --webhook-source produces an endpoint at /webhook/<source>; POSTing a body with X-CHA-Signature=sha256=<hex> triggers an immediate diagnose cycle. GET /webhook/health returns 200 for K8s liveness probes.")
+		"Listen address for the HMAC-authed webhook trigger receiver (e.g. ':8090'). Empty = receiver disabled. Each registered --webhook-source produces an endpoint at /webhook/<source>; POSTing a body with X-CHA-Signature=sha256=<hex-hmac-sha256-of-body> triggers an immediate diagnose cycle. Senders SHOULD also send X-CHA-Timestamp=<unix-seconds> and sign 'timestamp.body' instead (X-CHA-Signature=sha256=hex(hmac-sha256(secret, timestamp+\".\"+body))); timestamped requests more than 5 minutes from server time are rejected with 401, bounding replay of captured requests. Requests without the timestamp header keep the legacy body-only check. GET /webhook/health returns 200 for K8s liveness probes.")
 	c.Flags().StringSliceVar(&webhookSourceSpec, "webhook-source", nil,
-		"Repeatable webhook source registration in the form '<name>=<env-var-with-hmac-secret>'. Example: --webhook-source=vault=CHA_WEBHOOK_VAULT_SECRET. An empty env var registers the source with HMAC verification DISABLED (debug-only; production must always set a non-empty secret).")
+		"Repeatable webhook source registration in the form '<name>=<env-var-with-hmac-secret>'. Example: --webhook-source=vault=CHA_WEBHOOK_VAULT_SECRET. FAIL-CLOSED: if the env var is unset/empty, or the spec is malformed, an error is logged and the source is NOT registered. To run a deliberately unauthenticated source use the literal token '<name>=insecure-no-hmac' (DANGEROUS: anyone who can reach the listener can trigger diagnose cycles).")
+	c.Flags().StringVar(&healthListen, "health-listen", envOrDefault("HEALTH_LISTEN", ":8081"),
+		"Listen address for the always-on health server (default: $HEALTH_LISTEN or ':8081'). GET /healthz returns 200 while the process is alive — independent of the webhook receiver, so liveness/readiness probes work even when --webhook-listen is unset.")
 	c.Flags().StringVar(&clusterName, "cluster-name", envOrDefault("CLUSTER_NAME", "cluster"), "Cluster name stamped on Alertmanager alert labels (default: $CLUSTER_NAME or 'cluster')")
 	c.Flags().StringVar(&slackAlerts, "slack-alerts", "", "Slack webhook for #ceph-alerts — CHA acted (auto-fixed issues); used as fallback when --alertmanager-url is not set")
 	c.Flags().StringVar(&slackCritical, "slack-critical", "", "Slack webhook for #ceph-critical — human action required; used as fallback when --alertmanager-url is not set")

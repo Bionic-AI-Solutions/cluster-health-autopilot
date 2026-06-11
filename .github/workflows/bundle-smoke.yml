@@ -321,6 +321,49 @@ jobs:
           fi
           echo "PASS: no InvalidSpec or ReconcileError on Phase 2+ CR"
 
+      # ── Full-surface pruning smoke (P1.4) ──────────────────────────────
+      # v1.24.0 shipped with the installed CRD missing spec.watcher.triggers
+      # — schema-strict apiservers silently PRUNED the subtree from applied
+      # CRs and nothing in CI noticed. sample-cr-full.yaml sets EVERY
+      # optional spec subtree (all master-switches off, fake secret refs);
+      # reading the deep fields back catches a bundle CRD that lost a
+      # subtree relative to the Go types / chart CRD.
+      - name: Apply full-surface sample CR (pruning detection)
+        run: |
+          kubectl apply -f bundle/tests/sample-cr-full.yaml
+
+      - name: Verify no spec subtree was pruned by the installed CRD schema
+        run: |
+          check() {
+            local path="$1"
+            local got
+            got=$(kubectl -n cha-system get clusterhealthautopilot/smoke-full \
+              -o jsonpath="{${path}}" 2>/dev/null || echo "")
+            if [ -z "$got" ]; then
+              echo "FAIL: ${path} came back EMPTY — the installed CRD schema is missing this subtree and the apiserver pruned it (the v1.24.0 bug class). Hand-port the missing subtree into bundle/manifests/cha.bionicaisolutions.com_clusterhealthautopilots.yaml from the chart CRD."
+              exit 1
+            fi
+            echo "PASS: ${path} = ${got}"
+          }
+          # One deep leaf per optional subtree — a pruned ancestor empties
+          # every leaf under it.
+          check ".spec.watcher.triggers.prom.url"
+          check ".spec.watcher.triggers.webhook.listen"
+          check ".spec.watcher.triggers.webhook.sources"
+          check ".spec.externalDNS.cloudflare.apiTokenSecretRef.name"
+          check ".spec.externalDNS.cloudflare.zoneIDs"
+          check ".spec.alerting.slack.healthInfo.secretName"
+          check ".spec.alerting.alertmanager.url"
+          check ".spec.ai.digestPinAttestation.secretName"
+          check ".spec.ai.metrics.addr"
+          check ".spec.ai.memory.embeddings.model"
+          check ".spec.ai.extraEnv[1].valueFrom.secretKeyRef.name"
+          check ".spec.approval.store.replayConfigMap"
+          check ".spec.approval.ingress.tls.secretName"
+          check ".spec.ticketing.severityPriority.critical"
+          check ".spec.ticketing.auth.secretName"
+          echo "PASS: no subtree pruned — installed CRD schema covers the full spec surface"
+
       - name: Dump diagnostics on failure
         if: failure()
         run: |
@@ -332,6 +375,8 @@ jobs:
           kubectl -n cha-system get clusterhealthautopilot/smoke -o yaml || true
           echo "=== CR + conditions (AI+approval) ==="
           kubectl -n cha-system get clusterhealthautopilot/smoke-ai -o yaml || true
+          echo "=== CR as stored (full-surface pruning sample) ==="
+          kubectl -n cha-system get clusterhealthautopilot/smoke-full -o yaml || true
           echo "=== approval-server objects ==="
           kubectl -n cha-system get deploy,svc,sa,secret -l app.kubernetes.io/instance=smoke-ai || true
           kubectl get clusterrolebinding -l cha.bionicaisolutions.com/managed-by-cr=smoke-ai || true

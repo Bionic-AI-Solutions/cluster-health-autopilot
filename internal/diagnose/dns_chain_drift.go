@@ -116,6 +116,7 @@ func (a DNSChainDrift) Run(ctx context.Context, src snapshot.Source) []Diagnosti
 
 	ingresses, err := src.List(ctx, snapshot.GVRIngress, "")
 	if err != nil || ingresses == nil || len(ingresses.Items) == 0 {
+		logListFailure("ingresses", err, true) // silent when the CRD/resource is absent; logs Forbidden etc.
 		// CRD absent or RBAC denied — fail open, nothing to analyze.
 		return nil
 	}
@@ -522,6 +523,7 @@ func resolveIngressBackend(ing unstructured.Unstructured, ns, ingName string, ru
 func findIngressControllerLBIP(ctx context.Context, src snapshot.Source) string {
 	svcs, err := src.List(ctx, snapshot.GVRService, "")
 	if err != nil || svcs == nil {
+		logListFailure("services", err, true) // silent when the CRD/resource is absent; logs Forbidden etc.
 		return ""
 	}
 	for i := range svcs.Items {

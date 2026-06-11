@@ -41,6 +41,7 @@ const defaultWarnWindow = 14 * 24 * time.Hour
 func (c CertExpiry) Run(ctx context.Context, src snapshot.Source) []Diagnostic {
 	certs, err := src.List(ctx, snapshot.GVRCertificate, "")
 	if err != nil || len(certs.Items) == 0 {
+		logListFailure("certificates.cert-manager.io", err, true) // silent when the CRD/resource is absent; logs Forbidden etc.
 		// CRD not installed or no certificates — not an error.
 		return nil
 	}

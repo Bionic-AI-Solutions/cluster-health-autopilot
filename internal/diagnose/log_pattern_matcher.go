@@ -91,6 +91,7 @@ var logPatterns = []logPattern{
 func (a LogPatternMatcher) Run(ctx context.Context, src snapshot.Source) []Diagnostic {
 	events, err := src.List(ctx, snapshot.GVREvent, "")
 	if err != nil {
+		logListFailure("events", err, false)
 		return nil
 	}
 	type key struct{ subject, label string }

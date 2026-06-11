@@ -48,6 +48,7 @@ func (a TLSSecretMismatch) Run(ctx context.Context, src snapshot.Source) []Diagn
 
 	ingresses, err := src.List(ctx, snapshot.GVRIngress, "")
 	if err != nil || ingresses == nil || len(ingresses.Items) == 0 {
+		logListFailure("ingresses", err, true) // silent when the CRD/resource is absent; logs Forbidden etc.
 		return nil
 	}
 

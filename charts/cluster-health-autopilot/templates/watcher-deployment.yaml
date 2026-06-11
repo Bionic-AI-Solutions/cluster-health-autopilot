@@ -7,8 +7,17 @@ metadata:
   labels:
     {{- include "cha.labels" . | nindent 4 }}
     cha.bionicaisolutions.com/role: watcher
+{{- /* P1.9(a) — replicas honor watcher.replicas (default 1). Raising
+      above 1 is ONLY safe with leader election ON (CHA_LEADER_ELECTION
+      path): otherwise every replica runs the probe/fix/post cycle and
+      they race on DriftReports + double-post Slack. Fail the render
+      rather than ship a silently-racing multi-pod watcher. */}}
+{{- $watcherReplicas := .Values.watcher.replicas | default 1 }}
+{{- if and (gt (int $watcherReplicas) 1) (not .Values.watcher.leaderElection.enabled) }}
+{{- fail "watcher.replicas > 1 requires watcher.leaderElection.enabled=true (otherwise replicas race on DriftReports and double-post Slack). Set watcher.leaderElection.enabled=true or keep watcher.replicas=1." }}
+{{- end }}
 spec:
-  replicas: 1
+  replicas: {{ $watcherReplicas }}
   selector:
     matchLabels:
       {{- include "cha.selectorLabels" . | nindent 6 }}
@@ -98,6 +107,10 @@ spec:
             - --webhook-source={{ . }}
             {{- end }}
             {{- end }}
+            {{- /* P1.9(a) — always-on health server. Rendered
+                  unconditionally so the liveness/readiness probes below
+                  always have a target. */}}
+            - --health-listen={{ .Values.watcher.healthListen | default ":8081" }}
             {{- if ((.Values.watcher.remedy).enabled) }}
             - --remedy
             {{- if ((.Values.watcher.remedy).dryRun) }}
@@ -187,6 +200,9 @@ spec:
             {{- include "cha.optionalFixerEnv" . | nindent 12 }}
             {{- include "cha.analyzerToggleEnv" . | nindent 12 }}
             {{- include "cha.probeToggleEnv" . | nindent 12 }}
+            {{- include "cha.investigatorEnv" . | nindent 12 }}
+            {{- include "cha.externalDNSEnv" . | nindent 12 }}
+            {{- include "cha.extraEnv" . | nindent 12 }}
             {{- if and .Values.ticketing.enabled .Values.ticketing.auth.enabled }}
             - name: TICKETING_MCP_API_KEY
               valueFrom:
@@ -211,13 +227,37 @@ spec:
                   key: {{ $envName }}
             {{- end }}
             {{- end }}
-          {{- /* v1.23.0+ M6 — declare the webhook port when the receiver is on. */}}
-          {{- if ((.Values.watcher.triggers).webhook).listen }}
+          {{- /* P1.9(a) — derive the health port number from the
+                listen address (":8081" -> 8081) for the named port +
+                probes. The always-on health server makes this port
+                unconditional. */}}
+          {{- $healthAddr := .Values.watcher.healthListen | default ":8081" }}
+          {{- $healthPort := splitList ":" $healthAddr | last | int }}
           ports:
+            - name: health
+              containerPort: {{ $healthPort }}
+              protocol: TCP
+            {{- /* v1.23.0+ M6 — declare the webhook port when the receiver is on. */}}
+            {{- if ((.Values.watcher.triggers).webhook).listen }}
             - name: webhook
               containerPort: {{ ((.Values.watcher.triggers).webhook).service.port | default 8090 }}
               protocol: TCP
-          {{- end }}
+            {{- end }}
+          {{- /* P1.9(a) — liveness/readiness against the always-on
+                /healthz. Mirrors the approval-server / operator probe
+                pattern. */}}
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: health
+            initialDelaySeconds: 5
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: health
+            initialDelaySeconds: 2
+            periodSeconds: 10
           resources:
             {{- toYaml .Values.watcher.resources | nindent 12 }}
           securityContext:

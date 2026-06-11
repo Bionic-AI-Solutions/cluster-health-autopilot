@@ -8,8 +8,22 @@ metadata:
 rules:
   # Core probe surface.
   # watch verb added for cha watch --live (watcher mode); get+list retained for CronJob mode.
+  # resourcequotas (P1.2, v1.25.2) — DisruptionDrift's saturated-quota
+  # signal; the analyzer was silently dead without the grant.
+  # services + endpoints (P1.3, v1.25.2) — TraefikRoutes lists Services
+  # cluster-wide and KongRoutes falls back to v1.Endpoints; the operator
+  # builder gained these in v1.10.3 (DNS-chain drift) but the chart never
+  # did, so chart installs emitted PROBE_FAILED noise every cycle on
+  # k3s/Traefik. TestReaderRBAC_ChartOperatorParity now pins the two
+  # surfaces together.
   - apiGroups: [""]
-    resources: ["pods", "nodes", "persistentvolumeclaims", "persistentvolumes", "events", "namespaces"]
+    resources: ["pods", "nodes", "persistentvolumeclaims", "persistentvolumes", "events", "namespaces", "services", "endpoints", "resourcequotas"]
+    verbs: ["get", "list", "watch"]
+  # DisruptionDrift (P1.2, v1.25.2) — PDB blocked-evictions signal.
+  # Without this grant the analyzer's poddisruptionbudgets list returns
+  # `forbidden` and its soft-fail made it return nothing every cycle.
+  - apiGroups: ["policy"]
+    resources: ["poddisruptionbudgets"]
     verbs: ["get", "list", "watch"]
   # Secret reads — the ProactiveSecretKeyCheck analyzer needs to inspect the
   # SET OF KEY NAMES on each Secret (not their byte values) to detect

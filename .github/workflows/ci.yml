@@ -34,6 +34,15 @@ jobs:
           check-latest: true
           cache: true
 
+      # helm is required by the chart-args↔binary-flags parity gates
+      # (cmd/cha + cmd/cha-operator chartflags_test.go, P3.1) and the
+      # chart-toggle drift gate (internal/chartgate, P1.8) — they shell
+      # out to `helm template`. Without helm on PATH those tests t.Skip
+      # locally, so they MUST have helm here or the gate never runs.
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.16.2
+
       - name: go mod verify
         run: go mod verify
 
@@ -74,6 +83,12 @@ jobs:
         with:
           version: v2.12.0
           args: --timeout=5m
+
+      # CHANGELOG hygiene gate (P3.3b): one ISO date per version heading,
+      # descending semver order, no duplicate version headings. Catches the
+      # doubled-date / out-of-order defects that slipped into CHANGELOG.md.
+      - name: changelog lint
+        run: bash scripts/changelog-lint.sh
 
   chart-test:
     name: helm lint + unittest

@@ -96,18 +96,37 @@ func (w *Watcher) enrichDiagnostics(ctx context.Context, diagnostics []diagnose.
 	return out
 }
 
+// pendingURLTTL bounds how long a recorded approval URL lingers in the
+// pendingURLs map. Entries were previously evicted ONLY on lookup
+// (approvalURLFor), so a recorded-but-never-rendered ActionID — e.g. a
+// diagnostic that resolved before the next post — persisted for the
+// whole process lifetime, leaking memory. 24h is comfortably beyond any
+// approval-token TTL (minutes-to-hours), so a legitimately pending URL
+// is never swept out from under a still-valid token.
+const pendingURLTTL = 24 * time.Hour
+
 // recordApprovalURL stores an approval URL keyed by ActionID. The
 // watcher's buildCurrentState reads this to populate seenEntry.approvalURL,
 // which in turn populates DeltaDiag.ApprovalURL for rendering.
 //
-// The cache is bounded — entries older than the proposal TTL are evicted.
+// The cache is bounded two ways: a TTL sweep runs on every insert
+// (evicting entries older than pendingURLTTL regardless of whether they
+// were ever looked up), and approvalURLFor evicts on access.
 func (w *Watcher) recordApprovalURL(actionID, url string) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	if w.pendingURLs == nil {
 		w.pendingURLs = make(map[string]pendingURL)
 	}
-	w.pendingURLs[actionID] = pendingURL{url: url, recordedAt: time.Now()}
+	now := w.nowOrDefault()
+	// Sweep stale entries first so a write-heavy / read-light workload
+	// can't accumulate dead ActionIDs unboundedly.
+	for k, e := range w.pendingURLs {
+		if now.Sub(e.recordedAt) > pendingURLTTL {
+			delete(w.pendingURLs, k)
+		}
+	}
+	w.pendingURLs[actionID] = pendingURL{url: url, recordedAt: now}
 }
 
 // approvalURLFor returns the approval URL for actionID, or "" when none
@@ -119,8 +138,7 @@ func (w *Watcher) approvalURLFor(actionID string) string {
 	if !ok {
 		return ""
 	}
-	// Evict entries older than 30 minutes (well beyond the 15-min TTL).
-	if time.Since(e.recordedAt) > 30*time.Minute {
+	if w.nowOrDefault().Sub(e.recordedAt) > pendingURLTTL {
 		delete(w.pendingURLs, actionID)
 		return ""
 	}

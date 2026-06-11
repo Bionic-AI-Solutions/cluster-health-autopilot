@@ -277,6 +277,10 @@ spec:
                               type: string
                             pullPolicy:
                               type: string
+                            pullSecrets:
+                              type: array
+                              items:
+                                type: string
                         storage:
                           type: object
                           properties:

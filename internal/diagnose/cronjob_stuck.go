@@ -46,6 +46,7 @@ func (a CronJobStuck) Run(ctx context.Context, src snapshot.Source) []Diagnostic
 	gvr := schema.GroupVersionResource{Group: "batch", Version: "v1", Resource: "cronjobs"}
 	list, err := src.List(ctx, gvr, "")
 	if err != nil {
+		logListFailure("cronjobs", err, false)
 		return nil
 	}
 	now := time.Now()

@@ -34,6 +34,7 @@ func (FailingExternalSecrets) Name() string { return "FailingExternalSecrets" }
 func (FailingExternalSecrets) Run(ctx context.Context, src snapshot.Source) []Diagnostic {
 	list, err := src.List(ctx, snapshot.GVRExtSecret, "")
 	if err != nil || len(list.Items) == 0 {
+		logListFailure("externalsecrets", err, true) // silent when the CRD/resource is absent; logs Forbidden etc.
 		return nil
 	}
 
