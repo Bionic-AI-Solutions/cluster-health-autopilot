@@ -1,5 +1,16 @@
 # Cloud Probe Framework — Design
 
+> **STATUS: 🚧 PARTIAL — M1+M2 SHIPPED (30 cloud probes, v1.8.0); M3 NOT shipped.**
+> _(P4.1 honest-header pass, 2026-06-11)_
+>
+> The full multi-cloud surface — **30 probes (10 each AWS / GCP / Azure)** with all three Live SDK wrappers wired to execute against real clouds — shipped bundled in **OSS v1.8.0** (CHANGELOG [1.8.0] 2026-05-28: "a complete 30-probe multi-cloud surface (10 each AWS/GCP/Azure) with all three Live SDK wrappers"). GCP/Azure slices landed incrementally (Sprint 1–3 PRs) then collapsed into the v1.8.0 release. Live SDK wrappers (`internal/cloud/{aws,gcp,azure}/live.go`) compile against the real SDKs but are NOT integration-tested against live cloud accounts (credential-gated) — documented as a verification boundary in the CHANGELOG.
+>
+> **DELTA — M3 (Cloud-aware AI tier, CHA-com) was DROPPED SILENTLY and is NOT shipped.** §6 M3 below (T0 cloud-context enricher, T1 cloud-aware fix proposer, T2 cloud+K8s planner) has **no CHANGELOG entry and no code** as of 2026-06-11 (verified: no `cloud-aware`/`Cloud M3` references outside this design doc). The shipped AI tiers (T0–T3, CHA-com v1.1.0–v1.4.0) carry K8s context only, not cloud-resource context. → **Follow-up: Cloud M3 (cloud-aware AI tier)** is genuinely open; tracked in the consolidated roadmap Q3 2026 forward plan. M4 (cloud mutations) remains a separate future design as stated.
+>
+> Body below is the original design, preserved for context.
+
+---
+
 **Status:** Draft
 **Author:** skadam
 **Date:** 2026-05-23

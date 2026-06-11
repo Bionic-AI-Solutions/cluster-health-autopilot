@@ -1,5 +1,13 @@
 # AI SRE Positioning — Implementation Plan (2026-05-27)
 
+> **STATUS: ✅ SHIPPED — Workstreams complete across v1.6.x–v1.8.0 (May 2026)** _(P4.1 honest-header pass, 2026-06-11)_
+>
+> Workstream B's drift classes landed in **v1.7.0** (PR; CHANGELOG [1.7.0] 2026-05-27: "Closes Workstream B of the AI SRE positioning plan" — `GitOpsDrift`, `WorkloadStateDrift`, `RBACDrift` + `LLMFixerMatcher`); the Layer-2 investigator landed in **v1.5.0** (PR #55); remaining B4/B5/B6 classes + the operator port folded into the **v1.8.0** release (CHANGELOG [1.8.0]). The plan's drift-class-breadth and AI-SRE-repositioning goals are delivered. No material as-shipped delta.
+>
+> Body below is the original plan, preserved for context.
+
+---
+
 **Status:** Active — drives v1.6.3 (this week) through v1.8 (Q3).
 **Driver:** GTM feedback received 2026-05-27 from external reviewer.
 **Companion:** `2026-05-trigger-expansion-roadmap.md` (still valid; this plan

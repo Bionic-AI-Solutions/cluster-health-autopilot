@@ -1,5 +1,13 @@
 # k3s Probe Suite — Design Document
 
+> **STATUS: ✅ SHIPPED — v1.9.0** _(P4.1 honest-header pass, 2026-06-11)_
+>
+> The k3s probe suite (Traefik routes, LocalPath, Datastore/etcd-quorum, ingress discovery) shipped in **OSS v1.9.0** via PR #121 ("k3s probe suite — Traefik, LocalPath, Datastore, ingress discovery") + chart bump PR #122. Files: `internal/probe/traefik_routes.go`, `internal/probe/k3s_localpath.go`, `internal/probe/k3s_datastore.go`, `internal/probe/ingress_discovery.go`, `internal/probe/k3s_probes_test.go`. K3sDatastore clustered-etcd quorum checks extended in PR #126.
+>
+> No material as-shipped delta vs this design. Body below is the original design, preserved for context.
+
+---
+
 **Status:** Draft  
 **Date:** 2026-05-31  
 **Target version:** v1.10 (first sprint after v1.9.3 stabilisation)

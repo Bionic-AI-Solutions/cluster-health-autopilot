@@ -1,5 +1,14 @@
 # Phase 2d-γ — RAG-Driven Image Digest-Pin Proposer
 
+> **STATUS: ✅ SHIPPED — OSS foundations + CHA-com proposer both landed.**
+> _(P4.1 honest-header pass, 2026-06-11)_
+>
+> OSS-side foundations shipped across v1.14.0–v1.21.1: the workload feeder writing `kind=workload` with `image_digest` (PR #152); the `pkg/releasesrc` source-of-truth detectors — Helm `values.yaml` image-tag detector (PR #153, Phase 2d-γ-3 slice 1) + inline-image raw-YAML detector (v1.18.2, PR #159) + Helm-probe fallthrough fix (PR #162); `ActionProposePullRequest` ActionKind (PR #154); trust-class severity for digest-pin findings (v1.14.0, PR #144); per-workload dedup + operator-managed `owner_chart` synthesis (v1.25.0, PR #184); and digest-pin attestation chart/operator wiring (v1.21.1, PR #175). The CHA-com `DigestPinProposer` + approval-server executor consume these. **Caveat:** the auto-merge gate (`digestPinAutoMergeGate`) is fully implemented + tested but per the consolidated roadmap was **not yet CONSTRUCTED at runtime** ("Outstanding work item #1, Phase 3.B production wiring, ~1h, cha-com:1.19.0") — confirm before claiming auto-merge live.
+>
+> No material design-vs-shipped scope-shrink; the one open thread is the auto-merge runtime wiring noted above. Body below is the original design, preserved for context.
+
+---
+
 **Status:** Design draft
 **Tier:** Paid (CHA-com / AI tier, gated on `spec.ai.enabled`)
 **Author:** opened 2026-06-01

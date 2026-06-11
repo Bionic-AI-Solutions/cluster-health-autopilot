@@ -1,5 +1,14 @@
 # Phase 2d-β — RAG-Driven NetworkPolicy Proposer
 
+> **STATUS: ✅ SHIPPED — OSS proposer wire-up + CNI gating landed.**
+> _(P4.1 honest-header pass, 2026-06-11)_
+>
+> Shipped: the Phase 2d-β OSS proposer wire-up, CNI-gated + k3s-safe (PR #137); CNI detection hardened to recognize kube-router as a NetPol enforcer (v1.12.3, PR #142, after the 2026-06-01 dev-cluster outage); LoadBalancer-aware + kube-system-aware hardening (v1.13.0, PR #143). The OSS watcher mints Approve/Deny URLs so `ProposedPolicyYAML`-bearing diagnostics reach Slack/Alertmanager/OpenProject (Path B, PR #151 — closes the gap where NetworkPolicyProposer URLs were minted in the cha-com aiwatch but never reached user-facing sinks). The approval-server NetworkPolicy itself was also tightened to restrict ingress to the gateway ns (P2.6b-OSS).
+>
+> No material design-vs-shipped scope-shrink. Body below is the original design, preserved for context.
+
+---
+
 **Status:** Design draft
 **Tier:** Paid (CHA-com / AI tier, gated on `spec.ai.enabled`)
 **Author:** opened 2026-06-01

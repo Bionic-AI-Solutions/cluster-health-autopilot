@@ -1,5 +1,13 @@
 # DNS-chain drift analyzer — `DNSChainDrift` (2026-05-30)
 
+> **STATUS: ✅ SHIPPED — v1.10.0** _(P4.1 honest-header pass, 2026-06-11)_
+>
+> The `DNSChainDrift` analyzer (Cloudflare → Ingress → Service → Endpoints chain walk) shipped in **OSS v1.10.0** via PR #125 ("DNSChainDrift analyzer") + release bump PR #127. Files: `internal/diagnose/dns_chain_drift.go`, `internal/dns/cloudflare/client.go`. False-positive hardening followed: v1.10.3 (PR #130, DNS-chain false positives + silence snippet) and duplicate-ingress-host path-collision fix (7c07c0e). Optional external-DNS hop is gated on `CHA_CLOUDFLARE_TOKEN`; operator-managed token injection (`spec.externalDNS.cloudflare.apiTokenSecretRef`) was a silently-dead-feature later fixed under P1.5 (see [Unreleased] CHANGELOG).
+>
+> No material as-shipped delta vs this design. Body below is the original design, preserved for context.
+
+---
+
 **Status:** Design — implementation slated for v1.10.x (post v1.9 operator Phase 1c).
 **Parent context:**
   - `internal/probe/endpoints.go` — current static probe target list + auto-discovery.
