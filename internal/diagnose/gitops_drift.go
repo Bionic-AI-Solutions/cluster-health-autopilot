@@ -109,6 +109,7 @@ func (g GitOpsDrift) Run(ctx context.Context, src snapshot.Source) []Diagnostic 
 func (g GitOpsDrift) checkArgoApplications(ctx context.Context, src snapshot.Source, grace time.Duration, now time.Time) []Diagnostic {
 	apps, err := src.List(ctx, gvrArgoApplication, "")
 	if err != nil || apps == nil || len(apps.Items) == 0 {
+		logListFailure("applications.argoproj.io", err, true) // silent when the CRD/resource is absent; logs Forbidden etc.
 		return nil
 	}
 	var out []Diagnostic
@@ -178,6 +179,7 @@ func (g GitOpsDrift) checkArgoApplications(ctx context.Context, src snapshot.Sou
 func (g GitOpsDrift) checkFluxKustomizations(ctx context.Context, src snapshot.Source, grace time.Duration, now time.Time) []Diagnostic {
 	ks, err := src.List(ctx, gvrFluxKustomization, "")
 	if err != nil || ks == nil || len(ks.Items) == 0 {
+		logListFailure("kustomizations.kustomize.toolkit.fluxcd.io", err, true) // silent when the CRD/resource is absent; logs Forbidden etc.
 		return nil
 	}
 	var out []Diagnostic
@@ -191,6 +193,7 @@ func (g GitOpsDrift) checkFluxKustomizations(ctx context.Context, src snapshot.S
 func (g GitOpsDrift) checkFluxHelmReleases(ctx context.Context, src snapshot.Source, grace time.Duration, now time.Time) []Diagnostic {
 	hrs, err := src.List(ctx, gvrFluxHelmRelease, "")
 	if err != nil || hrs == nil || len(hrs.Items) == 0 {
+		logListFailure("helmreleases.helm.toolkit.fluxcd.io", err, true) // silent when the CRD/resource is absent; logs Forbidden etc.
 		return nil
 	}
 	var out []Diagnostic

@@ -123,6 +123,7 @@ func (c ConfigDrift) Run(ctx context.Context, src snapshot.Source) []Diagnostic 
 func (c ConfigDrift) checkCRDStoredVersions(ctx context.Context, src snapshot.Source) []Diagnostic {
 	list, err := src.List(ctx, gvrCRD, "")
 	if err != nil || list == nil {
+		logListFailure("customresourcedefinitions", err, true) // silent when the CRD/resource is absent; logs Forbidden etc.
 		return nil
 	}
 	var out []Diagnostic
@@ -159,6 +160,7 @@ func (c ConfigDrift) checkCRDStoredVersions(ctx context.Context, src snapshot.So
 func (c ConfigDrift) checkDeploymentRollouts(ctx context.Context, src snapshot.Source, now time.Time, grace time.Duration) []Diagnostic {
 	list, err := src.List(ctx, snapshot.GVRDeployment, "")
 	if err != nil || list == nil {
+		logListFailure("deployments", err, true) // silent when the CRD/resource is absent; logs Forbidden etc.
 		return nil
 	}
 	var out []Diagnostic
@@ -246,6 +248,7 @@ func (c ConfigDrift) checkDeploymentRollouts(ctx context.Context, src snapshot.S
 func (c ConfigDrift) checkConfigChecksumDrift(ctx context.Context, src snapshot.Source) []Diagnostic {
 	pods, err := src.List(ctx, snapshot.GVRPod, "")
 	if err != nil || pods == nil {
+		logListFailure("pods", err, true) // silent when the CRD/resource is absent; logs Forbidden etc.
 		return nil
 	}
 

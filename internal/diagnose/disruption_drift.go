@@ -6,13 +6,10 @@ package diagnose
 import (
 	"context"
 	"fmt"
-	"log"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/snapshot"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )
@@ -65,31 +62,9 @@ const (
 	graceJobFailedIndexes = 10 * time.Minute // Indexed Job has its own retry backoff
 )
 
-// Once-per-(resource, error-reason) list-failure logs (P1.2). The
-// analyzer keeps its fail-open contract (a missing CRD or RBAC denial
-// must not abort the diagnose cycle), but a persistent `forbidden`
-// previously made the whole analyzer silently dead — these logs make
-// the degradation visible without spamming every cycle. Keyed by error
-// reason (not a bare sync.Once) so a transient startup blip does not
-// swallow the log line for a *different* persistent failure (e.g. a
-// later RBAC regression). Cardinality is bounded by resource count ×
-// apierrors reason values.
-var (
-	logListFailMu   sync.Mutex
-	logListFailSeen = map[string]bool{}
-)
-
-// logListFailure emits the once-per-(resource, reason) degradation line.
-func logListFailure(resource string, err error) {
-	key := resource + "/" + string(apierrors.ReasonForError(err))
-	logListFailMu.Lock()
-	defer logListFailMu.Unlock()
-	if logListFailSeen[key] {
-		return
-	}
-	logListFailSeen[key] = true
-	log.Printf("disruption drift: list %s failed (analyzer degraded until this resolves): %v", resource, err)
-}
+// List-failure logging now lives in listlog.go (logListFailure) — the
+// once-per-(resource, error-reason) helper introduced here in P1.2 was
+// lifted package-wide in P1.7.
 
 // Run executes the three sub-analyzers in order and returns the
 // combined diagnostic slice. Always nil-error per the Analyzer
@@ -112,7 +87,7 @@ func (a DisruptionDrift) runPDB(ctx context.Context, src snapshot.Source) []Diag
 	gvr := schema.GroupVersionResource{Group: "policy", Version: "v1", Resource: "poddisruptionbudgets"}
 	list, err := src.List(ctx, gvr, "")
 	if err != nil {
-		logListFailure("poddisruptionbudgets", err)
+		logListFailure("poddisruptionbudgets", err, false)
 		return nil
 	}
 	now := time.Now()
@@ -184,7 +159,7 @@ func (a DisruptionDrift) runStuckJobs(ctx context.Context, src snapshot.Source) 
 	gvr := schema.GroupVersionResource{Group: "batch", Version: "v1", Resource: "jobs"}
 	list, err := src.List(ctx, gvr, "")
 	if err != nil {
-		logListFailure("jobs", err)
+		logListFailure("jobs", err, false)
 		return nil
 	}
 	now := time.Now()
@@ -245,7 +220,7 @@ func (a DisruptionDrift) runResourceQuota(ctx context.Context, src snapshot.Sour
 	gvr := schema.GroupVersionResource{Group: "", Version: "v1", Resource: "resourcequotas"}
 	list, err := src.List(ctx, gvr, "")
 	if err != nil {
-		logListFailure("resourcequotas", err)
+		logListFailure("resourcequotas", err, false)
 		return nil
 	}
 	now := time.Now()

@@ -115,6 +115,7 @@ func (s SecurityDrift) Run(ctx context.Context, src snapshot.Source) []Diagnosti
 func (s SecurityDrift) checkPSSPosture(ctx context.Context, src snapshot.Source) []Diagnostic {
 	nsList, err := src.List(ctx, gvrNamespace, "")
 	if err != nil || nsList == nil {
+		logListFailure("namespaces", err, true) // silent when the CRD/resource is absent; logs Forbidden etc.
 		return nil
 	}
 	var out []Diagnostic
@@ -235,6 +236,7 @@ func classifyDigestPinSeverity(img string) string {
 func (s SecurityDrift) checkMutableImageTags(ctx context.Context, src snapshot.Source) []Diagnostic {
 	pods, err := src.List(ctx, snapshot.GVRPod, "")
 	if err != nil || pods == nil {
+		logListFailure("pods", err, true) // silent when the CRD/resource is absent; logs Forbidden etc.
 		return nil
 	}
 	// v1.25.0 — per-workload dedup. The same Deployment's N replica
@@ -464,6 +466,7 @@ func extractDigestFromImageID(imageID string) string {
 func (s SecurityDrift) checkNetworkPolicyCoverage(ctx context.Context, src snapshot.Source) []Diagnostic {
 	nsList, err := src.List(ctx, gvrNamespace, "")
 	if err != nil || nsList == nil {
+		logListFailure("namespaces", err, true) // silent when the CRD/resource is absent; logs Forbidden etc.
 		return nil
 	}
 

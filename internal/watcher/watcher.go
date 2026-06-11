@@ -837,6 +837,11 @@ func (w *Watcher) updateSeen(current map[string]*seenEntry, posted []*seenEntry)
 func (w *Watcher) loadSeenFromDriftReports(ctx context.Context) {
 	list, err := w.lv.List(ctx, snapshot.GVRDriftReport, "")
 	if err != nil || list == nil {
+		// Proceed with an empty seen map (same behavior as before), but
+		// say so: a transient apiserver error here means every known
+		// finding re-posts to Slack on the first cycle — without this
+		// log line that flood looks inexplicable.
+		log.Printf("watcher: pre-populating seen map from DriftReports failed (Slack may re-post known findings): err=%v", err)
 		return
 	}
 	w.mu.Lock()

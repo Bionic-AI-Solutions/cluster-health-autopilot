@@ -56,6 +56,7 @@ func (a NetworkPolicyProposer) Run(ctx context.Context, src snapshot.Source) []D
 
 	nsList, err := src.List(ctx, gvrNamespace, "")
 	if err != nil || nsList == nil {
+		logListFailure("namespaces", err, true) // silent when the CRD/resource is absent; logs Forbidden etc.
 		return nil
 	}
 
