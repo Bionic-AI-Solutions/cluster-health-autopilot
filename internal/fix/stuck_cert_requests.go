@@ -35,6 +35,11 @@ const (
 //   - Never touches CRs still in progress (reason=Pending, state=pending/valid).
 //   - Skips protected namespaces.
 //   - cert-manager immediately recreates the deleted CR — this is idempotent.
+//
+// OWASP K8s Top-10 respected: K08 (Secrets Management Failures / TLS) —
+// deleting a terminally-failed request lets cert-manager retry issuance; CHA
+// never writes the TLS Secret and cannot downgrade a live cert. See
+// docs/OWASP_MAPPING.md and internal/fix/owasp_posture_test.go.
 type StuckCertificateRequests struct{}
 
 // Name returns the fixer's identifier.

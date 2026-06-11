@@ -18,6 +18,10 @@ import (
 //
 // This catches stale debug pods (kubectl debug, manual `kubectl run`
 // leftovers) and Job-spawned pods that crashed without a retry policy.
+//
+// OWASP K8s Top-10 respected: K01 (Insecure Workload Configurations) — only
+// deletes stuck/orphan Pods; never edits a PodSpec or a NetworkPolicy. See
+// docs/OWASP_MAPPING.md and internal/fix/owasp_posture_test.go.
 type StaleErrorPods struct{}
 
 // Name returns the fixer's identifier.
