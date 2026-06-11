@@ -70,9 +70,13 @@ type Handler struct {
 	trigC   chan<- struct{}
 
 	// legacyNoticed tracks sources that already logged the
-	// once-per-source "use X-CHA-Timestamp" recommendation.
+	// once-per-source "use X-CHA-Timestamp" recommendation;
+	// emptyNoticed does the same for the empty-secret rejection
+	// (the endpoint is reachable unauthenticated, so per-request
+	// logging would let an attacker spam the logs).
 	legacyMu      sync.Mutex
 	legacyNoticed map[string]bool
+	emptyNoticed  map[string]bool
 }
 
 // New returns a Handler with no sources registered. Use RegisterSource
@@ -82,6 +86,7 @@ func New(trigCh chan<- struct{}) *Handler {
 		sources:       map[string]sourceCfg{},
 		trigC:         trigCh,
 		legacyNoticed: map[string]bool{},
+		emptyNoticed:  map[string]bool{},
 	}
 }
 
@@ -180,7 +185,7 @@ func (h *Handler) authenticate(w http.ResponseWriter, r *http.Request, src strin
 		// Defense in depth: registration fail-closes before reaching
 		// this state, but if an empty secret slips through we reject
 		// everything rather than silently skip HMAC.
-		log.Printf("webhook: source %q registered with empty HMAC secret — rejecting all requests (fail-closed)", src)
+		h.noticeEmptySecret(src)
 		http.Error(w, "source has no HMAC secret configured", http.StatusUnauthorized)
 		return false
 	}
@@ -228,6 +233,19 @@ func (h *Handler) noticeLegacy(src string) {
 	}
 	h.legacyNoticed[src] = true
 	log.Printf("webhook: source %q authenticated with legacy body-only HMAC — recommend sending X-CHA-Timestamp and signing 'timestamp.body' so captured requests cannot be replayed beyond %s", src, maxTimestampSkew)
+}
+
+// noticeEmptySecret logs the empty-secret rejection once per source —
+// the endpoint is reachable unauthenticated, so per-request logging
+// would be attacker-controlled log spam.
+func (h *Handler) noticeEmptySecret(src string) {
+	h.legacyMu.Lock()
+	defer h.legacyMu.Unlock()
+	if h.emptyNoticed[src] {
+		return
+	}
+	h.emptyNoticed[src] = true
+	log.Printf("webhook: source %q registered with empty HMAC secret — rejecting all requests (fail-closed)", src)
 }
 
 // verifyHMAC validates the X-CHA-Signature header against payload.

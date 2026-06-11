@@ -374,9 +374,6 @@ func (w *Watcher) Run(ctx context.Context) error {
 	}
 }
 
-// watchGVR maintains a reconnecting watch for a single GVR.
-// Any ADDED/MODIFIED/DELETED event sends to trigCh (non-blocking).
-// ResourceNotFound (CRD absent) causes the goroutine to exit silently.
 // insecureNoHMACToken is the literal spec value (in place of an env-var
 // name) that registers a webhook source with HMAC verification disabled.
 const insecureNoHMACToken = "insecure-no-hmac"
@@ -389,6 +386,7 @@ const insecureNoHMACToken = "insecure-no-hmac"
 // is the explicit literal "<name>=insecure-no-hmac", which logs a loud
 // warning. getenv is injectable for tests (os.Getenv in production).
 func registerWebhookSources(h *webhook.Handler, specs []string, getenv func(string) string) {
+	seen := make(map[string]bool)
 	for _, spec := range specs {
 		parts := strings.SplitN(spec, "=", 2)
 		name := strings.TrimSpace(parts[0])
@@ -396,6 +394,10 @@ func registerWebhookSources(h *webhook.Handler, specs []string, getenv func(stri
 			log.Printf("watcher: ERROR webhook source spec %q has an empty name — source disabled (fail-closed)", spec)
 			continue
 		}
+		if seen[name] {
+			log.Printf("watcher: WARNING webhook source %q registered more than once; last spec wins", name)
+		}
+		seen[name] = true
 		if len(parts) != 2 || strings.TrimSpace(parts[1]) == "" {
 			log.Printf("watcher: ERROR webhook source %q: spec is missing '=<env-var-with-secret>' — source disabled (fail-closed)", name)
 			continue
@@ -415,6 +417,9 @@ func registerWebhookSources(h *webhook.Handler, specs []string, getenv func(stri
 	}
 }
 
+// watchGVR maintains a reconnecting watch for a single GVR.
+// Any ADDED/MODIFIED/DELETED event sends to trigCh (non-blocking).
+// ResourceNotFound (CRD absent) causes the goroutine to exit silently.
 func (w *Watcher) watchGVR(ctx context.Context, gvr schema.GroupVersionResource, trigCh chan<- struct{}) {
 	for {
 		if ctx.Err() != nil {
