@@ -13,7 +13,37 @@ serves the latest tagged chart cut.
 
 ## [Unreleased]
 
-## [1.24.1] — 2026-06-10
+## [1.25.0] — 2026-06-11
+
+Two follow-ups after live deployment surfaced operator-managed gaps + Slack-flood symptoms.
+
+### Added — Per-workload dedup in SecurityDrift digest-pin findings
+
+Before v1.25.0 the SecurityDrift `checkMutableImageTags` analyzer emitted one Diagnostic per Pod. A 3-replica Deployment + 9-DaemonSet-Pod calico-node → 12 Slack alerts every cycle, each identical except for the Pod-name suffix. v1.25.0 collapses by `(namespace, controller-owner-name, sorted-unpinned-image-set)`:
+
+- 3 Pods of one ReplicaSet → 1 diagnostic, `Subject="Workload/ns/rs-name"`, message says "(across 3 replica pods)"
+- Different image versions during a rolling update → 2 diagnostics (one per RS), correctly distinct
+- Standalone Pods (no controller) → fall back to per-Pod identity so they still surface
+- Severity is the union: any one warning-class image in the group upgrades the whole group
+
+2 new tests cover dedup + rolling-update distinctness. Existing SecurityDrift tests still pass with the new Subject shape.
+
+### Added — Operator-managed workloads synthesize `owner_chart`
+
+The workload-feeder previously read `owner_chart` only from Helm release labels (`helm.sh/chart` + `meta.helm.sh/release-name`) + ArgoCD `instance` annotation. Operator-managed Deployments (created directly by a Custom Resource controller, no Helm labels) had `owner_chart=None` in RAG → the DigestPinProposer couldn't find a `values.yaml` to target → silently skipped → no PR opened → no Approve/Reject buttons in Slack.
+
+v1.25.0 walks the OwnerReferences chain and synthesizes:
+
+- `owner_kind = "Operator"`
+- `owner_chart = "<crkind-lowercase>-<crname>"` (e.g. `clusterhealthautopilot-bionic`)
+- `owner_release = <CR name>`
+- `owner_release_namespace = workload namespace`
+
+Built-in workload parents (apps/v1 ReplicaSet, batch/v1 Job, core/v1) are explicitly skipped — they mean "this Pod is owned by a Deployment", not "this Deployment is operator-managed". 2 new tests cover both the positive (operator CR owner → synthesized) and negative (apps ReplicaSet owner → still nil) cases.
+
+`detectOwner` no longer early-returns on nil annotations — operator-managed workloads typically have NO annotations at all, so the nil-anns path must still walk the OwnerReferences fallback.
+
+## [1.24.1] — 2026-06-10 — 2026-06-10
 
 ### Fixed — CRD schema for `spec.watcher.triggers` (v1.24.0 was unusable on schema-strict K8s)
 

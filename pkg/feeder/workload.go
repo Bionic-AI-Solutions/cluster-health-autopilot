@@ -343,10 +343,11 @@ type ownerInfo struct {
 // pick the right release pipeline; future enrichment will probe the
 // repo / Application CR for the exact image.tag file path.
 func detectOwner(obj *unstructured.Unstructured) *ownerInfo {
+	// Annotations carry the Helm + ArgoCD signals; OwnerReferences
+	// carry the operator signal (v1.25.0). Operator-managed workloads
+	// frequently have NO annotations at all, so the nil-annotations
+	// case must still fall through to the OwnerReferences walker.
 	anns := obj.GetAnnotations()
-	if anns == nil {
-		return nil
-	}
 	if rel := anns["meta.helm.sh/release-name"]; rel != "" {
 		o := &ownerInfo{Kind: "Helm", ReleaseName: rel}
 		if relNS := anns["meta.helm.sh/release-namespace"]; relNS != "" {
@@ -380,5 +381,55 @@ func detectOwner(obj *unstructured.Unstructured) *ownerInfo {
 		}
 		return o
 	}
+	// v1.25.0 — operator-managed workloads. Helm + ArgoCD aren't the
+	// only release sources; modern installs increasingly use K8s
+	// operators that create Deployments directly via OwnerReferences
+	// to a Custom Resource (no Helm release labels, no Argo CD
+	// instance annotation). For digest-pin purposes, the CR's
+	// {kind, name, namespace} is the operator-equivalent of a Helm
+	// release tuple: it tells the DigestPinProposer that the
+	// "chart" is this operator's CR + the deploy repo wired to it.
+	//
+	// Detection: any controller-managing OwnerReference whose
+	// apiVersion contains a custom-resource group (anything other
+	// than apps/v1, batch/v1, core/v1 — the built-in Deployment /
+	// StatefulSet / Job parents). The CR's name + namespace are
+	// returned as the synthesized "owner_chart" / "owner_release"
+	// so downstream consumers (digest-pin proposer, audit-bundle)
+	// can treat operator-managed workloads as first-class.
+	for _, ref := range obj.GetOwnerReferences() {
+		if ref.Controller == nil || !*ref.Controller {
+			continue
+		}
+		// Skip built-in workload parents: apps/{Deployment,
+		// StatefulSet,DaemonSet,ReplicaSet}, batch/{Job,CronJob}.
+		// These mean the Pod is a child of a Deployment etc., not
+		// that the workload is operator-managed.
+		grp, _, _ := splitAPIVersion(ref.APIVersion)
+		if grp == "" || grp == "apps" || grp == "batch" {
+			continue
+		}
+		return &ownerInfo{
+			Kind:             "Operator",
+			ReleaseName:      ref.Name,
+			ReleaseNamespace: obj.GetNamespace(),
+			// Synthesize chart name from the CR Kind in lowercase.
+			// E.g. ClusterHealthAutopilot/bionic → owner_chart =
+			// "clusterhealthautopilot-bionic" so the digest-pin
+			// proposer can pick a per-CR sub-path in the deploy
+			// repo (and operators can opt-in per-CR via the
+			// repo-map config).
+			ChartName: strings.ToLower(ref.Kind) + "-" + ref.Name,
+		}
+	}
 	return nil
+}
+
+// splitAPIVersion returns (group, version) for an apiVersion string.
+// "apps/v1" → ("apps","v1"); "v1" → ("","v1"); "cha.bionicaisolutions.com/v1alpha1" → ("cha.bionicaisolutions.com","v1alpha1").
+func splitAPIVersion(av string) (string, string, error) {
+	if i := strings.Index(av, "/"); i > 0 {
+		return av[:i], av[i+1:], nil
+	}
+	return "", av, nil
 }

@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"sort"
 	"strings"
 
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/snapshot"
@@ -236,21 +237,37 @@ func (s SecurityDrift) checkMutableImageTags(ctx context.Context, src snapshot.S
 	if err != nil || pods == nil {
 		return nil
 	}
-	var out []Diagnostic
+	// v1.25.0 — per-workload dedup. The same Deployment's N replica
+	// Pods all share the same image set; emitting N identical
+	// diagnostics flooded the Slack channel + made the seen-map
+	// grow at the rate of replica churn (every rolling update
+	// produced new Pod names → new entries → re-alert). Group by
+	// (namespace, owner-controller-name, sorted-unpinned-image-set)
+	// and emit ONE diagnostic per group. For DaemonSets that's one
+	// alert per node-spread; for Deployments that's one per
+	// ReplicaSet (which means at most 2 during a rolling update,
+	// not N replicas per RS).
+	type groupKey struct {
+		ns        string
+		ownerName string
+		imageSet  string
+	}
+	type groupVal struct {
+		samplePod *unstructured.Unstructured
+		unpinned  []string
+		severity  string
+		podCount  int
+	}
+	groups := map[groupKey]*groupVal{}
 	for i := range pods.Items {
 		p := &pods.Items[i]
 		ns := p.GetNamespace()
 		if _, isSystem := systemSecurityNamespaces[ns]; isSystem {
 			continue
 		}
-		name := p.GetName()
 
 		containers, _, _ := unstructured.NestedSlice(p.Object, "spec", "containers")
 		var unpinned []string
-		// Track effective severity for this Pod: any single
-		// untrusted-class image upgrades the pod's diagnostic to
-		// warning. Trust-class info only when EVERY unpinned image
-		// in the pod is trusted-upstream.
 		podSeverity := "info"
 		for _, c := range containers {
 			ci, ok := c.(map[string]interface{})
@@ -262,8 +279,6 @@ func (s SecurityDrift) checkMutableImageTags(ctx context.Context, src snapshot.S
 			if img == "" || strings.Contains(img, "@sha256:") {
 				continue
 			}
-			// `latest` and `:` with no tag are flagged by other
-			// code paths; skip to avoid double-flagging.
 			if strings.HasSuffix(img, ":latest") || !strings.Contains(img, ":") {
 				continue
 			}
@@ -275,17 +290,82 @@ func (s SecurityDrift) checkMutableImageTags(ctx context.Context, src snapshot.S
 		if len(unpinned) == 0 {
 			continue
 		}
+		// Sort unpinned so different container declaration orders
+		// hash to the same group.
+		sorted := make([]string, len(unpinned))
+		copy(sorted, unpinned)
+		sort.Strings(sorted)
+		owner := controllerOwnerName(p)
+		if owner == "" {
+			// Standalone Pod (no controller) — fall back to per-Pod
+			// dedup so we still surface the finding.
+			owner = p.GetName()
+		}
+		key := groupKey{ns: ns, ownerName: owner, imageSet: strings.Join(sorted, ",")}
+		if g, ok := groups[key]; ok {
+			g.podCount++
+			// Upgrade severity if any pod in the group is warning.
+			if podSeverity == "warning" {
+				g.severity = "warning"
+			}
+			continue
+		}
+		groups[key] = &groupVal{
+			samplePod: p,
+			unpinned:  unpinned,
+			severity:  podSeverity,
+			podCount:  1,
+		}
+	}
+	// Render one diagnostic per group, in deterministic order so the
+	// seen-map fingerprint stays stable across cycles.
+	keys := make([]groupKey, 0, len(groups))
+	for k := range groups {
+		keys = append(keys, k)
+	}
+	sort.Slice(keys, func(i, j int) bool {
+		if keys[i].ns != keys[j].ns {
+			return keys[i].ns < keys[j].ns
+		}
+		return keys[i].ownerName < keys[j].ownerName
+	})
+	var out []Diagnostic
+	for _, k := range keys {
+		g := groups[k]
+		// Subject = the workload-owner identity (ReplicaSet name for
+		// Deployments, StatefulSet/DaemonSet name for those, Pod name
+		// for standalone). The watcher's seen-map keys on Subject so
+		// stable owner names stop the rolling-update re-alert.
+		subject := fmt.Sprintf("Workload/%s/%s", k.ns, k.ownerName)
+		msg := fmt.Sprintf(
+			"Workload %s/%s mounts %d container image(s) without digest pin: %s",
+			k.ns, k.ownerName, len(g.unpinned), strings.Join(g.unpinned, ", "))
+		if g.podCount > 1 {
+			msg = fmt.Sprintf("%s (across %d replica pods)", msg, g.podCount)
+		}
 		out = append(out, Diagnostic{
-			Source:   "SecurityDrift",
-			Subject:  fmt.Sprintf("Pod/%s/%s", ns, name),
-			Severity: podSeverity,
-			Message: fmt.Sprintf(
-				"Pod %s/%s mounts %d container image(s) without digest pin: %s",
-				ns, name, len(unpinned), strings.Join(unpinned, ", ")),
-			Remediation: renderDigestPinRemediation(p, unpinned),
+			Source:      "SecurityDrift",
+			Subject:     subject,
+			Severity:    g.severity,
+			Message:     msg,
+			Remediation: renderDigestPinRemediation(g.samplePod, g.unpinned),
 		})
 	}
 	return out
+}
+
+// controllerOwnerName returns the name of the controller-managing
+// OwnerReference on a Pod, or "" if none. ReplicaSets show up as the
+// owner for Deployment-managed Pods; StatefulSet / DaemonSet show
+// directly. The returned name is stable across the Pod's lifetime
+// (unlike pod.Name which rotates on every rollout).
+func controllerOwnerName(p *unstructured.Unstructured) string {
+	for _, ref := range p.GetOwnerReferences() {
+		if ref.Controller != nil && *ref.Controller {
+			return ref.Name
+		}
+	}
+	return ""
 }
 
 // renderDigestPinRemediation produces a remediation string with the

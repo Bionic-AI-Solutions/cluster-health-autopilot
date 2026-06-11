@@ -555,3 +555,85 @@ func TestSecurityDrift_NameStable(t *testing.T) {
 		t.Errorf("Name()=%q want SecurityDrift", name)
 	}
 }
+
+// ---- v1.25.0 — per-workload dedup ---------------------------------------
+
+func TestSecurityDrift_DigestPin_DedupesByWorkloadOwner(t *testing.T) {
+	// 3 ReplicaSet-owned Pods that share the same image set should
+	// collapse to ONE diagnostic keyed on the ReplicaSet name.
+	ctrl := true
+	mkPod := func(name string) unstructured.Unstructured {
+		return unstructured.Unstructured{Object: map[string]interface{}{
+			"apiVersion": "v1",
+			"kind":       "Pod",
+			"metadata": map[string]interface{}{
+				"name":      name,
+				"namespace": "demo",
+				"ownerReferences": []interface{}{map[string]interface{}{
+					"apiVersion": "apps/v1",
+					"kind":       "ReplicaSet",
+					"name":       "my-app-6c4c5b5c7b",
+					"controller": ctrl,
+				}},
+			},
+			"spec": map[string]interface{}{
+				"containers": []interface{}{map[string]interface{}{
+					"name":  "app",
+					"image": "registry/my-app:v1.0",
+				}},
+			},
+		}}
+	}
+	src := &memSourceSec{byResource: map[string][]unstructured.Unstructured{
+		"pods": {mkPod("my-app-6c4c5b5c7b-aaaaa"), mkPod("my-app-6c4c5b5c7b-bbbbb"), mkPod("my-app-6c4c5b5c7b-ccccc")},
+	}}
+	got := SecurityDrift{}.checkMutableImageTags(context.Background(), src)
+	if len(got) != 1 {
+		t.Fatalf("expected 1 deduped diagnostic; got %d", len(got))
+	}
+	want := "Workload/demo/my-app-6c4c5b5c7b"
+	if got[0].Subject != want {
+		t.Errorf("subject=%q want %q", got[0].Subject, want)
+	}
+	if !strings.Contains(got[0].Message, "across 3 replica pods") {
+		t.Errorf("message should report replica count; got %q", got[0].Message)
+	}
+}
+
+func TestSecurityDrift_DigestPin_DifferentImageSets_StayDistinct(t *testing.T) {
+	// Two ReplicaSets in the same namespace, different image versions
+	// (mid-rolling-update). Should emit 2 distinct diagnostics.
+	ctrl := true
+	mkPod := func(podName, rsName, tag string) unstructured.Unstructured {
+		return unstructured.Unstructured{Object: map[string]interface{}{
+			"apiVersion": "v1",
+			"kind":       "Pod",
+			"metadata": map[string]interface{}{
+				"name":      podName,
+				"namespace": "demo",
+				"ownerReferences": []interface{}{map[string]interface{}{
+					"apiVersion": "apps/v1",
+					"kind":       "ReplicaSet",
+					"name":       rsName,
+					"controller": ctrl,
+				}},
+			},
+			"spec": map[string]interface{}{
+				"containers": []interface{}{map[string]interface{}{
+					"name":  "app",
+					"image": "registry/my-app:" + tag,
+				}},
+			},
+		}}
+	}
+	src := &memSourceSec{byResource: map[string][]unstructured.Unstructured{
+		"pods": {
+			mkPod("my-app-old-aaaaa", "my-app-old-rs", "v1.0"),
+			mkPod("my-app-new-bbbbb", "my-app-new-rs", "v2.0"),
+		},
+	}}
+	got := SecurityDrift{}.checkMutableImageTags(context.Background(), src)
+	if len(got) != 2 {
+		t.Fatalf("expected 2 diagnostics (one per ReplicaSet); got %d", len(got))
+	}
+}
