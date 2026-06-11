@@ -26,6 +26,11 @@ import (
 // Job pod kept retrying CreateContainer against the old key for 26 days
 // before manual intervention. With this fixer, the next health-report tick
 // would have caught and resolved it automatically.
+//
+// OWASP K8s Top-10 respected: K08 (Secrets Management Failures) / K01
+// (Insecure Workload Configurations) — deletes the frozen Job so a corrected
+// Secret reference takes effect; never reads/writes/weakens a Secret. See
+// docs/OWASP_MAPPING.md and internal/fix/owasp_posture_test.go.
 type StuckJobsWithBadSecretRef struct{}
 
 // Name returns the fixer's identifier.
