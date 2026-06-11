@@ -13,7 +13,17 @@ serves the latest tagged chart cut.
 
 ## [Unreleased]
 
-## [1.25.0] — 2026-06-11
+## [1.25.1] — 2026-06-11
+
+### Fixed — goreleaser disk-OOM on GH-hosted runner
+
+v1.25.0 goreleaser failed at the docker buildx multi-arch build stage with `no space left on device`. The OSS workflow's transitive deps (AWS SDK v2 + k8s.io + buildx cache) overshoot the ~14 GiB free disk on the GH-hosted runner. v1.24.x and earlier just happened to fit; v1.25.0's added KEDA + extra ownerRef walker pushed past the limit.
+
+Same fix that the CHA-com workflow shipped in v1.20.0: pre-checkout cleanup step removes ~25 GiB of preinstalled .NET / Android SDK / Haskell / Swift / CodeQL toolchains that the workflow doesn't use.
+
+Chart 1.25.0 was published successfully to gh-pages before goreleaser exited; this patch re-publishes the chart at 1.25.1 alongside the new image so operators always pull a coherent pair. No code changes — v1.25.0 and v1.25.1 ship byte-identical Go binaries.
+
+## [1.25.0] — 2026-06-11 — 2026-06-11
 
 Two follow-ups after live deployment surfaced operator-managed gaps + Slack-flood symptoms.
 
