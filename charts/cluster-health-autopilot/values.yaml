@@ -634,6 +634,30 @@ approval:
     tls:
       enabled: true
       secretName: ""       # default: <release>-approval-server-tls
+  # P2.6b — NetworkPolicy restricting ingress to the approval-server
+  # pods to ONLY the gateway/oauth2-proxy namespace. Closes the
+  # X-Forwarded-User header-forgery bypass: the approval-server trusts
+  # the X-Forwarded-User header (set by oauth2-proxy at the OIDC ingress)
+  # for audit attribution, but a pod hitting the ClusterIP directly
+  # bypasses the ingress and can forge that header. The approve/deny
+  # click still needs a valid signed one-time token, so this is
+  # defense-in-depth for attribution honesty.
+  #
+  # Default OFF, and STRONGLY RECOMMENDED in production. It defaults off
+  # because a NetworkPolicy is fail-closed: enabling it with the wrong
+  # gatewayNamespaceSelector (or on a cluster whose CNI does not enforce
+  # NetworkPolicy) silently 0-routes every approval click — a worse
+  # outcome than the bug it closes. Enable it once you know your gateway
+  # namespace's labels.
+  #
+  # gatewayNamespaceSelector is REQUIRED when enabled (the template
+  # `fail`s otherwise — there is no safe default). On clusters with the
+  # NamespaceDefaultLabelName feature gate (default since k8s 1.21) the
+  # apiserver auto-stamps `kubernetes.io/metadata.name: <ns>` on every
+  # namespace, so that label is the usual choice.
+  networkPolicy:
+    enabled: false
+    gatewayNamespaceSelector: {}   # REQUIRED if enabled; e.g. {kubernetes.io/metadata.name: gateway}
   resources:               # defaults to top-level resources if unset
     limits:
       cpu: 200m

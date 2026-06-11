@@ -446,6 +446,20 @@ spec:
                               type: boolean
                             secretName:
                               type: string
+                    networkPolicy:
+                      # ApprovalNetworkPolicySpec — restricts ingress to the
+                      # approval-server pods to ONLY the gateway/oauth2-proxy
+                      # namespace, closing the X-Forwarded-User header-forgery
+                      # bypass. Default OFF; gatewayNamespaceSelector REQUIRED
+                      # when enabled (no safe default).
+                      type: object
+                      properties:
+                        enabled:
+                          type: boolean
+                        gatewayNamespaceSelector:
+                          type: object
+                          additionalProperties:
+                            type: string
                 externalDNS:
                   # ExternalDNSSpec — DNS-chain drift analyzer's optional
                   # Cloudflare integration. Schema-only if the watcher image

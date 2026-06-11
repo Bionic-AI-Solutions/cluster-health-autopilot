@@ -417,6 +417,10 @@ func (in *ApprovalSpec) DeepCopyInto(out *ApprovalSpec) {
 		out.Ingress = new(ApprovalIngressSpec)
 		in.Ingress.DeepCopyInto(out.Ingress)
 	}
+	if in.NetworkPolicy != nil {
+		out.NetworkPolicy = new(ApprovalNetworkPolicySpec)
+		in.NetworkPolicy.DeepCopyInto(out.NetworkPolicy)
+	}
 }
 
 // DeepCopy returns a deep copy of the receiver.
@@ -452,6 +456,29 @@ func (in *ApprovalIngressSpec) DeepCopy() *ApprovalIngressSpec {
 		return nil
 	}
 	out := new(ApprovalIngressSpec)
+	in.DeepCopyInto(out)
+	return out
+}
+
+// --- ApprovalNetworkPolicySpec ---
+
+// DeepCopyInto copies the receiver into out. in must be non-nil.
+func (in *ApprovalNetworkPolicySpec) DeepCopyInto(out *ApprovalNetworkPolicySpec) {
+	*out = *in
+	if in.GatewayNamespaceSelector != nil {
+		out.GatewayNamespaceSelector = make(map[string]string, len(in.GatewayNamespaceSelector))
+		for k, v := range in.GatewayNamespaceSelector {
+			out.GatewayNamespaceSelector[k] = v
+		}
+	}
+}
+
+// DeepCopy returns a deep copy of the receiver.
+func (in *ApprovalNetworkPolicySpec) DeepCopy() *ApprovalNetworkPolicySpec {
+	if in == nil {
+		return nil
+	}
+	out := new(ApprovalNetworkPolicySpec)
 	in.DeepCopyInto(out)
 	return out
 }

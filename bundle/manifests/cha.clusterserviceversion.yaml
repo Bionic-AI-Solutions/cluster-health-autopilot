@@ -149,9 +149,10 @@ spec:
             - apiGroups: ["rbac.authorization.k8s.io"]
               resources: ["rolebindings"]
               verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
-            # Phase 2c-C: optional approval-server Ingress.
+            # Phase 2c-C: optional approval-server Ingress + P2.6b
+            # approval-server NetworkPolicy.
             - apiGroups: ["networking.k8s.io"]
-              resources: ["ingresses"]
+              resources: ["ingresses", "networkpolicies"]
               verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
             # Leader-election Lease.
             - apiGroups: ["coordination.k8s.io"]

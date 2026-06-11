@@ -806,10 +806,64 @@ type ApprovalSpec struct {
 	// +optional
 	Ingress *ApprovalIngressSpec `json:"ingress,omitempty"`
 
+	// NetworkPolicy optionally restricts ingress to the approval-server
+	// pods to ONLY the gateway/oauth2-proxy namespace, closing the
+	// X-Forwarded-User header-forgery bypass (a pod that reaches the
+	// ClusterIP directly could forge the identity header the OIDC
+	// ingress injects). Off by default — see ApprovalNetworkPolicySpec.
+	// +optional
+	NetworkPolicy *ApprovalNetworkPolicySpec `json:"networkPolicy,omitempty"`
+
 	// AuditNamespace is the namespace the approval-server emits audit
 	// Events into. Empty → CR namespace.
 	// +optional
 	AuditNamespace string `json:"auditNamespace,omitempty"`
+}
+
+// ApprovalNetworkPolicySpec restricts ingress to the approval-server
+// pods to traffic originating in the gateway namespace (where
+// oauth2-proxy / the OIDC ingress controller live).
+//
+// Why this matters: the approval-server trusts the `X-Forwarded-User`
+// header for audit attribution. That header is injected by oauth2-proxy
+// at the OIDC ingress after a successful login. Internal cluster traffic
+// that hits the approval-server ClusterIP directly bypasses the ingress
+// and can therefore forge an arbitrary `X-Forwarded-User`. The
+// approve/deny click still requires a valid one-time signed token, so
+// this is defense-in-depth for audit-attribution honesty — but it closes
+// a real bypass. With the NetworkPolicy in place, only pods in the
+// gateway namespace can reach port 8443, so the only X-Forwarded-User
+// the server ever sees is the one oauth2-proxy set.
+//
+// Default OFF (Enabled=false). A NetworkPolicy is fail-closed by nature:
+// once any policy selects a pod, all non-matching ingress is dropped. If
+// this defaulted ON and the operator guessed the gateway namespace's
+// labels wrong (or the cluster's CNI doesn't enforce NetworkPolicy yet
+// labels it as if it does), every approval click would silently 0-route
+// — a worse outcome than the header-forgery bug it closes. So it is
+// opt-in, with a loud recommendation to enable it in production.
+//
+// When Enabled, GatewayNamespaceSelector is REQUIRED (validated at the
+// reconciler door, fail-closed). There is intentionally no default
+// selector: a wrong default would either over-permit (some unrelated
+// namespace happens to carry the guessed label) or block everything (no
+// namespace matches) — both silent. Forcing the operator to declare the
+// gateway namespace's labels makes the trust boundary explicit.
+type ApprovalNetworkPolicySpec struct {
+	// Enabled is the gate. Off by default. Strongly recommended in
+	// production once the gateway namespace's labels are known.
+	// +optional
+	Enabled bool `json:"enabled,omitempty"`
+
+	// GatewayNamespaceSelector is the label selector identifying the
+	// namespace(s) allowed to reach the approval-server on port 8443
+	// — i.e. where oauth2-proxy / the OIDC ingress controller run.
+	// REQUIRED when Enabled. A common value on clusters that enable the
+	// `NamespaceDefaultLabelName` feature gate is
+	// `{kubernetes.io/metadata.name: <gateway-namespace>}`, which the
+	// apiserver auto-stamps on every namespace.
+	// +optional
+	GatewayNamespaceSelector map[string]string `json:"gatewayNamespaceSelector,omitempty"`
 }
 
 // ApprovalSigningKeySpec controls the JWT signing-key Secret.

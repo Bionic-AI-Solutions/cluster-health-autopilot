@@ -13,6 +13,18 @@ serves the latest tagged chart cut.
 
 ## [Unreleased]
 
+### Added — operator + chart: approval-server NetworkPolicy closes the X-Forwarded-User bypass (P2.6b)
+
+The approval-server trusts the `X-Forwarded-User` header for audit attribution. That header is injected by oauth2-proxy at the OIDC ingress after a successful login — but the approval-server's `ClusterIP` Service is reachable by any pod in the cluster, and a pod hitting it directly bypasses the ingress and can forge an arbitrary `X-Forwarded-User`. The approve/deny click still requires a valid one-time signed token, so this was defense-in-depth for attribution honesty, not an auth bypass — but it let any pod corrupt the audit trail's "who approved this" field.
+
+A new **opt-in NetworkPolicy** restricts ingress to the approval-server pods (port 8443/TCP) to **only the gateway/oauth2-proxy namespace**, so the only `X-Forwarded-User` the server ever sees is the one oauth2-proxy set.
+
+- Operator: `BuildApprovalServerNetworkPolicy(cr)` (owner-ref'd, reconciled alongside the approval-server Deployment/Service; torn down when disabled). `podSelector` matches the Deployment's pod labels exactly.
+- CRD/types: new `spec.approval.networkPolicy.{enabled, gatewayNamespaceSelector}` (chart CRD + bundle CRD + full-surface sample CR).
+- Chart: `templates/approval-server-networkpolicy.yaml` + `approval.networkPolicy.{enabled, gatewayNamespaceSelector}` values.
+- RBAC: the operator ClusterRole (chart + bundle CSV) gains `networkpolicies` create/update/patch/delete on `networking.k8s.io`.
+- **Default OFF**, strongly recommended in production. A NetworkPolicy is fail-closed: defaulting on with a wrong/absent `gatewayNamespaceSelector` (or on a CNI that doesn't enforce NetworkPolicy) would silently 0-route every approval click — a worse outcome than the bug it closes. `gatewayNamespaceSelector` is **REQUIRED** when enabled (operator fails the CR `Ready=False/InvalidSpec`; chart `fail`s the render) — there is no safe default selector.
+
 ### Added — watcher health probes + opt-in multi-replica via leader election (P1.9)
 
 The watcher Deployment shipped with no liveness/readiness probes (every sibling deployment — approval-server, qdrant, operator — had them) because its only HTTP `/healthz` lived inside the `--webhook-listen` branch, so an install without the M6 webhook trigger had no health endpoint to probe. The watcher now starts an **always-on health server** (`--health-listen`, default `:8081`; chart value `watcher.healthListen`) serving `GET /healthz` unconditionally, independent of the webhook receiver, and the chart wires `livenessProbe` + `readinessProbe` against it. The watcher Deployment's hard-coded `replicas: 1` is now `watcher.replicas` (default 1); raising it above 1 is only safe with leader election on, so the chart **fails the render** when `watcher.replicas > 1` and `watcher.leaderElection.enabled=false` (otherwise replicas race on DriftReports and double-post Slack).

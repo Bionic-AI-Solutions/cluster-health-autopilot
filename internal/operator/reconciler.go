@@ -158,6 +158,24 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 			return ctrl.Result{}, r.updateStatus(ctx, &cr)
 		}
 	}
+	if ApprovalNetworkPolicyEnabled(&cr) {
+		// The NetworkPolicy is fail-closed: once it selects the
+		// approval-server pods, all ingress not matching an allow rule
+		// is dropped. An empty gatewayNamespaceSelector would either
+		// match nothing (blocking ALL traffic, including legit
+		// oauth2-proxy → approval clicks) or — if rendered as an empty
+		// selector — match EVERY namespace (defeating the control).
+		// There is intentionally no default; fail fast so the operator
+		// declares the gateway namespace's labels explicitly.
+		if len(cr.Spec.Approval.NetworkPolicy.GatewayNamespaceSelector) == 0 {
+			r.markReady(&cr, metav1.ConditionFalse, "InvalidSpec",
+				"spec.approval.networkPolicy.gatewayNamespaceSelector is required when "+
+					"spec.approval.networkPolicy.enabled=true (no safe default exists; "+
+					"set it to the gateway/oauth2-proxy namespace's labels, e.g. "+
+					"{kubernetes.io/metadata.name: <gateway-namespace>})")
+			return ctrl.Result{}, r.updateStatus(ctx, &cr)
+		}
+	}
 	if ApprovalEnabled(&cr) {
 		// The in-memory replay store is per-replica: each pod holds an
 		// independent set of consumed JTIs. Running >1 replica means
@@ -503,6 +521,7 @@ func (r *Reconciler) reconcileApprovalServer(ctx context.Context, cr *chav1alpha
 			ns  string
 		}{
 			{&networkingv1.Ingress{}, name, ns},
+			{&networkingv1.NetworkPolicy{}, name, ns},
 			{&appsv1.Deployment{}, name, ns},
 			{&corev1.Service{}, name, ns},
 			{&corev1.ServiceAccount{}, name, ns},
@@ -630,7 +649,29 @@ func (r *Reconciler) reconcileApprovalServer(ctx context.Context, cr *chav1alpha
 		return fmt.Errorf("approval Deployment: %w", err)
 	}
 
-	// 8. Optional Ingress (Phase 2c-C). Disabled → tear down a stale
+	// 8. Optional NetworkPolicy (P2.6b). Restricts ingress to the
+	// approval-server pods to the gateway/oauth2-proxy namespace,
+	// closing the X-Forwarded-User header-forgery bypass. Disabled →
+	// tear down a stale NetworkPolicy left from a previous spec.
+	desiredNetpol := BuildApprovalServerNetworkPolicy(cr)
+	if desiredNetpol == nil {
+		if err := r.deleteIfExists(ctx, &networkingv1.NetworkPolicy{}, ns, name); err != nil {
+			return fmt.Errorf("teardown approval NetworkPolicy: %w", err)
+		}
+	} else {
+		if err := controllerutilSetOwnerRef(cr, desiredNetpol, r.Scheme); err != nil {
+			return err
+		}
+		if err := r.createOrUpdate(ctx, desiredNetpol, func(current client.Object) {
+			c := current.(*networkingv1.NetworkPolicy)
+			c.Spec = desiredNetpol.Spec
+			mergeLabels(&c.ObjectMeta, desiredNetpol.Labels)
+		}); err != nil {
+			return fmt.Errorf("approval NetworkPolicy: %w", err)
+		}
+	}
+
+	// 9. Optional Ingress (Phase 2c-C). Disabled → tear down a stale
 	// Ingress object if one is left from a previous-spec.
 	desiredIng := BuildApprovalServerIngress(cr)
 	if desiredIng == nil {

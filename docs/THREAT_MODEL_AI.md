@@ -266,6 +266,25 @@ unsupervised mutation capability.
 | Closed-enum ActionKind whitelist matches existing OSS fixer verbs | `pkg/ai/types.go:ActionKind` | `pkg/ai/validate_test.go:TestActionKindIsValid` |
 | Watcher SA cannot read signing-key Secret | `charts/.../templates/approval-server-rbac.yaml` (separate RoleBinding) | Helm template render validation |
 | Approval-server SA isolated from watcher SA | `charts/.../templates/approval-server-serviceaccount.yaml` | Helm template structure |
+| NetworkPolicy restricts approval-server ingress to the gateway/oauth2-proxy namespace (P2.6b, opt-in) | `internal/operator/approval_builders.go:BuildApprovalServerNetworkPolicy`, `charts/.../templates/approval-server-networkpolicy.yaml` | `internal/operator/approval_networkpolicy_test.go` |
+
+**Header-trust model (X-Forwarded-User).** The approval-server attributes
+each approve/deny click to the SRE named in the `X-Forwarded-User`
+request header, which **oauth2-proxy injects at the OIDC ingress** after
+a successful login. The server's `ClusterIP` Service, however, is
+reachable by any pod in the cluster; a pod hitting it directly bypasses
+the ingress and can forge an arbitrary `X-Forwarded-User`. Because the
+click still requires a valid one-time signed token, this is **not** an
+authorization bypass — but it lets a hostile in-cluster workload corrupt
+the audit trail's "who approved this" field. The opt-in
+`spec.approval.networkPolicy` (default OFF; `gatewayNamespaceSelector`
+**required** when enabled — no safe default) closes this by dropping all
+ingress to port 8443 except from the gateway namespace, so the only
+`X-Forwarded-User` the server ever sees is the one oauth2-proxy set.
+**Operator requirement:** label your gateway/oauth2-proxy namespace and
+point `gatewayNamespaceSelector` at it (e.g.
+`{kubernetes.io/metadata.name: <gateway-ns>}`), and ensure the cluster
+CNI actually enforces NetworkPolicy.
 
 **Layer-2 Investigator (v1.5)** — this is the headline failure mode
 and the structural reason the Investigator can ship in OSS without an

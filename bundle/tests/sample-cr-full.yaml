@@ -151,6 +151,10 @@ spec:
       tls:
         enabled: false
         secretName: "fake-approval-tls-secret"
+    networkPolicy:
+      enabled: false
+      gatewayNamespaceSelector:
+        kubernetes.io/metadata.name: "gateway"
   externalDNS:
     cloudflare:
       enabled: false

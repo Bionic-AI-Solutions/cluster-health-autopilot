@@ -637,6 +637,79 @@ func GenerateSigningKeySecret(cr *chav1alpha1.ClusterHealthAutopilot) (*corev1.S
 
 func int32Ptr(i int32) *int32 { return &i }
 
+// ApprovalNetworkPolicyEnabled reports whether
+// spec.approval.networkPolicy.enabled is true. Both `spec.approval` and
+// `spec.approval.networkPolicy` must be non-nil first.
+func ApprovalNetworkPolicyEnabled(cr *chav1alpha1.ClusterHealthAutopilot) bool {
+	return ApprovalEnabled(cr) &&
+		cr.Spec.Approval.NetworkPolicy != nil &&
+		cr.Spec.Approval.NetworkPolicy.Enabled
+}
+
+// BuildApprovalServerNetworkPolicy returns the NetworkPolicy that
+// restricts ingress to the approval-server pods to ONLY the
+// gateway/oauth2-proxy namespace, or nil when networkPolicy is disabled.
+//
+// Trust model (closes the X-Forwarded-User bypass): the approval-server
+// trusts the `X-Forwarded-User` header for audit attribution. That
+// header is injected by oauth2-proxy at the OIDC ingress after a
+// successful login. A pod reaching the ClusterIP directly bypasses the
+// ingress and can forge an arbitrary `X-Forwarded-User`. The
+// approve/deny click still requires a valid one-time signed token, so
+// this is defense-in-depth for attribution honesty — but it closes a
+// real bypass. With this policy, only pods in the gateway namespace can
+// reach port 8443, so the only X-Forwarded-User the server ever sees is
+// the one oauth2-proxy set.
+//
+//   - podSelector = the approval-server pod labels (MUST match what
+//     BuildApprovalServerDeployment stamps on its pod template, so the
+//     policy actually selects the running pods).
+//   - policyTypes: [Ingress] — egress is left wide open (the server
+//     needs to reach the apiserver for RBAC + audit events).
+//   - one ingress rule: from a namespaceSelector for the gateway
+//     namespace, on port 8443/TCP.
+//
+// The reconciler validates GatewayNamespaceSelector is non-empty before
+// calling this (fail-closed); the builder assumes a non-empty selector.
+func BuildApprovalServerNetworkPolicy(cr *chav1alpha1.ClusterHealthAutopilot) *networkingv1.NetworkPolicy {
+	if !ApprovalNetworkPolicyEnabled(cr) {
+		return nil
+	}
+	// MUST match the Deployment's pod template labels (see
+	// BuildApprovalServerDeployment — it uses CommonLabels(cr,
+	// "approval-server") for both the selector and the pod template).
+	podLabels := CommonLabels(cr, "approval-server")
+	port := intstr.FromInt32(approvalServerHTTPPort)
+	tcp := corev1.ProtocolTCP
+
+	return &networkingv1.NetworkPolicy{
+		TypeMeta: metav1.TypeMeta{APIVersion: "networking.k8s.io/v1", Kind: "NetworkPolicy"},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      ApprovalServerName(cr),
+			Namespace: cr.Namespace,
+			Labels:    podLabels,
+		},
+		Spec: networkingv1.NetworkPolicySpec{
+			PodSelector: metav1.LabelSelector{MatchLabels: podLabels},
+			PolicyTypes: []networkingv1.PolicyType{networkingv1.PolicyTypeIngress},
+			Ingress: []networkingv1.NetworkPolicyIngressRule{
+				{
+					From: []networkingv1.NetworkPolicyPeer{
+						{
+							NamespaceSelector: &metav1.LabelSelector{
+								MatchLabels: cr.Spec.Approval.NetworkPolicy.GatewayNamespaceSelector,
+							},
+						},
+					},
+					Ports: []networkingv1.NetworkPolicyPort{
+						{Protocol: &tcp, Port: &port},
+					},
+				},
+			},
+		},
+	}
+}
+
 // ApprovalIngressEnabled reports whether spec.approval.ingress.enabled
 // is true. Both `spec.approval` and `spec.approval.ingress` must be
 // non-nil first.
