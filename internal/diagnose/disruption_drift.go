@@ -6,7 +6,9 @@ package diagnose
 import (
 	"context"
 	"fmt"
+	"log"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/snapshot"
@@ -62,6 +64,25 @@ const (
 	graceJobFailedIndexes = 10 * time.Minute // Indexed Job has its own retry backoff
 )
 
+// Once-per-process list-failure logs (P1.2). The analyzer keeps its
+// fail-open contract (a missing CRD or RBAC denial must not abort the
+// diagnose cycle), but a persistent `forbidden` previously made the
+// whole analyzer silently dead — these logs make the degradation
+// visible exactly once per resource per process instead of spamming
+// every cycle.
+var (
+	logPDBListFailOnce   sync.Once
+	logJobListFailOnce   sync.Once
+	logQuotaListFailOnce sync.Once
+)
+
+// logListFailure emits the once-per-process degradation line.
+func logListFailure(once *sync.Once, resource string, err error) {
+	once.Do(func() {
+		log.Printf("disruption drift: list %s failed (analyzer silently degraded): %v", resource, err)
+	})
+}
+
 // Run executes the three sub-analyzers in order and returns the
 // combined diagnostic slice. Always nil-error per the Analyzer
 // interface contract.
@@ -83,6 +104,7 @@ func (a DisruptionDrift) runPDB(ctx context.Context, src snapshot.Source) []Diag
 	gvr := schema.GroupVersionResource{Group: "policy", Version: "v1", Resource: "poddisruptionbudgets"}
 	list, err := src.List(ctx, gvr, "")
 	if err != nil {
+		logListFailure(&logPDBListFailOnce, "poddisruptionbudgets", err)
 		return nil
 	}
 	now := time.Now()
@@ -154,6 +176,7 @@ func (a DisruptionDrift) runStuckJobs(ctx context.Context, src snapshot.Source) 
 	gvr := schema.GroupVersionResource{Group: "batch", Version: "v1", Resource: "jobs"}
 	list, err := src.List(ctx, gvr, "")
 	if err != nil {
+		logListFailure(&logJobListFailOnce, "jobs", err)
 		return nil
 	}
 	now := time.Now()
@@ -214,6 +237,7 @@ func (a DisruptionDrift) runResourceQuota(ctx context.Context, src snapshot.Sour
 	gvr := schema.GroupVersionResource{Group: "", Version: "v1", Resource: "resourcequotas"}
 	list, err := src.List(ctx, gvr, "")
 	if err != nil {
+		logListFailure(&logQuotaListFailOnce, "resourcequotas", err)
 		return nil
 	}
 	now := time.Now()
