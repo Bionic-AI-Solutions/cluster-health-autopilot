@@ -73,3 +73,38 @@ CHA_PROBE_NODE_PRESSURE on
 CHA_PROBE_PENDING_PODS on
 CHA_PROBE_TRAEFIK_ROUTES on
 CHA_PROBE_VELERO on
+# SOAK RATIONALE (per-cloud-probe toggles, 2026-06 / O6): the 30 cloud probes
+# are NOT net-new triggers — they have been registered UNCONDITIONALLY (gated
+# only by the per-provider enabled switch) since v1.8. The CHA_CLOUD_PROBE_*
+# toggles only add the documented opt-out promised by the chart's
+# cloud.<provider>.probes.* values, which previously were decorative.
+# Default-ON preserves the status quo exactly; default-OFF would silently
+# disable every cloud signal on upgrade. EKS/GKE/AKS each gate BOTH the
+# control-plane and node-pool probes (one values key per asset).
+CHA_CLOUD_PROBE_AWS_RDS on
+CHA_CLOUD_PROBE_AWS_EBS on
+CHA_CLOUD_PROBE_AWS_EKS on
+CHA_CLOUD_PROBE_AWS_IAM on
+CHA_CLOUD_PROBE_AWS_ALB on
+CHA_CLOUD_PROBE_AWS_ACM on
+CHA_CLOUD_PROBE_AWS_KMS on
+CHA_CLOUD_PROBE_AWS_S3 on
+CHA_CLOUD_PROBE_AWS_VPC on
+CHA_CLOUD_PROBE_GCP_CLOUDSQL on
+CHA_CLOUD_PROBE_GCP_DISKS on
+CHA_CLOUD_PROBE_GCP_GKE on
+CHA_CLOUD_PROBE_GCP_IAM on
+CHA_CLOUD_PROBE_GCP_SUBNETS on
+CHA_CLOUD_PROBE_GCP_LB on
+CHA_CLOUD_PROBE_GCP_CERTS on
+CHA_CLOUD_PROBE_GCP_GCS on
+CHA_CLOUD_PROBE_GCP_KMS on
+CHA_CLOUD_PROBE_AZURE_SQL on
+CHA_CLOUD_PROBE_AZURE_DISKS on
+CHA_CLOUD_PROBE_AZURE_AKS on
+CHA_CLOUD_PROBE_AZURE_IDENTITIES on
+CHA_CLOUD_PROBE_AZURE_SUBNETS on
+CHA_CLOUD_PROBE_AZURE_APPGW on
+CHA_CLOUD_PROBE_AZURE_CERTS on
+CHA_CLOUD_PROBE_AZURE_STORAGE on
+CHA_CLOUD_PROBE_AZURE_KEYVAULTS on

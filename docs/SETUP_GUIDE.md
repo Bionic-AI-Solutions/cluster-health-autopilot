@@ -1207,6 +1207,42 @@ are independently disablable the same way (set to `off`; Helm:
 | `CHA_ANALYZER_CERT_EXPIRY` | CertExpiry analyzer | `analyzers.certExpiry.enabled` |
 | `CHA_ANALYZER_TLS_SECRET_MISMATCH` | TLSSecretMismatch analyzer (the opt-in auto-fixer is gated separately by `fixers.tlsSecretMismatch.enabled` / `CHA_FIXER_TLS_SECRET_MISMATCH`) | `analyzers.tlsSecretMismatch.enabled` |
 
+The 30 cloud probes default ON when their provider is enabled
+(`cloud.<provider>.enabled`) and are independently disablable the same way
+(set to `off`; Helm: `cloud.<provider>.probes.<name>: false`). The
+`eks` / `gke` / `aks` toggles each gate BOTH the control-plane and
+node-pool probes:
+
+| Env var | Disables | Helm value |
+|---|---|---|
+| `CHA_CLOUD_PROBE_AWS_RDS` | AWS RDS probe | `cloud.aws.probes.rds` |
+| `CHA_CLOUD_PROBE_AWS_EBS` | AWS EBS volumes probe | `cloud.aws.probes.ebs` |
+| `CHA_CLOUD_PROBE_AWS_EKS` | AWS EKS control-plane + node-group probes | `cloud.aws.probes.eks` |
+| `CHA_CLOUD_PROBE_AWS_IAM` | AWS IAM roles probe | `cloud.aws.probes.iam` |
+| `CHA_CLOUD_PROBE_AWS_ALB` | AWS ALB target-health probe | `cloud.aws.probes.alb` |
+| `CHA_CLOUD_PROBE_AWS_ACM` | AWS ACM cert-expiry probe | `cloud.aws.probes.acm` |
+| `CHA_CLOUD_PROBE_AWS_KMS` | AWS KMS keys probe | `cloud.aws.probes.kms` |
+| `CHA_CLOUD_PROBE_AWS_S3` | AWS S3 public-access probe | `cloud.aws.probes.s3` |
+| `CHA_CLOUD_PROBE_AWS_VPC` | AWS VPC subnets probe | `cloud.aws.probes.vpc` |
+| `CHA_CLOUD_PROBE_GCP_CLOUDSQL` | GCP Cloud SQL probe | `cloud.gcp.probes.cloudsql` |
+| `CHA_CLOUD_PROBE_GCP_DISKS` | GCP persistent disks probe | `cloud.gcp.probes.disks` |
+| `CHA_CLOUD_PROBE_GCP_GKE` | GCP GKE control-plane + node-pool probes | `cloud.gcp.probes.gke` |
+| `CHA_CLOUD_PROBE_GCP_IAM` | GCP IAM service-accounts probe | `cloud.gcp.probes.iam` |
+| `CHA_CLOUD_PROBE_GCP_SUBNETS` | GCP subnets probe | `cloud.gcp.probes.subnets` |
+| `CHA_CLOUD_PROBE_GCP_LB` | GCP LB backends probe | `cloud.gcp.probes.lb` |
+| `CHA_CLOUD_PROBE_GCP_CERTS` | GCP managed-certificates probe | `cloud.gcp.probes.certs` |
+| `CHA_CLOUD_PROBE_GCP_GCS` | GCP GCS public-access probe | `cloud.gcp.probes.gcs` |
+| `CHA_CLOUD_PROBE_GCP_KMS` | GCP KMS probe | `cloud.gcp.probes.kms` |
+| `CHA_CLOUD_PROBE_AZURE_SQL` | Azure SQL databases probe | `cloud.azure.probes.sql` |
+| `CHA_CLOUD_PROBE_AZURE_DISKS` | Azure disks probe | `cloud.azure.probes.disks` |
+| `CHA_CLOUD_PROBE_AZURE_AKS` | Azure AKS control-plane + node-pool probes | `cloud.azure.probes.aks` |
+| `CHA_CLOUD_PROBE_AZURE_IDENTITIES` | Azure managed-identities probe | `cloud.azure.probes.identities` |
+| `CHA_CLOUD_PROBE_AZURE_SUBNETS` | Azure subnets probe | `cloud.azure.probes.subnets` |
+| `CHA_CLOUD_PROBE_AZURE_APPGW` | Azure App Gateway backends probe | `cloud.azure.probes.appgw` |
+| `CHA_CLOUD_PROBE_AZURE_CERTS` | Azure certificates probe | `cloud.azure.probes.certs` |
+| `CHA_CLOUD_PROBE_AZURE_STORAGE` | Azure storage public-access probe | `cloud.azure.probes.storage` |
+| `CHA_CLOUD_PROBE_AZURE_KEYVAULTS` | Azure Key Vaults probe | `cloud.azure.probes.keyvaults` |
+
 Critical-workloads list configuration (Sprint 2.6):
 
 | Env var | Effect |

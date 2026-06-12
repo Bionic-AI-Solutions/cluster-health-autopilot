@@ -207,6 +207,7 @@ spec:
             {{- include "cha.protectedNamespacesEnv" . | nindent 12 }}
             {{- include "cha.analyzerToggleEnv" . | nindent 12 }}
             {{- include "cha.probeToggleEnv" . | nindent 12 }}
+            {{- include "cha.cloudProbeToggleEnv" . | nindent 12 }}
             {{- include "cha.investigatorEnv" . | nindent 12 }}
             {{- include "cha.externalDNSEnv" . | nindent 12 }}
             {{- include "cha.extraEnv" . | nindent 12 }}

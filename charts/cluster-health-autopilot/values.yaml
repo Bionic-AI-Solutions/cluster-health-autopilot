@@ -194,20 +194,17 @@ alertmanager:
 cloud:
   enabled: false
   cadence: 10m                     # min interval between cloud-probe runs
-  rateLimitPerMin: 60              # per-provider; override per-provider below
   aws:
     enabled: false
     region: ""                     # required; e.g. "us-east-1"
     auth:
-      mode: irsa                   # irsa | assumeRole | staticCredentials
-      roleArn: ""                  # for IRSA: ARN of the IAM role; auto-injected as eks.amazonaws.com/role-arn SA annotation
-      assumeRoleArn: ""            # for assumeRole: target role
-      credentialsSecret: ""        # for staticCredentials: K8s Secret name (ESO-managed)
-    # Per-probe documentation. All 10 AWS probes shipped in v1.8
-    # (M1 complete). Provider registration is gated by aws.enabled
-    # above; per-probe in-cluster gating is via CHA_PROBE_* env opt-outs
-    # on the binary (these keys are informational — flip aws.enabled to
-    # turn the whole provider on/off).
+      # Workload identity (IRSA) is the only supported auth mode.
+      roleArn: ""                  # ARN of the IAM role; auto-injected as eks.amazonaws.com/role-arn SA annotation
+    # Per-probe toggles. All 10 AWS probes shipped in v1.8 (M1
+    # complete) and default ON when aws.enabled=true. Set a key to
+    # false to emit CHA_CLOUD_PROBE_AWS_<NAME>=off and skip that
+    # probe's registration (eks gates both the control-plane and
+    # node-group probes — one asset, one key).
     probes:
       rds: true
       ebs: true
@@ -222,28 +219,56 @@ cloud:
     # GCP cloud probes shipped in v1.8 (M2): Cloud SQL, Persistent
     # Disks, GKE control-plane + node pools, IAM service accounts,
     # Subnets, LB backends, managed certs, GCS public access, KMS.
-    # NOTE: subnet IP-utilization and Cloud SQL storage-% are reported
-    # as "not measured" in live mode (need the Monitoring API; v1.9).
+    # NOTE: Cloud SQL storage-% is fetched via the Cloud Monitoring API
+    # (best-effort; "not measured" when unavailable). Subnet IP
+    # utilization is CAPACITY-ONLY in live mode — GCP exposes no cheap
+    # used-IP count (Network Analyzer insights live behind the
+    # Recommender API); the probe flags small-capacity subnets instead.
     enabled: false
     project: ""
     auth:
-      mode: workloadIdentity       # workloadIdentity | staticCredentials
-      serviceAccount: ""           # for workloadIdentity: GSA email; auto-injected as iam.gke.io/gcp-service-account SA annotation
-      credentialsSecret: ""        # for staticCredentials: K8s Secret name
+      # Workload Identity is the only supported auth mode.
+      serviceAccount: ""           # GSA email; auto-injected as iam.gke.io/gcp-service-account SA annotation
+    # Per-probe toggles (default ON when gcp.enabled=true). false emits
+    # CHA_CLOUD_PROBE_GCP_<NAME>=off (gke gates both the control-plane
+    # and node-pool probes).
+    probes:
+      cloudsql: true
+      disks: true
+      gke: true
+      iam: true
+      subnets: true
+      lb: true
+      certs: true
+      gcs: true
+      kms: true
   azure:
     # Azure cloud probes shipped in v1.8 (M2): SQL databases, Disks,
     # AKS control-plane + node pools, Managed Identities, Subnets, App
     # Gateway backends, certs, Storage public access, Key Vaults.
-    # NOTE: subnet IP-utilization, SQL storage-%, and App Gateway
-    # backend health are "not measured" in live mode (need Azure
-    # Monitor metrics / BackendHealth LRO; v1.9).
+    # NOTE: SQL storage-% and App Gateway backend health are fetched
+    # via Azure Monitor metrics (best-effort; "not measured" when
+    # unavailable). Subnet utilization reports available=total pending
+    # the Network usage API.
     enabled: false
     subscriptionId: ""
     resourceGroup: ""              # optional scope; empty = subscription-wide
     auth:
-      mode: workloadIdentity       # workloadIdentity | staticCredentials
-      clientId: ""                 # for workloadIdentity: AAD app client ID; auto-injected as azure.workload.identity/client-id SA annotation
-      credentialsSecret: ""        # for staticCredentials: K8s Secret name
+      # AAD Workload Identity is the only supported auth mode.
+      clientId: ""                 # AAD app client ID; auto-injected as azure.workload.identity/client-id SA annotation
+    # Per-probe toggles (default ON when azure.enabled=true). false
+    # emits CHA_CLOUD_PROBE_AZURE_<NAME>=off (aks gates both the
+    # control-plane and node-pool probes).
+    probes:
+      sql: true
+      disks: true
+      aks: true
+      identities: true
+      subnets: true
+      appgw: true
+      certs: true
+      storage: true
+      keyvaults: true
 
 # Ticketing — open issue-tracker tickets for diagnostics CHA cannot
 # auto-remediate. Runs after each watcher cycle's DriftReport reconcile;
