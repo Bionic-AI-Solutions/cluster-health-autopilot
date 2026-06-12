@@ -106,7 +106,8 @@ func TestReconcile_NormalizesNonEnumSeverity(t *testing.T) {
 
 // TestSeverityLiteralsAreEnumValues statically walks every non-test Go file
 // in the module's emitter/consumer trees (internal/, catalog/, pkg/, cmd/,
-// api/) and asserts that every string literal assigned to a `Severity` field
+// api/) and asserts that every string literal assigned to a `Severity` or
+// `severity` identifier (exported/unexported struct fields, local variables)
 // is one of the DriftReport CRD enum values (info|warning|critical).
 //
 // This is the strongest feasible "walk all probes/analyzers" guard: probe
@@ -143,14 +144,14 @@ func TestSeverityLiteralsAreEnumValues(t *testing.T) {
 			ast.Inspect(f, func(n ast.Node) bool {
 				switch x := n.(type) {
 				case *ast.KeyValueExpr:
-					// Severity: "..."
+					// Severity: "..." / severity: "..." (unexported field)
 					id, isIdent := x.Key.(*ast.Ident)
-					if !isIdent || id.Name != "Severity" {
+					if !isIdent || !isSeverityName(id.Name) {
 						return true
 					}
 					checkSeverityLit(fset, x.Value, valid, &violations)
 				case *ast.AssignStmt:
-					// foo.Severity = "..." / Severity = "..."
+					// foo.Severity = "..." / severity := "..." / severity = "..."
 					for i, lhs := range x.Lhs {
 						name := ""
 						switch l := lhs.(type) {
@@ -159,7 +160,7 @@ func TestSeverityLiteralsAreEnumValues(t *testing.T) {
 						case *ast.Ident:
 							name = l.Name
 						}
-						if name != "Severity" || i >= len(x.Rhs) {
+						if !isSeverityName(name) || i >= len(x.Rhs) {
 							continue
 						}
 						checkSeverityLit(fset, x.Rhs[i], valid, &violations)
@@ -179,6 +180,14 @@ func TestSeverityLiteralsAreEnumValues(t *testing.T) {
 			"these break the watcher's driftreport reconcile (spec.severity: Unsupported value):\n  %s",
 			len(violations), strings.Join(violations, "\n  "))
 	}
+}
+
+// isSeverityName reports whether an identifier names a severity slot the
+// lint must guard: the exported `Severity` field and the lowercase
+// `severity` form (local vars like `severity = "warn"`, unexported struct
+// fields like `severity: "..."`).
+func isSeverityName(name string) bool {
+	return name == "Severity" || name == "severity"
 }
 
 func checkSeverityLit(fset *token.FileSet, v ast.Expr, valid map[string]bool, violations *[]string) {

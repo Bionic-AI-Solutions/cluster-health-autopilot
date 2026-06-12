@@ -602,7 +602,7 @@ func buildCFRecordCache(ctx context.Context, client CloudflareClient) (map[strin
 // Returns:
 //   - (nil, true) when the record exists and matches — no finding, chain continues.
 //   - (*Diagnostic, false) when the record is completely absent — emit critical, chain stops.
-//   - (*Diagnostic, true) when the record points elsewhere — emit error, chain continues.
+//   - (*Diagnostic, true) when the record points elsewhere — emit critical, chain continues.
 func checkCFLayer(host string, cfRecords map[string][]DNSRecord, lbIP, k8sSummary string) (*Diagnostic, bool) {
 	records, found := cfRecords[host]
 	if !found || len(records) == 0 {
