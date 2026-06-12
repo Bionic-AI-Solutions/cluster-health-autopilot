@@ -256,10 +256,14 @@ func readerPolicyRules() []rbacv1.PolicyRule {
 		// driftreports" line on every reconcile and stale reports
 		// accumulated indefinitely.
 		//
-		// silences are SRE-curated (kubectl apply) and only READ by
-		// the watcher to honor matchers. Keep read-only here so the
-		// watcher cannot accidentally clobber a Silence the SRE
-		// applied — separation of authority.
+		// silences are SRE-curated (kubectl apply): the watcher READS
+		// the spec to honor matchers and never mutates it — keep the
+		// parent resource read-only so the watcher cannot clobber a
+		// Silence the SRE applied (separation of authority). The
+		// /status subresource is the one exception: the watcher's
+		// change-only status writer (pkg/silence/status.go) patches
+		// status.active / matchCount / lastMatchAt each cycle, so it
+		// gets update+patch on silences/status below.
 		{
 			APIGroups: []string{"cha.bionicaisolutions.com"},
 			Resources: []string{"driftreports", "resolutionrecords"},
@@ -281,6 +285,16 @@ func readerPolicyRules() []rbacv1.PolicyRule {
 			APIGroups: []string{"cha.bionicaisolutions.com"},
 			Resources: []string{"silences"},
 			Verbs:     []string{"get", "list", "watch"},
+		},
+		{
+			// silences/status — written by the watcher's change-only
+			// status writer (status.active / matchCount / lastMatchAt;
+			// pkg/silence/status.go). Spec stays read-only above —
+			// status is the watcher's observation, spec is the SRE's
+			// intent. Mirrors the chart's clusterrole-silence.yaml.
+			APIGroups: []string{"cha.bionicaisolutions.com"},
+			Resources: []string{"silences/status"},
+			Verbs:     []string{"update", "patch"},
 		},
 		// Leader-election: the watcher binary uses controller-runtime's
 		// lease-based leader election so multi-replica installs don't

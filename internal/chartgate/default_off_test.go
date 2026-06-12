@@ -15,7 +15,8 @@
 //
 // # HOW IT WORKS
 //
-// The test scans catalog/catalog.go for every CHA_* env toggle that GATES a
+// The test scans the catalog sources (catalog.go + cloud.go) for every CHA_*
+// env toggle that GATES a
 // probe / analyzer / fixer / investigator registration, derives its default
 // polarity from the comparison operator:
 //
@@ -47,7 +48,12 @@ import (
 	"testing"
 )
 
-const catalogPath = "../../catalog/catalog.go"
+// catalogPaths are the catalog source files scanned for registration-
+// gating toggles: catalog.go (K8s probes / analyzers / fixers /
+// investigator) and cloud.go (the per-cloud-probe CHA_CLOUD_PROBE_*
+// gates added in O6).
+var catalogPaths = []string{"../../catalog/catalog.go", "../../catalog/cloud.go"}
+
 const toggleGoldenPath = "testdata/toggle_defaults.golden"
 
 // Matches a registration-gating toggle and captures the key + the comparison
@@ -74,38 +80,41 @@ var nonRegistrationToggles = map[string]string{
 	"CHA_CRITICAL_SERVICES_REPLACE": "replace-vs-merge flag for the CHA_CRITICAL_SERVICES target list — config, not a registration gate",
 }
 
-// deriveToggleDefaults scans catalog.go and returns key → "on"/"off".
+// deriveToggleDefaults scans the catalog sources and returns key →
+// "on"/"off".
 func deriveToggleDefaults(t *testing.T) map[string]string {
 	t.Helper()
-	raw, err := os.ReadFile(catalogPath)
-	if err != nil {
-		t.Fatalf("read %s: %v", catalogPath, err)
-	}
 	out := map[string]string{}
-	for _, m := range registrationToggleRe.FindAllStringSubmatch(string(raw), -1) {
-		key, op, val := m[1], m[2], m[3]
-		if reason, skip := nonRegistrationToggles[key]; skip {
-			if strings.TrimSpace(reason) == "" {
-				t.Errorf("%s is excluded but carries no reason", key)
+	for _, path := range catalogPaths {
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("read %s: %v", path, err)
+		}
+		for _, m := range registrationToggleRe.FindAllStringSubmatch(string(raw), -1) {
+			key, op, val := m[1], m[2], m[3]
+			if reason, skip := nonRegistrationToggles[key]; skip {
+				if strings.TrimSpace(reason) == "" {
+					t.Errorf("%s is excluded but carries no reason", key)
+				}
+				continue
 			}
-			continue
+			var polarity string
+			switch {
+			case op == "!=" && val == "off":
+				polarity = "on" // registered unless opted out → default-on
+			case op == "==" && val == "true":
+				polarity = "off" // registered only when enabled → default-off
+			default:
+				t.Fatalf("%s: unrecognised toggle comparison %q %q %q — extend the polarity switch", key, key, op, val)
+			}
+			if existing, ok := out[key]; ok && existing != polarity {
+				t.Fatalf("%s read with conflicting polarities (%s vs %s) across %v", key, existing, polarity, catalogPaths)
+			}
+			out[key] = polarity
 		}
-		var polarity string
-		switch {
-		case op == "!=" && val == "off":
-			polarity = "on" // registered unless opted out → default-on
-		case op == "==" && val == "true":
-			polarity = "off" // registered only when enabled → default-off
-		default:
-			t.Fatalf("%s: unrecognised toggle comparison %q %q %q — extend the polarity switch", key, key, op, val)
-		}
-		if existing, ok := out[key]; ok && existing != polarity {
-			t.Fatalf("%s read with conflicting polarities (%s vs %s) in catalog.go", key, existing, polarity)
-		}
-		out[key] = polarity
 	}
 	if len(out) == 0 {
-		t.Fatalf("found zero registration toggles in %s — regex is stale", catalogPath)
+		t.Fatalf("found zero registration toggles in %v — regex is stale", catalogPaths)
 	}
 	return out
 }
@@ -184,7 +193,7 @@ func TestToggleDefaultsMatchGolden(t *testing.T) {
 	}
 	if len(removed) > 0 {
 		sort.Strings(removed)
-		t.Errorf("golden lists toggle(s) no longer found in catalog.go (removed or renamed) — update %s:\n  %s",
+		t.Errorf("golden lists toggle(s) no longer found in the catalog sources (removed or renamed) — update %s:\n  %s",
 			toggleGoldenPath, strings.Join(removed, "\n  "))
 	}
 }

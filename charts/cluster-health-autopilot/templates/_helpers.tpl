@@ -505,6 +505,137 @@ probes.<name>.enabled=false in values.yaml to emit CHA_PROBE_<NAME>=off.
 {{- end -}}
 
 {{- /*
+cha.cloudProbeToggleEnv — env-var opt-outs for the per-cloud-probe
+gates (O6). Each cloud probe defaults ON when its provider is enabled
+(cloud.<provider>.enabled); flip cloud.<provider>.probes.<name>=false
+to emit CHA_CLOUD_PROBE_<PROVIDER>_<NAME>=off and skip that probe's
+registration. The eks / gke / aks keys each gate BOTH the
+control-plane and node-pool probes (one asset, one key). Rendered
+unconditionally (not gated on cloud.enabled) so a disabled key is
+honored the moment the provider is switched on.
+*/ -}}
+{{- define "cha.cloudProbeToggleEnv" -}}
+{{- $aws := (((.Values.cloud).aws).probes) | default dict }}
+{{- if and (hasKey $aws "rds") (not $aws.rds) }}
+- name: CHA_CLOUD_PROBE_AWS_RDS
+  value: "off"
+{{- end }}
+{{- if and (hasKey $aws "ebs") (not $aws.ebs) }}
+- name: CHA_CLOUD_PROBE_AWS_EBS
+  value: "off"
+{{- end }}
+{{- if and (hasKey $aws "eks") (not $aws.eks) }}
+- name: CHA_CLOUD_PROBE_AWS_EKS
+  value: "off"
+{{- end }}
+{{- if and (hasKey $aws "iam") (not $aws.iam) }}
+- name: CHA_CLOUD_PROBE_AWS_IAM
+  value: "off"
+{{- end }}
+{{- if and (hasKey $aws "alb") (not $aws.alb) }}
+- name: CHA_CLOUD_PROBE_AWS_ALB
+  value: "off"
+{{- end }}
+{{- if and (hasKey $aws "acm") (not $aws.acm) }}
+- name: CHA_CLOUD_PROBE_AWS_ACM
+  value: "off"
+{{- end }}
+{{- if and (hasKey $aws "kms") (not $aws.kms) }}
+- name: CHA_CLOUD_PROBE_AWS_KMS
+  value: "off"
+{{- end }}
+{{- if and (hasKey $aws "s3") (not $aws.s3) }}
+- name: CHA_CLOUD_PROBE_AWS_S3
+  value: "off"
+{{- end }}
+{{- if and (hasKey $aws "vpc") (not $aws.vpc) }}
+- name: CHA_CLOUD_PROBE_AWS_VPC
+  value: "off"
+{{- end }}
+{{- $gcp := (((.Values.cloud).gcp).probes) | default dict }}
+{{- if and (hasKey $gcp "cloudsql") (not $gcp.cloudsql) }}
+- name: CHA_CLOUD_PROBE_GCP_CLOUDSQL
+  value: "off"
+{{- end }}
+{{- if and (hasKey $gcp "disks") (not $gcp.disks) }}
+- name: CHA_CLOUD_PROBE_GCP_DISKS
+  value: "off"
+{{- end }}
+{{- if and (hasKey $gcp "gke") (not $gcp.gke) }}
+- name: CHA_CLOUD_PROBE_GCP_GKE
+  value: "off"
+{{- end }}
+{{- if and (hasKey $gcp "iam") (not $gcp.iam) }}
+- name: CHA_CLOUD_PROBE_GCP_IAM
+  value: "off"
+{{- end }}
+{{- if and (hasKey $gcp "subnets") (not $gcp.subnets) }}
+- name: CHA_CLOUD_PROBE_GCP_SUBNETS
+  value: "off"
+{{- end }}
+{{- if and (hasKey $gcp "lb") (not $gcp.lb) }}
+- name: CHA_CLOUD_PROBE_GCP_LB
+  value: "off"
+{{- end }}
+{{- if and (hasKey $gcp "certs") (not $gcp.certs) }}
+- name: CHA_CLOUD_PROBE_GCP_CERTS
+  value: "off"
+{{- end }}
+{{- if and (hasKey $gcp "gcs") (not $gcp.gcs) }}
+- name: CHA_CLOUD_PROBE_GCP_GCS
+  value: "off"
+{{- end }}
+{{- if and (hasKey $gcp "kms") (not $gcp.kms) }}
+- name: CHA_CLOUD_PROBE_GCP_KMS
+  value: "off"
+{{- end }}
+{{- /* Tuning knob (not an opt-out): small-prefix threshold for the
+capacity-only GCP subnets probe. Rendered only when non-zero; 0/unset
+= the binary's compiled-in default (/26). */ -}}
+{{- with (((.Values.cloud).gcp).subnetsSmallPrefixThreshold) }}
+- name: CHA_CLOUD_PROBE_GCP_SUBNETS_SMALL_PREFIX
+  value: {{ . | quote }}
+{{- end }}
+{{- $azure := (((.Values.cloud).azure).probes) | default dict }}
+{{- if and (hasKey $azure "sql") (not $azure.sql) }}
+- name: CHA_CLOUD_PROBE_AZURE_SQL
+  value: "off"
+{{- end }}
+{{- if and (hasKey $azure "disks") (not $azure.disks) }}
+- name: CHA_CLOUD_PROBE_AZURE_DISKS
+  value: "off"
+{{- end }}
+{{- if and (hasKey $azure "aks") (not $azure.aks) }}
+- name: CHA_CLOUD_PROBE_AZURE_AKS
+  value: "off"
+{{- end }}
+{{- if and (hasKey $azure "identities") (not $azure.identities) }}
+- name: CHA_CLOUD_PROBE_AZURE_IDENTITIES
+  value: "off"
+{{- end }}
+{{- if and (hasKey $azure "subnets") (not $azure.subnets) }}
+- name: CHA_CLOUD_PROBE_AZURE_SUBNETS
+  value: "off"
+{{- end }}
+{{- if and (hasKey $azure "appgw") (not $azure.appgw) }}
+- name: CHA_CLOUD_PROBE_AZURE_APPGW
+  value: "off"
+{{- end }}
+{{- if and (hasKey $azure "certs") (not $azure.certs) }}
+- name: CHA_CLOUD_PROBE_AZURE_CERTS
+  value: "off"
+{{- end }}
+{{- if and (hasKey $azure "storage") (not $azure.storage) }}
+- name: CHA_CLOUD_PROBE_AZURE_STORAGE
+  value: "off"
+{{- end }}
+{{- if and (hasKey $azure "keyvaults") (not $azure.keyvaults) }}
+- name: CHA_CLOUD_PROBE_AZURE_KEYVAULTS
+  value: "off"
+{{- end }}
+{{- end -}}
+
+{{- /*
 cha.externalDNSEnv — projects the Cloudflare API token for the
 DNSChainDrift analyzer's external-hop verification. ALWAYS a
 secretKeyRef (the token value never appears in the manifest). Empty

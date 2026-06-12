@@ -727,10 +727,23 @@ func (w *Watcher) runDiagnose(ctx context.Context) ([]probe.Result, []diagnose.D
 	// findings on the floor.
 	if w.silences != nil {
 		if sil, err := w.silences.List(ctx); err == nil {
+			now := time.Now()
+			// Per-silence match counts BEFORE filtering — feeds the
+			// status writer (status.matchCount / ACTIVE printer column).
+			counts := silence.CountMatches(diags, sil, now)
 			before := len(diags)
-			diags = silence.Filter(diags, sil, time.Now())
+			diags = silence.Filter(diags, sil, now)
 			if dropped := before - len(diags); dropped > 0 {
 				log.Printf("watcher: silenced %d/%d diagnostics this cycle", dropped, before)
+			}
+			// Reconcile each Silence's status subresource (active /
+			// matchCount / lastMatchAt). Best-effort: only changed
+			// silences are patched, and failures never abort the cycle
+			// — status is observability, not control flow.
+			if mut := snapshot.AsMutator(w.lv); mut != nil {
+				if _, uerr := silence.UpdateStatuses(ctx, mut, sil, counts, now); uerr != nil {
+					log.Printf("watcher: silence status update: %v", uerr)
+				}
 			}
 		} else {
 			log.Printf("watcher: silence list failed (filtering skipped this cycle): %v", err)

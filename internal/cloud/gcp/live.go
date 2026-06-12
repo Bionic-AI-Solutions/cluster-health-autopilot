@@ -285,26 +285,43 @@ func (l *LiveClient) ListServiceAccounts(ctx context.Context) ([]pkggcp.ServiceA
 
 // ListSubnets satisfies pkggcp.Client.
 //
-// LIMITATION: the Compute API Subnetwork resource does not expose a
-// free-IP count. Accurate utilization needs the Monitoring API metric
-// compute.googleapis.com/subnetwork/... — out of scope for this
-// wrapper. We populate TotalIPCount from the primary CIDR mask and set
-// AvailableIPCount = -1 ("not measured") so the IP-exhaustion probe
+// LIMITATION (the honest live contract): GCP exposes NO cheap used-IP
+// count for a subnetwork. The Compute Subnetwork resource carries only
+// the CIDR ranges; the allocation-ratio insight lives in Network
+// Analyzer behind the Recommender API
+// (google.networkanalyzer.vpcnetwork.ipAddressInsight — a separate SDK
+// surface + IAM grant + Network Analyzer dependency, deliberately out
+// of scope here), and there is no Cloud Monitoring metric for it.
+// Deriving "used" from instance NICs would need an Instances
+// AggregatedList fan-out per cycle — too heavy for a 10m-cadence
+// probe.
+//
+// So this wrapper reports CAPACITY, not utilization: TotalIPCount from
+// the primary CIDR (minus GCP's 4 reserved addresses),
+// SecondaryIPCount summed from secondary ranges (no reservations
+// there), and AvailableIPCount = -1 ("not measured") so the probe
 // SKIPS the utilization check rather than treating the subnet as 100%
-// free, which would silently never fire in live mode. A follow-up
-// (v1.9) can wire the Monitoring API for real utilization.
+// free. The probe falls back to flagging small-capacity primary ranges
+// — see Subnets in iam_subnet_probe.go for the capacity-only contract.
 func (l *LiveClient) ListSubnets(ctx context.Context) ([]pkggcp.Subnet, error) {
 	var out []pkggcp.Subnet
 	err := l.compute.Subnetworks.AggregatedList(l.project).Pages(ctx, func(page *compute.SubnetworkAggregatedList) error {
 		for _, scoped := range page.Items {
 			for _, s := range scoped.Subnetworks {
 				total := usableIPsFromCIDR(s.IpCidrRange)
+				var secondary int64
+				for _, r := range s.SecondaryIpRanges {
+					if r != nil {
+						secondary += rangeSizeFromCIDR(r.IpCidrRange)
+					}
+				}
 				out = append(out, pkggcp.Subnet{
 					Name:             s.Name,
 					Network:          lastPathSegment(s.Network),
 					Region:           lastPathSegment(s.Region),
 					IPCIDRRange:      s.IpCidrRange,
 					TotalIPCount:     total,
+					SecondaryIPCount: secondary,
 					AvailableIPCount: -1, // not measured — see LIMITATION above
 				})
 			}
@@ -547,6 +564,22 @@ func usableIPsFromCIDR(cidr string) int64 {
 		return 0
 	}
 	return usable
+}
+
+// rangeSizeFromCIDR returns the full address count of an IPv4 CIDR
+// (2^(32-mask), no reservations subtracted — GCP reserves addresses
+// only in a subnet's PRIMARY range, not in secondary ranges). Returns
+// 0 for unparseable / non-IPv4 ranges.
+func rangeSizeFromCIDR(cidr string) int64 {
+	i := strings.LastIndex(cidr, "/")
+	if i < 0 {
+		return 0
+	}
+	var mask int
+	if _, err := fmt.Sscanf(cidr[i+1:], "%d", &mask); err != nil || mask < 0 || mask > 32 {
+		return 0
+	}
+	return int64(1) << uint(32-mask)
 }
 
 // isNotFound reports whether err is a googleapi 404.

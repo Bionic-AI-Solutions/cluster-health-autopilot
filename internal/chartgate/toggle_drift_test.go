@@ -26,6 +26,9 @@ import (
 // if the binary grows env-toggle reads elsewhere.
 var toggleSourceFiles = []string{
 	"../../catalog/catalog.go",
+	// CHA_CLOUD_PROBE_* per-cloud-probe gates (O6) — rendered by the
+	// chart's cha.cloudProbeToggleEnv from cloud.<provider>.probes.*.
+	"../../catalog/cloud.go",
 	"../../internal/diagnose/security_drift.go",
 	"../../internal/probe/k3s_datastore.go",
 	"../../internal/watcher/leader.go",

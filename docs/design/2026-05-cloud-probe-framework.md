@@ -7,6 +7,8 @@
 >
 > **DELTA — M3 (Cloud-aware AI tier, CHA-com) was DROPPED SILENTLY and is NOT shipped.** §6 M3 below (T0 cloud-context enricher, T1 cloud-aware fix proposer, T2 cloud+K8s planner) has **no CHANGELOG entry and no code** as of 2026-06-11 (verified: no `cloud-aware`/`Cloud M3` references outside this design doc). The shipped AI tiers (T0–T3, CHA-com v1.1.0–v1.4.0) carry K8s context only, not cloud-resource context. → **Follow-up: Cloud M3 (cloud-aware AI tier)** is genuinely open; tracked in the consolidated roadmap Q3 2026 forward plan. M4 (cloud mutations) remains a separate future design as stated.
 >
+> **DELTA — as-shipped chart surface (O6/O7, 2026-06-12):** the §3.7/§3.8 sketches below over-promise. `--cloud-rate-limit-per-min` / `cloud.rateLimitPerMin` were never implemented (rate protection is the `cloud.cadence` interval) and the dead chart value was removed. Auth modes `assumeRole` / `staticCredentials` were never implemented — workload identity (IRSA / GCP WI / AAD WI) is the only shipped auth path; the dead `auth.mode` / `assumeRoleArn` / `credentialsSecret` keys were removed (assume-role support would be a net-new feature, to be reintroduced deliberately). The per-probe `cloud.<provider>.probes.*` toggles ARE wired as of O6 (`CHA_CLOUD_PROBE_<PROVIDER>_<NAME>=off` env gates). GCP subnet IP utilization shipped capacity-only — GCP exposes no cheap used-IP count (the allocation-ratio insight is behind Network Analyzer / the Recommender API); see `internal/cloud/gcp/live.go`.
+>
 > Body below is the original design, preserved for context.
 
 ---

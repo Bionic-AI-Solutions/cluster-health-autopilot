@@ -202,7 +202,7 @@ func TestBuildReaderClusterRole_DriftReportsWriteVerbs(t *testing.T) {
 		{"cha.bionicaisolutions.com", "resolutionrecords",
 			[]string{"get", "list", "watch", "create", "update", "patch", "delete"}},
 		{"cha.bionicaisolutions.com", "silences",
-			[]string{"get", "list", "watch"}}, // read-only; SREs own these
+			[]string{"get", "list", "watch"}}, // spec read-only; SREs own it (status writes go via silences/status)
 	}
 	for _, c := range cases {
 		var matched *rbacv1.PolicyRule
@@ -234,10 +234,13 @@ func TestBuildReaderClusterRole_DriftReportsWriteVerbs(t *testing.T) {
 // v1.12.1 added lifecycle verbs to driftreports/resolutionrecords but
 // missed the /status subresources (K8s treats them as independent
 // RBAC targets). The watcher emitted "cannot patch
-// driftreports/status" each cycle.
+// driftreports/status" each cycle. silences/status joined the list
+// with the Silence status writer (O8): the watcher patches
+// status.active / matchCount / lastMatchAt while the silences parent
+// resource stays read-only (asserted above).
 func TestBuildReaderClusterRole_StatusSubresourceVerbs(t *testing.T) {
 	role := BuildReaderClusterRole()
-	for _, sub := range []string{"driftreports/status", "resolutionrecords/status"} {
+	for _, sub := range []string{"driftreports/status", "resolutionrecords/status", "silences/status"} {
 		var matched *rbacv1.PolicyRule
 		for i := range role.Rules {
 			r := &role.Rules[i]

@@ -121,12 +121,16 @@ type SilenceStatus struct {
 // `spec.until`, then the silence becomes a no-op (it does NOT auto-
 // delete — operators can extend or remove on their own).
 //
+// Until is type=string (NOT type=date): kubectl renders date columns
+// as age-since, which is negative — shown as `<invalid>` — for the
+// future expiry every active Silence has by definition.
+//
 // +kubebuilder:object:root=true
 // +kubebuilder:resource:scope=Namespaced,shortName=sil
 // +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:name="Source",type=string,JSONPath=`.spec.matcher.source`
 // +kubebuilder:printcolumn:name="Subject",type=string,JSONPath=`.spec.matcher.subject`
-// +kubebuilder:printcolumn:name="Until",type=date,JSONPath=`.spec.until`
+// +kubebuilder:printcolumn:name="Until",type=string,JSONPath=`.spec.until`
 // +kubebuilder:printcolumn:name="Active",type=boolean,JSONPath=`.status.active`
 // +kubebuilder:printcolumn:name="Matched",type=integer,JSONPath=`.status.matchCount`
 type Silence struct {

@@ -111,7 +111,10 @@ spec:
           type: string
           jsonPath: .spec.matcher.subject
         - name: Until
-          type: date
+          # type=string renders the raw RFC3339 timestamp. NOT type=date:
+          # kubectl renders date columns as age-since (negative/<invalid>
+          # for the future expiries every active Silence has).
+          type: string
           jsonPath: .spec.until
         - name: Active
           type: boolean

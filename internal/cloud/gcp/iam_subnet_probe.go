@@ -6,6 +6,7 @@ package gcp
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/cloud"
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/probe"
@@ -73,25 +74,45 @@ func (IAMServiceAccounts) Run(ctx context.Context, src cloud.Source) probe.Resul
 	}
 }
 
-// Subnets flags VPC subnetworks approaching IP exhaustion:
+// Subnets flags VPC subnetworks at IP-exhaustion risk. Two modes,
+// depending on what the client could measure:
+//
+// Measured (AvailableIPCount >= 0 — snapshot files / future clients):
 //   - < 10% free addresses → critical
 //   - < 25% free addresses → warning
 //
-// Mirrors the AWS VPCSubnets probe.
-type Subnets struct{}
+// Capacity-only (AvailableIPCount = -1 — the live wrapper; GCP exposes
+// no cheap used-IP count, see live.go ListSubnets):
+//   - primary CIDR smaller than /26 (configurable via
+//     SmallPrefixThreshold) → warning. A small subnet is the
+//     IP-exhaustion precondition we CAN see without the Recommender
+//     API; actual utilization lives in Network Analyzer.
+//
+// Mirrors the AWS VPCSubnets probe (which measures live).
+type Subnets struct {
+	// SmallPrefixThreshold is the primary-CIDR prefix length beyond
+	// which an unmeasured subnet is flagged as small-capacity (the
+	// capacity-only mode above). 0 means the default (/26 → 60 usable
+	// IPs). Set to a larger value (e.g. 28) to quiet intentionally
+	// tiny subnets, or smaller to be stricter.
+	SmallPrefixThreshold int
+}
 
 const subnetsName = "gcp-subnets"
 
 const (
 	subnetCritFreePercent = 10
 	subnetWarnFreePercent = 25
+	// defaultSmallPrefixThreshold flags unmeasured subnets smaller
+	// than a /26 (60 usable addresses after GCP's 4 reserved).
+	defaultSmallPrefixThreshold = 26
 )
 
 // Name satisfies cloudprobe.Probe.
 func (Subnets) Name() string { return subnetsName }
 
 // Run satisfies cloudprobe.Probe.
-func (Subnets) Run(ctx context.Context, src cloud.Source) probe.Result {
+func (p Subnets) Run(ctx context.Context, src cloud.Source) probe.Result {
 	gcpClient := src.GCP()
 	if gcpClient == nil {
 		return skipped(subnetsName, "GCP not configured (cloud.gcp.enabled=false)")
@@ -100,6 +121,10 @@ func (Subnets) Run(ctx context.Context, src cloud.Source) probe.Result {
 	if err != nil {
 		return probeFailed(subnetsName, "compute.ListSubnetworks", err)
 	}
+	smallPrefix := p.SmallPrefixThreshold
+	if smallPrefix <= 0 {
+		smallPrefix = defaultSmallPrefixThreshold
+	}
 
 	var findings []probe.Finding
 	var unmeasured int
@@ -107,15 +132,26 @@ func (Subnets) Run(ctx context.Context, src cloud.Source) probe.Result {
 		if s.TotalIPCount <= 0 {
 			continue // can't compute a percentage; skip rather than divide-by-zero
 		}
+		subject := fmt.Sprintf("gcp-subnet/%s/%s/%s", gcpClient.Project(), s.Region, s.Name)
 		if s.AvailableIPCount < 0 {
-			// Free-IP count not measured (live mode — needs the
-			// Monitoring API). Skip rather than treat as 100% free,
-			// which would silently never fire.
+			// Free-IP count not measured (the live wrapper — GCP
+			// exposes no cheap used-IP count; the allocation-ratio
+			// insight is behind the Recommender API). Capacity-only
+			// mode: flag small primary ranges instead of pretending
+			// the subnet is 100% free (which would silently never
+			// fire).
 			unmeasured++
+			if prefix := cidrPrefix(s.IPCIDRRange); prefix > smallPrefix {
+				findings = append(findings, probe.Finding{
+					Component:   subject,
+					Severity:    probe.SeverityWarning,
+					Message:     fmt.Sprintf("Subnet %q primary range %s provides only %d usable IPs (smaller than /%d); per-IP utilization is not exposed by GCP's Compute API — review utilization in Network Analyzer", s.Name, s.IPCIDRRange, s.TotalIPCount, smallPrefix),
+					Remediation: fmt.Sprintf("Expand the primary range: gcloud compute networks subnets expand-ip-range %s --region=%s --project=%s --prefix-length=<shorter>; or check Network Analyzer's IP utilization insight for the real allocation ratio.", s.Name, s.Region, gcpClient.Project()),
+				})
+			}
 			continue
 		}
 		freePercent := int(s.AvailableIPCount * 100 / s.TotalIPCount)
-		subject := fmt.Sprintf("gcp-subnet/%s/%s/%s", gcpClient.Project(), s.Region, s.Name)
 		switch {
 		case freePercent < subnetCritFreePercent:
 			findings = append(findings, probe.Finding{
@@ -135,7 +171,7 @@ func (Subnets) Run(ctx context.Context, src cloud.Source) probe.Result {
 
 	detail := fmt.Sprintf("%d subnet(s) inspected in project %s", len(subnets), gcpClient.Project())
 	if unmeasured > 0 {
-		detail += fmt.Sprintf("; IP utilization not measured for %d (needs Monitoring API)", unmeasured)
+		detail += fmt.Sprintf("; per-IP utilization not measured for %d — capacity-only (GCP exposes no used-IP count; see Network Analyzer)", unmeasured)
 	}
 	return probe.Result{
 		Component: probe.ComponentResult{
@@ -145,4 +181,19 @@ func (Subnets) Run(ctx context.Context, src cloud.Source) probe.Result {
 		},
 		Findings: findings,
 	}
+}
+
+// cidrPrefix returns the prefix length of an IPv4 CIDR ("10.0.0.0/28"
+// → 28), or -1 when unparseable / absent — callers then skip the
+// capacity check rather than guessing.
+func cidrPrefix(cidr string) int {
+	i := strings.LastIndex(cidr, "/")
+	if i < 0 {
+		return -1
+	}
+	var mask int
+	if _, err := fmt.Sscanf(cidr[i+1:], "%d", &mask); err != nil || mask < 0 || mask > 32 {
+		return -1
+	}
+	return mask
 }
