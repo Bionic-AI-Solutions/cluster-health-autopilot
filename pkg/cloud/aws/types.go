@@ -87,6 +87,14 @@ type ALBTargetGroup struct {
 	UnhealthyCount int    `json:"unhealthyCount"`
 	UnusedCount    int    `json:"unusedCount,omitempty"`
 	InitialCount   int    `json:"initialCount,omitempty"`
+	// LoadBalancerDNS is the DNS name of the load balancer this target
+	// group is attached to (first of TargetGroup.LoadBalancerArns,
+	// resolved via elbv2.DescribeLoadBalancers). Optional: empty when
+	// the TG is unattached or the LB could not be resolved (including
+	// snapshot files captured before this field existed) — the probe
+	// then omits the "(lb: ...)" message join key CHA-com's RCA
+	// matchers parse.
+	LoadBalancerDNS string `json:"loadBalancerDNS,omitempty"`
 }
 
 // ACMCertificate is the narrow projection of an ACM cert.

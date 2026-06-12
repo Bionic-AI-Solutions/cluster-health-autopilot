@@ -199,6 +199,46 @@ func TestALB_EmptyTargetGroupWarn(t *testing.T) {
 	}
 }
 
+// CHA-com RCA join contract (ai/cloudcontext): the 0-healthy message
+// carries a " (lb: <LB DNS name>)" suffix when the live wrapper
+// resolved the owning load balancer. See internal/cloud/contract_test.go.
+func TestALB_ZeroHealthyMessageCarriesLBJoinKey(t *testing.T) {
+	src := &fakeSource{aws: &fakeAWS{
+		region: "us-east-1",
+		targetGroups: []pkgaws.ALBTargetGroup{
+			{Name: "tg-1", ARN: "arn:...", Protocol: "HTTP", Port: 80, HealthyCount: 0, UnhealthyCount: 3,
+				LoadBalancerDNS: "my-alb-123.us-east-1.elb.amazonaws.com"},
+		},
+	}}
+	r := (ALBTargetHealth{}).Run(context.Background(), src)
+	if len(r.Findings) != 1 {
+		t.Fatalf("want 1 finding got %d", len(r.Findings))
+	}
+	want := "Target group tg-1 has 0 healthy targets (3 unhealthy) on HTTP:80 (lb: my-alb-123.us-east-1.elb.amazonaws.com)"
+	if r.Findings[0].Message != want {
+		t.Errorf("Message=%q want %q", r.Findings[0].Message, want)
+	}
+}
+
+// Backward compat: no LoadBalancerDNS (old snapshot files, unresolvable
+// LB) → the pre-enrichment message, no empty "(lb: )" suffix.
+func TestALB_ZeroHealthyMessageUnsuffixedWithoutLBDNS(t *testing.T) {
+	src := &fakeSource{aws: &fakeAWS{
+		region: "us-east-1",
+		targetGroups: []pkgaws.ALBTargetGroup{
+			{Name: "tg-1", ARN: "arn:...", Protocol: "HTTP", Port: 80, HealthyCount: 0, UnhealthyCount: 3},
+		},
+	}}
+	r := (ALBTargetHealth{}).Run(context.Background(), src)
+	if len(r.Findings) != 1 {
+		t.Fatalf("want 1 finding got %d", len(r.Findings))
+	}
+	want := "Target group tg-1 has 0 healthy targets (3 unhealthy) on HTTP:80"
+	if r.Findings[0].Message != want {
+		t.Errorf("Message=%q want %q", r.Findings[0].Message, want)
+	}
+}
+
 func TestALB_HealthyHasHealthy(t *testing.T) {
 	src := &fakeSource{aws: &fakeAWS{
 		region: "us-east-1",

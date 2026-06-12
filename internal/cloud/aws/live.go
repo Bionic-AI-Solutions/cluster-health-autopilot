@@ -299,14 +299,21 @@ func (c *LiveClient) DescribeALBTargetGroupsWithHealth(ctx context.Context) ([]p
 		}
 		marker = resp.NextMarker
 	}
+	// One DescribeLoadBalancers per probe cycle (NOT per target group)
+	// builds the ARN → DNS-name map that feeds LoadBalancerDNS — the
+	// CHA-com "(lb: ...)" RCA join key. Best-effort: a failure leaves
+	// the map empty (message enrichment is never worth failing the
+	// probe over) and the probe omits the suffix.
+	dnsByARN := c.describeLoadBalancerDNS(ctx)
 	out := make([]pkgaws.ALBTargetGroup, 0, len(tgs))
 	for _, tg := range tgs {
 		entry := pkgaws.ALBTargetGroup{
-			ARN:        awssdk.ToString(tg.TargetGroupArn),
-			Name:       awssdk.ToString(tg.TargetGroupName),
-			Protocol:   string(tg.Protocol),
-			Port:       awssdk.ToInt32(tg.Port),
-			TargetType: string(tg.TargetType),
+			ARN:             awssdk.ToString(tg.TargetGroupArn),
+			Name:            awssdk.ToString(tg.TargetGroupName),
+			Protocol:        string(tg.Protocol),
+			Port:            awssdk.ToInt32(tg.Port),
+			TargetType:      string(tg.TargetType),
+			LoadBalancerDNS: firstLoadBalancerDNS(tg.LoadBalancerArns, dnsByARN),
 		}
 		health, err := c.elbv2.DescribeTargetHealth(ctx, &elasticloadbalancingv2.DescribeTargetHealthInput{
 			TargetGroupArn: tg.TargetGroupArn,
@@ -332,6 +339,53 @@ func (c *LiveClient) DescribeALBTargetGroupsWithHealth(ctx context.Context) ([]p
 		out = append(out, entry)
 	}
 	return out, nil
+}
+
+// describeLoadBalancerDNS lists every ALB/NLB once and returns the
+// ARN → DNS-name map. Best-effort enrichment helper: returns nil
+// (nil-map reads are safe; callers fall back to name / omit the suffix).
+func (c *LiveClient) describeLoadBalancerDNS(ctx context.Context) map[string]string {
+	var lbs []elbv2types.LoadBalancer
+	var marker *string
+	for {
+		resp, err := c.elbv2.DescribeLoadBalancers(ctx, &elasticloadbalancingv2.DescribeLoadBalancersInput{Marker: marker})
+		if err != nil {
+			return nil
+		}
+		lbs = append(lbs, resp.LoadBalancers...)
+		if resp.NextMarker == nil || awssdk.ToString(resp.NextMarker) == "" {
+			break
+		}
+		marker = resp.NextMarker
+	}
+	return lbDNSByARN(lbs)
+}
+
+// lbDNSByARN maps load-balancer ARN → DNS name, skipping entries
+// missing either side.
+func lbDNSByARN(lbs []elbv2types.LoadBalancer) map[string]string {
+	out := make(map[string]string, len(lbs))
+	for _, lb := range lbs {
+		arn := awssdk.ToString(lb.LoadBalancerArn)
+		dns := awssdk.ToString(lb.DNSName)
+		if arn == "" || dns == "" {
+			continue
+		}
+		out[arn] = dns
+	}
+	return out
+}
+
+// firstLoadBalancerDNS resolves the first of a target group's
+// LoadBalancerArns that has a known DNS name ("" when none do — the
+// probe then omits the "(lb: ...)" join key).
+func firstLoadBalancerDNS(arns []string, dnsByARN map[string]string) string {
+	for _, arn := range arns {
+		if dns := dnsByARN[arn]; dns != "" {
+			return dns
+		}
+	}
+	return ""
 }
 
 // --- ACM ---------------------------------------------------------------

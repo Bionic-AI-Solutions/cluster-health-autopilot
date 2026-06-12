@@ -106,6 +106,15 @@ type BackendService struct {
 	HealthyCount   int    `json:"healthyCount"`
 	UnhealthyCount int    `json:"unhealthyCount"`
 	TotalBackends  int    `json:"totalBackends,omitempty"`
+	// ForwardingRule is the forwarding-rule IP (preferred) or name of
+	// the rule pointing at this backend service (compute
+	// ForwardingRules aggregated list, joined on rule.BackendService —
+	// passthrough LBs only; proxy-based rules don't reference the
+	// backend service directly). Optional: empty when unmapped
+	// (including snapshot files captured before this field existed) —
+	// the probe then falls back to the backend-service name for the
+	// "(lb: ...)" message join key CHA-com's RCA matchers parse.
+	ForwardingRule string `json:"forwardingRule,omitempty"`
 }
 
 // ManagedCertificate is the narrow projection of a Google-managed SSL

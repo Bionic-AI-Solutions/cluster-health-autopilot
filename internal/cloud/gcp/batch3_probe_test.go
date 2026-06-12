@@ -38,6 +38,57 @@ func TestLB_ZeroHealthy_Critical(t *testing.T) {
 	}
 }
 
+// CHA-com RCA join contract (ai/cloudcontext): the 0-healthy message
+// carries a " (lb: <forwarding-rule IP or name>)" suffix. See
+// internal/cloud/contract_test.go.
+func TestLB_ZeroHealthyMessageCarriesForwardingRuleJoinKey(t *testing.T) {
+	got := LoadBalancerBackends{}.Run(context.Background(), &fakeSource{
+		gcp: &fakeGCP{project: "p", backends: []pkggcp.BackendService{
+			{Name: "web", HealthyCount: 0, UnhealthyCount: 3, TotalBackends: 3, ForwardingRule: "203.0.113.7"},
+		}},
+	})
+	if len(got.Findings) != 1 {
+		t.Fatalf("want 1 finding got %d", len(got.Findings))
+	}
+	want := `LB backend service "web" has 0 healthy backends (3 unhealthy); traffic is failing (lb: 203.0.113.7)`
+	if got.Findings[0].Message != want {
+		t.Errorf("Message=%q want %q", got.Findings[0].Message, want)
+	}
+}
+
+// No forwarding rule mapped → fall back to the backend-service name as
+// the join value (per the CHA-com contract).
+func TestLB_ZeroHealthyMessageFallsBackToBackendServiceName(t *testing.T) {
+	got := LoadBalancerBackends{}.Run(context.Background(), &fakeSource{
+		gcp: &fakeGCP{project: "p", backends: []pkggcp.BackendService{
+			{Name: "web", HealthyCount: 0, UnhealthyCount: 3, TotalBackends: 3},
+		}},
+	})
+	if len(got.Findings) != 1 {
+		t.Fatalf("want 1 finding got %d", len(got.Findings))
+	}
+	want := `LB backend service "web" has 0 healthy backends (3 unhealthy); traffic is failing (lb: web)`
+	if got.Findings[0].Message != want {
+		t.Errorf("Message=%q want %q", got.Findings[0].Message, want)
+	}
+}
+
+// Guard: if both forwarding rule and name are somehow empty, the suffix
+// is omitted entirely — never an empty "(lb: )".
+func TestLB_ZeroHealthyMessageNoEmptyLBSuffix(t *testing.T) {
+	got := LoadBalancerBackends{}.Run(context.Background(), &fakeSource{
+		gcp: &fakeGCP{project: "p", backends: []pkggcp.BackendService{
+			{HealthyCount: 0, UnhealthyCount: 3, TotalBackends: 3},
+		}},
+	})
+	if len(got.Findings) != 1 {
+		t.Fatalf("want 1 finding got %d", len(got.Findings))
+	}
+	if strings.Contains(got.Findings[0].Message, "(lb:") {
+		t.Errorf("empty join value must omit the suffix; got %q", got.Findings[0].Message)
+	}
+}
+
 func TestLB_PartialUnhealthy_Warning(t *testing.T) {
 	got := LoadBalancerBackends{}.Run(context.Background(), &fakeSource{
 		gcp: &fakeGCP{project: "p", backends: []pkggcp.BackendService{{Name: "web", HealthyCount: 2, UnhealthyCount: 1, TotalBackends: 3}}},

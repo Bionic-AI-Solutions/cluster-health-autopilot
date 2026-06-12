@@ -501,16 +501,22 @@ func (l *LiveClient) ListAppGatewayBackends(ctx context.Context) ([]pkgazure.App
 					poolHealthByName = aggregateBackendHealth(h)
 				}
 			}
+			// The gateway's public hostname (from the already-fetched
+			// listener config — no extra API call) feeds
+			// FrontendHostname, the CHA-com "(lb: ...)" RCA join key;
+			// the probe falls back to the gateway name when empty.
+			frontendHostname := appGatewayFrontendHostname(gw)
 			for _, pool := range gw.Properties.BackendAddressPools {
 				if pool == nil || pool.Name == nil || pool.Properties == nil {
 					continue
 				}
 				total := len(pool.Properties.BackendAddresses)
 				rec := pkgazure.AppGatewayBackend{
-					Gateway:      *gw.Name,
-					PoolName:     *pool.Name,
-					TotalCount:   total,
-					HealthyCount: -1, // default: not measured
+					Gateway:          *gw.Name,
+					PoolName:         *pool.Name,
+					TotalCount:       total,
+					HealthyCount:     -1, // default: not measured
+					FrontendHostname: frontendHostname,
 				}
 				if ph, ok := poolHealthByName[*pool.Name]; ok {
 					rec.HealthyCount = ph.Healthy
@@ -551,6 +557,9 @@ func (l *LiveClient) ListAppServiceCertificates(ctx context.Context) ([]pkgazure
 				}
 				// A populated thumbprint means the cert is issued.
 				rec.Issued = c.Properties.Thumbprint != nil && *c.Properties.Thumbprint != ""
+				// SANs/CN the certificate covers — feeds the CHA-com
+				// "(domains: ...)" RCA join key (omitted when empty).
+				rec.Domains = derefNonEmpty(c.Properties.HostNames)
 			}
 			out = append(out, rec)
 		}
@@ -627,6 +636,43 @@ func (l *LiveClient) ListKeyVaults(ctx context.Context) ([]pkgazure.KeyVault, er
 }
 
 // --- helpers ---
+
+// appGatewayFrontendHostname returns the gateway's public hostname out
+// of its HTTP-listener config: the first listener HostName, else the
+// first non-empty entry of any listener's HostNames. "" when no
+// listener declares a hostname (the probe then falls back to the
+// gateway name for the "(lb: ...)" join key).
+func appGatewayFrontendHostname(gw *armnetwork.ApplicationGateway) string {
+	if gw == nil || gw.Properties == nil {
+		return ""
+	}
+	for _, lis := range gw.Properties.HTTPListeners {
+		if lis == nil || lis.Properties == nil {
+			continue
+		}
+		if h := deref(lis.Properties.HostName); h != "" {
+			return h
+		}
+		for _, hn := range lis.Properties.HostNames {
+			if h := deref(hn); h != "" {
+				return h
+			}
+		}
+	}
+	return ""
+}
+
+// derefNonEmpty flattens a []*string into the non-empty values.
+// Returns nil when nothing usable remains.
+func derefNonEmpty(in []*string) []string {
+	var out []string
+	for _, s := range in {
+		if v := deref(s); v != "" {
+			out = append(out, v)
+		}
+	}
+	return out
+}
 
 // resourceGroupFromID extracts the resourceGroups segment from an ARM
 // resource ID: /subscriptions/X/resourceGroups/RG/providers/...

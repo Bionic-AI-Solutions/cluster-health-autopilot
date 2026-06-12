@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"time"
 
+	intcloud "github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/cloud"
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/cloud"
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/probe"
 )
@@ -38,10 +39,18 @@ func (LoadBalancerBackends) Run(ctx context.Context, src cloud.Source) probe.Res
 		subject := fmt.Sprintf("gcp-lb/%s/%s", gcpClient.Project(), s.Name)
 		switch {
 		case s.HealthyCount == 0 && (s.UnhealthyCount > 0 || s.TotalBackends > 0):
+			// The "(lb: <forwarding-rule IP or name>)" suffix is the
+			// CHA-com RCA join key; unmapped backend services fall back
+			// to the backend-service name — see internal/cloud/joinkeys.go.
+			// contract: internal/cloud/contract_test.go
+			lbValue := s.ForwardingRule
+			if lbValue == "" {
+				lbValue = s.Name
+			}
 			findings = append(findings, probe.Finding{
 				Component:   subject,
 				Severity:    probe.SeverityCritical,
-				Message:     fmt.Sprintf("LB backend service %q has 0 healthy backends (%d unhealthy); traffic is failing", s.Name, s.UnhealthyCount),
+				Message:     fmt.Sprintf("LB backend service %q has 0 healthy backends (%d unhealthy); traffic is failing", s.Name, s.UnhealthyCount) + intcloud.JoinKeyLB(lbValue),
 				Remediation: fmt.Sprintf("gcloud compute backend-services get-health %s --project=%s — check the health-check config + backend instance health.", s.Name, gcpClient.Project()),
 			})
 		case s.UnhealthyCount > 0:

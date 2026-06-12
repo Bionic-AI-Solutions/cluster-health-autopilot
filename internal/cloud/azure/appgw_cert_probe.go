@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"time"
 
+	intcloud "github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/cloud"
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/cloud"
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/probe"
 )
@@ -46,10 +47,18 @@ func (AppGatewayBackends) Run(ctx context.Context, src cloud.Source) probe.Resul
 		subject := fmt.Sprintf("azure-appgw/%s/%s/%s", azClient.SubscriptionID(), p.Gateway, p.PoolName)
 		switch {
 		case p.HealthyCount == 0 && (p.UnhealthyCount > 0 || p.TotalCount > 0):
+			// The "(lb: <AppGW public hostname>)" suffix is the CHA-com
+			// RCA join key; gateways without a listener hostname fall
+			// back to the gateway name — see internal/cloud/joinkeys.go.
+			// contract: internal/cloud/contract_test.go
+			lbValue := p.FrontendHostname
+			if lbValue == "" {
+				lbValue = p.Gateway
+			}
 			findings = append(findings, probe.Finding{
 				Component:   subject,
 				Severity:    probe.SeverityCritical,
-				Message:     fmt.Sprintf("App Gateway %q backend pool %q has 0 healthy members (%d unhealthy)", p.Gateway, p.PoolName, p.UnhealthyCount),
+				Message:     fmt.Sprintf("App Gateway %q backend pool %q has 0 healthy members (%d unhealthy)", p.Gateway, p.PoolName, p.UnhealthyCount) + intcloud.JoinKeyLB(lbValue),
 				Remediation: fmt.Sprintf("az network application-gateway show-backend-health --name %s -g <rg> --subscription %s", p.Gateway, azClient.SubscriptionID()),
 			})
 		case p.UnhealthyCount > 0:
@@ -105,11 +114,16 @@ func (c Certificates) Run(ctx context.Context, src cloud.Source) probe.Result {
 	t := now()
 	for _, cert := range certs {
 		subject := fmt.Sprintf("azure-cert/%s/%s/%s", azClient.SubscriptionID(), cert.ResourceGroup, cert.Name)
+		// The "(domains: d1,d2)" suffix is the CHA-com RCA join key
+		// (omitted when no domains are known) — see
+		// internal/cloud/joinkeys.go.
+		// contract: internal/cloud/contract_test.go
+		domainsSuffix := intcloud.JoinKeyDomains(cert.Domains)
 		if !cert.Issued {
 			findings = append(findings, probe.Finding{
 				Component:   subject,
 				Severity:    probe.SeverityCritical,
-				Message:     fmt.Sprintf("Certificate %q is not issued (provisioning failed or pending)", cert.Name),
+				Message:     fmt.Sprintf("Certificate %q is not issued (provisioning failed or pending)", cert.Name) + domainsSuffix,
 				Remediation: fmt.Sprintf("az webapp config ssl show --certificate-name %s -g %s --subscription %s — check domain validation.", cert.Name, cert.ResourceGroup, azClient.SubscriptionID()),
 			})
 			continue
@@ -118,7 +132,7 @@ func (c Certificates) Run(ctx context.Context, src cloud.Source) probe.Result {
 			findings = append(findings, probe.Finding{
 				Component:   subject,
 				Severity:    probe.SeverityWarning,
-				Message:     fmt.Sprintf("Certificate %q expires %s (< 21d)", cert.Name, cert.NotAfter.UTC().Format("2006-01-02")),
+				Message:     fmt.Sprintf("Certificate %q expires %s (< 21d)", cert.Name, cert.NotAfter.UTC().Format("2006-01-02")) + domainsSuffix,
 				Remediation: fmt.Sprintf("Renew before expiry. App Service managed certs auto-renew if the domain binding is intact; confirm the custom-domain binding for %s.", cert.Name),
 			})
 		}

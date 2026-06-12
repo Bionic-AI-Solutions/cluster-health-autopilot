@@ -104,6 +104,13 @@ type AppGatewayBackend struct {
 	HealthyCount   int    `json:"healthyCount"`
 	UnhealthyCount int    `json:"unhealthyCount"`
 	TotalCount     int    `json:"totalCount,omitempty"`
+	// FrontendHostname is the gateway's public hostname taken from the
+	// already-fetched HTTP-listener config (HostName / HostNames).
+	// Optional: empty when no listener declares a hostname (including
+	// snapshot files captured before this field existed) — the probe
+	// then falls back to the gateway name for the "(lb: ...)" message
+	// join key CHA-com's RCA matchers parse.
+	FrontendHostname string `json:"frontendHostname,omitempty"`
 }
 
 // Certificate is the narrow projection of an App Service / managed
@@ -113,6 +120,12 @@ type Certificate struct {
 	ResourceGroup string    `json:"resourceGroup,omitempty"`
 	NotAfter      time.Time `json:"notAfter,omitempty"`
 	Issued        bool      `json:"issued,omitempty"` // false = provisioning/failed
+	// Domains are the hostnames the certificate covers (SANs/CN from
+	// the certificate resource's HostNames). Optional: empty when not
+	// surfaced (including snapshot files captured before this field
+	// existed) — the probe then omits the "(domains: ...)" message
+	// join key CHA-com's RCA matchers parse.
+	Domains []string `json:"domains,omitempty"`
 }
 
 // StorageAccount is the narrow projection of a Storage account's

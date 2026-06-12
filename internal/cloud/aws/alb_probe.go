@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 
+	intcloud "github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/cloud"
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/cloud"
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/probe"
 )
@@ -39,8 +40,12 @@ func (ALBTargetHealth) Run(ctx context.Context, src cloud.Source) probe.Result {
 		if tg.HealthyCount == 0 && tg.UnhealthyCount > 0 {
 			findings = append(findings, probe.Finding{
 				Component: subject, Severity: probe.SeverityCritical,
+				// The "(lb: <LB DNS name>)" suffix is the CHA-com RCA
+				// join key (omitted when the LB is unresolved) — see
+				// internal/cloud/joinkeys.go.
+				// contract: internal/cloud/contract_test.go
 				Message: fmt.Sprintf("Target group %s has 0 healthy targets (%d unhealthy) on %s:%d",
-					tg.Name, tg.UnhealthyCount, tg.Protocol, tg.Port),
+					tg.Name, tg.UnhealthyCount, tg.Protocol, tg.Port) + intcloud.JoinKeyLB(tg.LoadBalancerDNS),
 				Remediation: fmt.Sprintf("aws elbv2 describe-target-health --target-group-arn %s", tg.ARN),
 			})
 			continue

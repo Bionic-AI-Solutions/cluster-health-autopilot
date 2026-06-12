@@ -38,6 +38,57 @@ func TestAppGW_ZeroHealthy_Critical(t *testing.T) {
 	}
 }
 
+// CHA-com RCA join contract (ai/cloudcontext): the 0-healthy message
+// carries a " (lb: <AppGW public hostname>)" suffix, falling back to
+// the AppGW name. See internal/cloud/contract_test.go.
+func TestAppGW_ZeroHealthyMessageCarriesHostnameJoinKey(t *testing.T) {
+	got := AppGatewayBackends{}.Run(context.Background(), &fakeSource{
+		azure: &fakeAzure{subscription: "s", appgw: []pkgazure.AppGatewayBackend{
+			{Gateway: "gw", PoolName: "web", HealthyCount: 0, UnhealthyCount: 2, TotalCount: 2, FrontendHostname: "www.example.com"},
+		}},
+	})
+	if len(got.Findings) != 1 {
+		t.Fatalf("want 1 finding got %d", len(got.Findings))
+	}
+	want := `App Gateway "gw" backend pool "web" has 0 healthy members (2 unhealthy) (lb: www.example.com)`
+	if got.Findings[0].Message != want {
+		t.Errorf("Message=%q want %q", got.Findings[0].Message, want)
+	}
+}
+
+// No frontend hostname in the fetched config → fall back to the AppGW
+// name as the join value (per the CHA-com contract).
+func TestAppGW_ZeroHealthyMessageFallsBackToGatewayName(t *testing.T) {
+	got := AppGatewayBackends{}.Run(context.Background(), &fakeSource{
+		azure: &fakeAzure{subscription: "s", appgw: []pkgazure.AppGatewayBackend{
+			{Gateway: "gw", PoolName: "web", HealthyCount: 0, UnhealthyCount: 2, TotalCount: 2},
+		}},
+	})
+	if len(got.Findings) != 1 {
+		t.Fatalf("want 1 finding got %d", len(got.Findings))
+	}
+	want := `App Gateway "gw" backend pool "web" has 0 healthy members (2 unhealthy) (lb: gw)`
+	if got.Findings[0].Message != want {
+		t.Errorf("Message=%q want %q", got.Findings[0].Message, want)
+	}
+}
+
+// Guard: if both hostname and gateway name are somehow empty, the
+// suffix is omitted entirely — never an empty "(lb: )".
+func TestAppGW_ZeroHealthyMessageNoEmptyLBSuffix(t *testing.T) {
+	got := AppGatewayBackends{}.Run(context.Background(), &fakeSource{
+		azure: &fakeAzure{subscription: "s", appgw: []pkgazure.AppGatewayBackend{
+			{PoolName: "web", HealthyCount: 0, UnhealthyCount: 2, TotalCount: 2},
+		}},
+	})
+	if len(got.Findings) != 1 {
+		t.Fatalf("want 1 finding got %d", len(got.Findings))
+	}
+	if strings.Contains(got.Findings[0].Message, "(lb:") {
+		t.Errorf("empty join value must omit the suffix; got %q", got.Findings[0].Message)
+	}
+}
+
 func TestAppGW_Partial_Warning(t *testing.T) {
 	got := AppGatewayBackends{}.Run(context.Background(), &fakeSource{
 		azure: &fakeAzure{subscription: "s", appgw: []pkgazure.AppGatewayBackend{{Gateway: "gw", PoolName: "web", HealthyCount: 2, UnhealthyCount: 1, TotalCount: 3}}},
@@ -93,6 +144,60 @@ func TestAzureCert_NearExpiry_Warning(t *testing.T) {
 		})
 	if got.Component.Status != "DEGRADED" {
 		t.Errorf("status=%s want DEGRADED (9d)", got.Component.Status)
+	}
+}
+
+// CHA-com RCA join contract (ai/cloudcontext): cert findings carry a
+// " (domains: <d1>,<d2>)" suffix when SANs/CN are known. See
+// internal/cloud/contract_test.go.
+func TestAzureCert_NotIssuedMessageCarriesDomainsJoinKey(t *testing.T) {
+	got := Certificates{}.Run(context.Background(), &fakeSource{
+		azure: &fakeAzure{subscription: "s", certs: []pkgazure.Certificate{
+			{Name: "c", Issued: false, Domains: []string{"example.com", "www.example.com"}},
+		}},
+	})
+	if len(got.Findings) != 1 {
+		t.Fatalf("want 1 finding got %d", len(got.Findings))
+	}
+	want := `Certificate "c" is not issued (provisioning failed or pending) (domains: example.com,www.example.com)`
+	if got.Findings[0].Message != want {
+		t.Errorf("Message=%q want %q", got.Findings[0].Message, want)
+	}
+}
+
+func TestAzureCert_NearExpiryMessageCarriesDomainsJoinKey(t *testing.T) {
+	got := Certificates{Now: func() time.Time { return time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC) }}.Run(
+		context.Background(), &fakeSource{
+			azure: &fakeAzure{subscription: "s", certs: []pkgazure.Certificate{
+				{Name: "c", Issued: true, NotAfter: time.Date(2026, 1, 10, 0, 0, 0, 0, time.UTC), Domains: []string{"example.com"}},
+			}},
+		})
+	if len(got.Findings) != 1 {
+		t.Fatalf("want 1 finding got %d", len(got.Findings))
+	}
+	want := `Certificate "c" expires 2026-01-10 (< 21d) (domains: example.com)`
+	if got.Findings[0].Message != want {
+		t.Errorf("Message=%q want %q", got.Findings[0].Message, want)
+	}
+}
+
+// Backward compat: no domains known (old snapshot files, wrapper gap)
+// → the pre-enrichment message, no empty "(domains: )" suffix.
+func TestAzureCert_MessagesUnsuffixedWithoutDomains(t *testing.T) {
+	notIssued := Certificates{}.Run(context.Background(), &fakeSource{
+		azure: &fakeAzure{subscription: "s", certs: []pkgazure.Certificate{{Name: "c", Issued: false}}},
+	})
+	if want := `Certificate "c" is not issued (provisioning failed or pending)`; notIssued.Findings[0].Message != want {
+		t.Errorf("Message=%q want %q", notIssued.Findings[0].Message, want)
+	}
+	expiring := Certificates{Now: func() time.Time { return time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC) }}.Run(
+		context.Background(), &fakeSource{
+			azure: &fakeAzure{subscription: "s", certs: []pkgazure.Certificate{
+				{Name: "c", Issued: true, NotAfter: time.Date(2026, 1, 10, 0, 0, 0, 0, time.UTC), Domains: []string{""}},
+			}},
+		})
+	if want := `Certificate "c" expires 2026-01-10 (< 21d)`; expiring.Findings[0].Message != want {
+		t.Errorf("Message=%q want %q", expiring.Findings[0].Message, want)
 	}
 }
 

@@ -321,14 +321,22 @@ func (l *LiveClient) ListSubnets(ctx context.Context) ([]pkggcp.Subnet, error) {
 // a per-backend GetHealth call; we aggregate the per-group health into
 // the inlined healthy/unhealthy counts.
 func (l *LiveClient) ListBackendServices(ctx context.Context) ([]pkggcp.BackendService, error) {
+	// One ForwardingRules aggregated list per probe cycle builds the
+	// backend-service → forwarding-rule (IP or name) map that feeds
+	// ForwardingRule — the CHA-com "(lb: ...)" RCA join key.
+	// Best-effort: a failure leaves the map empty (message enrichment
+	// is never worth failing the probe over) and the probe falls back
+	// to the backend-service name.
+	frByBackendService := l.listForwardingRuleIndex(ctx)
 	var out []pkggcp.BackendService
 	err := l.compute.BackendServices.AggregatedList(l.project).Pages(ctx, func(page *compute.BackendServiceAggregatedList) error {
 		for _, scoped := range page.Items {
 			for _, bs := range scoped.BackendServices {
 				rec := pkggcp.BackendService{
-					Name:          bs.Name,
-					Protocol:      bs.Protocol,
-					TotalBackends: len(bs.Backends),
+					Name:           bs.Name,
+					Protocol:       bs.Protocol,
+					TotalBackends:  len(bs.Backends),
+					ForwardingRule: frByBackendService[bs.Name],
 				}
 				for _, b := range bs.Backends {
 					h, herr := l.compute.BackendServices.GetHealth(
@@ -355,6 +363,48 @@ func (l *LiveClient) ListBackendServices(ctx context.Context) ([]pkggcp.BackendS
 		return nil, err
 	}
 	return out, nil
+}
+
+// listForwardingRuleIndex fetches every forwarding rule once
+// (aggregated across regions; includes the global scope) and returns
+// the backend-service-name → forwarding-rule-value index built by
+// forwardingRuleIndex. Best-effort enrichment helper: returns nil
+// (nil-map reads are safe; callers fall back to name / omit the suffix).
+func (l *LiveClient) listForwardingRuleIndex(ctx context.Context) map[string]string {
+	var rules []*compute.ForwardingRule
+	err := l.compute.ForwardingRules.AggregatedList(l.project).Pages(ctx, func(page *compute.ForwardingRuleAggregatedList) error {
+		for _, scoped := range page.Items {
+			rules = append(rules, scoped.ForwardingRules...)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil
+	}
+	return forwardingRuleIndex(rules)
+}
+
+// forwardingRuleIndex maps backend-service name → forwarding-rule IP
+// (preferred) or name. Only passthrough-LB rules carry a direct
+// BackendService reference; proxy-based rules (rule.Target) would need
+// a target-proxy + URL-map walk to resolve and are deliberately left
+// unmapped — the probe falls back to the backend-service name.
+func forwardingRuleIndex(rules []*compute.ForwardingRule) map[string]string {
+	out := make(map[string]string, len(rules))
+	for _, r := range rules {
+		if r == nil || r.BackendService == "" {
+			continue
+		}
+		value := r.IPAddress
+		if value == "" {
+			value = r.Name
+		}
+		if value == "" {
+			continue
+		}
+		out[lastPathSegment(r.BackendService)] = value
+	}
+	return out
 }
 
 // ListManagedCertificates satisfies pkggcp.Client. Maps Compute SSL

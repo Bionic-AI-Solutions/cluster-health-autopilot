@@ -13,6 +13,19 @@ serves the latest tagged chart cut.
 
 ## [Unreleased]
 
+### Added — cloud-probe message join keys for CHA-com's cross-resource RCA matchers
+
+CHA-com's cross-resource RCA matchers (ai/cloudcontext, PR #65) join Kubernetes resources to cloud findings via tokens parsed out of the finding MESSAGE. Three LB probes and the Azure cert probe omitted the join keys; they now carry them. **Message-only enrichment** — subjects, severities, and finding counts are unchanged, and the suffix format is a frozen cross-repo contract: single space, literal `(lb: ` / `(domains: `, comma-separated domains with no spaces, closing paren.
+
+- **`aws-alb-target-health`** — the 0-healthy-targets finding appends ` (lb: <load balancer DNS name>)`. The live wrapper resolves the target group's `LoadBalancerArns` via ONE `elbv2.DescribeLoadBalancers` per probe cycle (not per target group); new optional `ALBTargetGroup.LoadBalancerDNS` (`loadBalancerDNS` snapshot field).
+- **`gcp-lb-backends`** — the 0-healthy-backends finding appends ` (lb: <forwarding-rule IP or name>)`, falling back to the backend-service name when unmapped. The live wrapper adds ONE `compute.ForwardingRules.AggregatedList` per probe cycle, joining passthrough-LB rules on `rule.BackendService` (proxy-based rules would need a target-proxy + URL-map walk and are deliberately left to the name fallback); new optional `BackendService.ForwardingRule` (`forwardingRule` snapshot field).
+- **`azure-appgw-backends`** — the 0-healthy-members finding appends ` (lb: <AppGW public hostname>)` from the already-fetched HTTP-listener config (`HostName`/`HostNames`; no extra API call), falling back to the gateway name; new optional `AppGatewayBackend.FrontendHostname` (`frontendHostname` snapshot field).
+- **`azure-certs`** — both cert findings (`expires` / `is not issued`) append ` (domains: <d1>,<d2>)` from the certificate resource's `HostNames` (SANs/CN, already in the fetched data); new optional `Certificate.Domains` (`domains` snapshot field). Omitted entirely when no domains are known.
+- **Backward/offline compat** — all four fields are optional snapshot additions; live-wrapper enrichment fetches are best-effort and never fail the probe.
+  - AWS (`aws-alb-target-health`) and Azure certs (`azure-certs`): absent or failed enrichment → the pre-enrichment message with no suffix added (no `(lb: ...)` or `(domains: ...)`) (name is not enough — DNS/IP needs a separate API call, so without it there is nothing safe to emit).
+  - GCP (`gcp-lb-backends`) and Azure AppGW (`azure-appgw-backends`): absent or failed enrichment → name-only suffix, e.g. `(lb: my-forwarding-rule)` or `(lb: my-appgw)`, because the backend/gateway name is already present in local data (name is in-process and always available; DNS/IP needs a separate API call). Never a panic or an empty `(lb: )`.
+- **Contract pinned** — shared suffix builders in `internal/cloud/joinkeys.go` (`JoinKeyLB`, `JoinKeyDomains`) + `internal/cloud/contract_test.go` freezing the literal `" (lb: %s)"` / `" (domains: %s)"` formats with a pointer at the CHA-com dependency; per-probe tests assert the exact enriched message with the data present AND the unsuffixed shape when absent; live-layer helper tests cover the ARN→DNS map, the forwarding-rule index, listener-hostname extraction, and SAN flattening. No chart/CRD changes.
+
 ### Added — hash-chained audit-trail primitive in OSS `pkg/audit` (closes the features/policy source-citation gap)
 
 The website's features/policy page cites `pkg/audit/hash_chain.go` as the auditable open-source implementation of the tamper-evident audit trail, but the hash-chain primitive previously lived only in the private CHA-com repo — the cited file did not exist here. The primitive is now ported (first-party code, Apache-2.0), so "audit the envelope before you install" includes the chain itself.
