@@ -242,14 +242,23 @@ cloud:
       certs: true
       gcs: true
       kms: true
+    # Small-prefix threshold for the capacity-only subnets probe: an
+    # unmeasured subnet whose primary CIDR is smaller than /<threshold>
+    # is flagged as a warning. 0 = the probe default (/26 → 60 usable
+    # IPs). Raise (e.g. 28) to quiet intentionally tiny subnets, lower
+    # to be stricter. Rendered as
+    # CHA_CLOUD_PROBE_GCP_SUBNETS_SMALL_PREFIX.
+    subnetsSmallPrefixThreshold: 0
   azure:
     # Azure cloud probes shipped in v1.8 (M2): SQL databases, Disks,
     # AKS control-plane + node pools, Managed Identities, Subnets, App
     # Gateway backends, certs, Storage public access, Key Vaults.
     # NOTE: SQL storage-% and App Gateway backend health are fetched
     # via Azure Monitor metrics (best-effort; "not measured" when
-    # unavailable). Subnet utilization reports available=total pending
-    # the Network usage API.
+    # unavailable). Subnet utilization is measured live: used IPs are
+    # counted from every subnet-attached resource (NIC IP configs, App
+    # Gateway IP configs, IP-config profiles, private endpoints), so
+    # available = total - used.
     enabled: false
     subscriptionId: ""
     resourceGroup: ""              # optional scope; empty = subscription-wide

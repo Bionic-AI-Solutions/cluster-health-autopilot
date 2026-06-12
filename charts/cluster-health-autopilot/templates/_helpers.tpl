@@ -589,6 +589,13 @@ honored the moment the provider is switched on.
 - name: CHA_CLOUD_PROBE_GCP_KMS
   value: "off"
 {{- end }}
+{{- /* Tuning knob (not an opt-out): small-prefix threshold for the
+capacity-only GCP subnets probe. Rendered only when non-zero; 0/unset
+= the binary's compiled-in default (/26). */ -}}
+{{- with (((.Values.cloud).gcp).subnetsSmallPrefixThreshold) }}
+- name: CHA_CLOUD_PROBE_GCP_SUBNETS_SMALL_PREFIX
+  value: {{ . | quote }}
+{{- end }}
 {{- $azure := (((.Values.cloud).azure).probes) | default dict }}
 {{- if and (hasKey $azure "sql") (not $azure.sql) }}
 - name: CHA_CLOUD_PROBE_AZURE_SQL

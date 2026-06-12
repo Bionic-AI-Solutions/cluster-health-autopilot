@@ -6,6 +6,7 @@ package catalog
 import (
 	"testing"
 
+	gcpprobes "github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/cloud/gcp"
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/registry"
 )
 
@@ -103,6 +104,48 @@ func TestCloudProbes_SkippedWhenEnvOff(t *testing.T) {
 				t.Errorf("%s=off: expected %d probes registered, got %d", env, want, len(names))
 			}
 		})
+	}
+}
+
+// registeredGCPSubnets returns the gcp-subnets probe RegisterCloudOSS
+// registered under the current environment.
+func registeredGCPSubnets(t *testing.T) gcpprobes.Subnets {
+	t.Helper()
+	r := registry.New()
+	RegisterCloudOSS(r, false, true, false)
+	for _, p := range r.CloudProbes() {
+		if s, ok := p.(gcpprobes.Subnets); ok {
+			return s
+		}
+	}
+	t.Fatal("gcp-subnets probe not registered")
+	return gcpprobes.Subnets{}
+}
+
+// TestCloudProbes_GCPSubnetsSmallPrefixEnv pins the env→probe wiring:
+// CHA_CLOUD_PROBE_GCP_SUBNETS_SMALL_PREFIX must reach
+// gcpprobes.Subnets.SmallPrefixThreshold (the chart renders the env
+// from cloud.gcp.subnetsSmallPrefixThreshold).
+func TestCloudProbes_GCPSubnetsSmallPrefixEnv(t *testing.T) {
+	t.Setenv("CHA_CLOUD_PROBE_GCP_SUBNETS_SMALL_PREFIX", "28")
+	if got := registeredGCPSubnets(t).SmallPrefixThreshold; got != 28 {
+		t.Errorf("SmallPrefixThreshold = %d, want 28 (from CHA_CLOUD_PROBE_GCP_SUBNETS_SMALL_PREFIX)", got)
+	}
+}
+
+func TestCloudProbes_GCPSubnetsSmallPrefixEnv_UnsetOrInvalid(t *testing.T) {
+	// Unset → 0 (probe's compiled-in /26 default).
+	t.Setenv("CHA_CLOUD_PROBE_GCP_SUBNETS_SMALL_PREFIX", "")
+	if got := registeredGCPSubnets(t).SmallPrefixThreshold; got != 0 {
+		t.Errorf("unset env: SmallPrefixThreshold = %d, want 0 (probe default)", got)
+	}
+	// Garbage and non-positive values must fall back to the default,
+	// never poison the probe.
+	for _, bad := range []string{"not-a-number", "-3", "0"} {
+		t.Setenv("CHA_CLOUD_PROBE_GCP_SUBNETS_SMALL_PREFIX", bad)
+		if got := registeredGCPSubnets(t).SmallPrefixThreshold; got != 0 {
+			t.Errorf("env=%q: SmallPrefixThreshold = %d, want 0 (probe default)", bad, got)
+		}
 	}
 }
 

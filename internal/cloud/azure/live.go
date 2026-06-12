@@ -411,11 +411,14 @@ func (l *LiveClient) countRoleAssignments(ctx context.Context, principalID strin
 
 // ListSubnets satisfies pkgazure.Client.
 //
-// LIMITATION: the Network API Subnet resource does not expose a
-// free-IP count. We populate TotalIPCount from the address-prefix
-// mask and set AvailableIPCount = TotalIPCount so the IP-exhaustion
-// probe never false-positives. Real utilization needs the Network
-// usage API — a follow-up.
+// Utilization is MEASURED (G9): TotalIPCount comes from the
+// address-prefix mask (minus Azure's 5 reserved addresses) and used
+// IPs are counted across every subnet-attached resource type — NIC
+// IPConfigurations, ApplicationGatewayIPConfigurations,
+// IPConfigurationProfiles, PrivateEndpoints — all READ-ONLY fields
+// the apiserver populates on the Subnet resource itself (no $expand,
+// no extra API call). AvailableIPCount = total - used, clamped at 0,
+// so the IP-exhaustion probe fires on real data.
 func (l *LiveClient) ListSubnets(ctx context.Context) ([]pkgazure.Subnet, error) {
 	var out []pkgazure.Subnet
 	vnetPager := l.vnets.NewListAllPager(nil)

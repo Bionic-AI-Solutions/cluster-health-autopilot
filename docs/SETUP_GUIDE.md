@@ -1243,6 +1243,8 @@ node-pool probes:
 | `CHA_CLOUD_PROBE_AZURE_STORAGE` | Azure storage public-access probe | `cloud.azure.probes.storage` |
 | `CHA_CLOUD_PROBE_AZURE_KEYVAULTS` | Azure Key Vaults probe | `cloud.azure.probes.keyvaults` |
 
+Tuning knob (not a disable toggle): `CHA_CLOUD_PROBE_GCP_SUBNETS_SMALL_PREFIX` sets the capacity-only GCP subnets probe's small-prefix threshold (an unmeasured subnet with a primary CIDR smaller than `/<threshold>` is flagged). Rendered from `cloud.gcp.subnetsSmallPrefixThreshold`; 0 / unset = the compiled-in `/26` default.
+
 Critical-workloads list configuration (Sprint 2.6):
 
 | Env var | Effect |

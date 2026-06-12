@@ -5,6 +5,7 @@ package catalog
 
 import (
 	"os"
+	"strconv"
 
 	awsprobes "github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/cloud/aws"
 	azureprobes "github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/cloud/azure"
@@ -36,8 +37,12 @@ import (
 // unavailable). GCP subnet IP utilization is CAPACITY-ONLY in live
 // mode: GCP exposes no cheap used-IP count (Network Analyzer insights
 // live behind the Recommender API); the probe instead flags
-// small-capacity subnets. Azure subnet utilization reports
-// available=total pending the Network usage API. See
+// small-capacity subnets (threshold configurable via
+// CHA_CLOUD_PROBE_GCP_SUBNETS_SMALL_PREFIX / the chart's
+// cloud.gcp.subnetsSmallPrefixThreshold). Azure subnet utilization is
+// MEASURED live: used IPs are counted from every subnet-attached
+// resource (NIC IP configurations, App Gateway IP configs, IP-config
+// profiles, private endpoints), so available = total - used. See
 // internal/cloud/{gcp,azure}/live.go for the exact set.
 func RegisterCloudOSS(reg *registry.Registry, awsEnabled, gcpEnabled, azureEnabled bool) {
 	if awsEnabled {
@@ -83,7 +88,7 @@ func RegisterCloudOSS(reg *registry.Registry, awsEnabled, gcpEnabled, azureEnabl
 			reg.RegisterCloudProbe(gcpprobes.IAMServiceAccounts{})
 		}
 		if os.Getenv("CHA_CLOUD_PROBE_GCP_SUBNETS") != "off" {
-			reg.RegisterCloudProbe(gcpprobes.Subnets{})
+			reg.RegisterCloudProbe(gcpprobes.Subnets{SmallPrefixThreshold: gcpSubnetSmallPrefix()})
 		}
 		if os.Getenv("CHA_CLOUD_PROBE_GCP_LB") != "off" {
 			reg.RegisterCloudProbe(gcpprobes.LoadBalancerBackends{})
@@ -127,4 +132,24 @@ func RegisterCloudOSS(reg *registry.Registry, awsEnabled, gcpEnabled, azureEnabl
 			reg.RegisterCloudProbe(azureprobes.KeyVaults{})
 		}
 	}
+}
+
+// gcpSubnetSmallPrefix reads CHA_CLOUD_PROBE_GCP_SUBNETS_SMALL_PREFIX
+// — the capacity-only GCP Subnets probe's small-prefix threshold (an
+// unmeasured subnet whose primary CIDR is smaller than /<threshold>
+// is flagged; see gcpprobes.Subnets.SmallPrefixThreshold). Rendered by
+// the chart from cloud.gcp.subnetsSmallPrefixThreshold (a tuning knob
+// next to the cha.cloudProbeToggleEnv opt-outs, NOT a registration
+// gate). Unset, non-numeric, or non-positive values return 0 = the
+// probe's compiled-in default (/26).
+func gcpSubnetSmallPrefix() int {
+	raw := os.Getenv("CHA_CLOUD_PROBE_GCP_SUBNETS_SMALL_PREFIX")
+	if raw == "" {
+		return 0
+	}
+	n, err := strconv.Atoi(raw)
+	if err != nil || n <= 0 {
+		return 0
+	}
+	return n
 }
