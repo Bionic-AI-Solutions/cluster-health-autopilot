@@ -50,6 +50,7 @@ func (AppGatewayBackends) Run(ctx context.Context, src cloud.Source) probe.Resul
 			// The "(lb: <AppGW public hostname>)" suffix is the CHA-com
 			// RCA join key; gateways without a listener hostname fall
 			// back to the gateway name — see internal/cloud/joinkeys.go.
+			// contract: internal/cloud/contract_test.go
 			lbValue := p.FrontendHostname
 			if lbValue == "" {
 				lbValue = p.Gateway
@@ -116,6 +117,7 @@ func (c Certificates) Run(ctx context.Context, src cloud.Source) probe.Result {
 		// The "(domains: d1,d2)" suffix is the CHA-com RCA join key
 		// (omitted when no domains are known) — see
 		// internal/cloud/joinkeys.go.
+		// contract: internal/cloud/contract_test.go
 		domainsSuffix := intcloud.JoinKeyDomains(cert.Domains)
 		if !cert.Issued {
 			findings = append(findings, probe.Finding{

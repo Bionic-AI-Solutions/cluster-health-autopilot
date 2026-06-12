@@ -342,8 +342,8 @@ func (c *LiveClient) DescribeALBTargetGroupsWithHealth(ctx context.Context) ([]p
 }
 
 // describeLoadBalancerDNS lists every ALB/NLB once and returns the
-// ARN → DNS-name map. Best-effort enrichment helper: any error yields
-// an empty map (callers then omit the join-key suffix).
+// ARN → DNS-name map. Best-effort enrichment helper: returns nil
+// (nil-map reads are safe; callers fall back to name / omit the suffix).
 func (c *LiveClient) describeLoadBalancerDNS(ctx context.Context) map[string]string {
 	var lbs []elbv2types.LoadBalancer
 	var marker *string

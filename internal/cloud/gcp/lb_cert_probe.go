@@ -42,6 +42,7 @@ func (LoadBalancerBackends) Run(ctx context.Context, src cloud.Source) probe.Res
 			// The "(lb: <forwarding-rule IP or name>)" suffix is the
 			// CHA-com RCA join key; unmapped backend services fall back
 			// to the backend-service name — see internal/cloud/joinkeys.go.
+			// contract: internal/cloud/contract_test.go
 			lbValue := s.ForwardingRule
 			if lbValue == "" {
 				lbValue = s.Name

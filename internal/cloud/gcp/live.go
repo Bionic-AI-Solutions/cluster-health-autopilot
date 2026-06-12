@@ -368,8 +368,8 @@ func (l *LiveClient) ListBackendServices(ctx context.Context) ([]pkggcp.BackendS
 // listForwardingRuleIndex fetches every forwarding rule once
 // (aggregated across regions; includes the global scope) and returns
 // the backend-service-name → forwarding-rule-value index built by
-// forwardingRuleIndex. Best-effort enrichment helper: any error yields
-// an empty map.
+// forwardingRuleIndex. Best-effort enrichment helper: returns nil
+// (nil-map reads are safe; callers fall back to name / omit the suffix).
 func (l *LiveClient) listForwardingRuleIndex(ctx context.Context) map[string]string {
 	var rules []*compute.ForwardingRule
 	err := l.compute.ForwardingRules.AggregatedList(l.project).Pages(ctx, func(page *compute.ForwardingRuleAggregatedList) error {
