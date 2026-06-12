@@ -61,16 +61,23 @@ func ParseProtectedNamespacesExtra(raw string) []string {
 // CHA_PROTECTED_NAMESPACES_EXTRA. The setter exists for hosts that
 // configure the extension from another source, and for tests.
 func SetExtraProtectedNamespaces(namespaces ...string) {
-	list := ParseProtectedNamespacesExtra(strings.Join(namespaces, ","))
-	set := make(map[string]struct{}, len(list))
-	for _, ns := range list {
-		set[ns] = struct{}{}
-	}
+	list, set := buildExtraSet(strings.Join(namespaces, ","))
 	extraMu.Lock()
 	extraProtected = set
 	extraList = list
 	extraLoaded = true
 	extraMu.Unlock()
+}
+
+// buildExtraSet parses raw into the ordered list + lookup set pair
+// stored behind extraMu.
+func buildExtraSet(raw string) ([]string, map[string]struct{}) {
+	list := ParseProtectedNamespacesExtra(raw)
+	set := make(map[string]struct{}, len(list))
+	for _, ns := range list {
+		set[ns] = struct{}{}
+	}
+	return list, set
 }
 
 // LoadExtraProtectedNamespacesFromEnv (re)reads
@@ -105,11 +112,22 @@ func extraProtectedSet() map[string]struct{} {
 		return s
 	}
 	extraMu.RUnlock()
-	LoadExtraProtectedNamespacesFromEnv()
-	extraMu.RLock()
-	s := extraProtected
-	extraMu.RUnlock()
-	return s
+	return loadExtraFromEnvIfUnloaded()
+}
+
+// loadExtraFromEnvIfUnloaded is the slow path of extraProtectedSet.
+// extraLoaded is RE-CHECKED under the write lock (double-checked
+// locking): a SetExtraProtectedNamespaces that raced in between the
+// caller's RUnlock and this load must win — otherwise the env value
+// would silently overwrite the host's explicit configuration.
+func loadExtraFromEnvIfUnloaded() map[string]struct{} {
+	extraMu.Lock()
+	defer extraMu.Unlock()
+	if !extraLoaded {
+		extraList, extraProtected = buildExtraSet(os.Getenv(EnvProtectedNamespacesExtra))
+		extraLoaded = true
+	}
+	return extraProtected
 }
 
 // ExtraProtectedNamespaces returns the operator-extended namespaces

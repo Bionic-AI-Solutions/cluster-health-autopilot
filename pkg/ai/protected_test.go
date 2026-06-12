@@ -136,6 +136,42 @@ func TestIsProtectedNamespace_LazyEnvLoad(t *testing.T) {
 	}
 }
 
+// TestLazyEnvLoad_DoesNotClobberRacingSetter pins the double-checked
+// locking in the lazy-load slow path. It deterministically replays the
+// TOCTOU interleaving: a reader observes extraLoaded == false and drops
+// the read lock; before it can load from env, SetExtraProtectedNamespaces
+// runs. The reader's slow path (loadExtraFromEnvIfUnloaded) must then
+// re-check extraLoaded under the write lock and KEEP the setter's value
+// instead of overwriting it with the env value.
+func TestLazyEnvLoad_DoesNotClobberRacingSetter(t *testing.T) {
+	resetExtras(t)
+	t.Setenv(EnvProtectedNamespacesExtra, "env-ns")
+	// Step 1: the un-initialized state a lazy reader would observe
+	// before releasing the read lock (extraLoaded == false).
+	extraMu.Lock()
+	extraLoaded = false
+	extraProtected = nil
+	extraList = nil
+	extraMu.Unlock()
+	t.Cleanup(func() { SetExtraProtectedNamespaces() })
+
+	// Step 2: the racing setter wins the write lock first.
+	SetExtraProtectedNamespaces("setter-ns")
+
+	// Step 3: the reader's slow path executes. With double-checked
+	// locking it must observe extraLoaded == true and skip the env load.
+	set := loadExtraFromEnvIfUnloaded()
+	if _, ok := set["setter-ns"]; !ok {
+		t.Error("racing setter value setter-ns lost; lazy env load clobbered SetExtraProtectedNamespaces")
+	}
+	if _, ok := set["env-ns"]; ok {
+		t.Error("env-ns present; slow path loaded from env despite extraLoaded == true")
+	}
+	if !IsProtectedNamespace("setter-ns") {
+		t.Error("IsProtectedNamespace(setter-ns) = false after setter-then-lazy-check interleaving")
+	}
+}
+
 func TestParseProtectedNamespacesExtra(t *testing.T) {
 	cases := []struct {
 		in   string

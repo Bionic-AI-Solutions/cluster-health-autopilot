@@ -3,6 +3,8 @@
 
 package probe
 
+import "github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/ai"
+
 // probeProtectedNamespaces mirrors the canonical no-touch list in
 // internal/fix/protected.go. Kept in sync by convention; consolidation
 // into a shared pkg-level helper is tracked under the Sprint 5 operator
@@ -23,11 +25,18 @@ var probeProtectedNamespaces = map[string]struct{}{
 }
 
 // IsProtectedNamespace reports whether the given namespace contains
-// platform-critical workloads. Used by probes to escalate severity.
+// platform-critical workloads — the compiled-in floor above plus any
+// operator-appended extras (CHA_PROTECTED_NAMESPACES_EXTRA, shared via
+// pkg/ai with the fixer guard and the AI-action validator). Used by
+// probes to escalate severity: a namespace important enough to be
+// no-touch on the act side is important enough to be always-critical
+// on the detect side.
 func IsProtectedNamespace(ns string) bool {
 	if ns == "" {
 		return false
 	}
-	_, ok := probeProtectedNamespaces[ns]
-	return ok
+	if _, ok := probeProtectedNamespaces[ns]; ok {
+		return true
+	}
+	return ai.IsExtraProtectedNamespace(ns)
 }
