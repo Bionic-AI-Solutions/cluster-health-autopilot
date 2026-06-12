@@ -376,6 +376,34 @@ func TestBuildDiagnoseCronJob_DefaultScheduleAndCaps(t *testing.T) {
 	mustContain(t, args, "diagnose")
 }
 
+// BackoffLimit pointer semantics (v1.26.0): nil = default 1, explicit
+// 0 = no retries (previously inexpressible — the int32 zero value was
+// silently overridden to the default), explicit N honored.
+func TestBuildDiagnoseCronJob_BackoffLimitPointerSemantics(t *testing.T) {
+	cases := []struct {
+		name string
+		in   *int32
+		want int32
+	}{
+		{"nil defaults to 1", nil, 1},
+		{"explicit 0 honored (no retries)", int32Ptr(0), 0},
+		{"explicit 2 honored", int32Ptr(2), 2},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cr := sampleCR()
+			cr.Spec.Diagnose = &chav1alpha1.DiagnoseSpec{Enabled: true, BackoffLimit: tc.in}
+			c := BuildDiagnoseCronJob(cr)
+			if c == nil {
+				t.Fatal("enabled diagnose must produce a CronJob")
+			}
+			if got := *c.Spec.JobTemplate.Spec.BackoffLimit; got != tc.want {
+				t.Errorf("backoffLimit=%d want %d", got, tc.want)
+			}
+		})
+	}
+}
+
 // --- Remediate CronJob ---
 
 func TestBuildRemediateCronJob_DefaultDisabled(t *testing.T) {

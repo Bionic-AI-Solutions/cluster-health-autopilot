@@ -216,7 +216,7 @@ func BuildWatcherDeployment(cr *chav1alpha1.ClusterHealthAutopilot) *appsv1.Depl
 		"--debounce=" + debounce,
 		"--resync-period=" + resync,
 	}
-	args = append(args, alertingArgs(cr.Spec.Alerting, false)...)
+	args = append(args, alertingArgs(cr.Spec.Alerting)...)
 	args = append(args, ticketingArgs(cr.Spec.Ticketing)...)
 	args = append(args, watcherTriggerArgs(cr.Spec.Watcher)...)
 
@@ -321,9 +321,14 @@ func BuildDiagnoseCronJob(cr *chav1alpha1.ClusterHealthAutopilot) *batchv1.CronJ
 	if cr.Spec.Diagnose == nil || !cr.Spec.Diagnose.Enabled {
 		return nil
 	}
+	// --format=daily renders the #healthinfo daily digest (and is what
+	// --slack-healthinfo requires); mirrors the chart's
+	// cronjob-diagnose.yaml, whose values default diagnose.format=daily.
+	args := []string{"diagnose", "--live", "--format=daily"}
+	args = append(args, diagnoseAlertingArgs(cr.Spec.Alerting)...)
 	return buildCronJobCommon(cr, "diagnose", NamesFor(cr).Diagnose, cr.Spec.Diagnose.Schedule,
 		cr.Spec.Diagnose.BackoffLimit, cr.Spec.Diagnose.ActiveDeadlineSeconds,
-		[]string{"diagnose", "--live"},
+		args, healthinfoEnv(cr.Spec.Alerting),
 		defaultDiagnoseSchedule, defaultDiagnoseBackoffLimit, defaultDiagnoseActiveDeadlineS,
 	)
 }
@@ -338,34 +343,46 @@ func BuildRemediateCronJob(cr *chav1alpha1.ClusterHealthAutopilot) *batchv1.Cron
 	if cr.Spec.Remediate.DryRun {
 		args = append(args, "--dry-run=true")
 	}
+	// No alerting flags/env: `cha remediate` registers only an optional
+	// --slack-webhook (which the AlertingSpec has no field for), and the
+	// chart's cronjob-remediate.yaml renders none either.
+	// nil backoffLimit = RemediateSpec has no backoffLimit knob; the
+	// default (defaultRemediateBackoffLimit) always applies.
 	return buildCronJobCommon(cr, "remediate", NamesFor(cr).Remediate, cr.Spec.Remediate.Schedule,
-		0, cr.Spec.Remediate.ActiveDeadlineSeconds, args,
+		nil, cr.Spec.Remediate.ActiveDeadlineSeconds, args, nil,
 		defaultRemediateSchedule, defaultRemediateBackoffLimit, defaultRemediateActiveDeadlineS,
 	)
 }
 
 // buildCronJobCommon factors the shared shape between diagnose and
-// remediate. Each caller supplies its own arg list and defaults so
-// the resulting object reflects the role correctly.
+// remediate. Each caller supplies its own COMPLETE arg list and any
+// role-specific env (e.g. diagnose's SLACK_HEALTHINFO_URL) — this
+// function must never append flags itself: `cha diagnose` and
+// `cha remediate` register far fewer flags than `cha watch`, and a
+// watch-only flag leaking in here made both CronJobs exit 1 with
+// "unknown flag" on every run (fixed v1.26.0; pinned by
+// cronjob_args_test.go + cmd/cha/operatorflags_test.go).
 func buildCronJobCommon(
 	cr *chav1alpha1.ClusterHealthAutopilot,
 	role, name, schedule string,
-	backoffLimit int32, activeDeadline int64,
-	args []string,
+	backoffLimit *int32, activeDeadline int64,
+	args []string, extraEnv []corev1.EnvVar,
 	defaultSchedule string, defaultBackoff int32, defaultDeadline int64,
 ) *batchv1.CronJob {
 	if schedule == "" {
 		schedule = defaultSchedule
 	}
-	if backoffLimit == 0 {
-		backoffLimit = defaultBackoff
+	// Pointer semantics: nil = unset → default; an explicit 0 is a
+	// real value (no retries) and is honored. A plain int32 here could
+	// not tell those apart (fixed v1.26.0).
+	limit := defaultBackoff
+	if backoffLimit != nil {
+		limit = *backoffLimit
 	}
 	if activeDeadline == 0 {
 		activeDeadline = defaultDeadline
 	}
 	labels := CommonLabels(cr, role)
-	// diagnose posts the daily #healthinfo digest; remediate does not.
-	args = append(args, alertingArgs(cr.Spec.Alerting, role == "diagnose")...)
 
 	successfulJobsHistoryLimit := int32(3)
 	failedJobsHistoryLimit := int32(3)
@@ -385,7 +402,7 @@ func buildCronJobCommon(
 			JobTemplate: batchv1.JobTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{Labels: labels},
 				Spec: batchv1.JobSpec{
-					BackoffLimit:          &backoffLimit,
+					BackoffLimit:          &limit,
 					ActiveDeadlineSeconds: &activeDeadline,
 					Template: corev1.PodTemplateSpec{
 						ObjectMeta: metav1.ObjectMeta{Labels: labels},
@@ -395,9 +412,12 @@ func buildCronJobCommon(
 							ImagePullSecrets:   pullSecretRefs(cr.Spec.Image.PullSecrets),
 							Containers: []corev1.Container{
 								{
-									Name:            role,
-									Image:           imageRef(cr.Spec.Image),
-									Env:             append(alertingEnv(cr.Spec.Alerting), protectedNamespacesEnv(cr)...),
+									Name:  role,
+									Image: imageRef(cr.Spec.Image),
+									// extraEnv is a freshly built, callee-owned slice
+									// (healthinfoEnv result or nil) — appending directly
+									// is safe; no defensive copy needed.
+									Env:             append(extraEnv, protectedNamespacesEnv(cr)...),
 									ImagePullPolicy: pullPolicy(cr.Spec.Image),
 									Args:            args,
 								},
@@ -410,11 +430,6 @@ func buildCronJobCommon(
 	}
 }
 
-// alertingArgs turns the AlertingSpec into CLI flags the `cha` binary
-// accepts. Slack webhook URLs are passed via K8s env-var expansion
-// $(SLACK_*_URL) — the values are injected by alertingEnv() into the
-// container's env.
-//
 // watcherTriggerEnv projects the webhook SecretName's keys into the
 // watcher container so each --webhook-source <name>=<env-var-name>
 // entry resolves at startup. Empty SecretName or empty Sources =
@@ -479,11 +494,14 @@ func watcherTriggerArgs(w *chav1alpha1.WatcherSpec) []string {
 	return out
 }
 
-// The `cha watch` subcommand only accepts --slack-alerts and
-// --slack-critical; --slack-healthinfo is exclusive to `cha diagnose`
-// (it posts the daily digest). Pass includeHealthInfo=false for the
-// watcher Deployment and true for the diagnose CronJob.
-func alertingArgs(a *chav1alpha1.AlertingSpec, includeHealthInfo bool) []string {
+// alertingArgs renders the WATCH-ONLY alerting flags
+// (--alertmanager-url, --cluster-name, --slack-alerts,
+// --slack-critical) for the watcher Deployment. `cha diagnose` and
+// `cha remediate` register NONE of these — appending them to the
+// CronJobs made every Job exit 1 with "unknown flag" (fixed v1.26.0);
+// the diagnose CronJob's only alerting flag is rendered by
+// diagnoseAlertingArgs below.
+func alertingArgs(a *chav1alpha1.AlertingSpec) []string {
 	if a == nil {
 		return nil
 	}
@@ -501,19 +519,51 @@ func alertingArgs(a *chav1alpha1.AlertingSpec, includeHealthInfo bool) []string 
 		if c := a.Slack.Critical; c != nil && c.SecretName != "" {
 			out = append(out, "--slack-critical=$(SLACK_CRITICAL_URL)")
 		}
-		if includeHealthInfo {
-			if c := a.Slack.HealthInfo; c != nil && c.SecretName != "" {
-				out = append(out, "--slack-healthinfo=$(SLACK_HEALTHINFO_URL)")
-			}
-		}
 	}
 	return out
 }
 
-// alertingEnv builds the env var slice that provides Slack webhook URLs
-// via secretKeyRef so alertingArgs() can reference them as $(ENV_VAR).
-// K8s expands $(FOO) in container args from the container's env at
-// pod-start time, before the process exec.
+// diagnoseAlertingArgs renders the single alerting flag `cha diagnose`
+// accepts: --slack-healthinfo (the daily #healthinfo digest, which
+// also requires --format=daily). Mirrors the chart's
+// cronjob-diagnose.yaml.
+func diagnoseAlertingArgs(a *chav1alpha1.AlertingSpec) []string {
+	if a == nil || a.Slack == nil {
+		return nil
+	}
+	if c := a.Slack.HealthInfo; c != nil && c.SecretName != "" {
+		return []string{"--slack-healthinfo=$(SLACK_HEALTHINFO_URL)"}
+	}
+	return nil
+}
+
+// healthinfoEnv provides only the SLACK_HEALTHINFO_URL env var that
+// diagnoseAlertingArgs' $(SLACK_HEALTHINFO_URL) expands — the diagnose
+// CronJob consumes no other alerting env (mirrors the chart's
+// cha.slackHealthinfoEnv helper).
+func healthinfoEnv(a *chav1alpha1.AlertingSpec) []corev1.EnvVar {
+	if a == nil || a.Slack == nil {
+		return nil
+	}
+	if c := a.Slack.HealthInfo; c != nil && c.SecretName != "" {
+		return []corev1.EnvVar{secretRefEnv("SLACK_HEALTHINFO_URL", c.SecretName, defaultSlackSecretKey, c.SecretKey)}
+	}
+	return nil
+}
+
+// alertingEnv builds the WATCHER's env var slice: the Slack webhook
+// URLs that alertingArgs() references as $(ENV_VAR). K8s expands
+// $(FOO) in container args from the container's env at pod-start time,
+// before the process exec. ONLY the two channels `cha watch` consumes
+// (--slack-alerts / --slack-critical) belong here — SLACK_HEALTHINFO_URL
+// is diagnose-only (healthinfoEnv above). Until v1.26.0 this function
+// also injected SLACK_HEALTHINFO_URL onto the watcher: nothing in watch
+// mode reads it, and because secretRefEnv emits a NON-optional
+// secretKeyRef, a missing healthinfo secret hard-failed watcher pod
+// creation (CreateContainerConfigError) for an env var that could never
+// be used. The chart's watcher-deployment.yaml (slackAlertsEnv +
+// slackCriticalEnv only) is the reference shape; pinned by
+// TestWatcherDeploymentEnv_NoHealthinfoSecretRef.
 func alertingEnv(a *chav1alpha1.AlertingSpec) []corev1.EnvVar {
 	if a == nil || a.Slack == nil {
 		return nil
@@ -524,9 +574,6 @@ func alertingEnv(a *chav1alpha1.AlertingSpec) []corev1.EnvVar {
 	}
 	if c := a.Slack.Critical; c != nil && c.SecretName != "" {
 		env = append(env, secretRefEnv("SLACK_CRITICAL_URL", c.SecretName, defaultSlackSecretKey, c.SecretKey))
-	}
-	if c := a.Slack.HealthInfo; c != nil && c.SecretName != "" {
-		env = append(env, secretRefEnv("SLACK_HEALTHINFO_URL", c.SecretName, defaultSlackSecretKey, c.SecretKey))
 	}
 	return env
 }

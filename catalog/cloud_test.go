@@ -4,6 +4,7 @@
 package catalog
 
 import (
+	"strings"
 	"testing"
 
 	gcpprobes "github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/cloud/gcp"
@@ -82,7 +83,7 @@ func TestCloudProbes_ProviderDisabledRegistersNothing(t *testing.T) {
 	// AWS/Azure probes.
 	names := cloudProbeNames(t, false, true, false)
 	for n := range names {
-		if n[:4] != "gcp-" {
+		if !strings.HasPrefix(n, "gcp-") {
 			t.Errorf("GCP-only registration leaked non-GCP probe %q", n)
 		}
 	}

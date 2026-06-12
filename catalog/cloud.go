@@ -4,6 +4,7 @@
 package catalog
 
 import (
+	"log"
 	"os"
 	"strconv"
 
@@ -45,6 +46,9 @@ import (
 // profiles, private endpoints), so available = total - used. See
 // internal/cloud/{gcp,azure}/live.go for the exact set.
 func RegisterCloudOSS(reg *registry.Registry, awsEnabled, gcpEnabled, azureEnabled bool) {
+	// NOTE: the literal `os.Getenv("CHA_...") != "off"` form below is
+	// load-bearing — the chartgate toggle-drift/default-off regex
+	// scanners match it verbatim; don't refactor it into a helper.
 	if awsEnabled {
 		if os.Getenv("CHA_CLOUD_PROBE_AWS_RDS") != "off" {
 			reg.RegisterCloudProbe(awsprobes.RDS{})
@@ -149,6 +153,7 @@ func gcpSubnetSmallPrefix() int {
 	}
 	n, err := strconv.Atoi(raw)
 	if err != nil || n <= 0 {
+		log.Printf("catalog: invalid CHA_CLOUD_PROBE_GCP_SUBNETS_SMALL_PREFIX=%q (want a positive integer prefix length); using the probe's compiled-in /26 default", raw)
 		return 0
 	}
 	return n

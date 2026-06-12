@@ -136,13 +136,22 @@ func TestCRD_PrinterColumnsChartBundleParity(t *testing.T) {
 var markerRe = regexp.MustCompile("\\+kubebuilder:printcolumn:name=\"([^\"]+)\",type=([a-z]+),JSONPath=`([^`]+)`")
 
 // markerSources maps an api/v1alpha1 source file to the chart CRD it
-// describes. Only files that DECLARE printcolumn markers belong here.
-var markerSources = map[string]string{
-	"../../api/v1alpha1/silence_types.go": "silences.cha.bionicaisolutions.com",
+// describes (CRD name + chart template filename, so adding a second
+// entry cannot silently keep comparing against crd-silence.yaml). Only
+// files that DECLARE printcolumn markers belong here.
+var markerSources = map[string]struct {
+	crdName   string
+	chartFile string
+}{
+	"../../api/v1alpha1/silence_types.go": {
+		crdName:   "silences.cha.bionicaisolutions.com",
+		chartFile: "crd-silence.yaml",
+	},
 }
 
 func TestCRD_PrinterColumnsMatchGoMarkers(t *testing.T) {
-	for src, crdName := range markerSources {
+	for src, ms := range markerSources {
+		crdName := ms.crdName
 		raw, err := os.ReadFile(src)
 		if err != nil {
 			t.Fatalf("read %s: %v", src, err)
@@ -155,7 +164,7 @@ func TestCRD_PrinterColumnsMatchGoMarkers(t *testing.T) {
 			t.Fatalf("%s declares no printcolumn markers — update markerSources", src)
 		}
 
-		chartPath := chartTplDir + "/crd-silence.yaml"
+		chartPath := chartTplDir + "/" + ms.chartFile
 		rawChart, err := os.ReadFile(chartPath)
 		if err != nil {
 			t.Fatalf("read %s: %v", chartPath, err)

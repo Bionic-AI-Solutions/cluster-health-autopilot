@@ -179,7 +179,14 @@ jobs:
           # (PackageManifest, ClusterServiceVersion, Subscription,
           # InstallPlan CRDs + the catalog-operator + olm-operator
           # Deployments). ~90s on kind.
-          operator-sdk olm install --timeout=5m
+          #
+          # PIN the OLM version: without --version the installer fetches
+          # releases/latest/download/{crds,olm}.yaml, and upstream OLM's
+          # latest release (v0.45.0) no longer ships those YAML assets —
+          # the download 404s and the install hard-fails. v0.44.0 is the
+          # newest release that still publishes crds.yaml + olm.yaml.
+          # Bump deliberately after verifying the new tag's assets.
+          operator-sdk olm install --version 0.44.0 --timeout=5m
           # `operator-sdk olm install` also installs the upstream
           # `operatorhubio-catalog` CatalogSource that points at
           # quay.io's catalog registry. Our bundle has zero

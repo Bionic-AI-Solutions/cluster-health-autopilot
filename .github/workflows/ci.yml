@@ -72,6 +72,10 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v5
+        with:
+          # changelog-tag-check.sh verifies every released CHANGELOG
+          # heading against the repo's git tags.
+          fetch-tags: true
 
       - uses: actions/setup-go@v6
         with:
@@ -89,6 +93,26 @@ jobs:
       # doubled-date / out-of-order defects that slipped into CHANGELOG.md.
       - name: changelog lint
         run: bash scripts/changelog-lint.sh
+
+      # CHANGELOG ↔ git-tag parity (O9): every released `## [x.y.z]`
+      # heading except the topmost (the in-flight release) must have a
+      # matching vx.y.z (or chart-releaser) tag, and [Unreleased] may
+      # not present any version as already shipped.
+      - name: changelog tag check
+        # Belt-and-braces tag fetch: actions/checkout's `fetch-tags: true`
+        # does not reliably deliver tags on PR merge-ref checkouts, and
+        # the script (correctly) exits 2 on a tagless checkout. Fetch
+        # tags explicitly so the gate always sees the real tag list.
+        run: |
+          git fetch --tags --force --quiet origin
+          bash scripts/changelog-tag-check.sh
+
+      # Fixture tests for the gate itself: prose inside [Unreleased]
+      # that merely mentions a version + date must PASS (the dated
+      # check is anchored to the heading signature); version-numbered
+      # headings and untagged release headings must FAIL.
+      - name: changelog tag check selftest
+        run: bash scripts/changelog-tag-check_test.sh
 
   chart-test:
     name: helm lint + unittest

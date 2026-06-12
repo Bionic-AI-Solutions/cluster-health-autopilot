@@ -104,6 +104,11 @@ type Subnet struct {
 	// reserves no addresses in secondary ranges, so this is the full
 	// range size. 0 = no secondary ranges (or captured before this
 	// field existed).
+	//
+	// Data-only: no probe consumes it today — it ships purely as
+	// snapshot capture surface (context for operators reading captures
+	// and for future capacity logic). The Subnets probe's checks read
+	// TotalIPCount / AvailableIPCount only.
 	SecondaryIPCount int64 `json:"secondaryIPCount,omitempty"`
 }
 
