@@ -1177,6 +1177,32 @@ Deployment (or CronJob, for diagnose/remediate). Set to `off`:
 | `CHA_PROBE_ETCD` | ETCD probe (use this for k3s / managed control plane) |
 | `CHA_PROBE_FAILED_MOUNTS` | FailedMounts probe |
 
+The six base probes are also independently disablable (set to `off`; Helm:
+`probes.<name>.enabled: false`):
+
+| Env var | Disables | Helm value |
+|---|---|---|
+| `CHA_PROBE_CEPH` | Ceph Storage probe | `probes.ceph.enabled` |
+| `CHA_PROBE_NODES` | Cluster Nodes probe | `probes.nodes.enabled` |
+| `CHA_PROBE_POSTGRES` | PostgreSQL probe | `probes.postgres.enabled` |
+| `CHA_PROBE_PVCS` | Storage Claims (PVC) probe | `probes.pvcs.enabled` |
+| `CHA_PROBE_CRITICAL_WORKLOADS` | Critical Services (workload list) probe | `probes.criticalWorkloads.enabled` |
+| `CHA_PROBE_ENDPOINTS` | External Endpoints probe | `probes.endpoints.enabled` |
+
+The seven core analyzers (secret-chain / cert / image-auth) default ON and
+are independently disablable the same way (set to `off`; Helm:
+`analyzers.<name>.enabled: false`):
+
+| Env var | Disables | Helm value |
+|---|---|---|
+| `CHA_ANALYZER_SECRET_KEY_MISSING` | SecretKeyMissing analyzer | `analyzers.secretKeyMissing.enabled` |
+| `CHA_ANALYZER_FAILING_EXTERNAL_SECRETS` | FailingExternalSecrets analyzer | `analyzers.failingExternalSecrets.enabled` |
+| `CHA_ANALYZER_PROACTIVE_SECRET_KEY_CHECK` | ProactiveSecretKeyCheck analyzer | `analyzers.proactiveSecretKeyCheck.enabled` |
+| `CHA_ANALYZER_UNPROVISIONED_SECRET` | UnprovisionedSecret analyzer | `analyzers.unprovisionedSecret.enabled` |
+| `CHA_ANALYZER_IMAGE_PULL_AUTH` | ImagePullAuth analyzer | `analyzers.imagePullAuth.enabled` |
+| `CHA_ANALYZER_CERT_EXPIRY` | CertExpiry analyzer | `analyzers.certExpiry.enabled` |
+| `CHA_ANALYZER_TLS_SECRET_MISMATCH` | TLSSecretMismatch analyzer (the opt-in auto-fixer is gated separately by `fixers.tlsSecretMismatch.enabled` / `CHA_FIXER_TLS_SECRET_MISMATCH`) | `analyzers.tlsSecretMismatch.enabled` |
+
 Critical-workloads list configuration (Sprint 2.6):
 
 | Env var | Effect |

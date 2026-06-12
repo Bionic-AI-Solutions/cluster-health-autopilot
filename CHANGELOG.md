@@ -13,6 +13,16 @@ serves the latest tagged chart cut.
 
 ## [Unreleased]
 
+### Added — toggles for the 6 base probes + 7 core analyzers (docs said "each probe independently togglable"; now it's true)
+
+The public docs promised every probe/analyzer is independently disablable, but the six base probes (Ceph, Nodes, Postgres, PVCs, Critical Services, Endpoints) and seven core analyzers (SecretKeyMissing, FailingExternalSecrets, ProactiveSecretKeyCheck, UnprovisionedSecret, ImagePullAuth, CertExpiry, TLSSecretMismatch) were registered unconditionally in `catalog/catalog.go` — no env gate, no chart toggle.
+
+- **catalog** — each now follows the exact `os.Getenv("CHA_X") != "off"` opt-out pattern the 15 existing gated probes/analyzers use. New env vars: `CHA_PROBE_CEPH`, `CHA_PROBE_NODES`, `CHA_PROBE_POSTGRES`, `CHA_PROBE_PVCS`, `CHA_PROBE_CRITICAL_WORKLOADS` (gates the Critical Services probe — the documented env name), `CHA_PROBE_ENDPOINTS`, `CHA_ANALYZER_SECRET_KEY_MISSING`, `CHA_ANALYZER_FAILING_EXTERNAL_SECRETS`, `CHA_ANALYZER_PROACTIVE_SECRET_KEY_CHECK`, `CHA_ANALYZER_UNPROVISIONED_SECRET`, `CHA_ANALYZER_IMAGE_PULL_AUTH`, `CHA_ANALYZER_CERT_EXPIRY`, `CHA_ANALYZER_TLS_SECRET_MISMATCH`. **All 13 default ON — no behavior change for existing installs** (these probes/analyzers have shipped default-on since v1.0; the toggle only adds the documented opt-out, so the P3.3a default-off discipline records a status-quo soak rationale in the golden rather than shipping the secret-chain core signal default-off).
+- **chart** — `probes.{ceph,nodes,postgres,pvcs,criticalWorkloads,endpoints}.enabled` and `analyzers.{secretKeyMissing,failingExternalSecrets,proactiveSecretKeyCheck,unprovisionedSecret,imagePullAuth,certExpiry,tlsSecretMismatch}.enabled` (all default `true`), wired through the existing `cha.probeToggleEnv` / `cha.analyzerToggleEnv` helpers — `enabled: false` emits `CHA_*=off` on the watcher + diagnose containers, byte-identical render at defaults.
+- **tests** — `catalog/catalog_test.go` (new): every toggle registers by default, skips on `=off`, doesn't drop siblings, and non-`off` values (`true`/`OFF`/garbage) do NOT disable; helm-unittest coverage extended (`probe_toggle_test.yaml` + new `analyzer_toggle_test.yaml`); the P1.8 toggle-drift and P3.3a default-off chartgates pass with the new inventory.
+- **operator** — no change needed: the CR has no probe/analyzer toggle surface today (the existing 15 toggles aren't operator-settable either); tracked as a follow-up alongside a watcher `extraEnv` passthrough rather than growing the CRD here.
+- **docs** — `docs/SETUP_GUIDE.md` env-var tables list the 13 new toggles with their Helm values.
+
 ### Fixed — DNSChainDrift emitted non-enum severities; every DriftReport reconcile cycle failed CRD validation
 
 Production bug: `DNSChainDrift` emitted diagnostics with `severity: "warn"` (duplicate-ingress-host, service-external-name-mismatch) and `severity: "error"` (missing-cloudflare-record, cloudflare-points-elsewhere, missing-ingress, ingress-orphan-service, service-no-endpoints), but the DriftReport CRD enum only allows `info|warning|critical` — so the watcher's driftreport reconcile failed on those subjects every cycle with `spec.severity: Unsupported value: "warn"`.

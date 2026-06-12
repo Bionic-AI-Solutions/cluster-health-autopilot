@@ -94,17 +94,32 @@ func RegisterOSS(r *registry.Registry) {
 		}
 	}
 
-	r.RegisterProbe(
-		probe.Ceph{},
-		probe.Nodes{},
-		probe.Postgres{},
-		probe.PVCs{},
-		probe.Services{Targets: servicesTargets},
-		probe.NewEndpoints(
+	// Base probes — the original six. Each defaults ON and is
+	// independently disablable via CHA_PROBE_<NAME>=off, honoring the
+	// docs' "each probe independently togglable" promise. The
+	// CRITICAL_WORKLOADS toggle gates the Critical Services probe
+	// (the documented env name predates the probe's display name).
+	if os.Getenv("CHA_PROBE_CEPH") != "off" {
+		r.RegisterProbe(probe.Ceph{})
+	}
+	if os.Getenv("CHA_PROBE_NODES") != "off" {
+		r.RegisterProbe(probe.Nodes{})
+	}
+	if os.Getenv("CHA_PROBE_POSTGRES") != "off" {
+		r.RegisterProbe(probe.Postgres{})
+	}
+	if os.Getenv("CHA_PROBE_PVCS") != "off" {
+		r.RegisterProbe(probe.PVCs{})
+	}
+	if os.Getenv("CHA_PROBE_CRITICAL_WORKLOADS") != "off" {
+		r.RegisterProbe(probe.Services{Targets: servicesTargets})
+	}
+	if os.Getenv("CHA_PROBE_ENDPOINTS") != "off" {
+		r.RegisterProbe(probe.NewEndpoints(
 			probe.DefaultEndpointTargets(),
 			probe.DefaultDiscoveryOptions(),
-		),
-	)
+		))
+	}
 
 	// Sprint 2 probes — opt-out via env so a cluster with weird shape can
 	// silence individual probes without forking.
@@ -170,15 +185,31 @@ func RegisterOSS(r *registry.Registry) {
 	if os.Getenv("CHA_PROBE_K3S_DATASTORE") != "off" {
 		r.RegisterProbe(probe.K3sDatastore{})
 	}
-	r.RegisterAnalyzer(
-		diagnose.SecretKeyMissing{},
-		diagnose.FailingExternalSecrets{},
-		diagnose.ProactiveSecretKeyCheck{},
-		diagnose.UnprovisionedSecret{},
-		diagnose.ImagePullAuth{},
-		diagnose.CertExpiry{},
-		diagnose.TLSSecretMismatch{},
-	)
+	// Core analyzers — the secret-chain / cert / image-auth set the
+	// product was built around. Each defaults ON; the env gate exists
+	// only so the docs' "disable any analyzer" promise holds. Do NOT
+	// flip any of these defaults.
+	if os.Getenv("CHA_ANALYZER_SECRET_KEY_MISSING") != "off" {
+		r.RegisterAnalyzer(diagnose.SecretKeyMissing{})
+	}
+	if os.Getenv("CHA_ANALYZER_FAILING_EXTERNAL_SECRETS") != "off" {
+		r.RegisterAnalyzer(diagnose.FailingExternalSecrets{})
+	}
+	if os.Getenv("CHA_ANALYZER_PROACTIVE_SECRET_KEY_CHECK") != "off" {
+		r.RegisterAnalyzer(diagnose.ProactiveSecretKeyCheck{})
+	}
+	if os.Getenv("CHA_ANALYZER_UNPROVISIONED_SECRET") != "off" {
+		r.RegisterAnalyzer(diagnose.UnprovisionedSecret{})
+	}
+	if os.Getenv("CHA_ANALYZER_IMAGE_PULL_AUTH") != "off" {
+		r.RegisterAnalyzer(diagnose.ImagePullAuth{})
+	}
+	if os.Getenv("CHA_ANALYZER_CERT_EXPIRY") != "off" {
+		r.RegisterAnalyzer(diagnose.CertExpiry{})
+	}
+	if os.Getenv("CHA_ANALYZER_TLS_SECRET_MISMATCH") != "off" {
+		r.RegisterAnalyzer(diagnose.TLSSecretMismatch{})
+	}
 	// v1.7 drift-class expansion (Workstreams B1+B2+B3) + v1.8
 	// config + capacity + security drift (Workstreams B4+B5+B6).
 	// Each opt-out via env var on clusters that don't host the

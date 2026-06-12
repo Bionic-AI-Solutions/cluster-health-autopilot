@@ -801,6 +801,41 @@ gatekeeper:
 # entries to false on clusters that don't host the targeted asset
 # class.
 analyzers:
+  # Core analyzers — the secret-chain / cert / image-auth set the product
+  # was built around. Each defaults ON (do NOT flip these unless you have
+  # an external system producing the same signal); set enabled: false to
+  # emit CHA_ANALYZER_<NAME>=off on the watcher/diagnose containers.
+  secretKeyMissing:
+    # Workloads referencing a Secret key that does not exist (the
+    # CreateContainerConfigError root cause).
+    enabled: true
+  failingExternalSecrets:
+    # ExternalSecrets stuck SecretSyncedError / not Ready (ESO sync
+    # chain broken).
+    enabled: true
+  proactiveSecretKeyCheck:
+    # Proactive secretKeyRef validation BEFORE pods restart and hit
+    # CreateContainerConfigError.
+    enabled: true
+  unprovisionedSecret:
+    # Secrets referenced by workloads that no controller (ESO, cert-
+    # manager, Helm) ever provisioned.
+    enabled: true
+  imagePullAuth:
+    # ImagePullBackOff caused by missing/invalid pull credentials
+    # (namespace missing pull secret or deployment missing
+    # imagePullSecrets).
+    enabled: true
+  certExpiry:
+    # cert-manager Certificates close to / past expiry or stuck not
+    # Ready.
+    enabled: true
+  tlsSecretMismatch:
+    # Ingress TLS secretName pointing at a stale/mismatched Secret while
+    # a healthy Certificate targets a different Secret for the same host.
+    # (The optional auto-FIXER for this finding is gated separately under
+    # fixers.tlsSecretMismatch.)
+    enabled: true
   gitopsDrift:
     # GitOps drift — Argo CD Application + Flux Kustomization +
     # Flux HelmRelease. Surfaces controllers stuck OutOfSync,
@@ -911,6 +946,31 @@ investigator:
 # host the asset. Set enabled: false only to silence a probe on a
 # cluster that DOES host the CRD but you don't want CHA watching it.
 probes:
+  # Base probes — the original six. Each defaults ON; set enabled: false
+  # to emit CHA_PROBE_<NAME>=off and skip the probe entirely.
+  ceph:
+    # Rook-Ceph cluster health (HEALTH_OK / OSD status). Auto-skips when
+    # the rook-ceph CRDs are absent.
+    enabled: true
+  nodes:
+    # Node Ready conditions across the cluster.
+    enabled: true
+  postgres:
+    # PostgreSQL (CNPG) cluster health. Auto-skips when the CNPG CRDs
+    # are absent.
+    enabled: true
+  pvcs:
+    # PersistentVolumeClaims stuck Pending / Lost.
+    enabled: true
+  criticalWorkloads:
+    # Critical Services probe — the curated workload target list
+    # (defaults merged with CHA_CRITICAL_SERVICES / the probe-critical
+    # annotation). Emits CHA_PROBE_CRITICAL_WORKLOADS=off when disabled.
+    enabled: true
+  endpoints:
+    # External HTTP(S) endpoint reachability for discovered/seeded
+    # Ingress hostnames.
+    enabled: true
   kong:
     # Kong ingress — KongPlugin / KongConsumer / Kong proxy readiness
     # drift. Auto-skips when configuration.konghq.com CRDs are absent.

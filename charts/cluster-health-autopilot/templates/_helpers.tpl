@@ -204,6 +204,50 @@ flip analyzers.<name>.enabled=false in values.yaml to silence the
 no-target list cycle on clusters that don't host the asset class.
 */ -}}
 {{- define "cha.analyzerToggleEnv" -}}
+{{- /* Core analyzers — secret-chain / cert / image-auth. Each defaults
+       ON in catalog.go (opt-out via CHA_ANALYZER_<NAME>=off). */ -}}
+{{- if (.Values.analyzers).secretKeyMissing }}
+{{- if not .Values.analyzers.secretKeyMissing.enabled }}
+- name: CHA_ANALYZER_SECRET_KEY_MISSING
+  value: "off"
+{{- end }}
+{{- end }}
+{{- if (.Values.analyzers).failingExternalSecrets }}
+{{- if not .Values.analyzers.failingExternalSecrets.enabled }}
+- name: CHA_ANALYZER_FAILING_EXTERNAL_SECRETS
+  value: "off"
+{{- end }}
+{{- end }}
+{{- if (.Values.analyzers).proactiveSecretKeyCheck }}
+{{- if not .Values.analyzers.proactiveSecretKeyCheck.enabled }}
+- name: CHA_ANALYZER_PROACTIVE_SECRET_KEY_CHECK
+  value: "off"
+{{- end }}
+{{- end }}
+{{- if (.Values.analyzers).unprovisionedSecret }}
+{{- if not .Values.analyzers.unprovisionedSecret.enabled }}
+- name: CHA_ANALYZER_UNPROVISIONED_SECRET
+  value: "off"
+{{- end }}
+{{- end }}
+{{- if (.Values.analyzers).imagePullAuth }}
+{{- if not .Values.analyzers.imagePullAuth.enabled }}
+- name: CHA_ANALYZER_IMAGE_PULL_AUTH
+  value: "off"
+{{- end }}
+{{- end }}
+{{- if (.Values.analyzers).certExpiry }}
+{{- if not .Values.analyzers.certExpiry.enabled }}
+- name: CHA_ANALYZER_CERT_EXPIRY
+  value: "off"
+{{- end }}
+{{- end }}
+{{- if (.Values.analyzers).tlsSecretMismatch }}
+{{- if not .Values.analyzers.tlsSecretMismatch.enabled }}
+- name: CHA_ANALYZER_TLS_SECRET_MISMATCH
+  value: "off"
+{{- end }}
+{{- end }}
 {{- if (.Values.analyzers).gitopsDrift }}
 {{- if not .Values.analyzers.gitopsDrift.enabled }}
 - name: CHA_ANALYZER_GITOPS_DRIFT
@@ -310,6 +354,45 @@ that DOES host the CRD but doesn't want CHA watching it. Flip
 probes.<name>.enabled=false in values.yaml to emit CHA_PROBE_<NAME>=off.
 */ -}}
 {{- define "cha.probeToggleEnv" -}}
+{{- /* Base probes — the original six. Each defaults ON in catalog.go
+       (opt-out via CHA_PROBE_<NAME>=off). criticalWorkloads gates the
+       Critical Services probe (documented env name). */ -}}
+{{- if (.Values.probes).ceph }}
+{{- if not .Values.probes.ceph.enabled }}
+- name: CHA_PROBE_CEPH
+  value: "off"
+{{- end }}
+{{- end }}
+{{- if (.Values.probes).nodes }}
+{{- if not .Values.probes.nodes.enabled }}
+- name: CHA_PROBE_NODES
+  value: "off"
+{{- end }}
+{{- end }}
+{{- if (.Values.probes).postgres }}
+{{- if not .Values.probes.postgres.enabled }}
+- name: CHA_PROBE_POSTGRES
+  value: "off"
+{{- end }}
+{{- end }}
+{{- if (.Values.probes).pvcs }}
+{{- if not .Values.probes.pvcs.enabled }}
+- name: CHA_PROBE_PVCS
+  value: "off"
+{{- end }}
+{{- end }}
+{{- if (.Values.probes).criticalWorkloads }}
+{{- if not .Values.probes.criticalWorkloads.enabled }}
+- name: CHA_PROBE_CRITICAL_WORKLOADS
+  value: "off"
+{{- end }}
+{{- end }}
+{{- if (.Values.probes).endpoints }}
+{{- if not .Values.probes.endpoints.enabled }}
+- name: CHA_PROBE_ENDPOINTS
+  value: "off"
+{{- end }}
+{{- end }}
 {{- if (.Values.probes).kong }}
 {{- if not .Values.probes.kong.enabled }}
 - name: CHA_PROBE_KONG

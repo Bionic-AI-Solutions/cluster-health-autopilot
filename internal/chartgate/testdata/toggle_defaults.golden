@@ -22,7 +22,28 @@
 # state. The many `on` entries here PREDATE this gate and are grandfathered —
 # the gate only catches NET-NEW additions or polarity FLIPS, not the existing
 # default-on inventory.
+# SOAK RATIONALE (base-probe + core-analyzer toggles, 2026-06): the six base
+# probes (Ceph/Nodes/Postgres/PVCs/CriticalWorkloads/Endpoints) and seven core
+# analyzers (secret-chain/cert/image-auth) below are NOT net-new triggers —
+# they have been registered UNCONDITIONALLY since v1.0 and have years of
+# production soak. The toggles only add the documented opt-out
+# (CHA_PROBE_<NAME>=off / CHA_ANALYZER_<NAME>=off); shipping them default-OFF
+# would be a behavior REGRESSION, silently disabling the product's core
+# signal. Default-ON preserves the status quo exactly.
 CHA_ANALYZER_CAPACITY_DRIFT on
+CHA_ANALYZER_CERT_EXPIRY on
+CHA_ANALYZER_FAILING_EXTERNAL_SECRETS on
+CHA_ANALYZER_IMAGE_PULL_AUTH on
+CHA_ANALYZER_PROACTIVE_SECRET_KEY_CHECK on
+CHA_ANALYZER_SECRET_KEY_MISSING on
+CHA_ANALYZER_TLS_SECRET_MISMATCH on
+CHA_ANALYZER_UNPROVISIONED_SECRET on
+CHA_PROBE_CEPH on
+CHA_PROBE_CRITICAL_WORKLOADS on
+CHA_PROBE_ENDPOINTS on
+CHA_PROBE_NODES on
+CHA_PROBE_POSTGRES on
+CHA_PROBE_PVCS on
 CHA_ANALYZER_CONFIG_DRIFT on
 CHA_ANALYZER_CRONJOB_STUCK on
 CHA_ANALYZER_DISRUPTION_DRIFT on

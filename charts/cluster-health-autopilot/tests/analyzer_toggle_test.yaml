@@ -1,0 +1,103 @@
+suite: core analyzer toggles
+templates:
+  - templates/watcher-deployment.yaml
+tests:
+  - it: no core CHA_ANALYZER_* env when all core analyzers default-on
+    template: templates/watcher-deployment.yaml
+    set:
+      watcher.enabled: true
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: CHA_ANALYZER_SECRET_KEY_MISSING
+            value: "off"
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: CHA_ANALYZER_TLS_SECRET_MISMATCH
+            value: "off"
+
+  - it: CHA_ANALYZER_SECRET_KEY_MISSING=off when analyzers.secretKeyMissing.enabled=false
+    template: templates/watcher-deployment.yaml
+    set:
+      watcher.enabled: true
+      analyzers.secretKeyMissing.enabled: false
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: CHA_ANALYZER_SECRET_KEY_MISSING
+            value: "off"
+
+  - it: CHA_ANALYZER_FAILING_EXTERNAL_SECRETS=off when analyzers.failingExternalSecrets.enabled=false
+    template: templates/watcher-deployment.yaml
+    set:
+      watcher.enabled: true
+      analyzers.failingExternalSecrets.enabled: false
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: CHA_ANALYZER_FAILING_EXTERNAL_SECRETS
+            value: "off"
+
+  - it: CHA_ANALYZER_PROACTIVE_SECRET_KEY_CHECK=off when analyzers.proactiveSecretKeyCheck.enabled=false
+    template: templates/watcher-deployment.yaml
+    set:
+      watcher.enabled: true
+      analyzers.proactiveSecretKeyCheck.enabled: false
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: CHA_ANALYZER_PROACTIVE_SECRET_KEY_CHECK
+            value: "off"
+
+  - it: CHA_ANALYZER_UNPROVISIONED_SECRET=off when analyzers.unprovisionedSecret.enabled=false
+    template: templates/watcher-deployment.yaml
+    set:
+      watcher.enabled: true
+      analyzers.unprovisionedSecret.enabled: false
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: CHA_ANALYZER_UNPROVISIONED_SECRET
+            value: "off"
+
+  - it: CHA_ANALYZER_IMAGE_PULL_AUTH=off when analyzers.imagePullAuth.enabled=false
+    template: templates/watcher-deployment.yaml
+    set:
+      watcher.enabled: true
+      analyzers.imagePullAuth.enabled: false
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: CHA_ANALYZER_IMAGE_PULL_AUTH
+            value: "off"
+
+  - it: CHA_ANALYZER_CERT_EXPIRY=off when analyzers.certExpiry.enabled=false
+    template: templates/watcher-deployment.yaml
+    set:
+      watcher.enabled: true
+      analyzers.certExpiry.enabled: false
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: CHA_ANALYZER_CERT_EXPIRY
+            value: "off"
+
+  - it: CHA_ANALYZER_TLS_SECRET_MISMATCH=off when analyzers.tlsSecretMismatch.enabled=false
+    template: templates/watcher-deployment.yaml
+    set:
+      watcher.enabled: true
+      analyzers.tlsSecretMismatch.enabled: false
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: CHA_ANALYZER_TLS_SECRET_MISMATCH
+            value: "off"
