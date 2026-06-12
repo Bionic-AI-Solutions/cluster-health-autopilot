@@ -5,12 +5,11 @@ package main
 
 import (
 	"os"
-	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 
 	chav1alpha1 "github.com/Bionic-AI-Solutions/cluster-health-autopilot/api/v1alpha1"
+	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/chartgate"
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/operator"
 	batchv1 "k8s.io/api/batch/v1"
 	"sigs.k8s.io/yaml"
@@ -40,8 +39,9 @@ import (
 // builders emit their maximal flag surface.
 func maximalOperatorCR(t *testing.T) *chav1alpha1.ClusterHealthAutopilot {
 	t.Helper()
-	_, thisFile, _, _ := runtime.Caller(0)
-	path := filepath.Join(filepath.Dir(thisFile), "..", "..", "bundle", "tests", "sample-cr-full.yaml")
+	// Resolved through the shared chartgate locator so a future
+	// bundle/tests move fails loudly in ONE place with a clear message.
+	path := chartgate.SampleCRFullPath(t)
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("read full-surface sample CR: %v", err)

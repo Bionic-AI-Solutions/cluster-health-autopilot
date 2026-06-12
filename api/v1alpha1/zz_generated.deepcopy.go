@@ -90,7 +90,7 @@ func (in *ClusterHealthAutopilotSpec) DeepCopyInto(out *ClusterHealthAutopilotSp
 	}
 	if in.Diagnose != nil {
 		out.Diagnose = new(DiagnoseSpec)
-		*out.Diagnose = *in.Diagnose
+		in.Diagnose.DeepCopyInto(out.Diagnose)
 	}
 	if in.Remediate != nil {
 		out.Remediate = new(RemediateSpec)
@@ -151,6 +151,27 @@ func (in *ClusterHealthAutopilotStatus) DeepCopy() *ClusterHealthAutopilotStatus
 		return nil
 	}
 	out := new(ClusterHealthAutopilotStatus)
+	in.DeepCopyInto(out)
+	return out
+}
+
+// --- DiagnoseSpec ---
+
+// DeepCopyInto copies the receiver into out. in must be non-nil.
+func (in *DiagnoseSpec) DeepCopyInto(out *DiagnoseSpec) {
+	*out = *in
+	if in.BackoffLimit != nil {
+		out.BackoffLimit = new(int32)
+		*out.BackoffLimit = *in.BackoffLimit
+	}
+}
+
+// DeepCopy returns a deep copy of the receiver.
+func (in *DiagnoseSpec) DeepCopy() *DiagnoseSpec {
+	if in == nil {
+		return nil
+	}
+	out := new(DiagnoseSpec)
 	in.DeepCopyInto(out)
 	return out
 }

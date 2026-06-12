@@ -253,9 +253,14 @@ type DiagnoseSpec struct {
 	// Default "0 9 * * *".
 	Schedule string `json:"schedule,omitempty"`
 
-	// BackoffLimit caps Job-level retries. Default 1.
+	// BackoffLimit caps Job-level retries. nil (unset) defaults to 1;
+	// an explicit 0 disables retries entirely. Pointer-typed because a
+	// plain int32 could not express explicit 0 — the zero value was
+	// indistinguishable from unset and silently overridden to the
+	// default (fixed v1.26.0).
+	// +kubebuilder:validation:Minimum=0
 	// +optional
-	BackoffLimit int32 `json:"backoffLimit,omitempty"`
+	BackoffLimit *int32 `json:"backoffLimit,omitempty"`
 
 	// ActiveDeadlineSeconds caps the Job's wall-clock runtime.
 	// Default 120.

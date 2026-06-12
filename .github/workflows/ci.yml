@@ -101,6 +101,13 @@ jobs:
       - name: changelog tag check
         run: bash scripts/changelog-tag-check.sh
 
+      # Fixture tests for the gate itself: prose inside [Unreleased]
+      # that merely mentions a version + date must PASS (the dated
+      # check is anchored to the heading signature); version-numbered
+      # headings and untagged release headings must FAIL.
+      - name: changelog tag check selftest
+        run: bash scripts/changelog-tag-check_test.sh
+
   chart-test:
     name: helm lint + unittest
     runs-on: ubuntu-latest

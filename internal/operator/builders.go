@@ -346,8 +346,10 @@ func BuildRemediateCronJob(cr *chav1alpha1.ClusterHealthAutopilot) *batchv1.Cron
 	// No alerting flags/env: `cha remediate` registers only an optional
 	// --slack-webhook (which the AlertingSpec has no field for), and the
 	// chart's cronjob-remediate.yaml renders none either.
+	// nil backoffLimit = RemediateSpec has no backoffLimit knob; the
+	// default (defaultRemediateBackoffLimit) always applies.
 	return buildCronJobCommon(cr, "remediate", NamesFor(cr).Remediate, cr.Spec.Remediate.Schedule,
-		0, cr.Spec.Remediate.ActiveDeadlineSeconds, args, nil,
+		nil, cr.Spec.Remediate.ActiveDeadlineSeconds, args, nil,
 		defaultRemediateSchedule, defaultRemediateBackoffLimit, defaultRemediateActiveDeadlineS,
 	)
 }
@@ -363,15 +365,19 @@ func BuildRemediateCronJob(cr *chav1alpha1.ClusterHealthAutopilot) *batchv1.Cron
 func buildCronJobCommon(
 	cr *chav1alpha1.ClusterHealthAutopilot,
 	role, name, schedule string,
-	backoffLimit int32, activeDeadline int64,
+	backoffLimit *int32, activeDeadline int64,
 	args []string, extraEnv []corev1.EnvVar,
 	defaultSchedule string, defaultBackoff int32, defaultDeadline int64,
 ) *batchv1.CronJob {
 	if schedule == "" {
 		schedule = defaultSchedule
 	}
-	if backoffLimit == 0 {
-		backoffLimit = defaultBackoff
+	// Pointer semantics: nil = unset → default; an explicit 0 is a
+	// real value (no retries) and is honored. A plain int32 here could
+	// not tell those apart (fixed v1.26.0).
+	limit := defaultBackoff
+	if backoffLimit != nil {
+		limit = *backoffLimit
 	}
 	if activeDeadline == 0 {
 		activeDeadline = defaultDeadline
@@ -396,7 +402,7 @@ func buildCronJobCommon(
 			JobTemplate: batchv1.JobTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{Labels: labels},
 				Spec: batchv1.JobSpec{
-					BackoffLimit:          &backoffLimit,
+					BackoffLimit:          &limit,
 					ActiveDeadlineSeconds: &activeDeadline,
 					Template: corev1.PodTemplateSpec{
 						ObjectMeta: metav1.ObjectMeta{Labels: labels},
@@ -406,9 +412,12 @@ func buildCronJobCommon(
 							ImagePullSecrets:   pullSecretRefs(cr.Spec.Image.PullSecrets),
 							Containers: []corev1.Container{
 								{
-									Name:            role,
-									Image:           imageRef(cr.Spec.Image),
-									Env:             append(append([]corev1.EnvVar{}, extraEnv...), protectedNamespacesEnv(cr)...),
+									Name:  role,
+									Image: imageRef(cr.Spec.Image),
+									// extraEnv is a freshly built, callee-owned slice
+									// (healthinfoEnv result or nil) — appending directly
+									// is safe; no defensive copy needed.
+									Env:             append(extraEnv, protectedNamespacesEnv(cr)...),
 									ImagePullPolicy: pullPolicy(cr.Spec.Image),
 									Args:            args,
 								},
@@ -542,10 +551,19 @@ func healthinfoEnv(a *chav1alpha1.AlertingSpec) []corev1.EnvVar {
 	return nil
 }
 
-// alertingEnv builds the env var slice that provides Slack webhook URLs
-// via secretKeyRef so alertingArgs() can reference them as $(ENV_VAR).
-// K8s expands $(FOO) in container args from the container's env at
-// pod-start time, before the process exec.
+// alertingEnv builds the WATCHER's env var slice: the Slack webhook
+// URLs that alertingArgs() references as $(ENV_VAR). K8s expands
+// $(FOO) in container args from the container's env at pod-start time,
+// before the process exec. ONLY the two channels `cha watch` consumes
+// (--slack-alerts / --slack-critical) belong here — SLACK_HEALTHINFO_URL
+// is diagnose-only (healthinfoEnv above). Until v1.26.0 this function
+// also injected SLACK_HEALTHINFO_URL onto the watcher: nothing in watch
+// mode reads it, and because secretRefEnv emits a NON-optional
+// secretKeyRef, a missing healthinfo secret hard-failed watcher pod
+// creation (CreateContainerConfigError) for an env var that could never
+// be used. The chart's watcher-deployment.yaml (slackAlertsEnv +
+// slackCriticalEnv only) is the reference shape; pinned by
+// TestWatcherDeploymentEnv_NoHealthinfoSecretRef.
 func alertingEnv(a *chav1alpha1.AlertingSpec) []corev1.EnvVar {
 	if a == nil || a.Slack == nil {
 		return nil
@@ -556,9 +574,6 @@ func alertingEnv(a *chav1alpha1.AlertingSpec) []corev1.EnvVar {
 	}
 	if c := a.Slack.Critical; c != nil && c.SecretName != "" {
 		env = append(env, secretRefEnv("SLACK_CRITICAL_URL", c.SecretName, defaultSlackSecretKey, c.SecretKey))
-	}
-	if c := a.Slack.HealthInfo; c != nil && c.SecretName != "" {
-		env = append(env, secretRefEnv("SLACK_HEALTHINFO_URL", c.SecretName, defaultSlackSecretKey, c.SecretKey))
 	}
 	return env
 }

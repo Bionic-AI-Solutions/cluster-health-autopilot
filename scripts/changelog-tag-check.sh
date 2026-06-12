@@ -19,10 +19,13 @@
 #      while the release PR that introduces it is in flight (the tag is
 #      pushed after merge). If the topmost heading IS tagged, fine too.
 #   2. The `[Unreleased]` section body must not present a version as
-#      already shipped: no `[x.y.z] — YYYY-MM-DD` (dated version
-#      reference) and no heading of any level naming a bare `[x.y.z]`.
-#      Unreleased content belongs under the topic `###` headings; it
-#      gets a version number only when the release section is cut.
+#      already shipped: no HEADING of any level naming a `[x.y.z]` —
+#      dated (`### [x.y.z] — YYYY-MM-DD`, the shipped-header signature)
+#      or bare. Both checks are anchored to the heading signature, so
+#      prose that merely mentions a version/date (e.g. "Backport of
+#      [1.25.1] fix from 2026-05-11") passes. Unreleased content belongs
+#      under the topic `###` headings; it gets a version number only
+#      when the release section is cut.
 #
 # Requires git tags to be present (CI: checkout with fetch-tags: true).
 set -euo pipefail
@@ -81,13 +84,20 @@ while IFS= read -r line; do
     continue
   fi
 
-  # Inside [Unreleased]: nothing may read as an already-shipped version.
+  # Inside [Unreleased]: no HEADING may present a version as already
+  # shipped. Both checks are anchored to the markdown heading signature
+  # (`#`s + space, then the bracketed version) — prose that merely
+  # MENTIONS a version and a date, e.g.
+  # `- Backport of [1.25.1] fix from 2026-05-11`, is legitimate
+  # cross-reference content and must pass (an unanchored version+date
+  # regex false-positived on exactly that).
   if [[ "$in_unreleased" -eq 1 ]]; then
-    # A bracketed version followed by an ISO date on the same line is
-    # the shipped-header signature (`[x.y.z] — YYYY-MM-DD`); matched
-    # loosely (any separator) since the dash glyph has varied.
-    if [[ "$line" =~ \[[0-9]+\.[0-9]+\.[0-9]+\].*[0-9]{4}-[0-9]{2}-[0-9]{2} ]]; then
-      echo "changelog-tag-check: line $lineno: [Unreleased] content references a dated version as shipped:" >&2
+    # Heading whose bracketed version carries an ISO date — the
+    # shipped-header signature (`### [x.y.z] — YYYY-MM-DD`); the date
+    # separator is matched loosely since the dash glyph has varied.
+    # (A two-`#` form is consumed by the release-heading branch above.)
+    if [[ "$line" =~ ^#{1,6}\ +\[[0-9]+\.[0-9]+\.[0-9]+\].*[0-9]{4}-[0-9]{2}-[0-9]{2} ]]; then
+      echo "changelog-tag-check: line $lineno: [Unreleased] content presents a dated version heading as shipped:" >&2
       echo "  $line" >&2
       fail=1
     elif [[ "$line" =~ ^#{1,6}\ +\[[0-9]+\.[0-9]+\.[0-9]+\] ]]; then

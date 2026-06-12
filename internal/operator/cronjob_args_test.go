@@ -129,6 +129,36 @@ func TestCronJobAlertingEnv_RoleScoped(t *testing.T) {
 	}
 }
 
+// The WATCHER must not carry a SLACK_HEALTHINFO_URL secretKeyRef:
+// nothing in `cha watch` reads it (--slack-healthinfo is registered on
+// the diagnose subcommand only, and there is no direct env read), and
+// secretRefEnv emits a NON-optional secretKeyRef — so when the
+// healthinfo secret is absent the kubelet hard-fails watcher pod
+// creation (CreateContainerConfigError) over an env var that could
+// never be consumed. The chart's watcher-deployment.yaml is the
+// reference: it renders cha.slackAlertsEnv + cha.slackCriticalEnv
+// only (cha.slackHealthinfoEnv appears solely on cronjob-diagnose).
+func TestWatcherDeploymentEnv_NoHealthinfoSecretRef(t *testing.T) {
+	cr := sampleCR()
+	cr.Spec.Watcher = &chav1alpha1.WatcherSpec{Enabled: true}
+	cr.Spec.Alerting = fullAlerting()
+
+	d := BuildWatcherDeployment(cr)
+	if d == nil {
+		t.Fatal("enabled watcher must produce a Deployment")
+	}
+	env := d.Spec.Template.Spec.Containers[0].Env
+	if hasEnv(env, "SLACK_HEALTHINFO_URL") {
+		t.Errorf("watcher Deployment carries SLACK_HEALTHINFO_URL — `cha watch` never reads it, and the non-optional secretKeyRef hard-fails pod creation when the secret is absent; have %v", envNames(env))
+	}
+	// The two channels the watcher DOES consume must still be present.
+	for _, want := range []string{"SLACK_ALERTS_URL", "SLACK_CRITICAL_URL"} {
+		if !hasEnv(env, want) {
+			t.Errorf("watcher Deployment env missing %s (consumed via --slack-alerts/--slack-critical $(...) expansion); have %v", want, envNames(env))
+		}
+	}
+}
+
 func hasEnv(env []corev1.EnvVar, name string) bool {
 	for _, e := range env {
 		if e.Name == name {
