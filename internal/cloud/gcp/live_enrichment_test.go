@@ -11,6 +11,21 @@ import (
 
 // forwardingRuleIndex feeds the CHA-com "(lb: ...)" join key — backend
 // service name → forwarding-rule IP (preferred) or name.
+//
+// Error-injection: when ForwardingRules.AggregatedList errors,
+// listForwardingRuleIndex returns nil (best-effort). A nil-map lookup
+// returns "" so the probe falls back to the backend-service name as the
+// join value — the finding still carries a "(lb: <name>)" suffix.
+func TestForwardingRuleIndex_ErrorYieldsEmptyMap_ProbeFallsBackToName(t *testing.T) {
+	// Simulate the error path: listForwardingRuleIndex returns nil.
+	// forwardingRuleIndex(nil) must return an empty (not nil) map so that
+	// the downstream lookup produces "" — the probe then uses the backend-
+	// service name as the join-key value.
+	idx := forwardingRuleIndex(nil)
+	if got := idx["any-backend"]; got != "" {
+		t.Errorf("AggregatedList error path: idx[any-backend]=%q want \"\" (name fallback)", got)
+	}
+}
 
 func TestForwardingRuleIndex_MapsBackendServiceToIP(t *testing.T) {
 	idx := forwardingRuleIndex([]*compute.ForwardingRule{

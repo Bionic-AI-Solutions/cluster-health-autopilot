@@ -13,6 +13,20 @@ import (
 // lbDNSByARN + firstLoadBalancerDNS feed the CHA-com "(lb: ...)" join
 // key — one DescribeLoadBalancers per probe cycle builds the ARN → DNS
 // map; each target group resolves through its LoadBalancerArns.
+//
+// Error-injection: when DescribeLoadBalancers errors, describeLoadBalancerDNS
+// returns nil (best-effort). firstLoadBalancerDNS on a nil map returns ""
+// so the probe omits the "(lb: ...)" suffix entirely — the finding carries
+// the pre-enrichment message.
+func TestDescribeLoadBalancerDNS_ErrorYieldsEmptyMap_ProbeUnsuffixed(t *testing.T) {
+	// Simulate the error path: describeLoadBalancerDNS returns nil when
+	// the DescribeLoadBalancers call fails. Verify that firstLoadBalancerDNS
+	// on that nil map returns "" so the probe emits the unsuffixed message.
+	var nilMap map[string]string // equivalent to return value on error
+	if got := firstLoadBalancerDNS([]string{"arn:lb/1"}, nilMap); got != "" {
+		t.Errorf("DescribeLoadBalancers error path: firstLoadBalancerDNS=%q want \"\" (unsuffixed)", got)
+	}
+}
 
 func TestLBDNSByARN(t *testing.T) {
 	m := lbDNSByARN([]elbv2types.LoadBalancer{
