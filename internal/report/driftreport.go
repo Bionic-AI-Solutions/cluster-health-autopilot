@@ -8,6 +8,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"log"
 	"strings"
 	"time"
 
@@ -101,6 +102,36 @@ func AssembleEntries(
 	return out
 }
 
+// NormalizeSeverity coerces an arbitrary severity string into the
+// DriftReport CRD spec.severity enum (info|warning|critical).
+//
+// Defense-in-depth: a single emitter using a non-enum literal (the
+// production `severity: "warn"` incident) makes EVERY reconcile cycle fail
+// CRD validation (`spec.severity: Unsupported value`). Emitters are fixed at
+// the source (and guarded by a source-level lint test), but this choke point
+// guarantees a future emitter can never break reconcile again.
+//
+//	info|warning|critical → unchanged
+//	warn                  → warning
+//	error|err|fatal|crit  → critical
+//	"" (optional field)   → warning (matches the AssembleEntries default)
+//	anything else         → warning, with a log line naming the source
+func NormalizeSeverity(severity, source string) string {
+	switch s := strings.ToLower(strings.TrimSpace(severity)); s {
+	case "info", "warning", "critical":
+		return s
+	case "warn":
+		return "warning"
+	case "error", "err", "fatal", "crit":
+		return "critical"
+	case "":
+		return "warning"
+	default:
+		log.Printf("report: driftreport: unknown severity %q from source %q — defaulting to \"warning\"", severity, source)
+		return "warning"
+	}
+}
+
 // Reconcile upserts one CR per entry and deletes CRs whose subject is not
 // in the current entry set.
 //
@@ -123,6 +154,10 @@ func Reconcile(
 
 	wantBySubject := make(map[string]DriftReportEntry, len(entries))
 	for _, e := range entries {
+		// Normalize here — the single choke point before both the create
+		// spec and the per-cycle spec-refresh patch — so a non-enum
+		// severity from any emitter can never fail CRD validation.
+		e.Severity = NormalizeSeverity(e.Severity, e.Source)
 		wantBySubject[e.Subject] = e
 	}
 

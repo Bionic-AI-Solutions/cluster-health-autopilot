@@ -295,7 +295,7 @@ func (a DNSChainDrift) Run(ctx context.Context, src snapshot.Source) []Diagnosti
 			// Host is on seed list but has no Ingress and is not external-only.
 			out = append(out, Diagnostic{
 				Subject:  subj("missing-ingress", host),
-				Severity: "error",
+				Severity: "critical",
 				Source:   "DNSChainDrift",
 				Message: fmt.Sprintf(
 					"*%s* is in the static endpoint target list but has no Ingress in any namespace. "+
@@ -341,7 +341,7 @@ func (a DNSChainDrift) Run(ctx context.Context, src snapshot.Source) []Diagnosti
 			if len(colliding) > 0 {
 				out = append(out, Diagnostic{
 					Subject:  subj("duplicate-ingress-host", host),
-					Severity: "warn",
+					Severity: "warning",
 					Source:   "DNSChainDrift",
 					Message: fmt.Sprintf(
 						"*%s* has %d colliding path(s) claimed by multiple Ingresses: %s. "+
@@ -358,7 +358,7 @@ func (a DNSChainDrift) Run(ctx context.Context, src snapshot.Source) []Diagnosti
 			if svcErr != nil || svc == nil {
 				out = append(out, Diagnostic{
 					Subject:  subj("ingress-orphan-service", be.ns+"/"+be.ingName+"/"+host),
-					Severity: "error",
+					Severity: "critical",
 					Source:   "DNSChainDrift",
 					Message: fmt.Sprintf(
 						"Ingress `%s/%s` routes host *%s* to Service `%s/%s` (port %s) "+
@@ -380,7 +380,7 @@ func (a DNSChainDrift) Run(ctx context.Context, src snapshot.Source) []Diagnosti
 			if strings.EqualFold(svcType, "ExternalName") {
 				out = append(out, Diagnostic{
 					Subject:  subj("service-external-name-mismatch", be.svcNs+"/"+be.svcName+"/"+host),
-					Severity: "warn",
+					Severity: "warning",
 					Source:   "DNSChainDrift",
 					Message: fmt.Sprintf(
 						"Ingress `%s/%s` for host *%s* references Service `%s/%s` "+
@@ -400,7 +400,7 @@ func (a DNSChainDrift) Run(ctx context.Context, src snapshot.Source) []Diagnosti
 			if epErr != nil || ep == nil || !hasReadyEndpoints(ep) {
 				out = append(out, Diagnostic{
 					Subject:  subj("service-no-endpoints", be.svcNs+"/"+be.svcName+"/"+host),
-					Severity: "error",
+					Severity: "critical",
 					Source:   "DNSChainDrift",
 					Message: fmt.Sprintf(
 						"Service `%s/%s` (backing host *%s* via Ingress `%s/%s`) "+
@@ -601,7 +601,7 @@ func buildCFRecordCache(ctx context.Context, client CloudflareClient) (map[strin
 // checkCFLayer checks the Cloudflare DNS record for a single host.
 // Returns:
 //   - (nil, true) when the record exists and matches — no finding, chain continues.
-//   - (*Diagnostic, false) when the record is completely absent — emit error, chain stops.
+//   - (*Diagnostic, false) when the record is completely absent — emit critical, chain stops.
 //   - (*Diagnostic, true) when the record points elsewhere — emit error, chain continues.
 func checkCFLayer(host string, cfRecords map[string][]DNSRecord, lbIP, k8sSummary string) (*Diagnostic, bool) {
 	records, found := cfRecords[host]
@@ -621,7 +621,7 @@ func checkCFLayer(host string, cfRecords map[string][]DNSRecord, lbIP, k8sSummar
 		)
 		return &Diagnostic{
 			Subject:     subj("missing-cloudflare-record", host),
-			Severity:    "error",
+			Severity:    "critical",
 			Source:      "DNSChainDrift",
 			Message:     msg,
 			Remediation: rem,
@@ -647,7 +647,7 @@ func checkCFLayer(host string, cfRecords map[string][]DNSRecord, lbIP, k8sSummar
 	}
 	return &Diagnostic{
 		Subject:  subj("cloudflare-points-elsewhere", host),
-		Severity: "error",
+		Severity: "critical",
 		Source:   "DNSChainDrift",
 		Message: fmt.Sprintf(
 			"*%s*: Cloudflare DNS record exists but points elsewhere. "+

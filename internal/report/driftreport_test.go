@@ -29,6 +29,9 @@ type fakeMutator struct {
 	// body sent to that signature. Lets regression tests assert the patch
 	// targeted the right subresource AND carried the expected fields.
 	patchBodies map[string][]byte
+	// created holds every object passed to Create, in call order. Lets
+	// regression tests assert the full spec/labels the writer sent.
+	created []*unstructured.Unstructured
 }
 
 func (f *fakeMutator) Delete(_ context.Context, gvr schema.GroupVersionResource, ns, name string) error {
@@ -55,6 +58,7 @@ func (f *fakeMutator) PatchStatus(_ context.Context, gvr schema.GroupVersionReso
 }
 func (f *fakeMutator) Create(_ context.Context, gvr schema.GroupVersionResource, ns string, obj *unstructured.Unstructured) error {
 	f.calls = append(f.calls, fmt.Sprintf("Create %s/%s/%s", gvr.Resource, ns, obj.GetName()))
+	f.created = append(f.created, obj)
 	return nil
 }
 

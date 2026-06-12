@@ -13,6 +13,14 @@ serves the latest tagged chart cut.
 
 ## [Unreleased]
 
+### Fixed — DNSChainDrift emitted non-enum severities; every DriftReport reconcile cycle failed CRD validation
+
+Production bug: `DNSChainDrift` emitted diagnostics with `severity: "warn"` (duplicate-ingress-host, service-external-name-mismatch) and `severity: "error"` (missing-cloudflare-record, cloudflare-points-elsewhere, missing-ingress, ingress-orphan-service, service-no-endpoints), but the DriftReport CRD enum only allows `info|warning|critical` — so the watcher's driftreport reconcile failed on those subjects every cycle with `spec.severity: Unsupported value: "warn"`.
+
+- **Source fix** (`internal/diagnose/dns_chain_drift.go`) — all seven emit sites now use enum values: `warn` → `warning`, `error` → `critical` (broken-chain findings — host unreachable / traffic dropped — are critical by the same scale the rest of the catalog uses).
+- **Defense-in-depth** (`internal/report/driftreport.go`) — new `report.NormalizeSeverity(severity, source)` applied at the single choke point in `Reconcile` where both the create spec and the per-cycle spec-refresh patch are built: `warn`→`warning`, `error`/`err`/`fatal`/`crit`→`critical`, empty→`warning` (the existing AssembleEntries default), anything else→`warning` with a log line naming the offending source. A future emitter with a bad literal can no longer break reconcile.
+- **Guard tests** (`internal/report/severity_test.go`) — (1) a table-driven regression test for the normalizer mapping; (2) `TestReconcile_NormalizesNonEnumSeverity` asserting both the create path and the spec-patch path send enum values; (3) `TestSeverityLiteralsAreEnumValues`, a static AST lint that walks every non-test `.go` file under `internal/`, `catalog/`, `pkg/`, `cmd/`, `api/` and fails on any `Severity` string literal outside the enum — this test caught exactly the seven production sites before the fix.
+
 ### Added — chart: deploy the read-only hosted dashboard (P6.6)
 
 P6.6 shipped a `cha-com dashboard` subcommand (a read-only, server-rendered HTML view of findings/approvals/history). This wires the OSS Helm chart to actually deploy it, mirroring the approval-server's chart pattern.

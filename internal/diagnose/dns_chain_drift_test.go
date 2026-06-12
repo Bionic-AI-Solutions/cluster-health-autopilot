@@ -251,8 +251,8 @@ func TestDNSChainDrift_MissingCFRecord(t *testing.T) {
 	for _, d := range diags {
 		if strings.Contains(d.Subject, "missing-cloudflare-record") && strings.Contains(d.Subject, host) {
 			found = true
-			if d.Severity != "error" {
-				t.Errorf("expected severity=error, got %q", d.Severity)
+			if d.Severity != "critical" {
+				t.Errorf("expected severity=critical, got %q", d.Severity)
 			}
 		}
 	}
@@ -290,8 +290,8 @@ func TestDNSChainDrift_CFPointsElsewhere(t *testing.T) {
 	for _, d := range diags {
 		if strings.Contains(d.Subject, "cloudflare-points-elsewhere") && strings.Contains(d.Subject, host) {
 			found = true
-			if d.Severity != "error" {
-				t.Errorf("expected severity=error, got %q", d.Severity)
+			if d.Severity != "critical" {
+				t.Errorf("expected severity=critical, got %q", d.Severity)
 			}
 			if !strings.Contains(d.Message, wrongIP) {
 				t.Errorf("expected message to contain wrong IP %q: %s", wrongIP, d.Message)
@@ -373,8 +373,8 @@ func TestDNSChainDrift_OrphanService(t *testing.T) {
 	for _, d := range diags {
 		if strings.Contains(d.Subject, "ingress-orphan-service") {
 			found = true
-			if d.Severity != "error" {
-				t.Errorf("expected severity=error, got %q", d.Severity)
+			if d.Severity != "critical" {
+				t.Errorf("expected severity=critical, got %q", d.Severity)
 			}
 			if !strings.Contains(d.Message, "ghost-svc") {
 				t.Errorf("expected message to mention ghost-svc: %s", d.Message)
@@ -402,8 +402,8 @@ func TestDNSChainDrift_NoEndpoints(t *testing.T) {
 	for _, d := range diags {
 		if strings.Contains(d.Subject, "service-no-endpoints") {
 			found = true
-			if d.Severity != "error" {
-				t.Errorf("expected severity=error, got %q", d.Severity)
+			if d.Severity != "critical" {
+				t.Errorf("expected severity=critical, got %q", d.Severity)
 			}
 		}
 	}
@@ -543,8 +543,8 @@ func TestDNSChainDrift_DuplicateIngressHost(t *testing.T) {
 	for _, d := range diags {
 		if strings.Contains(d.Subject, "duplicate-ingress-host") {
 			found = true
-			if d.Severity != "warn" {
-				t.Errorf("expected severity=warn, got %q", d.Severity)
+			if d.Severity != "warning" {
+				t.Errorf("expected severity=warning, got %q", d.Severity)
 			}
 		}
 	}
