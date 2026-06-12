@@ -1028,8 +1028,12 @@ What this flag does, mechanically:
 
 ### Safety constraints
 
-- **Protected namespaces** (`kube-system`, `kube-public`, the chart's own namespace, and
-  anything matching `cha.bionicaisolutions.com/protected: "true"`) are skipped.
+- **Protected namespaces** are skipped. The compiled-in floor is `kube-system`,
+  `kube-public`, `kube-node-lease`, `rook-ceph`, `vault`, `external-secrets`, and
+  `cnpg-system`; operators can APPEND namespaces via `protectedNamespaces.extra`
+  (Helm) / `spec.protectedNamespacesExtra` (operator CR) /
+  `CHA_PROTECTED_NAMESPACES_EXTRA` (env, comma-separated). The floor itself can
+  never be removed.
 - **GitOps-managed Ingresses are skipped** so the fixer never fights ArgoCD, Flux, or
   Helm. Detected via:
   - ArgoCD: `argocd.argoproj.io/instance` or `argocd.argoproj.io/tracking-id` annotation
@@ -1492,6 +1496,18 @@ fixers:
   # managed-by label). The analyzer always emits the diagnostic regardless.
   tlsSecretMismatch:
     enabled: false
+
+# Protected namespaces (v1.25.2). The compiled-in floor — kube-system,
+# kube-public, kube-node-lease, rook-ceph, vault, external-secrets,
+# cnpg-system — is NEVER touched by any fixer or AI-proposed action and
+# cannot be shrunk. `extra` APPENDS namespaces to that floor: rendered as
+# CHA_PROTECTED_NAMESPACES_EXTRA on the watcher, diagnose, remediate, and
+# aiwatch containers so the fixer guard AND the AI-action validator extend
+# the same boundary. Operator-managed installs use the equivalent CR field
+# `spec.protectedNamespacesExtra`. Append-only: garbage or duplicate
+# entries are ignored; nothing in this list can un-protect a floor entry.
+protectedNamespaces:
+  extra: []          # e.g. [prod-payments, tenant-a]
 
 slack:
   alerts:

@@ -57,6 +57,7 @@ spec:
                 {{- end }}
               env:
                 {{- include "cha.optionalFixerEnv" . | nindent 16 }}
+                {{- include "cha.protectedNamespacesEnv" . | nindent 16 }}
               resources:
                 {{- toYaml .Values.resources | nindent 16 }}
               securityContext:

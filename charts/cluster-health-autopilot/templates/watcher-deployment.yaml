@@ -204,6 +204,7 @@ spec:
             {{- include "cha.slackCriticalEnv" . | nindent 12 }}
             {{- include "cha.vaultEnv" . | nindent 12 }}
             {{- include "cha.optionalFixerEnv" . | nindent 12 }}
+            {{- include "cha.protectedNamespacesEnv" . | nindent 12 }}
             {{- include "cha.analyzerToggleEnv" . | nindent 12 }}
             {{- include "cha.probeToggleEnv" . | nindent 12 }}
             {{- include "cha.investigatorEnv" . | nindent 12 }}

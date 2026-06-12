@@ -30,6 +30,9 @@ spec:
   # BYO SA name — the operator binds it to the reader ClusterRole but
   # does NOT create it (and nothing waits on it; all workloads are off).
   serviceAccountName: "smoke-full-byo-sa"
+  # Append-only protected-namespace extension → rendered as
+  # CHA_PROTECTED_NAMESPACES_EXTRA on watcher/cronjobs/aiwatch.
+  protectedNamespacesExtra: ["smoke-protected-extra", "smoke-protected-extra-2"]
   watcher:
     enabled: false
     replicas: 1

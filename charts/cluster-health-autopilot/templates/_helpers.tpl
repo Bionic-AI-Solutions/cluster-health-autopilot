@@ -198,6 +198,22 @@ Keep additive — never break existing installs by changing default semantics.
 {{- end -}}
 
 {{- /*
+cha.protectedNamespacesEnv — APPEND-ONLY extension of the compiled-in
+protected-namespace floor. Renders protectedNamespaces.extra as
+CHA_PROTECTED_NAMESPACES_EXTRA (comma-separated). Consumed by BOTH
+act-side guards (internal/fix fixer guard + pkg/ai AI-action validator),
+so include this on every act-capable container: watcher, diagnose,
+remediate, aiwatch. Empty list = no env var (byte-identical render).
+The floor itself is compiled in and can never be removed via this knob.
+*/ -}}
+{{- define "cha.protectedNamespacesEnv" -}}
+{{- with (.Values.protectedNamespaces).extra }}
+- name: CHA_PROTECTED_NAMESPACES_EXTRA
+  value: {{ join "," . | quote }}
+{{- end }}
+{{- end -}}
+
+{{- /*
 cha.analyzerToggleEnv — env-var toggles for the v1.7+ drift-class
 expansion analyzers (Workstreams B1+B2+B3+B4). Each defaults to ON;
 flip analyzers.<name>.enabled=false in values.yaml to silence the

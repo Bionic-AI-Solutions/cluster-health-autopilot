@@ -22,6 +22,7 @@ import (
 	"strings"
 
 	chav1alpha1 "github.com/Bionic-AI-Solutions/cluster-health-autopilot/api/v1alpha1"
+	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/ai"
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -237,6 +238,7 @@ func BuildWatcherDeployment(cr *chav1alpha1.ClusterHealthAutopilot) *appsv1.Depl
 	env = append(env, ticketingEnv(cr.Spec.Ticketing)...)
 	env = append(env, watcherTriggerEnv(cr.Spec.Watcher)...)
 	env = append(env, externalDNSEnv(cr.Spec.ExternalDNS)...)
+	env = append(env, protectedNamespacesEnv(cr)...)
 
 	// v1.16.0 — When the CR's AI tier has approvalServerUrl set, hand
 	// it to the watcher so the OSS binary itself can mint signed
@@ -395,7 +397,7 @@ func buildCronJobCommon(
 								{
 									Name:            role,
 									Image:           imageRef(cr.Spec.Image),
-									Env:             alertingEnv(cr.Spec.Alerting),
+									Env:             append(alertingEnv(cr.Spec.Alerting), protectedNamespacesEnv(cr)...),
 									ImagePullPolicy: pullPolicy(cr.Spec.Image),
 									Args:            args,
 								},
@@ -855,7 +857,30 @@ func aiEnv(cr *chav1alpha1.ClusterHealthAutopilot) []corev1.EnvVar {
 	// are read by the cha-com aiwatch binary; the OSS operator only wires
 	// them. Plain values inline; tokens/passwords via secretKeyRef ONLY.
 	env = append(env, ticketingProviderEnv(cr.Spec.Ticketing)...)
+	// Protected-namespace extension — the aiwatch links pkg/ai's
+	// validator, which must enforce the SAME widened floor the fixer
+	// guard sees, or a proposal could pass AI validation and then be
+	// refused (or worse, the inverse) at apply time.
+	env = append(env, protectedNamespacesEnv(cr)...)
 	return env
+}
+
+// protectedNamespacesEnv renders spec.protectedNamespacesExtra as the
+// CHA_PROTECTED_NAMESPACES_EXTRA env var (comma-separated; trimmed,
+// deduped, empties dropped — mirrors ai.ParseProtectedNamespacesExtra
+// on the consuming side). Returned on EVERY act-capable workload
+// (watcher, diagnose, remediate, aiwatch) so the fixer guard and the
+// AI validator extend the same append-only floor. Nil when the spec
+// has no usable entries — byte-identical legacy render.
+func protectedNamespacesEnv(cr *chav1alpha1.ClusterHealthAutopilot) []corev1.EnvVar {
+	extras := ai.ParseProtectedNamespacesExtra(strings.Join(cr.Spec.ProtectedNamespacesExtra, ","))
+	if len(extras) == 0 {
+		return nil
+	}
+	return []corev1.EnvVar{{
+		Name:  ai.EnvProtectedNamespacesExtra,
+		Value: strings.Join(extras, ","),
+	}}
 }
 
 // ticketingProviderEnv renders the CHA-com Jira / ServiceNow / route env

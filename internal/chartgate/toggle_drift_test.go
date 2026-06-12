@@ -30,6 +30,9 @@ var toggleSourceFiles = []string{
 	"../../internal/probe/k3s_datastore.go",
 	"../../internal/watcher/leader.go",
 	"../../cmd/cha/main.go",
+	// CHA_PROTECTED_NAMESPACES_EXTRA — append-only protected-namespace
+	// extension read lazily by pkg/ai (and via it, internal/fix).
+	"../../pkg/ai/protected.go",
 }
 
 const helpersTplPath = "../../charts/cluster-health-autopilot/templates/_helpers.tpl"

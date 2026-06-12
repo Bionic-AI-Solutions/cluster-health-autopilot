@@ -780,6 +780,21 @@ dashboard:
       memory: 32Mi
   nodeSelector: {}
 
+# Protected namespaces — the act-side no-touch list. The compiled-in floor
+# (kube-system, kube-public, kube-node-lease, rook-ceph, vault,
+# external-secrets, cnpg-system) is NOT configurable and can never be
+# removed. `extra` APPENDS namespaces to that floor: each entry is rendered
+# as CHA_PROTECTED_NAMESPACES_EXTRA (comma-separated) on the watcher,
+# diagnose, remediate, AND aiwatch containers, so both act-side guards —
+# the fixer guard (internal/fix) and the AI-action validator (pkg/ai) —
+# extend the same boundary. Diagnose analyzers still REPORT findings in
+# protected namespaces; only mutations are gated.
+protectedNamespaces:
+  extra: []
+  # extra:
+  #   - prod-payments
+  #   - tenant-a
+
 # Gatekeeper ConstraintTemplate — third-layer admission policy that rejects
 # mutations against protected namespaces even if a signed approval somehow
 # requested one. Requires OPA Gatekeeper to be installed in the cluster.

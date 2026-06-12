@@ -116,6 +116,10 @@ func (in *ClusterHealthAutopilotSpec) DeepCopyInto(out *ClusterHealthAutopilotSp
 		out.Ticketing = new(TicketingSpec)
 		in.Ticketing.DeepCopyInto(out.Ticketing)
 	}
+	if in.ProtectedNamespacesExtra != nil {
+		out.ProtectedNamespacesExtra = make([]string, len(in.ProtectedNamespacesExtra))
+		copy(out.ProtectedNamespacesExtra, in.ProtectedNamespacesExtra)
+	}
 }
 
 // DeepCopy returns a deep copy of the receiver.

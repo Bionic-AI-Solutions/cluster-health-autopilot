@@ -13,6 +13,11 @@ import (
 // ProtectedNamespaces names mirror internal/fix/protected.go. Re-listed
 // here so the AI surface enforces the same boundary at proposal time
 // without importing the internal package.
+//
+// This map is the COMPILED-IN FLOOR, not the complete protected set:
+// operators may APPEND namespaces via CHA_PROTECTED_NAMESPACES_EXTRA
+// (or SetExtraProtectedNamespaces) — see protected.go. Nothing can
+// remove an entry from this floor at runtime.
 var ProtectedNamespaces = map[string]struct{}{
 	"kube-system":      {},
 	"kube-public":      {},
@@ -23,15 +28,21 @@ var ProtectedNamespaces = map[string]struct{}{
 	"cnpg-system":      {},
 }
 
-// IsProtectedNamespace reports whether ns is on the no-touch list.
-// Mirrors fix.IsProtectedNamespace; duplicated to avoid cross-package
-// dependency from the public ai package into internal/fix.
+// IsProtectedNamespace reports whether ns is on the no-touch list —
+// the compiled-in floor PLUS any operator-appended extras
+// (CHA_PROTECTED_NAMESPACES_EXTRA / SetExtraProtectedNamespaces).
+// Mirrors fix.IsProtectedNamespace; the floor is duplicated to avoid a
+// cross-package dependency from the public ai package into
+// internal/fix, while the extras are shared (internal/fix consults
+// IsExtraProtectedNamespace) so both guards always agree.
 func IsProtectedNamespace(ns string) bool {
 	if ns == "" {
 		return false
 	}
-	_, ok := ProtectedNamespaces[ns]
-	return ok
+	if _, ok := ProtectedNamespaces[ns]; ok {
+		return true
+	}
+	return IsExtraProtectedNamespace(ns)
 }
 
 // Validate enforces the structural and policy invariants of an

@@ -84,6 +84,7 @@ spec:
                 fieldRef:
                   fieldPath: metadata.name
             {{- include "cha.aiEnv" . | nindent 12 }}
+            {{- include "cha.protectedNamespacesEnv" . | nindent 12 }}
             {{- if (.Values.approval).enabled }}
             # t1+ click-to-fix URL signing — same Ed25519 key the
             # approval-server validates with.

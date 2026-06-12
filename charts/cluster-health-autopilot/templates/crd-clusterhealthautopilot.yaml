@@ -78,6 +78,14 @@ spec:
                         type: string
                 serviceAccountName:
                   type: string
+                # v1.25.2 — append-only extension of the compiled-in
+                # protected-namespace floor; rendered as
+                # CHA_PROTECTED_NAMESPACES_EXTRA on watcher + cronjobs +
+                # aiwatch (feeds both the fixer guard and the AI validator).
+                protectedNamespacesExtra:
+                  type: array
+                  items:
+                    type: string
                 watcher:
                   type: object
                   required:

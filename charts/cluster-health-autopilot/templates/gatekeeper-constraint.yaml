@@ -86,7 +86,12 @@ spec:
         kinds: ["Order"]
   parameters:
     protectedNamespaces:
-      {{- range .Values.gatekeeper.constraints.protectedNamespaces }}
+      {{- /* protectedNamespaces.extra is appended so the admission
+             layer enforces the SAME widened boundary the binary's
+             fixer guard + AI validator read from
+             CHA_PROTECTED_NAMESPACES_EXTRA. Append-only: the
+             gatekeeper list keeps its compiled-floor mirror. */}}
+      {{- range uniq (concat .Values.gatekeeper.constraints.protectedNamespaces (default list (.Values.protectedNamespaces).extra)) }}
       - {{ . | quote }}
       {{- end }}
     allowedUsernames:

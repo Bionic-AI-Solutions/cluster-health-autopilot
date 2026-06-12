@@ -101,3 +101,18 @@ func TestClusterHealthAutopilotSpec_DeepCopy_IncludesAI(t *testing.T) {
 		t.Error("Spec.DeepCopy did not deep-copy AI nested struct")
 	}
 }
+
+func TestClusterHealthAutopilotSpec_DeepCopy_ProtectedNamespacesExtra(t *testing.T) {
+	src := &ClusterHealthAutopilotSpec{
+		Image:                    ImageSpec{Repository: "a", Tag: "b"},
+		ProtectedNamespacesExtra: []string{"prod-payments", "tenant-a"},
+	}
+	dst := src.DeepCopy()
+	if &dst.ProtectedNamespacesExtra[0] == &src.ProtectedNamespacesExtra[0] {
+		t.Fatal("Spec.DeepCopy should clone the ProtectedNamespacesExtra backing array")
+	}
+	dst.ProtectedNamespacesExtra[0] = "MUTATED"
+	if src.ProtectedNamespacesExtra[0] == "MUTATED" {
+		t.Error("Spec.DeepCopy did not deep-copy ProtectedNamespacesExtra")
+	}
+}

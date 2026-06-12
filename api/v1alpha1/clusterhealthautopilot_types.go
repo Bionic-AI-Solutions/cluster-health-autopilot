@@ -110,6 +110,27 @@ type ClusterHealthAutopilotSpec struct {
 	// itself — the SA lifecycle belongs to whoever defined it.
 	// +optional
 	ServiceAccountName string `json:"serviceAccountName,omitempty"`
+
+	// ProtectedNamespacesExtra APPENDS namespaces to the compiled-in
+	// protected-namespace floor (kube-system, kube-public,
+	// kube-node-lease, rook-ceph, vault, external-secrets,
+	// cnpg-system). Append-only by contract: entries here can only ADD
+	// to the no-touch list — nothing can remove a compiled-in entry.
+	//
+	// Deliberately a TOP-LEVEL field (not under spec.remediate or
+	// spec.ai): one list feeds BOTH act-side guards. The operator
+	// renders it as the CHA_PROTECTED_NAMESPACES_EXTRA env var on the
+	// watcher Deployment and diagnose/remediate CronJobs (consumed by
+	// the fixer guard, internal/fix.IsProtectedNamespace) AND on the
+	// aiwatch Deployment (consumed by the AI-action validator,
+	// pkg/ai.IsProtectedNamespace, linked into cha-com) — splitting the
+	// knob per consumer would invite the two safety floors to diverge.
+	//
+	// Entries are whitespace-trimmed and deduplicated; empty entries
+	// are ignored. Diagnose-side analyzers still REPORT findings in
+	// protected namespaces — only mutations are gated.
+	// +optional
+	ProtectedNamespacesExtra []string `json:"protectedNamespacesExtra,omitempty"`
 }
 
 // ImageSpec names the container image for all CHA workloads.
