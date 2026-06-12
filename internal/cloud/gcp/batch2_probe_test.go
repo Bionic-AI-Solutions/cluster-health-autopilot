@@ -215,6 +215,71 @@ func TestSubnets_Unmeasured_Skipped(t *testing.T) {
 	}
 }
 
+// Capacity-only contract (O7): unmeasured subnets (live mode) with a
+// small primary CIDR are flagged — the IP-exhaustion precondition the
+// probe CAN see without the Recommender API.
+func TestSubnets_Unmeasured_SmallCIDR_Warns(t *testing.T) {
+	got := Subnets{}.Run(context.Background(), &fakeSource{
+		gcp: &fakeGCP{project: "p", subnets: []pkggcp.Subnet{
+			{Name: "tiny", Region: "us-central1", IPCIDRRange: "10.0.0.0/28", TotalIPCount: 12, AvailableIPCount: -1},
+		}},
+	})
+	if len(got.Findings) != 1 {
+		t.Fatalf("expected 1 small-capacity warning; got: %+v", got.Findings)
+	}
+	if got.Findings[0].Severity != probe.SeverityWarning {
+		t.Errorf("severity=%s want warning", got.Findings[0].Severity)
+	}
+	if !strings.Contains(got.Findings[0].Message, "Network Analyzer") {
+		t.Errorf("message must point at Network Analyzer for real utilization; got: %q", got.Findings[0].Message)
+	}
+}
+
+func TestSubnets_Unmeasured_LargeCIDR_Silent(t *testing.T) {
+	got := Subnets{}.Run(context.Background(), &fakeSource{
+		gcp: &fakeGCP{project: "p", subnets: []pkggcp.Subnet{
+			{Name: "big", Region: "us-central1", IPCIDRRange: "10.0.0.0/24", TotalIPCount: 252, AvailableIPCount: -1},
+		}},
+	})
+	if len(got.Findings) != 0 {
+		t.Errorf("unmeasured /24 should not warn; got: %+v", got.Findings)
+	}
+	if !strings.Contains(got.Component.Detail, "capacity-only") {
+		t.Errorf("detail should state the capacity-only contract; got: %q", got.Component.Detail)
+	}
+}
+
+func TestSubnets_SmallPrefixThreshold_Configurable(t *testing.T) {
+	// /27 is small under the default (/26) but fine when the operator
+	// relaxes the threshold to /28.
+	subnets := []pkggcp.Subnet{
+		{Name: "tiny", Region: "us-central1", IPCIDRRange: "10.0.0.0/27", TotalIPCount: 28, AvailableIPCount: -1},
+	}
+	got := Subnets{}.Run(context.Background(), &fakeSource{gcp: &fakeGCP{project: "p", subnets: subnets}})
+	if len(got.Findings) != 1 {
+		t.Errorf("default threshold (/26) should flag a /27; got: %+v", got.Findings)
+	}
+	got = Subnets{SmallPrefixThreshold: 28}.Run(context.Background(), &fakeSource{gcp: &fakeGCP{project: "p", subnets: subnets}})
+	if len(got.Findings) != 0 {
+		t.Errorf("threshold /28 should not flag a /27; got: %+v", got.Findings)
+	}
+}
+
+func TestCIDRPrefix(t *testing.T) {
+	cases := map[string]int{
+		"10.0.0.0/28": 28,
+		"10.0.0.0/8":  8,
+		"":            -1,
+		"10.0.0.0":    -1,
+		"10.0.0.0/99": -1,
+	}
+	for in, want := range cases {
+		if got := cidrPrefix(in); got != want {
+			t.Errorf("cidrPrefix(%q)=%d want %d", in, got, want)
+		}
+	}
+}
+
 func TestBatch2_NamesStable(t *testing.T) {
 	cases := map[string]string{
 		GKEControlPlane{}.Name():    "gcp-gke-control-plane",

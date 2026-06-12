@@ -87,14 +87,24 @@ type ServiceAccount struct {
 }
 
 // Subnet is the narrow projection of a VPC subnetwork. The drift
-// signal is IP exhaustion: AvailableIPCount low relative to range.
+// signal is IP exhaustion: AvailableIPCount low relative to range —
+// when measured. The live wrapper cannot measure used IPs cheaply
+// (AvailableIPCount = -1, "not measured"); the probe then falls back
+// to a capacity-only check on the primary CIDR. See
+// internal/cloud/gcp/live.go ListSubnets for the live contract.
 type Subnet struct {
 	Name             string `json:"name"`
 	Network          string `json:"network,omitempty"`
 	Region           string `json:"region,omitempty"`
 	IPCIDRRange      string `json:"ipCidrRange,omitempty"`
-	AvailableIPCount int64  `json:"availableIPCount"` // free addresses
-	TotalIPCount     int64  `json:"totalIPCount"`     // usable addresses in the range
+	AvailableIPCount int64  `json:"availableIPCount"` // free addresses; -1 = not measured
+	TotalIPCount     int64  `json:"totalIPCount"`     // usable addresses in the primary range
+	// SecondaryIPCount is the summed address capacity of the subnet's
+	// secondary (alias) ranges — GKE pod/service ranges live here. GCP
+	// reserves no addresses in secondary ranges, so this is the full
+	// range size. 0 = no secondary ranges (or captured before this
+	// field existed).
+	SecondaryIPCount int64 `json:"secondaryIPCount,omitempty"`
 }
 
 // BackendService is the narrow projection of a Load Balancer backend
