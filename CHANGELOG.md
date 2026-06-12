@@ -13,6 +13,18 @@ serves the latest tagged chart cut.
 
 ## [Unreleased]
 
+## [1.26.1] — 2026-06-12
+
+### Fixed — watcher standby pods now serve `/healthz`; rolling upgrades no longer deadlock (O11, production 1.26.0 upgrade incident)
+
+PR #186 (1.26.0) introduced the always-on `:8081` health server **and** the chart/operator liveness+readiness probes that target it — but started the listener inside `Watcher.Run`, which `cha watch` wraps in `RunWithLeader`, i.e. inside the leader-election `OnStartedLeading` callback. A standby (non-leader) pod therefore served nothing on `:8081`: the liveness probe got `connection refused` and kubelet kill-looped it. Under the operator-built Deployment's `RollingUpdate maxUnavailable=0` strategy this deadlocked **every** upgrade — the new pod could never pass its probes while the old leader held the `cha-watcher` lease, and the old pod was never terminated. Production recovery required deleting the old leader pod and temporarily relaxing `maxUnavailable`.
+
+- **`cha watch` now binds the health listener BEFORE entering leader election**, on the command context (process lifetime, not lease lifetime), via the new idempotent `Watcher.StartHealthServer`. `/healthz` returns 200 as soon as the process is up — leader, standby, or still-acquiring. A bind failure is a hard startup error (loud exit beats a silent probe kill-loop). `Watcher.Run` still calls `StartHealthServer` defensively (idempotent no-op when already started), so direct `Run` callers and the `CHA_LEADER_ELECTION=off` path keep the listener.
+- **`/readyz` added as an unconditional 200 alias of `/healthz`** — deliberately NOT gated on holding the leader lease. The chart and operator point both probes at `/healthz`; the watcher serves no Service traffic that readiness needs to gate, and a leadership-gated readiness would re-create the same deadlock (a standby pod that never goes Ready blocks `maxUnavailable=0` rollouts and single-replica rollover). Documented in the chart template, the operator's `watcherHealthProbes`, and the handler.
+- **Regression test** `TestStartHealthServer_Serves200WhileStandby_NotLeader` (internal/watcher) pins the incident: health server started the way `cmd/cha` does, leader election entered against a lease already held by another identity, asserts `/healthz` answers 200 while the watch-loop body has never run. Plus an idempotency test (second `StartHealthServer` must not re-bind).
+
+No probe endpoints, ports, or chart values changed — `helm upgrade` from 1.26.0 picks up the fixed binary and rolls cleanly (this release is itself the first upgrade that no longer needs the manual leader-pod delete).
+
 ## [1.26.0] — 2026-06-12
 
 Release cut covering everything merged since v1.25.1 (PRs #186–#203 plus the O9 release PR): the operator CronJob unknown-flag production fix, the housekeeping/honesty batches (O6–O8), the trigger/security hardening from the adversarial review (P1.x/P2.x), supply-chain provenance (P6.2), ticketing M2, the dashboard + playground deploy surfaces, and the new CHANGELOG↔tag CI gate.

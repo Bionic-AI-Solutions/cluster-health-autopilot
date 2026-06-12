@@ -253,7 +253,16 @@ spec:
             {{- end }}
           {{- /* P1.9(a) — liveness/readiness against the always-on
                 /healthz. Mirrors the approval-server / operator probe
-                pattern. */}}
+                pattern.
+
+                O11 (1.26.1): /healthz answers 200 in STANDBY too — the
+                binary binds the health listener before leader election.
+                Do NOT point readiness at a leadership-gated endpoint:
+                the watcher serves no Service traffic that readiness
+                must gate, and a standby-not-Ready pod deadlocks
+                rolling upgrades where the new pod must go Ready while
+                the old leader still holds the lease (production 1.26.0
+                incident). */}}
           livenessProbe:
             httpGet:
               path: /healthz

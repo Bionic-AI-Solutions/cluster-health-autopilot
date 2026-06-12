@@ -1487,6 +1487,14 @@ func watcherContainerPorts(w *chav1alpha1.WatcherSpec) []corev1.ContainerPort {
 // watcherHealthProbes returns liveness+readiness probes hitting the
 // always-on /healthz endpoint — parity with the chart's watcher
 // Deployment probe stanzas.
+//
+// O11 (1.26.1): /healthz is 200 in STANDBY too — the cha binary binds
+// the health listener before leader election. Keep BOTH probes on it:
+// a leadership-gated readiness endpoint would deadlock this builder's
+// RollingUpdate maxUnavailable=0 strategy (the new standby pod could
+// never go Ready while the old leader holds the lease — production
+// 1.26.0 incident), and the watcher serves no Service traffic that
+// readiness needs to gate.
 func watcherHealthProbes() (*corev1.Probe, *corev1.Probe) {
 	probe := func(initialDelay int32) *corev1.Probe {
 		return &corev1.Probe{

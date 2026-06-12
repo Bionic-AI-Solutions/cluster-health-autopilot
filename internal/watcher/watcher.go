@@ -24,6 +24,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"strings"
@@ -274,6 +275,16 @@ type Watcher struct {
 	// events — they run on the initial cycle and then no more often
 	// than cfg.CloudCadence. Zero value means "never run yet → run now".
 	lastCloudRun time.Time
+
+	// healthOnce + healthLn back the always-on health server. The
+	// server is started at most once per Watcher (StartHealthServer is
+	// idempotent: cmd/cha starts it BEFORE leader election so standby
+	// pods serve /healthz, and Run calls it again defensively for
+	// direct callers). healthLn holds the bound listener so tests can
+	// discover the ephemeral port. Guarded by healthMu.
+	healthOnce sync.Once
+	healthMu   sync.Mutex
+	healthLn   net.Listener
 }
 
 // New returns a configured Watcher. mut may be nil when remediation is disabled.
@@ -309,13 +320,80 @@ func (w *Watcher) healthListenAddr() string {
 // returns 200 unconditionally — it reports process liveness, not
 // readiness of any optional subsystem (webhook/prom triggers are
 // best-effort and must not gate the liveness probe).
+//
+// /readyz is a deliberate alias of /healthz and is also 200 in standby
+// (NOT gated on holding the leader lease). Rationale: both the chart
+// and the operator point liveness AND readiness at this server, the
+// watcher serves no Service traffic that readiness needs to gate, and
+// a leadership-gated readiness would re-create the 1.26.0 upgrade
+// deadlock under RollingUpdate maxUnavailable=0 — the new standby pod
+// could never become Ready while the old leader holds the lease, so
+// the rollout would never progress. A standby pod is exactly as
+// "ready" as it is supposed to be: alive and waiting for the lease.
 func (w *Watcher) healthHandler() http.Handler {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/healthz", func(rw http.ResponseWriter, _ *http.Request) {
+	ok := func(rw http.ResponseWriter, _ *http.Request) {
 		rw.WriteHeader(http.StatusOK)
 		_, _ = rw.Write([]byte("ok"))
-	})
+	}
+	mux.HandleFunc("/healthz", ok)
+	mux.HandleFunc("/readyz", ok)
 	return mux
+}
+
+// StartHealthServer starts the always-on /healthz (+/readyz alias)
+// server and returns once the listener is BOUND — callers know the
+// probe target exists the moment this returns. It is idempotent;
+// only the first call binds. The server shuts down when ctx ends.
+//
+// REGRESSION GUARD (O11, production 1.26.0 upgrade incident): cmd/cha
+// MUST call this BEFORE RunWithLeader. PR #186 originally started this
+// server inside Run — which only executes after the leader lease is
+// acquired — so standby pods served nothing, the liveness probe got
+// `connection refused`, and rolling upgrades with maxUnavailable=0
+// deadlocked (new pod kill-looped while the old leader held the lease).
+func (w *Watcher) StartHealthServer(ctx context.Context) error {
+	var bindErr error
+	w.healthOnce.Do(func() {
+		healthAddr := w.healthListenAddr()
+		ln, err := net.Listen("tcp", healthAddr)
+		if err != nil {
+			bindErr = err
+			return
+		}
+		w.healthMu.Lock()
+		w.healthLn = ln
+		w.healthMu.Unlock()
+		healthSrv := &http.Server{
+			Handler:           w.healthHandler(),
+			ReadHeaderTimeout: 5 * time.Second,
+		}
+		go func() {
+			log.Printf("watcher: health listener on %s", ln.Addr())
+			if err := healthSrv.Serve(ln); err != nil && err != http.ErrServerClosed {
+				log.Printf("watcher: health server: %v", err)
+			}
+		}()
+		go func() {
+			<-ctx.Done()
+			shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			_ = healthSrv.Shutdown(shutdownCtx)
+		}()
+	})
+	return bindErr
+}
+
+// healthAddr returns the bound address of the health listener, or ""
+// when StartHealthServer has not (successfully) run. Test seam for the
+// ephemeral-port (":0") case.
+func (w *Watcher) healthAddr() string {
+	w.healthMu.Lock()
+	defer w.healthMu.Unlock()
+	if w.healthLn == nil {
+		return ""
+	}
+	return w.healthLn.Addr().String()
 }
 
 // WithSilenceLister sets the per-cycle Silence source. Wired by the
@@ -411,30 +489,12 @@ func (w *Watcher) Run(ctx context.Context) error {
 		}()
 	}
 
-	// Always-on health server. Serves GET /healthz unconditionally so
-	// the Deployment's liveness + readiness probes work regardless of
-	// whether the M6 webhook receiver is configured. Independent port
-	// (Config.HealthListen, default :8081) so its lifecycle never
-	// couples to the webhook trigger.
-	{
-		healthAddr := w.healthListenAddr()
-		healthSrv := &http.Server{
-			Addr:              healthAddr,
-			Handler:           w.healthHandler(),
-			ReadHeaderTimeout: 5 * time.Second,
-		}
-		go func() {
-			log.Printf("watcher: health listener on %s", healthAddr)
-			if err := healthSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-				log.Printf("watcher: health server: %v", err)
-			}
-		}()
-		go func() {
-			<-ctx.Done()
-			shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
-			_ = healthSrv.Shutdown(shutdownCtx)
-		}()
+	// Always-on health server. cmd/cha starts it BEFORE leader election
+	// (so standby pods serve /healthz — see StartHealthServer's O11
+	// regression note); this call is an idempotent no-op there, and the
+	// real start for direct Run callers (leader election disabled).
+	if err := w.StartHealthServer(ctx); err != nil {
+		log.Printf("watcher: health listener %s: %v", w.healthListenAddr(), err)
 	}
 
 	resync := time.NewTicker(w.cfg.ResyncPeriod)

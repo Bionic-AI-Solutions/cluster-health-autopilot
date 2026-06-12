@@ -697,6 +697,18 @@ the post-fix cluster state.`,
 					w = w.WithSilenceLister(silence.NewK8sLister(dyn))
 				}
 			}
+			// O11 — start the always-on health server BEFORE leader
+			// election, on the command context (process lifetime, not
+			// the leader lease lifetime). A standby pod must serve
+			// /healthz or the chart/operator liveness probe kill-loops
+			// it, which deadlocks RollingUpdate maxUnavailable=0
+			// upgrades (production 1.26.0 incident: the new pod could
+			// never go healthy while the old leader held the lease).
+			// Fail hard on bind error: probes would kill the pod anyway,
+			// and a loud exit beats a silent kill-loop.
+			if err := w.StartHealthServer(ctx); err != nil {
+				return fmt.Errorf("health listener %s: %w", healthListen, err)
+			}
 			// Sprint 4.3 — wrap Run in leader election. When the env says
 			// off, LeaderConfig.Disabled is set and the body runs straight
 			// through.
