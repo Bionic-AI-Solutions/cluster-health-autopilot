@@ -41,6 +41,7 @@ import (
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/server/webhook"
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/snapshot"
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/trigger/prom"
+	pkgai "github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/ai"
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/cloud"
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/registry"
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/silence"
@@ -94,6 +95,15 @@ type Config struct {
 	// links pointing at <base>/approve?token=<JWT>. When empty, no
 	// approval URLs are emitted regardless of registered AI components.
 	ApprovalBaseURL string
+
+	// SilenceLinks carries the Ed25519 signer + approval base URL +
+	// short/long windows used to mint the two one-click Silence links
+	// (subject-scoped snooze + class-scoped mute) attached to every posted
+	// finding. When not fully configured (no key / no base URL) the
+	// watcher mints nothing and the Slack renderer falls back to the
+	// kubectl heredoc — OSS-only / air-gapped installs keep working.
+	// Defaults: ShortDur 24h, LongDur 90d (filled by attachApprovalURLs).
+	SilenceLinks report.SilenceLinkConfig
 
 	WriteDriftReports bool
 
@@ -227,6 +237,22 @@ type seenEntry struct {
 	severity    string
 	message     string
 	remediation string
+
+	// source is the analyzer/probe name that produced this finding. It
+	// becomes matcher.source on the class-scoped one-click Silence link
+	// (mute the WHOLE class). Carried from diagnose.Diagnostic.Source;
+	// for probe findings it defaults to the probe component.
+	source string
+
+	// silenceSubjectURL / silenceClassLongURL are the signed one-click
+	// Silence links minted by attachApprovalURLs when SilenceLinks is
+	// configured. Empty otherwise (renderer falls back to kubectl).
+	// silenceShortDur / silenceLongDur carry the configured windows so the
+	// renderer can label the links with the real duration.
+	silenceSubjectURL   string
+	silenceClassLongURL string
+	silenceShortDur     time.Duration
+	silenceLongDur      time.Duration
 
 	// Layer-2 investigator summary (OSS rule-based or paid LLM).
 	investigation string
@@ -875,6 +901,9 @@ func buildCurrentState(results []probe.Result, diags []diagnose.Diagnostic) map[
 				message:       f.Message,
 				remediation:   f.Remediation,
 				investigation: f.Investigation,
+				// probe.Finding has no distinct Source — the probe
+				// component is the class identity for class-scoped silence.
+				source: r.Component.Component,
 			}
 		}
 	}
@@ -895,6 +924,7 @@ func buildCurrentState(results []probe.Result, diags []diagnose.Diagnostic) map[
 			investigation:    d.Investigation,
 			enrichment:       d.Enrichment,
 			proposedActionID: d.ProposedActionID,
+			source:           d.Source,
 		}
 	}
 	return m
@@ -911,15 +941,20 @@ func buildCurrentState(results []probe.Result, diags []diagnose.Diagnostic) map[
 // field additions automatically reach every destination.
 func seenEntryToDeltaDiag(e *seenEntry) report.DeltaDiag {
 	return report.DeltaDiag{
-		Subject:          e.subject,
-		Severity:         e.severity,
-		Message:          e.message,
-		Remediation:      e.remediation,
-		Investigation:    e.investigation,
-		Enrichment:       e.enrichment,
-		ProposedActionID: e.proposedActionID,
-		ApprovalURL:      e.approvalURL,
-		IsNewThisCycle:   e.isNewThisCycle,
+		Subject:             e.subject,
+		Source:              e.source,
+		Severity:            e.severity,
+		Message:             e.message,
+		Remediation:         e.remediation,
+		Investigation:       e.investigation,
+		Enrichment:          e.enrichment,
+		ProposedActionID:    e.proposedActionID,
+		ApprovalURL:         e.approvalURL,
+		IsNewThisCycle:      e.isNewThisCycle,
+		SilenceSubjectURL:   e.silenceSubjectURL,
+		SilenceClassLongURL: e.silenceClassLongURL,
+		SilenceShortDur:     e.silenceShortDur,
+		SilenceLongDur:      e.silenceLongDur,
 	}
 }
 
@@ -929,13 +964,61 @@ func seenEntryToDeltaDiag(e *seenEntry) report.DeltaDiag {
 // rendered DeltaDiag carries the URL.
 func (w *Watcher) attachApprovalURLs(state map[string]*seenEntry) {
 	for _, e := range state {
-		if e.proposedActionID == "" {
-			continue
+		if e.proposedActionID != "" {
+			if url := w.approvalURLFor(e.proposedActionID); url != "" {
+				e.approvalURL = url
+			}
 		}
-		if url := w.approvalURLFor(e.proposedActionID); url != "" {
-			e.approvalURL = url
-		}
+		w.attachSilenceLinks(e)
 	}
+}
+
+// attachSilenceLinks mints the two signed one-click Silence links for one
+// finding when the watcher's SilenceLinks config is fully populated (signer
+// + approval base URL). Subject link → matcher.{source,subject}; class link
+// → matcher.source only. Soft-fail: a signing/URL error just leaves the
+// links empty and the renderer falls back to the kubectl heredoc — a
+// finding never loses its render because a link couldn't be signed.
+//
+// Minted for EVERY posted finding (criticals + the steady-state/diagnostic
+// set the renderer surfaces) so the affordance is uniform across the post.
+func (w *Watcher) attachSilenceLinks(e *seenEntry) {
+	cfg := &w.cfg.SilenceLinks
+	if !cfg.Enabled() {
+		return
+	}
+	short := cfg.ShortDur
+	if short <= 0 {
+		short = report.DefaultSilenceShortDuration
+	}
+	long := cfg.LongDur
+	if long <= 0 {
+		long = report.DefaultSilenceLongDuration
+	}
+	kid := cfg.KeyID
+	if kid == "" {
+		kid = "default-1"
+	}
+	// matcher.source: the analyzer/probe name. Fall back to the Subject
+	// when an analyzer left Source empty so MintSilenceLinks (which
+	// requires a non-empty Source) still produces usable links.
+	source := e.source
+	if source == "" {
+		source = e.subject
+	}
+	links, err := pkgai.MintSilenceLinks(cfg.PrivateKey, kid, cfg.BaseURL, pkgai.SilenceLinkRequest{
+		Source:   source,
+		Subject:  e.subject,
+		ShortDur: short,
+		LongDur:  long,
+	}, w.nowOrDefault())
+	if err != nil {
+		return
+	}
+	e.silenceSubjectURL = links.SubjectURL
+	e.silenceClassLongURL = links.ClassURL
+	e.silenceShortDur = short
+	e.silenceLongDur = long
 }
 
 // diff computes which subjects need a Slack post (new/changed/repeat) and which

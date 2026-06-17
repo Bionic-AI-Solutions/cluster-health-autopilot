@@ -506,6 +506,12 @@ func watchCmd() *cobra.Command {
 		approvalServerURL string
 		signingKeyPath    string
 
+		// One-click Silence link windows (v1.26.3). Reuse the approval
+		// signing key; the watcher mints subject-scoped (short) + class-
+		// scoped (long) signed Silence links onto every posted finding.
+		silenceShortDur time.Duration
+		silenceLongDur  time.Duration
+
 		// M5 + M6 trigger sources (v1.23.0).
 		promTriggerURL      string
 		promTriggerInterval time.Duration
@@ -629,6 +635,7 @@ the post-fix cluster state.`,
 			// Soft-fail: missing key just disables URL minting; the
 			// watcher continues without click-to-fix URLs. Failures here
 			// MUST NOT block the watcher's primary diagnostics flow.
+			var silenceLinks report.SilenceLinkConfig
 			if approvalServerURL != "" {
 				keyPath := signingKeyPath
 				if keyPath == "" {
@@ -653,6 +660,17 @@ the post-fix cluster state.`,
 					if reg.FixProposer() == nil {
 						reg.RegisterFixProposer(ai.ManifestBridge{})
 					}
+					// Reuse the same signing key to mint the one-click
+					// Silence links the watcher delta path attaches to
+					// every posted finding (subject snooze + class mute).
+					// Gated identically: empty key / base URL → no links,
+					// renderer falls back to the kubectl heredoc.
+					silenceLinks = report.SilenceLinkConfig{
+						PrivateKey: priv,
+						BaseURL:    approvalServerURL,
+						ShortDur:   silenceShortDur,
+						LongDur:    silenceLongDur,
+					}
 				}
 			}
 
@@ -676,6 +694,7 @@ the post-fix cluster state.`,
 				CloudSource:            cloudSrc,
 				CloudCadence:           cloudCadence,
 				ApprovalBaseURL:        approvalServerURL,
+				SilenceLinks:           silenceLinks,
 				PromTriggerURL:         promTriggerURL,
 				PromTriggerInterval:    promTriggerInterval,
 				PromTriggerAlertFilter: promTriggerFilter,
@@ -794,6 +813,10 @@ the post-fix cluster state.`,
 		"Base URL of the approval-server (e.g. https://cha-approve.example.com). When set AND --signing-key-path resolves to a valid Ed25519 key, the watcher registers an ai.ManifestBridge FixProposer + signer and mints signed approve/deny URLs that ride through Slack / Alertmanager / DriftReport / ticketing adapters. Empty = no URL minting (pre-v1.16.0 behavior).")
 	c.Flags().StringVar(&signingKeyPath, "signing-key-path", os.Getenv(ai.EnvSigningKeyPath),
 		"Path to the Ed25519 signing key file (base64-encoded raw bytes). Defaults to $CHA_SIGNING_KEY_PATH or "+ai.DefaultSigningKeyPath+". Required when --approval-server-url is set; missing key falls back to URL-less mode (text-only proposal, no click-to-fix).")
+	c.Flags().DurationVar(&silenceShortDur, "silence-short-duration", report.DefaultSilenceShortDuration,
+		"Window for the subject-scoped \"🔕 Silence 24h\" one-click link the watcher attaches to each posted finding. Requires --approval-server-url + a signing key.")
+	c.Flags().DurationVar(&silenceLongDur, "silence-long-duration", report.DefaultSilenceLongDuration,
+		"Window for the class-scoped \"🔕 Silence class (90d)\" one-click link the watcher attaches to each posted finding. Requires --approval-server-url + a signing key.")
 
 	return c
 }
@@ -973,6 +996,15 @@ func diagnoseCmd() *cobra.Command {
 		vaultAddr         string
 		vaultMount        string
 		vaultRole         string
+
+		// One-click silence links (FormatSlack critical section). When
+		// both are set, --slack-webhook posts include signed 🔕 Silence
+		// links under each critical finding. Empty = no links (OSS-only
+		// / air-gapped → graceful, output unchanged).
+		silenceApprovalURL string
+		silenceSigningKey  string
+		silenceShortDur    time.Duration
+		silenceLongDur     time.Duration
 	)
 	c := &cobra.Command{
 		Use:   "diagnose",
@@ -1055,7 +1087,8 @@ func diagnoseCmd() *cobra.Command {
 
 			// Standard Slack post (legacy --slack-webhook, used for non-daily cronjobs).
 			if slackWebhook != "" {
-				payload := report.FormatSlack(results, diagnostics, nil, false)
+				silenceCfg := buildSilenceLinkConfig(silenceApprovalURL, silenceSigningKey, silenceShortDur, silenceLongDur)
+				payload := report.FormatSlackWithSilence(results, diagnostics, nil, false, silenceCfg)
 				if err := report.PostSlack(nil, slackWebhook, payload); err != nil {
 					fmt.Fprintln(os.Stderr, "warning: slack post failed:", err)
 				}
@@ -1081,7 +1114,33 @@ func diagnoseCmd() *cobra.Command {
 	c.Flags().StringVar(&vaultAddr, "vault-addr", os.Getenv("VAULT_ADDR"), "Vault HTTP endpoint (default: $VAULT_ADDR). Empty disables the VaultPathMissing analyzer.")
 	c.Flags().StringVar(&vaultMount, "vault-kv-mount", envOrDefault("VAULT_KV_MOUNT", "secret"), "Vault KV-v2 mount path (default: $VAULT_KV_MOUNT or 'secret')")
 	c.Flags().StringVar(&vaultRole, "vault-k8s-role", os.Getenv("VAULT_K8S_ROLE"), "Vault kubernetes-auth role (default: $VAULT_K8S_ROLE). When unset, falls back to $VAULT_TOKEN.")
+	c.Flags().StringVar(&silenceApprovalURL, "approval-server-url", "", "Approval-server external base URL (e.g. https://cha-approve.example.com). When set with --signing-key-path, --slack-webhook posts include signed 🔕 one-click Silence links under each critical finding.")
+	c.Flags().StringVar(&silenceSigningKey, "signing-key-path", "", "Path to the Ed25519 signing key (default: $CHA_SIGNING_KEY_PATH then "+ai.DefaultSigningKeyPath+"). Required for one-click Silence links.")
+	c.Flags().DurationVar(&silenceShortDur, "silence-short-duration", report.DefaultSilenceShortDuration, "Window for the subject-scoped \"Silence 24h\" one-click link.")
+	c.Flags().DurationVar(&silenceLongDur, "silence-long-duration", report.DefaultSilenceLongDuration, "Window for the class-scoped \"Silence class (90d)\" one-click link.")
 	return c
+}
+
+// buildSilenceLinkConfig assembles the report.SilenceLinkConfig for the
+// FormatSlack critical-section one-click silence links. Returns nil
+// (→ no links, graceful) when no approval URL is set or the signing key
+// cannot be loaded — mirroring the watcher's "proceed without URL
+// minting" posture for a missing key.
+func buildSilenceLinkConfig(approvalURL, keyPath string, short, long time.Duration) *report.SilenceLinkConfig {
+	if approvalURL == "" {
+		return nil
+	}
+	priv, err := ai.LoadSigningKey(keyPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "report: --approval-server-url set but signing key not loaded (%v); posting without silence links\n", err)
+		return nil
+	}
+	return &report.SilenceLinkConfig{
+		PrivateKey: priv,
+		BaseURL:    approvalURL,
+		ShortDur:   short,
+		LongDur:    long,
+	}
 }
 
 // buildVaultClient constructs a Vault client honoring the auth precedence:

@@ -28,7 +28,7 @@ func TestFormatSlackDelta_ClassButtons_AllPresent(t *testing.T) {
 		"❌ <https://approve.example.com/deny?token=A|Deny>", // existing deny URL derived from approve
 		"🧠 <https://approve.example.com/approve-class?token=B|Approve+remember class>",
 		"❌ <https://approve.example.com/deny-class?token=C|Deny+remember class>",
-		"🔕 <https://approve.example.com/silence-class?token=D|Silence class (7d)>",
+		"🔕 <https://approve.example.com/silence-class?token=D|Silence class (90d)>",
 	} {
 		if !strings.Contains(body, w) {
 			t.Errorf("payload missing %q\n--- body ---\n%s", w, body)

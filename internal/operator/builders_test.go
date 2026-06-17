@@ -4,6 +4,7 @@
 package operator
 
 import (
+	"strings"
 	"testing"
 
 	chav1alpha1 "github.com/Bionic-AI-Solutions/cluster-health-autopilot/api/v1alpha1"
@@ -175,6 +176,40 @@ func TestBuildWatcherDeployment_ApprovalURLMintingWiring(t *testing.T) {
 	mounts := d.Spec.Template.Spec.Containers[0].VolumeMounts
 	if len(mounts) != 1 || mounts[0].Name != "signing-key" || mounts[0].MountPath != "/etc/cha/keys" {
 		t.Errorf("signing-key mount not wired correctly: %+v", mounts)
+	}
+}
+
+// When spec.approval.silence durations are set alongside the signer +
+// approval URL, the watcher gets --silence-short/long-duration so it mints
+// links with the operator-chosen windows. Unset fields keep binary defaults.
+func TestBuildWatcherDeployment_SilenceDurationFlags(t *testing.T) {
+	cr := sampleCR()
+	cr.Spec.Watcher = &chav1alpha1.WatcherSpec{Enabled: true}
+	cr.Spec.AI = &chav1alpha1.AISpec{ApprovalServerURL: "https://cha-approve.example.com"}
+	cr.Spec.Approval = &chav1alpha1.ApprovalSpec{
+		SigningKey: &chav1alpha1.ApprovalSigningKeySpec{SecretName: "cha-approval-signing-key"},
+		Silence:    &chav1alpha1.ApprovalSilenceSpec{ShortDuration: "12h", LongDuration: "720h"},
+	}
+	args := BuildWatcherDeployment(cr).Spec.Template.Spec.Containers[0].Args
+	mustContain(t, args, "--silence-short-duration=12h")
+	mustContain(t, args, "--silence-long-duration=720h")
+}
+
+// Without spec.approval.silence the watcher gets NO silence-duration flags
+// (binary defaults 24h / 90d apply) — keeps args byte-stable for installs
+// that never tuned the windows.
+func TestBuildWatcherDeployment_NoSilenceDurationFlagsByDefault(t *testing.T) {
+	cr := sampleCR()
+	cr.Spec.Watcher = &chav1alpha1.WatcherSpec{Enabled: true}
+	cr.Spec.AI = &chav1alpha1.AISpec{ApprovalServerURL: "https://cha-approve.example.com"}
+	cr.Spec.Approval = &chav1alpha1.ApprovalSpec{
+		SigningKey: &chav1alpha1.ApprovalSigningKeySpec{SecretName: "cha-approval-signing-key"},
+	}
+	args := BuildWatcherDeployment(cr).Spec.Template.Spec.Containers[0].Args
+	for _, a := range args {
+		if strings.HasPrefix(a, "--silence-short-duration") || strings.HasPrefix(a, "--silence-long-duration") {
+			t.Errorf("unset silence durations must NOT emit flags; got %q in %v", a, args)
+		}
 	}
 }
 

@@ -697,6 +697,16 @@ approval:
     pullPolicy: IfNotPresent
   signingKey:
     secretName: cha-approval-signing-key
+  # One-click Silence links (the FormatSlack "🔴 Critical — needs human"
+  # section). When the diagnose path is invoked with --approval-server-url
+  # + --signing-key-path (CLI/legacy --slack-webhook posts), each critical
+  # finding gets two signed 🔕 links: a subject-scoped snooze (silenceShort)
+  # and a class-scoped mute (silenceLong). Durations are SIGNED into the
+  # token (tamper-proof). These defaults flow to the binary's
+  # --silence-short-duration / --silence-long-duration flags.
+  silence:
+    shortDuration: 24h      # subject-scoped "Silence 24h"
+    longDuration: 2160h     # class-scoped  "Silence class (90d)" — 90d
   # G10 approval-HA: leave store.backend empty (default in-memory) for the
   # default single-replica posture. Set to "configmap" to share replay +
   # runbook state across replicas via Kubernetes — required when running

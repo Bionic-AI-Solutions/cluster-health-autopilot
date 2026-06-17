@@ -43,19 +43,68 @@ func renderAIBlocks(b *strings.Builder, d DeltaDiag) {
 	}
 }
 
-// renderSilenceSnippet emits the inline kubectl heredoc that creates a
-// Silence CR for THIS finding's subject for 24h. Lets SREs distinguish
-// "fix this" from "noisy, mute" without hunting for the CRD schema.
+// renderSilenceSnippet emits the silence affordance for ONE finding.
+//
+// Two modes, gated on whether the watcher minted signed one-click links:
+//
+//   - CONFIGURED (signer + approval base URL present): renders the two
+//     click-links — "🔕 Silence <short>" (subject-scoped snooze) and
+//     "🔕 Silence class (<long>)" (Source-scoped mute). One click hits the
+//     approval-server's /silence endpoint, which materializes a real
+//     Silence CR. No CRD schema to memorize, no terminal needed.
+//
+//   - UNCONFIGURED (OSS-only / air-gapped — no key, no approval-server):
+//     falls back to the inline kubectl heredoc that creates a 24h
+//     subject-scoped Silence CR. The air-gapped affordance is preserved.
+//
 // Subject-scoped (exact match); edit spec.matcher to `source` for
 // class-wide suppression. Mirrors what `slack_delta.go` does for the
-// watcher delta path so both production renderers stay in sync.
+// FormatSlackDelta renderer so both production renderers stay in sync.
 func renderSilenceSnippet(b *strings.Builder, d DeltaDiag) {
+	if d.SilenceSubjectURL != "" || d.SilenceClassLongURL != "" {
+		renderSilenceClickLinks(b, d)
+		return
+	}
 	fmt.Fprintf(b, "  🔕 silence 24h: ```kubectl apply -f - <<EOF\n"+
 		"apiVersion: cha.bionicaisolutions.com/v1alpha1\n"+
 		"kind: Silence\nmetadata:\n  name: %s\n  namespace: cluster-health-autopilot\n"+
 		"spec:\n  matcher:\n    subject: %q\n  until: %q\n  reason: silenced-from-slack\nEOF```\n",
 		slackSilenceName(d.Subject), d.Subject,
 		time.Now().UTC().Add(24*time.Hour).Format("2006-01-02T15:04:05Z"))
+}
+
+// renderSilenceClickLinks emits the "🔕 <url|Silence 24h> · 🔕 <url|Silence
+// class (90d)>" row, labelling each link with its actual configured
+// duration. Either link may be absent (gated independently).
+func renderSilenceClickLinks(b *strings.Builder, d DeltaDiag) {
+	b.WriteString("  ")
+	sep := ""
+	if d.SilenceSubjectURL != "" {
+		fmt.Fprintf(b, "🔕 <%s|Silence %s>", d.SilenceSubjectURL, humanizeSilenceDuration(d.SilenceShortDur, DefaultSilenceShortDuration))
+		sep = " · "
+	}
+	if d.SilenceClassLongURL != "" {
+		fmt.Fprintf(b, "%s🔕 <%s|Silence class (%s)>", sep, d.SilenceClassLongURL, humanizeSilenceDuration(d.SilenceLongDur, DefaultSilenceLongDuration))
+	}
+	b.WriteString("\n")
+}
+
+// humanizeSilenceDuration renders a silence window as a compact label
+// ("24h", "90d", "12h"). Falls back to def when dur <= 0. Multi-day whole
+// windows (≥ 48h) collapse to "Nd"; a single day stays "24h" (matches the
+// canonical "Silence 24h" affordance); other whole hours render "Nh";
+// sub-hour windows keep the stdlib form.
+func humanizeSilenceDuration(dur, def time.Duration) string {
+	if dur <= 0 {
+		dur = def
+	}
+	if dur >= 48*time.Hour && dur%(24*time.Hour) == 0 {
+		return fmt.Sprintf("%dd", dur/(24*time.Hour))
+	}
+	if dur%time.Hour == 0 {
+		return fmt.Sprintf("%dh", dur/time.Hour)
+	}
+	return dur.String()
 }
 
 // FormatAlertsPayload renders the #ceph-alerts message for a watcher cycle

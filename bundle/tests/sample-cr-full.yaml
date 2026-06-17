@@ -145,6 +145,9 @@ spec:
       namespace: "cha-system"
       replayConfigMap: "smoke-approval-replay"
       runbookConfigMap: "smoke-approval-runbooks"
+    silence:
+      shortDuration: "24h"
+      longDuration: "2160h"
     ingress:
       enabled: false
       ingressClassName: "nginx"

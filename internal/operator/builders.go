@@ -254,6 +254,11 @@ func BuildWatcherDeployment(cr *chav1alpha1.ClusterHealthAutopilot) *appsv1.Depl
 			"--approval-server-url="+cr.Spec.AI.ApprovalServerURL,
 			"--signing-key-path=/etc/cha/keys/signing.key",
 		)
+		// One-click Silence link windows. Same signer + base URL; the
+		// watcher mints subject (short) + class (long) signed Silence
+		// links onto every posted finding. Render only when explicitly
+		// set so an unconfigured CR keeps the binary defaults (24h / 90d).
+		args = append(args, silenceDurationArgs(cr.Spec.Approval.Silence)...)
 		watcherVolumes = []corev1.Volume{{
 			Name: "signing-key",
 			VolumeSource: corev1.VolumeSource{
@@ -490,6 +495,26 @@ func watcherTriggerArgs(w *chav1alpha1.WatcherSpec) []string {
 		for _, s := range h.Sources {
 			out = append(out, "--webhook-source="+s)
 		}
+	}
+	return out
+}
+
+// silenceDurationArgs renders the one-click Silence link window flags
+// (--silence-short-duration / --silence-long-duration) for the watcher
+// Deployment. Only the explicitly-set fields render so an unconfigured
+// CR keeps the binary defaults (24h / 90d). The flags are appended only
+// when the watcher is already getting the signer + approval base URL
+// (the caller gates on that).
+func silenceDurationArgs(s *chav1alpha1.ApprovalSilenceSpec) []string {
+	if s == nil {
+		return nil
+	}
+	var out []string
+	if s.ShortDuration != "" {
+		out = append(out, "--silence-short-duration="+s.ShortDuration)
+	}
+	if s.LongDuration != "" {
+		out = append(out, "--silence-long-duration="+s.LongDuration)
 	}
 	return out
 }

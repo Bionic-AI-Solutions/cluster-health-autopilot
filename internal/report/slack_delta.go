@@ -18,6 +18,13 @@ type DeltaDiag struct {
 	Message     string
 	Remediation string
 
+	// Source names the analyzer / probe that produced this finding
+	// (e.g. "FailingExternalSecrets"). It is the matcher.source for the
+	// class-scoped one-click Silence link — muting the WHOLE class, not
+	// just this Subject. Empty on legacy callers; the class silence link
+	// is only minted/rendered when Source is set.
+	Source string
+
 	// IsNewThisCycle distinguishes findings that just appeared (new
 	// subject OR fingerprint changed since the prior cycle) from
 	// findings being re-posted because the repeat-interval elapsed.
@@ -66,6 +73,30 @@ type DeltaDiag struct {
 	ApproveClassURL string
 	DenyClassURL    string
 	SilenceClassURL string
+
+	// One-click signed Silence links — minted by the OSS watcher's
+	// attachApprovalURLs when a signing key + approval base URL are
+	// configured (see internal/watcher + report.SilenceLinkConfig).
+	//
+	//   - SilenceSubjectURL   snoozes THIS finding (matcher.subject =
+	//     Subject) for the configured SHORT window (default 24h).
+	//   - SilenceClassLongURL mutes the finding's whole class
+	//     (matcher.source = Source) for the configured LONG window
+	//     (default 90d).
+	//
+	// Both are empty in OSS-only / air-gapped installs (no key / no
+	// approval-server). The renderer gates on them: when set it emits the
+	// click-links; when unset it falls back to the kubectl one-liner so the
+	// air-gapped affordance is never lost.
+	//
+	// SilenceShortDur / SilenceLongDur carry the configured windows so the
+	// renderer can label the links with the real duration ("Silence 24h",
+	// "Silence class (90d)") instead of hardcoded text. Zero values fall
+	// back to the package defaults when a link URL is nonetheless present.
+	SilenceSubjectURL   string
+	SilenceClassLongURL string
+	SilenceShortDur     time.Duration
+	SilenceLongDur      time.Duration
 }
 
 // ResolvedDiag is a diagnostic that no longer appears in the current cycle.
@@ -96,17 +127,12 @@ func FormatSlackDelta(
 			if d.Remediation != "" {
 				fmt.Fprintf(&b, "  _→ %s_\n", d.Remediation)
 			}
-			// To-silence one-liner — paste into a terminal to create a
-			// Silence CR that suppresses THIS finding for 24h. Lets
-			// SREs distinguish "fix this" from "noisy, mute" without
-			// hunting for the CRD schema. Subject-scoped (exact match);
-			// edit spec.matcher to `source` for class-wide suppression.
-			fmt.Fprintf(&b, "  🔕 silence 24h: ```kubectl apply -f - <<EOF\n"+
-				"apiVersion: cha.bionicaisolutions.com/v1alpha1\n"+
-				"kind: Silence\nmetadata:\n  name: %s\n  namespace: cluster-health-autopilot\n"+
-				"spec:\n  matcher:\n    subject: %q\n  until: %q\n  reason: silenced-from-slack\nEOF```\n",
-				slackSilenceName(d.Subject), d.Subject,
-				time.Now().UTC().Add(24*time.Hour).Format("2006-01-02T15:04:05Z"))
+			// Silence affordance: signed one-click links when the watcher
+			// minted them (signer + approval base URL configured), else
+			// the kubectl heredoc fallback so air-gapped installs keep a
+			// way to mute THIS finding. Shared with the routing.go live
+			// renderer (renderSilenceSnippet) so both stay in sync.
+			renderSilenceSnippet(&b, d)
 			if d.Investigation != "" {
 				fmt.Fprintf(&b, "  🔬 _%s_\n", d.Investigation)
 			}
@@ -125,7 +151,15 @@ func FormatSlackDelta(
 				// Phase 2.B.6 — class-action row. Hidden when class
 				// URLs are empty (legacy memory-off deploy stays
 				// byte-identical to pre-2.B Slack output).
-				if d.ApproveClassURL != "" || d.DenyClassURL != "" || d.SilenceClassURL != "" {
+				//
+				// The class-scoped Silence link is rendered above by
+				// renderSilenceSnippet (SilenceClassLongURL, configurable
+				// duration). To keep EXACTLY ONE class silence link, the
+				// legacy cha-com SilenceClassURL is only emitted here when
+				// the OSS long link is absent — and labelled with the
+				// configurable long duration, never the old hardcoded 7d.
+				renderClassSilence := d.SilenceClassURL != "" && d.SilenceClassLongURL == ""
+				if d.ApproveClassURL != "" || d.DenyClassURL != "" || renderClassSilence {
 					b.WriteString("  ")
 					sep := ""
 					if d.ApproveClassURL != "" {
@@ -136,8 +170,8 @@ func FormatSlackDelta(
 						fmt.Fprintf(&b, "%s❌ <%s|Deny+remember class>", sep, d.DenyClassURL)
 						sep = " · "
 					}
-					if d.SilenceClassURL != "" {
-						fmt.Fprintf(&b, "%s🔕 <%s|Silence class (7d)>", sep, d.SilenceClassURL)
+					if renderClassSilence {
+						fmt.Fprintf(&b, "%s🔕 <%s|Silence class (%s)>", sep, d.SilenceClassURL, humanizeSilenceDuration(d.SilenceLongDur, DefaultSilenceLongDuration))
 					}
 					b.WriteString("\n")
 				}
