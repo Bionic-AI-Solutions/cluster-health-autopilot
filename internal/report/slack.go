@@ -11,6 +11,7 @@ package report
 
 import (
 	"bytes"
+	"crypto/ed25519"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -21,7 +22,38 @@ import (
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/diagnose"
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/fix"
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/probe"
+	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/ai"
 )
+
+// SilenceLinkConfig carries everything FormatSlack needs to mint the
+// two signed one-click silence links rendered under each critical
+// "needs human" finding. It is OPTIONAL: when nil — or when any of the
+// signing key / base URL is absent — FormatSlack emits NO silence links
+// and the output is byte-identical to the pre-silence-link render. This
+// keeps OSS-only / air-gapped installs (no approval-server, no signing
+// key) graceful.
+//
+// The signer/baseURL/durations are threaded from the watcher Config the
+// same way the approval base URL is threaded for click-to-fix links.
+type SilenceLinkConfig struct {
+	// PrivateKey signs the silence tokens. Required (nil disables links).
+	PrivateKey ed25519.PrivateKey
+	// KeyID is stamped into the JWT header (kid). Default "default-1".
+	KeyID string
+	// BaseURL is the approval-server external base
+	// (e.g. https://cha-approve.example.com). Required (empty disables).
+	BaseURL string
+	// ShortDur is the subject-scoped "Silence 24h" window. Default 24h.
+	ShortDur time.Duration
+	// LongDur is the class-scoped "Silence class (90d)" window.
+	// Default 2160h (90d).
+	LongDur time.Duration
+}
+
+// enabled reports whether the config can mint links.
+func (c *SilenceLinkConfig) enabled() bool {
+	return c != nil && len(c.PrivateKey) == ed25519.PrivateKeySize && c.BaseURL != ""
+}
 
 // SlackPayload is the JSON shape Slack incoming-webhooks accept.
 //
@@ -68,6 +100,16 @@ type SlackAttachment struct {
 //
 // fixResults may be empty (read-only diagnose) or nil.
 func FormatSlack(results []probe.Result, diagnostics []diagnose.Diagnostic, fixResults []fix.Result, autopilot bool) SlackPayload {
+	return FormatSlackWithSilence(results, diagnostics, fixResults, autopilot, nil)
+}
+
+// FormatSlackWithSilence is FormatSlack plus optional one-click silence
+// links under each critical "needs human" finding. When silenceCfg is
+// nil or not fully configured (no signing key / no base URL), it behaves
+// exactly like FormatSlack — no links, unchanged output. FormatSlack is
+// kept as a thin wrapper so existing callers that don't mint links stay
+// untouched.
+func FormatSlackWithSilence(results []probe.Result, diagnostics []diagnose.Diagnostic, fixResults []fix.Result, autopilot bool, silenceCfg *SilenceLinkConfig) SlackPayload {
 	overall, color, headline := overallStatus(results)
 	now := time.Now().UTC()
 
@@ -111,6 +153,7 @@ func FormatSlack(results []probe.Result, diagnostics []diagnose.Diagnostic, fixR
 
 	if len(criticals) > 0 {
 		fmt.Fprintf(&b, "\n*🔴 Critical Issues (%d) — needs human:*\n", len(criticals))
+		now := time.Now()
 		for _, f := range criticals {
 			fmt.Fprintf(&b, "• *%s:* %s\n", f.Component, f.Message)
 			if f.Investigation != "" {
@@ -118,6 +161,13 @@ func FormatSlack(results []probe.Result, diagnostics []diagnose.Diagnostic, fixR
 			}
 			if f.Remediation != "" {
 				fmt.Fprintf(&b, "   _Remediation:_ %s\n", f.Remediation)
+			}
+			// One-click silence links — only when a signer + approval
+			// base URL are configured. OSS-only / air-gapped installs
+			// (no key, no approval-server) take the no-op path and the
+			// render is byte-identical to before.
+			if line := silenceLinkLine(silenceCfg, f, now); line != "" {
+				b.WriteString(line)
 			}
 		}
 	}
@@ -167,6 +217,56 @@ func FormatSlack(results []probe.Result, diagnostics []diagnose.Diagnostic, fixR
 		}},
 	}
 }
+
+// silenceLinkLine renders the "🔕 Silence 24h · 🔕 Silence class (90d)"
+// row for one critical finding, or "" when silence links are disabled
+// or minting fails (graceful — a finding never loses its main render
+// just because a link couldn't be signed).
+//
+// probe.Finding has no separate Source/Subject — Component is the
+// finding's identity. We use it for BOTH the subject-scoped matcher
+// (matcher.{source,subject} = Component → snooze THIS finding) and the
+// class-scoped matcher (matcher.source = Component → mute the whole
+// class). When the analyzer encodes its name + a per-object subject into
+// Component (e.g. "TLSSecretMismatch: ingress/foo"), the class link is
+// still Source-only on the same string; this is a defensible default
+// until probe.Finding grows distinct Source/Subject fields.
+func silenceLinkLine(cfg *SilenceLinkConfig, f probe.Finding, now time.Time) string {
+	if !cfg.enabled() {
+		return ""
+	}
+	short := cfg.ShortDur
+	if short <= 0 {
+		short = DefaultSilenceShortDuration
+	}
+	long := cfg.LongDur
+	if long <= 0 {
+		long = DefaultSilenceLongDuration
+	}
+	kid := cfg.KeyID
+	if kid == "" {
+		kid = "default-1"
+	}
+	links, err := ai.MintSilenceLinks(cfg.PrivateKey, kid, cfg.BaseURL, ai.SilenceLinkRequest{
+		Source:   f.Component,
+		Subject:  f.Component,
+		ShortDur: short,
+		LongDur:  long,
+	}, now)
+	if err != nil {
+		return ""
+	}
+	return fmt.Sprintf("   🔕 <%s|Silence 24h> · 🔕 <%s|Silence class (90d)>\n",
+		links.SubjectURL, links.ClassURL)
+}
+
+// Default silence windows when SilenceLinkConfig leaves them zero.
+const (
+	// DefaultSilenceShortDuration is the subject-scoped snooze window.
+	DefaultSilenceShortDuration = 24 * time.Hour
+	// DefaultSilenceLongDuration is the class-scoped mute window (90d).
+	DefaultSilenceLongDuration = 2160 * time.Hour
+)
 
 // PostSlack POSTs the payload as JSON to the given webhook URL and
 // returns nil on the canonical "ok" response.

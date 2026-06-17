@@ -13,6 +13,19 @@ serves the latest tagged chart cut.
 
 ## [Unreleased]
 
+## [1.26.3] — 2026-06-17
+
+### Added — one-click Silence links on "Critical — needs human" Slack findings (OSS foundation)
+
+Non-actionable "human intervention" criticals previously had no in-Slack way to dismiss them. The `🔴 Critical Issues — needs human` section now renders **two signed one-click silence links** under each finding when a signer + approval base URL are configured: **🔕 Silence 24h** (subject-scoped snooze of that specific finding) and **🔕 Silence class (90d)** (class-scoped mute of the finding's Source). Clicking either hits the CHA-com approval-server's `/silence` endpoint, which consumes the signed token and creates a real OSS `Silence` CR (`api/v1alpha1`, `pkg/silence`) with the right `Matcher` + `Until`. This PR ships the OSS foundation; the approval-server `/silence` handler is a separate CHA-com task.
+
+- **Signed silence token** (`pkg/ai/silence_token.go`): `SilenceTokenClaims{Scope, Source, Subject, MessagePattern, UntilUnix, …}` + `SignSilenceToken` / `VerifySilenceToken`, mirroring the existing approval `TokenClaims` EdDSA compact-JWS (same `kid`, same verify-before-unmarshal discipline). The silence WINDOW (`UntilUnix`), `Scope`, and the whole matcher are SIGNED — an attacker cannot widen a 24h subject snooze into a 90d cluster-wide class mute by editing the URL (it flips the signature). Security model is doc-commented.
+- **Link minter** (`pkg/ai/silence_link.go`): `MintSilenceLinks(priv, kid, baseURL, req, now)` returns the two signed `<baseURL>/silence?token=…` URLs (subject-scoped `now+ShortDur`, class-scoped `now+LongDur`), each with a unique JTI; token `exp` extends a clickability buffer past the silence window (mirrors approve-token exp policy).
+- **Slack wiring** (`internal/report/slack.go`): new `FormatSlackWithSilence` (with `FormatSlack` kept as a thin no-link wrapper) renders both links under each critical. Gated on a fully-configured `SilenceLinkConfig` (signing key + base URL); OSS-only / air-gapped installs take the no-op path and the render stays byte-identical. `cha diagnose` gains `--approval-server-url`, `--signing-key-path`, `--silence-short-duration` (24h), `--silence-long-duration` (2160h=90d).
+- **Config knobs**: `approval.silence.{shortDuration,longDuration}` Helm values + `spec.approval.silence.{shortDuration,longDuration}` CR fields (defaults 24h / 90d).
+- **RBAC**: the approval-server SA gets `create,get,list` on `silences.cha.bionicaisolutions.com` via a namespace-local Role in BOTH the chart (`approval-server-rbac.yaml`) and the operator (`BuildApprovalSilenceWriterRole`, reconciled + finalizer-owned). The operator/CSV/chart operator-ClusterRole also hold the silences verbs so RBAC escalation prevention passes when materializing that Role (chart↔operator↔bundle parity preserved).
+- **Tests**: silence token sign/verify round-trip + tamper (UntilUnix/Scope/Subject) + expiry + malformed; minter two-well-formed-URLs with correct scope/until/jti + messagePattern propagation; slack renders both links when configured and NONE in OSS-only mode (regression guard for byte-identical no-link output); operator silence-writer Role/RoleBinding unit tests.
+
 ## [1.26.2] — 2026-06-17
 
 ### Fixed — human-approved (token-based) executions no longer fail with "ai proposal lacks rollback info" (OF1)

@@ -438,6 +438,10 @@ func (in *ApprovalSpec) DeepCopyInto(out *ApprovalSpec) {
 		out.Store = new(ApprovalStoreSpec)
 		*out.Store = *in.Store
 	}
+	if in.Silence != nil {
+		out.Silence = new(ApprovalSilenceSpec)
+		*out.Silence = *in.Silence
+	}
 	if in.Ingress != nil {
 		out.Ingress = new(ApprovalIngressSpec)
 		in.Ingress.DeepCopyInto(out.Ingress)

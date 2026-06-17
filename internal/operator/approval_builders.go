@@ -531,6 +531,61 @@ func BuildApprovalEventsRoleBinding(cr *chav1alpha1.ClusterHealthAutopilot) *rba
 	}
 }
 
+// BuildApprovalSilenceWriterRole grants the approval-server SA create+
+// get+list on Silence CRs in the release namespace. The /silence handler
+// consumes a signed silence token (subject 24h / class 90d) and creates
+// the corresponding Silence CR. The watcher SA has READ-only on silences
+// (it honors them); only the approval-server creates from a clicked link.
+// create cannot be resourceName-scoped, so this is namespace-local +
+// unrestricted-by-name (mirrors the events Role's minimum-namespaced
+// posture). Mirrors charts/.../templates/approval-server-rbac.yaml.
+func BuildApprovalSilenceWriterRole(cr *chav1alpha1.ClusterHealthAutopilot) *rbacv1.Role {
+	if !ApprovalEnabled(cr) {
+		return nil
+	}
+	return &rbacv1.Role{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      ApprovalServerName(cr) + "-silence-writer",
+			Namespace: cr.Namespace,
+			Labels:    CommonLabels(cr, "approval-server"),
+		},
+		Rules: []rbacv1.PolicyRule{
+			{
+				APIGroups: []string{"cha.bionicaisolutions.com"},
+				Resources: []string{"silences"},
+				Verbs:     []string{"create", "get", "list"},
+			},
+		},
+	}
+}
+
+// BuildApprovalSilenceWriterRoleBinding ties the SA to the silence
+// writer Role.
+func BuildApprovalSilenceWriterRoleBinding(cr *chav1alpha1.ClusterHealthAutopilot) *rbacv1.RoleBinding {
+	if !ApprovalEnabled(cr) {
+		return nil
+	}
+	return &rbacv1.RoleBinding{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      ApprovalServerName(cr) + "-silence-writer",
+			Namespace: cr.Namespace,
+			Labels:    CommonLabels(cr, "approval-server"),
+		},
+		RoleRef: rbacv1.RoleRef{
+			APIGroup: rbacv1.GroupName,
+			Kind:     "Role",
+			Name:     ApprovalServerName(cr) + "-silence-writer",
+		},
+		Subjects: []rbacv1.Subject{
+			{
+				Kind:      rbacv1.ServiceAccountKind,
+				Name:      ApprovalServerName(cr),
+				Namespace: cr.Namespace,
+			},
+		},
+	}
+}
+
 // BuildApprovalStoresRole grants RW on the replay + runbook ConfigMaps
 // when Store.Backend == "configmap". Returns nil for the inmemory
 // store (minimum-privilege posture — no extra ConfigMap access).

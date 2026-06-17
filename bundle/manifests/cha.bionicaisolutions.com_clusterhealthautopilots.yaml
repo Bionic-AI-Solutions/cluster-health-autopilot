@@ -437,6 +437,13 @@ spec:
                           type: string
                         runbookConfigMap:
                           type: string
+                    silence:
+                      type: object
+                      properties:
+                        shortDuration:
+                          type: string
+                        longDuration:
+                          type: string
                     ingress:
                       type: object
                       properties:

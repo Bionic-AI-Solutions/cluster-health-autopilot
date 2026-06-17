@@ -162,6 +162,12 @@ spec:
             - apiGroups: [""]
               resources: ["events"]
               verbs: ["create", "patch"]
+            # One-click Silence: operator holds silences verbs so it can
+            # materialize the approval-server's `create silences` Role
+            # past RBAC escalation prevention. Mirror the chart in lockstep.
+            - apiGroups: ["cha.bionicaisolutions.com"]
+              resources: ["silences"]
+              verbs: ["get", "list", "create"]
             # Phase 1c: operator-provisioned reader RBAC. `escalate`
             # bypasses the admission check that the creator must
             # already hold every verb being granted — required because

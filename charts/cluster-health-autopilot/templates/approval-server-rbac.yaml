@@ -88,6 +88,40 @@ subjects:
   - kind: ServiceAccount
     name: {{ include "cha.fullname" . }}-approval-server
     namespace: {{ .Release.Namespace }}
+---
+# One-click Silence: the approval-server's /silence handler consumes a
+# signed silence token and CREATES a Silence CR (subject-scoped 24h or
+# class-scoped 90d). Namespace-local — silences live in the CHA release
+# namespace. create cannot be resourceName-scoped; get+list let the
+# handler dedup / report. The watcher SA has READ-only on silences (it
+# honors them); only the approval-server may create from a clicked link.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "cha.fullname" . }}-approval-silence-writer
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "cha.labels" . | nindent 4 }}
+rules:
+  - apiGroups: ["cha.bionicaisolutions.com"]
+    resources: ["silences"]
+    verbs: ["create", "get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "cha.fullname" . }}-approval-silence-writer
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "cha.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "cha.fullname" . }}-approval-silence-writer
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "cha.fullname" . }}-approval-server
+    namespace: {{ .Release.Namespace }}
 {{- if eq (.Values.approval.store).backend "configmap" }}
 ---
 # G10 approval-HA: when the operator selects the shared ConfigMap store

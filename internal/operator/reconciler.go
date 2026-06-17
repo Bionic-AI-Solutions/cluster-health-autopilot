@@ -593,6 +593,7 @@ func (r *Reconciler) reconcileApprovalServer(ctx context.Context, cr *chav1alpha
 		{BuildApprovalSigningReaderRole(cr), BuildApprovalSigningReaderRoleBinding(cr), "signing-reader"},
 		{BuildApprovalEventsRole(cr), BuildApprovalEventsRoleBinding(cr), "events"},
 		{BuildApprovalStoresRole(cr), BuildApprovalStoresRoleBinding(cr), "stores"},
+		{BuildApprovalSilenceWriterRole(cr), BuildApprovalSilenceWriterRoleBinding(cr), "silence-writer"},
 	} {
 		if pair.role == nil {
 			// stores-RBAC is gated on configmap backend; events Role

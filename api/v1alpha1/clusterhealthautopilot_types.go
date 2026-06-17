@@ -825,6 +825,14 @@ type ApprovalSpec struct {
 	// +optional
 	Store *ApprovalStoreSpec `json:"store,omitempty"`
 
+	// Silence configures the one-click Silence link windows rendered in
+	// the FormatSlack "Critical — needs human" section. The
+	// approval-server's /silence handler creates a Silence CR from the
+	// clicked signed token; these durations are SIGNED into the token
+	// (tamper-proof). Optional — defaults apply when unset.
+	// +optional
+	Silence *ApprovalSilenceSpec `json:"silence,omitempty"`
+
 	// Ingress optionally exposes the approve/deny endpoint publicly
 	// (typical for Slack approval flows that need the SRE to click a
 	// link). Off by default — production users that drive approval
@@ -930,6 +938,23 @@ type ApprovalStoreSpec struct {
 	// `cha-approval-runbooks`.
 	// +optional
 	RunbookConfigMap string `json:"runbookConfigMap,omitempty"`
+}
+
+// ApprovalSilenceSpec configures the one-click Silence link windows.
+// Both are durations (e.g. "24h", "2160h"). The subject-scoped link
+// snoozes one finding for ShortDuration; the class-scoped link mutes the
+// finding's whole Source for LongDuration. Empty fields fall back to the
+// binary defaults (24h / 2160h = 90d).
+type ApprovalSilenceSpec struct {
+	// ShortDuration is the subject-scoped "Silence 24h" window. Maps to
+	// the binary's --silence-short-duration. Default 24h.
+	// +optional
+	ShortDuration string `json:"shortDuration,omitempty"`
+
+	// LongDuration is the class-scoped "Silence class (90d)" window.
+	// Maps to the binary's --silence-long-duration. Default 2160h (90d).
+	// +optional
+	LongDuration string `json:"longDuration,omitempty"`
 }
 
 // ApprovalIngressSpec optionally exposes the approval-server publicly.

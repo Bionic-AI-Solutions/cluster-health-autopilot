@@ -95,6 +95,14 @@ rules:
   - apiGroups: [""]
     resources: ["events"]
     verbs: ["create", "patch"]
+  # One-click Silence: the operator creates the approval-server's narrow
+  # namespaced Role granting `create silences` to the approval-server SA.
+  # Per the escalate-on-roles k3s quirk note above, the operator holds
+  # the silences verbs itself so RBAC escalation prevention passes when
+  # it materializes that Role.
+  - apiGroups: ["cha.bionicaisolutions.com"]
+    resources: ["silences"]
+    verbs: ["get", "list", "create"]
   # Phase 1c: operator-provisioned reader RBAC. The operator creates +
   # maintains a SHARED ClusterRole (cha-operator-watcher-reader) plus a
   # PER-CR ClusterRoleBinding so the watcher SA gets cluster-wide read
