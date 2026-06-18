@@ -183,9 +183,10 @@ EOF
 expect fail "non-topmost-heading-without-tag" "$FIXTURES/untagged-release.md"
 
 # A NON-topmost pre-release heading WITHOUT a matching git tag fails — the
-# claimed-but-never-cut class, now extended to pre-release versions. This
-# repo has no `v0.1.0-alpha.*` tags, so the second (non-topmost) heading is
-# correctly flagged.
+# claimed-but-never-cut class, now extended to pre-release versions. The
+# non-topmost heading uses 9.9.9-alpha.1, a version that will never be a real
+# tag in this repo, so the case stays valid no matter which versions ship
+# (an earlier draft used 0.1.0-alpha.1, which broke once that tag was cut).
 cat >"$FIXTURES/untagged-prerelease.md" <<'EOF'
 # Changelog
 
@@ -195,9 +196,9 @@ cat >"$FIXTURES/untagged-prerelease.md" <<'EOF'
 
 ### Fixed — topmost (exempt)
 
-## [0.1.0-alpha.1] — 2026-06-18
+## [9.9.9-alpha.1] — 2026-06-18
 
-### Added — pre-release heading whose v0.1.0-alpha.1 tag was never pushed
+### Added — pre-release heading whose v9.9.9-alpha.1 tag was never pushed
 EOF
 expect fail "non-topmost-prerelease-without-tag" "$FIXTURES/untagged-prerelease.md"
 
