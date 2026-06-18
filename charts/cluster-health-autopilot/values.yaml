@@ -14,7 +14,7 @@ image:
   # repository value below to `ghcr.io/bionic-ai-solutions/cluster-health-autopilot`
   # to use it.
   repository: docker4zerocool/cluster-health-autopilot
-  tag: ""                         # default = .Chart.appVersion (e.g. v1.6.0)
+  tag: ""                         # default = .Chart.appVersion (e.g. v0.1.0-alpha.1)
   # pullPolicy is left empty so the `cha.pullPolicy` helper picks it
   # automatically: Always for mutable tags (latest / main / dev /
   # `*-latest`) and IfNotPresent for semver-pinned tags. Override only
@@ -637,7 +637,7 @@ ai:
     # The commercial CHA-com image for the aiwatch Deployment. Tag
     # defaults to "v<AppVersion>" (cha-com images carry a leading "v").
     repository: docker4zerocool/cha-com
-    tag: ""               # default = "v" + .Chart.AppVersion (e.g. v1.8.2)
+    tag: ""               # default = "v" + .Chart.AppVersion (e.g. v0.1.0-alpha.1)
     pullPolicy: IfNotPresent
   resources: {}           # defaults to top-level resources if unset
   apiKey:
