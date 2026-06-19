@@ -13,6 +13,11 @@ serves the latest tagged chart cut.
 
 ## [Unreleased]
 
+## [0.2.0-alpha.1] — 2026-06-19
+
+### Fixed
+- Slack alert headers are now **conditional on actionability**: the alarming `*CHA Alert — Human Action Required*` title is used only when a finding in the payload carries a signed Approve/Deny button. Purely advisory findings (e.g. RBAC-drift warnings: wildcard verbs, unbound ServiceAccounts) now render `*CHA Advisory — Review (no action required)*` so on-call engineers aren't paged to "act" on items that have no action. One-click Silence links are unchanged and still attached to every posted finding.
+
 ## [0.1.0-alpha.1] — 2026-06-18
 
 **Version re-baseline.** This project is pre-launch; releases through v1.26.3
