@@ -83,6 +83,12 @@ func BuildActiveAlerts(active []DeltaDiag, clusterName string, ttl time.Duration
 		if d.Severity == "info" {
 			continue // don't fire info-level issues
 		}
+		// Only critical + actionable findings page via Alertmanager. Purely
+		// advisory warnings (no approve/deny action) stay on CHA's native Slack
+		// with the honest "CHA Advisory" title and are not duplicated here.
+		if d.Severity != "critical" && d.ApprovalURL == "" {
+			continue
+		}
 		annotations := map[string]string{
 			"summary":     d.Message,
 			"remediation": d.Remediation,
