@@ -13,6 +13,11 @@ serves the latest tagged chart cut.
 
 ## [Unreleased]
 
+## [0.2.0-alpha.5] — 2026-06-19
+
+### Changed
+- **Alertmanager push is now limited to critical + actionable findings.** Purely-advisory warnings (no approve/deny action) are no longer pushed to Alertmanager — they stay on CHA's native Slack with the honest "CHA Advisory" title. This stops the duplicate, misleadingly-titled "Human Action Required" alerts that the cluster Alertmanager's Slack receiver rendered for advisory findings. Criticals (always) and findings with a signed approve/deny URL still reach Alertmanager for paging/escalation.
+
 ## [0.2.0-alpha.4] — 2026-06-19
 
 ### Fixed

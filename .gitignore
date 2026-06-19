@@ -36,3 +36,4 @@ dist/
 
 # stray local build binary (use bin/ for builds)
 /cha
+.worktrees
