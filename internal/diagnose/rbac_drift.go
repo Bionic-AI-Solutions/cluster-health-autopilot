@@ -6,6 +6,7 @@ package diagnose
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/snapshot"
@@ -49,8 +50,12 @@ import (
 //     local-clusterowner (exact match prevents over-suppression of
 //     user roles like custom-admin or payments-admin).
 //     Operators rarely want a wildcard verb in a user-managed role.
-//     NOTE: a configurable extension point (e.g. a flag or ConfigMap
-//     entry for site-specific prefixes/names) is a natural follow-up.
+//
+//   - **ConfigMap-based allowlist extension** — the built-in allowlist
+//     can be extended at runtime by a ConfigMap named `cha-rbac-allowlist`
+//     in the install namespace (POD_NAMESPACE or "cluster-health-autopilot").
+//     Keys: allowNamespaces, allowRolePrefixes, allowRoleNames (comma/newline
+//     separated). See Feature 1 comment in Run() for full details.
 //
 //   - **ServiceAccount with no RoleBinding** — a ServiceAccount
 //     mounted to a Deployment but no RoleBinding / ClusterRoleBinding
@@ -162,35 +167,189 @@ var systemRBACExactNames = map[string]struct{}{
 	"local-clusterowner": {},
 }
 
+// rbacAllowlist holds the merged built-in + ConfigMap allowlist for a
+// single Run() invocation. It is NOT stored on the struct to keep
+// RBACDrift constructable as RBACDrift{} with zero config — the list
+// is rebuilt from the ConfigMap on every Run call.
+type rbacAllowlist struct {
+	// extra namespaces to suppress (merged with systemRBACNamespaces)
+	extraNamespaces map[string]struct{}
+	// extra name prefixes to suppress (merged with systemRBACNamePrefixes)
+	extraPrefixes []string
+	// extra exact names to suppress (merged with systemRBACExactNames)
+	extraExactNames map[string]struct{}
+}
+
+// isSystemRBACWithExtra extends the built-in isSystemRBAC check with
+// the per-run ConfigMap-sourced allowlist. The caller passes the merged
+// allowlist returned by loadRBACAllowlist; built-in vars stay immutable.
+func isSystemRBACWithExtra(name, namespace string, extra rbacAllowlist) bool {
+	// built-in check first
+	if isSystemRBAC(name, namespace) {
+		return true
+	}
+	// ConfigMap-extended namespace check
+	if _, ok := extra.extraNamespaces[namespace]; ok {
+		return true
+	}
+	// ConfigMap-extended prefix check
+	for _, prefix := range extra.extraPrefixes {
+		if strings.HasPrefix(name, prefix) {
+			return true
+		}
+	}
+	// ConfigMap-extended exact-name check
+	if _, ok := extra.extraExactNames[name]; ok {
+		return true
+	}
+	return false
+}
+
+// installNamespace returns the namespace CHA is running in.
+// Reads POD_NAMESPACE env var; falls back to "cluster-health-autopilot".
+func installNamespace() string {
+	if ns := os.Getenv("POD_NAMESPACE"); ns != "" {
+		return ns
+	}
+	return "cluster-health-autopilot"
+}
+
+// gvrConfigMap is the GVR for core/v1 ConfigMap objects, used to load
+// the cha-rbac-allowlist ConfigMap at Run time.
+var gvrConfigMap = schema.GroupVersionResource{Group: "", Version: "v1", Resource: "configmaps"}
+
+// loadRBACAllowlist attempts a best-effort read of the `cha-rbac-allowlist`
+// ConfigMap from the install namespace. Absent/unreadable/empty → returns
+// a zero-value rbacAllowlist (built-in baseline only). No errors are returned;
+// callers treat the result as purely additive to the built-in lists.
+//
+// Supported ConfigMap data keys (comma- and/or newline-separated, spaces trimmed):
+//   - allowNamespaces  — extra namespaces to suppress
+//   - allowRolePrefixes — extra name prefixes to suppress
+//   - allowRoleNames    — extra exact role names to suppress
+func loadRBACAllowlist(ctx context.Context, src snapshot.Source) rbacAllowlist {
+	ns := installNamespace()
+	obj, err := src.Get(ctx, gvrConfigMap, ns, "cha-rbac-allowlist")
+	if err != nil || obj == nil {
+		return rbacAllowlist{}
+	}
+	data, _, _ := unstructured.NestedStringMap(obj.Object, "data")
+	if len(data) == 0 {
+		return rbacAllowlist{}
+	}
+
+	extra := rbacAllowlist{
+		extraNamespaces: map[string]struct{}{},
+		extraExactNames: map[string]struct{}{},
+	}
+
+	parseEntries := func(raw string) []string {
+		// split on comma or newline; trim spaces; drop blanks
+		parts := strings.FieldsFunc(raw, func(r rune) bool {
+			return r == ',' || r == '\n' || r == '\r'
+		})
+		var out []string
+		for _, p := range parts {
+			p = strings.TrimSpace(p)
+			if p != "" {
+				out = append(out, p)
+			}
+		}
+		return out
+	}
+
+	for _, ns := range parseEntries(data["allowNamespaces"]) {
+		extra.extraNamespaces[ns] = struct{}{}
+	}
+	extra.extraPrefixes = append(extra.extraPrefixes, parseEntries(data["allowRolePrefixes"])...)
+	for _, name := range parseEntries(data["allowRoleNames"]) {
+		extra.extraExactNames[name] = struct{}{}
+	}
+	return extra
+}
+
 // Run walks the RBAC + ServiceAccount surfaces and emits one
 // Diagnostic per drift signal.
+//
+// Feature 1 — Configurable allowlist via ConfigMap: on each Run, we
+// best-effort read the `cha-rbac-allowlist` ConfigMap from the install
+// namespace and merge its entries with the built-in baseline for this
+// run only. The built-in package-level vars are never mutated.
+//
+// Feature 2 — Suppressed-RBAC digest: when ≥1 finding is suppressed
+// by the allowlist (built-in or ConfigMap), exactly one `info` diagnostic
+// is appended after both checks, summarising what was silenced. This
+// collapses N paging warnings into ONE info line for visibility.
+// Note: `info` still posts to Slack, but this keeps it as one line vs N.
 func (r RBACDrift) Run(ctx context.Context, src snapshot.Source) []Diagnostic {
+	extra := loadRBACAllowlist(ctx, src)
+
 	var out []Diagnostic
-	out = append(out, r.checkWildcardVerbs(ctx, src, gvrClusterRole, "ClusterRole")...)
-	out = append(out, r.checkWildcardVerbs(ctx, src, gvrRole, "Role")...)
-	out = append(out, r.checkUnboundServiceAccounts(ctx, src)...)
+	var suppressed []string
+	var wildcardOut, wildcardSuppressed = r.checkWildcardVerbs(ctx, src, gvrClusterRole, "ClusterRole", extra)
+	out = append(out, wildcardOut...)
+	suppressed = append(suppressed, wildcardSuppressed...)
+
+	var roleOut, roleSuppressed = r.checkWildcardVerbs(ctx, src, gvrRole, "Role", extra)
+	out = append(out, roleOut...)
+	suppressed = append(suppressed, roleSuppressed...)
+
+	var saOut, saSuppressed = r.checkUnboundServiceAccounts(ctx, src, extra)
+	out = append(out, saOut...)
+	suppressed = append(suppressed, saSuppressed...)
+
+	// Feature 2: emit a single info digest when anything was suppressed.
+	// The digest itself is NOT counted as a suppressed finding.
+	if len(suppressed) > 0 {
+		const maxDisplay = 12
+		subjects := suppressed
+		var overflow int
+		if len(subjects) > maxDisplay {
+			overflow = len(subjects) - maxDisplay
+			subjects = subjects[:maxDisplay]
+		}
+		msg := fmt.Sprintf("%d expected-system RBAC finding(s) suppressed as allowlisted: %s",
+			len(suppressed), strings.Join(subjects, ", "))
+		if overflow > 0 {
+			msg += fmt.Sprintf(" +%d more", overflow)
+		}
+		out = append(out, Diagnostic{
+			Source:   "RBACDrift",
+			Severity: "info",
+			Subject:  "RBACDrift/cluster/suppressed-expected-system",
+			Message:  msg,
+			Remediation: "These are RBAC wildcard/unbound-SA findings on known system/operator components, " +
+				"suppressed to reduce noise. To extend or shrink the allowlist, create or edit the " +
+				"`cha-rbac-allowlist` ConfigMap in the CHA install namespace " +
+				"(keys: allowNamespaces / allowRolePrefixes / allowRoleNames, comma- or newline-separated).",
+		})
+	}
+
 	return out
 }
 
 // checkWildcardVerbs walks Role / ClusterRole resources and flags any
 // rule whose verbs include `"*"` against a non-system resource and
 // the role itself isn't a system canonical role.
-func (r RBACDrift) checkWildcardVerbs(ctx context.Context, src snapshot.Source, gvr schema.GroupVersionResource, kind string) []Diagnostic {
+//
+// Returns (diagnostics, suppressedSubjects). Suppressed subjects are
+// collected so Run() can emit the digest diagnostic (Feature 2).
+func (r RBACDrift) checkWildcardVerbs(ctx context.Context, src snapshot.Source, gvr schema.GroupVersionResource, kind string, extra rbacAllowlist) ([]Diagnostic, []string) {
 	list, err := src.List(ctx, gvr, "")
 	if err != nil || list == nil || len(list.Items) == 0 {
 		logListFailure(gvr.Resource, err, true) // silent when the CRD/resource is absent; logs Forbidden etc.
-		return nil
+		return nil, nil
 	}
 	var out []Diagnostic
+	var suppressed []string
 	for i := range list.Items {
 		role := &list.Items[i]
 		name := role.GetName()
 		ns := role.GetNamespace()
-		if isSystemRBAC(name, ns) {
-			continue
-		}
+
 		subject := fmt.Sprintf("%s/%s/%s", kind, nsOrCluster(ns), name)
 		rules, _, _ := unstructured.NestedSlice(role.Object, "rules")
+		hasWildcard := false
 		for _, ru := range rules {
 			rule, ok := ru.(map[string]interface{})
 			if !ok {
@@ -200,10 +359,35 @@ func (r RBACDrift) checkWildcardVerbs(ctx context.Context, src snapshot.Source, 
 			if !containsString(verbs, "*") {
 				continue
 			}
-			// We have a wildcard. Skip rules that scope to a
-			// system API group only (those are typically expected
-			// in user-defined roles that wrap kube-controller-manager
-			// permissions).
+			apiGroups, _, _ := unstructured.NestedStringSlice(rule, "apiGroups")
+			if onlySystemAPIGroups(apiGroups) {
+				continue
+			}
+			hasWildcard = true
+			break
+		}
+		if !hasWildcard {
+			continue
+		}
+
+		// Check allowlist AFTER confirming there's a wildcard — so we
+		// only collect suppressed subjects for roles that actually had
+		// a wildcard finding to suppress (not every role we visited).
+		if isSystemRBACWithExtra(name, ns, extra) {
+			suppressed = append(suppressed, subject)
+			continue
+		}
+
+		// Rebuild the rule details for the diagnostic message.
+		for _, ru := range rules {
+			rule, ok := ru.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			verbs, _, _ := unstructured.NestedStringSlice(rule, "verbs")
+			if !containsString(verbs, "*") {
+				continue
+			}
 			apiGroups, _, _ := unstructured.NestedStringSlice(rule, "apiGroups")
 			if onlySystemAPIGroups(apiGroups) {
 				continue
@@ -225,7 +409,7 @@ func (r RBACDrift) checkWildcardVerbs(ctx context.Context, src snapshot.Source, 
 			break // one diagnostic per role, even with multiple wildcard rules
 		}
 	}
-	return out
+	return out, suppressed
 }
 
 // checkUnboundServiceAccounts walks ServiceAccounts referenced by Pods
@@ -237,11 +421,14 @@ func (r RBACDrift) checkWildcardVerbs(ctx context.Context, src snapshot.Source, 
 //     the SA only as an identity marker (logs, audit), not for K8s API
 //     access; flagging them as "unbound" produced false-positive noise
 //     pre-1.11.1 for every Helm chart that ships hardened SAs.
-func (r RBACDrift) checkUnboundServiceAccounts(ctx context.Context, src snapshot.Source) []Diagnostic {
+//
+// Returns (diagnostics, suppressedSubjects). Suppressed subjects are
+// collected so Run() can emit the digest diagnostic (Feature 2).
+func (r RBACDrift) checkUnboundServiceAccounts(ctx context.Context, src snapshot.Source, extra rbacAllowlist) ([]Diagnostic, []string) {
 	pods, err := src.List(ctx, snapshot.GVRPod, "")
 	if err != nil || pods == nil {
 		logListFailure("pods", err, true) // silent when the CRD/resource is absent; logs Forbidden etc.
-		return nil
+		return nil, nil
 	}
 
 	// Pre-fetch SA objects so we can check automountServiceAccountToken
@@ -268,6 +455,10 @@ func (r RBACDrift) checkUnboundServiceAccounts(ctx context.Context, src snapshot
 		if _, isSystem := systemRBACNamespaces[ns]; isSystem {
 			continue
 		}
+		// ConfigMap-extended namespace check for pod collection phase
+		if _, ok := extra.extraNamespaces[ns]; ok {
+			continue
+		}
 		saName, _, _ := unstructured.NestedString(p.Object, "spec", "serviceAccountName")
 		if saName == "" || saName == "default" {
 			continue
@@ -287,7 +478,7 @@ func (r RBACDrift) checkUnboundServiceAccounts(ctx context.Context, src snapshot
 		refs[saRef{ns: ns, name: saName}] = struct{}{}
 	}
 	if len(refs) == 0 {
-		return nil
+		return nil, nil
 	}
 
 	// Walk RoleBindings (namespaced) + ClusterRoleBindings (cluster-scoped)
@@ -323,13 +514,29 @@ func (r RBACDrift) checkUnboundServiceAccounts(ctx context.Context, src snapshot
 	}
 
 	var out []Diagnostic
+	var suppressed []string
 	for ref := range refs {
 		if _, isBound := bound[ref]; isBound {
 			continue
 		}
+		subject := fmt.Sprintf("ServiceAccount/%s/%s", ref.ns, ref.name)
+
+		// Check ConfigMap-extended allowlist for SA name exact matches.
+		// (Namespace-based suppression was already applied during pod collection above.)
+		if _, ok := extra.extraExactNames[ref.name]; ok {
+			suppressed = append(suppressed, subject)
+			continue
+		}
+		for _, prefix := range extra.extraPrefixes {
+			if strings.HasPrefix(ref.name, prefix) {
+				suppressed = append(suppressed, subject)
+				goto nextRef
+			}
+		}
+
 		out = append(out, Diagnostic{
 			Source:   "RBACDrift",
-			Subject:  fmt.Sprintf("ServiceAccount/%s/%s", ref.ns, ref.name),
+			Subject:  subject,
 			Severity: "warning",
 			Message: fmt.Sprintf(
 				"ServiceAccount %s/%s is mounted by a Pod but has no RoleBinding or ClusterRoleBinding",
@@ -344,8 +551,9 @@ func (r RBACDrift) checkUnboundServiceAccounts(ctx context.Context, src snapshot
 					"`serviceAccountName: default`.",
 				ref.ns, ref.ns, ref.name, ref.ns, ref.name),
 		})
+	nextRef:
 	}
-	return out
+	return out, suppressed
 }
 
 // isSystemRBAC reports whether the role/binding is one the K8s control

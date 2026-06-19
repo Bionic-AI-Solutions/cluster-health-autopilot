@@ -5,6 +5,7 @@ package diagnose
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -170,7 +171,8 @@ func TestRBACDrift_NonWildcard_Silent(t *testing.T) {
 
 func TestRBACDrift_SystemClusterRole_Skipped(t *testing.T) {
 	// cluster-admin and system:* roles have wildcards by design;
-	// flagging them is noise.
+	// flagging them is noise. They are suppressed → a suppressed digest
+	// (info severity) may be emitted, but no warning must appear.
 	src := &memSourceRBAC{byResource: map[string][]unstructured.Unstructured{
 		"clusterroles": {
 			makeClusterRole("cluster-admin", []string{"*"}, []string{"*"}, []string{"*"}),
@@ -178,8 +180,10 @@ func TestRBACDrift_SystemClusterRole_Skipped(t *testing.T) {
 		},
 	}}
 	got := RBACDrift{}.Run(context.Background(), src)
-	if len(got) != 0 {
-		t.Errorf("system roles should be skipped; got %+v", got)
+	for _, d := range got {
+		if d.Severity == "warning" {
+			t.Errorf("system roles should be skipped (no warning); got %+v", d)
+		}
 	}
 }
 
@@ -189,8 +193,11 @@ func TestRBACDrift_KubeSystemRole_Skipped(t *testing.T) {
 			[]string{"*"}, []string{""}, []string{"configmaps"})},
 	}}
 	got := RBACDrift{}.Run(context.Background(), src)
-	if len(got) != 0 {
-		t.Errorf("kube-system roles should be skipped; got %+v", got)
+	// kube-system roles are suppressed → a digest (info) may appear but no warning.
+	for _, d := range got {
+		if d.Severity == "warning" {
+			t.Errorf("kube-system roles should be skipped (no warning); got %+v", d)
+		}
 	}
 }
 
@@ -405,9 +412,12 @@ func TestRBACDrift_KnownOperatorPrefixes_Suppressed(t *testing.T) {
 				"clusterroles": {makeClusterRole(name, []string{"*"}, []string{""}, []string{"*"})},
 			}}
 			got := RBACDrift{}.Run(context.Background(), src)
-			if len(got) != 0 {
-				t.Errorf("operator/system ClusterRole %q should be suppressed; got %d diagnostics: %+v",
-					name, len(got), got)
+			// Suppressed roles emit a digest (info), not a warning.
+			for _, d := range got {
+				if d.Severity == "warning" {
+					t.Errorf("operator/system ClusterRole %q should be suppressed (no warning); got: %+v",
+						name, d)
+				}
 			}
 		})
 	}
@@ -432,9 +442,12 @@ func TestRBACDrift_CanonicalExactNames_Suppressed(t *testing.T) {
 				"clusterroles": {makeClusterRole(name, []string{"*"}, []string{""}, []string{"*"})},
 			}}
 			got := RBACDrift{}.Run(context.Background(), src)
-			if len(got) != 0 {
-				t.Errorf("canonical ClusterRole %q should be suppressed; got %d diagnostics: %+v",
-					name, len(got), got)
+			// Suppressed roles emit a digest (info), not a warning.
+			for _, d := range got {
+				if d.Severity == "warning" {
+					t.Errorf("canonical ClusterRole %q should be suppressed (no warning); got: %+v",
+						name, d)
+				}
 			}
 		})
 	}
@@ -513,11 +526,268 @@ func TestRBACDrift_UserNamespaceUnboundSA_StillFlagged(t *testing.T) {
 		"pods": {makeRBACPod("payments", "payments-api-xyz", "payments-sa")},
 	}}
 	got := RBACDrift{}.Run(context.Background(), src)
+	// Expect exactly 1 warning (no suppressed items → no digest)
 	if len(got) != 1 {
 		t.Errorf("unbound SA in user namespace 'payments' must still be flagged; got %d diagnostics: %+v",
 			len(got), got)
 	}
 	if !strings.Contains(got[0].Subject, "ServiceAccount/payments/payments-sa") {
 		t.Errorf("subject should name the SA; got %q", got[0].Subject)
+	}
+}
+
+// --- Feature 1: ConfigMap-based allowlist extension --------------------------
+
+// makeConfigMap builds a core/v1 ConfigMap with arbitrary data.
+func makeConfigMap(ns, name string, data map[string]string) unstructured.Unstructured {
+	u := unstructured.Unstructured{}
+	u.SetAPIVersion("v1")
+	u.SetKind("ConfigMap")
+	u.SetNamespace(ns)
+	u.SetName(name)
+	dataIface := map[string]interface{}{}
+	for k, v := range data {
+		dataIface[k] = v
+	}
+	_ = unstructured.SetNestedStringMap(u.Object, data, "data")
+	return u
+}
+
+// TestRBACDrift_ConfigMapAllowlist_ExtendsPrefixes verifies that a
+// `cha-rbac-allowlist` ConfigMap with `allowRolePrefixes: "myoperator-"`
+// causes a ClusterRole named "myoperator-controller" (which has wildcard
+// verbs) to be suppressed instead of flagged.
+func TestRBACDrift_ConfigMapAllowlist_ExtendsPrefixes(t *testing.T) {
+	cm := makeConfigMap("cluster-health-autopilot", "cha-rbac-allowlist", map[string]string{
+		"allowRolePrefixes": "myoperator-",
+	})
+	src := &memSourceRBAC{byResource: map[string][]unstructured.Unstructured{
+		"clusterroles": {makeClusterRole("myoperator-controller", []string{"*"}, []string{""}, []string{"pods"})},
+		"configmaps":   {cm},
+	}}
+	got := RBACDrift{}.Run(context.Background(), src)
+	// The wildcard warning should be suppressed; only the info digest may appear.
+	for _, d := range got {
+		if d.Severity == "warning" && strings.Contains(d.Subject, "myoperator-controller") {
+			t.Errorf("myoperator-controller should be suppressed by ConfigMap allowlist; got warning: %+v", d)
+		}
+	}
+}
+
+// TestRBACDrift_ConfigMapAllowlist_ExtendsNamespaces verifies that adding
+// "my-ns" to `allowNamespaces` suppresses an unbound SA in that namespace.
+func TestRBACDrift_ConfigMapAllowlist_ExtendsNamespaces(t *testing.T) {
+	cm := makeConfigMap("cluster-health-autopilot", "cha-rbac-allowlist", map[string]string{
+		"allowNamespaces": "my-ns",
+	})
+	src := &memSourceRBAC{byResource: map[string][]unstructured.Unstructured{
+		"pods":       {makeRBACPod("my-ns", "my-pod", "my-sa")},
+		"configmaps": {cm},
+	}}
+	got := RBACDrift{}.Run(context.Background(), src)
+	for _, d := range got {
+		if d.Severity == "warning" && strings.Contains(d.Subject, "my-ns") {
+			t.Errorf("unbound SA in my-ns should be suppressed by ConfigMap allowlist; got warning: %+v", d)
+		}
+	}
+}
+
+// TestRBACDrift_ConfigMapAllowlist_WasAlreadyFlagged confirms the inverse:
+// without the ConfigMap, the same role IS flagged.
+func TestRBACDrift_ConfigMapAllowlist_WasAlreadyFlagged(t *testing.T) {
+	// No ConfigMap in source → myoperator-controller must be flagged.
+	src := &memSourceRBAC{byResource: map[string][]unstructured.Unstructured{
+		"clusterroles": {makeClusterRole("myoperator-controller", []string{"*"}, []string{""}, []string{"pods"})},
+	}}
+	got := RBACDrift{}.Run(context.Background(), src)
+	var hasWarning bool
+	for _, d := range got {
+		if d.Severity == "warning" && strings.Contains(d.Subject, "myoperator-controller") {
+			hasWarning = true
+		}
+	}
+	if !hasWarning {
+		t.Errorf("without ConfigMap, myoperator-controller must be flagged; got: %+v", got)
+	}
+}
+
+// TestRBACDrift_BuiltinStillWorksNoConfigMap confirms that the built-in
+// allowlist (k10-admin etc.) works correctly when no ConfigMap exists:
+// k10-admin stays suppressed, my-app-wildcard stays flagged.
+func TestRBACDrift_BuiltinStillWorksNoConfigMap(t *testing.T) {
+	// memSourceRBAC.Get returns nil,nil for unknown objects → "no ConfigMap"
+	src := &memSourceRBAC{byResource: map[string][]unstructured.Unstructured{
+		"clusterroles": {
+			makeClusterRole("k10-admin", []string{"*"}, []string{""}, []string{"*"}),
+			makeClusterRole("my-app-wildcard", []string{"*"}, []string{""}, []string{"pods"}),
+		},
+	}}
+	got := RBACDrift{}.Run(context.Background(), src)
+	// k10-admin should be suppressed; my-app-wildcard should be warned
+	var hasK10Warning, hasAppWarning bool
+	for _, d := range got {
+		if d.Severity == "warning" && strings.Contains(d.Subject, "k10-admin") {
+			hasK10Warning = true
+		}
+		if d.Severity == "warning" && strings.Contains(d.Subject, "my-app-wildcard") {
+			hasAppWarning = true
+		}
+	}
+	if hasK10Warning {
+		t.Errorf("k10-admin should be suppressed by built-in allowlist even without ConfigMap; got warning")
+	}
+	if !hasAppWarning {
+		t.Errorf("my-app-wildcard must be flagged; got: %+v", got)
+	}
+}
+
+// --- Feature 2: Suppressed-RBAC digest ---------------------------------------
+
+// TestRBACDrift_SuppressedDigest_EmittedWhenSuppressed verifies that when
+// at least one finding is suppressed by the allowlist, exactly one `info`
+// diagnostic with subject RBACDrift/cluster/suppressed-expected-system is
+// emitted, and its message contains the count and at least one suppressed subject.
+func TestRBACDrift_SuppressedDigest_EmittedWhenSuppressed(t *testing.T) {
+	src := &memSourceRBAC{byResource: map[string][]unstructured.Unstructured{
+		"clusterroles": {
+			// k10-admin is in the built-in allowlist → will be suppressed
+			makeClusterRole("k10-admin", []string{"*"}, []string{""}, []string{"*"}),
+		},
+	}}
+	got := RBACDrift{}.Run(context.Background(), src)
+	var digestDiags []Diagnostic
+	for _, d := range got {
+		if d.Subject == "RBACDrift/cluster/suppressed-expected-system" {
+			digestDiags = append(digestDiags, d)
+		}
+	}
+	if len(digestDiags) != 1 {
+		t.Fatalf("expected exactly 1 suppressed-digest info diagnostic; got %d: %+v", len(digestDiags), got)
+	}
+	d := digestDiags[0]
+	if d.Severity != "info" {
+		t.Errorf("digest diagnostic must have severity 'info'; got %q", d.Severity)
+	}
+	if !strings.Contains(d.Message, "1 expected-system RBAC finding(s) suppressed") {
+		t.Errorf("digest message must contain count; got %q", d.Message)
+	}
+	if !strings.Contains(d.Message, "k10-admin") {
+		t.Errorf("digest message must contain suppressed subject; got %q", d.Message)
+	}
+	if !strings.Contains(d.Remediation, "cha-rbac-allowlist") {
+		t.Errorf("digest remediation must mention ConfigMap name; got %q", d.Remediation)
+	}
+}
+
+// TestRBACDrift_SuppressedDigest_NotEmittedWhenNothingSuppressed verifies
+// that when NO findings are suppressed (all roles are real user roles), the
+// digest diagnostic is NOT emitted.
+func TestRBACDrift_SuppressedDigest_NotEmittedWhenNothingSuppressed(t *testing.T) {
+	src := &memSourceRBAC{byResource: map[string][]unstructured.Unstructured{
+		"clusterroles": {
+			makeClusterRole("my-app-wildcard", []string{"*"}, []string{""}, []string{"pods"}),
+		},
+	}}
+	got := RBACDrift{}.Run(context.Background(), src)
+	for _, d := range got {
+		if d.Subject == "RBACDrift/cluster/suppressed-expected-system" {
+			t.Errorf("no suppressed findings → digest must NOT be emitted; got: %+v", d)
+		}
+	}
+}
+
+// TestRBACDrift_DigestNotCountedAsSuppressed verifies that the digest
+// diagnostic itself is not counted as a suppressed finding (no self-reference
+// or infinite recursion).
+func TestRBACDrift_DigestNotCountedAsSuppressed(t *testing.T) {
+	src := &memSourceRBAC{byResource: map[string][]unstructured.Unstructured{
+		"clusterroles": {
+			makeClusterRole("k10-admin", []string{"*"}, []string{""}, []string{"*"}),
+		},
+	}}
+	got := RBACDrift{}.Run(context.Background(), src)
+	// Expect: 1 info digest. The digest itself must NOT appear in the count
+	// embedded in its own message (i.e. "1 ... suppressed" not "2 ... suppressed").
+	for _, d := range got {
+		if d.Subject == "RBACDrift/cluster/suppressed-expected-system" {
+			if strings.Contains(d.Message, "2 expected-system") {
+				t.Errorf("digest must not count itself; message: %q", d.Message)
+			}
+			if !strings.Contains(d.Message, "1 expected-system") {
+				t.Errorf("digest message must say 1 suppressed; got %q", d.Message)
+			}
+		}
+	}
+}
+
+// TestRBACDrift_DigestMessageCapsAt12 verifies that when more than 12
+// subjects are suppressed, the message truncates to ~12 with "+N more".
+func TestRBACDrift_DigestMessageCapsAt12(t *testing.T) {
+	// Build 15 operator ClusterRoles all with k10- prefix (built-in suppressed)
+	var roles []unstructured.Unstructured
+	for i := 0; i < 15; i++ {
+		roles = append(roles, makeClusterRole(
+			fmt.Sprintf("k10-role-%d", i),
+			[]string{"*"}, []string{""}, []string{"pods"},
+		))
+	}
+	src := &memSourceRBAC{byResource: map[string][]unstructured.Unstructured{
+		"clusterroles": roles,
+	}}
+	got := RBACDrift{}.Run(context.Background(), src)
+	var digest *Diagnostic
+	for i := range got {
+		if got[i].Subject == "RBACDrift/cluster/suppressed-expected-system" {
+			digest = &got[i]
+			break
+		}
+	}
+	if digest == nil {
+		t.Fatal("expected suppressed digest; got none")
+	}
+	if !strings.Contains(digest.Message, "+3 more") {
+		t.Errorf("digest with 15 suppressions should show '+3 more'; got %q", digest.Message)
+	}
+	if !strings.Contains(digest.Message, "15 expected-system") {
+		t.Errorf("digest message should say 15 suppressed; got %q", digest.Message)
+	}
+}
+
+// TestRBACDrift_OverSuppressionGuard_AllFlaggedAfterFix repeats the
+// over-suppression guard for the new code path: user roles my-app-wildcard,
+// custom-admin, payments-admin, and unbound user SA must still be flagged.
+func TestRBACDrift_OverSuppressionGuard_AllFlaggedAfterFix(t *testing.T) {
+	cases := []struct {
+		kind string
+		ns   string
+		name string
+	}{
+		{kind: "clusterroles", ns: "", name: "my-app-wildcard"},
+		{kind: "roles", ns: "team-x", name: "custom-admin"},
+		{kind: "clusterroles", ns: "", name: "payments-admin"},
+	}
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.kind+"/"+tc.ns+"/"+tc.name, func(t *testing.T) {
+			var obj unstructured.Unstructured
+			if tc.ns == "" {
+				obj = makeClusterRole(tc.name, []string{"*"}, []string{""}, []string{"pods"})
+			} else {
+				obj = makeRole(tc.ns, tc.name, []string{"*"}, []string{""}, []string{"pods"})
+			}
+			src := &memSourceRBAC{byResource: map[string][]unstructured.Unstructured{
+				tc.kind: {obj},
+			}}
+			got := RBACDrift{}.Run(context.Background(), src)
+			var hasWarning bool
+			for _, d := range got {
+				if d.Severity == "warning" && strings.Contains(d.Subject, tc.name) {
+					hasWarning = true
+				}
+			}
+			if !hasWarning {
+				t.Errorf("user role %q must still be flagged as warning; got: %+v", tc.name, got)
+			}
+		})
 	}
 }

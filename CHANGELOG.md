@@ -13,6 +13,12 @@ serves the latest tagged chart cut.
 
 ## [Unreleased]
 
+## [0.2.0-alpha.3] — 2026-06-19
+
+### Added
+- **Configurable RBAC allowlist** — extend the built-in expected-system allowlist at runtime (no rebuild) via an optional `cha-rbac-allowlist` ConfigMap in the install namespace. Data keys `allowNamespaces`, `allowRolePrefixes`, `allowRoleNames` (comma/newline-separated) are merged with the built-ins per cycle; absent ConfigMap → built-ins only.
+- **Suppressed-RBAC digest** — instead of silently dropping allowlisted findings, `RBACDrift` emits one `info` summary per cycle (`RBACDrift/cluster/suppressed-expected-system`) listing how many wildcard-verb / unbound-SA findings were suppressed and which, so the silenced set stays visible (one info line + a DriftReport, replacing N paging warnings).
+
 ## [0.2.0-alpha.2] — 2026-06-19
 
 ### Fixed
