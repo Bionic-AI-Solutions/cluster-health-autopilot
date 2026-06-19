@@ -13,6 +13,7 @@ posture, or reasoning about blast radius.
 - [ADVERSARIAL_ANALYSIS.md §8](ADVERSARIAL_ANALYSIS.md#8-ai-tier-attack-surface) — security review of the AI surface
 - [SETUP_GUIDE.md §14](SETUP_GUIDE.md#14-ai-tier-setup) — installation walkthrough
 - [design/2026-05-investigator-agent.md](design/2026-05-investigator-agent.md) — Layer-2 design document
+- [design/2026-06-19-firecrawl-rca-tier-chaining-design.md](design/2026-06-19-firecrawl-rca-tier-chaining-design.md) — deep-RCA + Firecrawl + tier-chaining increment
 
 ---
 
@@ -128,9 +129,54 @@ Layer-2 is the sibling of T0: both are read-only and additive. The
 difference is that T0 asks an LLM to *narrate* what the diagnostic
 already says; Layer-2 *gathers fresh evidence* via deterministic tools
 and synthesizes a conclusion. The OSS implementation is rule-based
-(no LLM); the paid CHA-com binary may override it with an LLM-backed
-implementation that picks tools dynamically from the same closed
-Environment surface.
+(no LLM); the paid CHA-com binary replaces it with an LLM-backed
+**deep-RCA investigator** that extends the closed Environment surface
+with optional Firecrawl web research.
+
+**CHA-com deep-RCA investigator (v0.2.0-alpha.1, paid)**: The
+`ai/investigator.go:LLMInvestigator` replaces the rule-based
+investigator when the AI tier is enabled. It:
+
+1. Runs the same read-only cluster tools (`Describe` + `GetEvents` via
+   `pkg/ai.Environment`) against the live cluster.
+2. Synthesizes a **generic, client-redacted web search query** via an
+   LLM call — namespace, pod name, host, IP, and secret identifiers are
+   stripped before the query leaves the cluster. `RedactDiagnostic` and
+   `RedactEventMessage` provide a regex backstop. Environment observation
+   arguments are populated from the REDACTED subject so raw identifiers
+   never reach the RCA LLM prompt.
+3. Calls **Firecrawl** (opt-in, requires `FIRECRAWL_API_KEY`) to search
+   and scrape relevant documentation and runbooks. This is the **one
+   deliberate exception** to "payload never leaves the cluster" — see
+   [THREAT_MODEL_AI.md](THREAT_MODEL_AI.md) for the egress threat model.
+4. Synthesizes a root-cause analysis (summary + citations) from cluster
+   tool outputs + web results.
+5. Persists the RCA to the **`cha_investigations` Qdrant collection** for
+   cross-cycle retrieval.
+6. Forwards the RCA into every downstream AI tier via a `<root_cause>`
+   prompt block: T0 enricher, T1 proposer, T2 planner, and T3 runbook
+   all receive the investigation result when present. T1 also receives
+   prior-cycle RCAs for the same finding class (via a
+   `<prior_investigation>` block) and the T0 enrichment.
+
+**Flags** (CHA-com binary):
+
+| Flag | Default | Notes |
+|---|---|---|
+| `--firecrawl-endpoint` | `https://api.firecrawl.dev` | Firecrawl API base URL |
+| `--firecrawl-enabled` | `true` | Inert without the key env set |
+| `--firecrawl-api-key-env` | `FIRECRAWL_API_KEY` | Name of the env var holding the API key |
+| `--investigator-web-timeout` | `8s` | Per-request wall-clock cap for the Firecrawl call |
+
+**ESO setup** (Firecrawl key):
+```yaml
+# ExternalSecret cha-firecrawl-key
+# ClusterSecretStore: vault-backend
+# Vault path: secret/data/shared/api-keys  key: firecrawl_api_key
+# Produces:  K8s Secret cha-firecrawl-key  key: FIRECRAWL_API_KEY
+```
+See [AI_OPERATOR_RUNBOOK.md](AI_OPERATOR_RUNBOOK.md) for the full
+deployment procedure.
 
 Full design rationale: [design/2026-05-investigator-agent.md](design/2026-05-investigator-agent.md).
 
@@ -212,10 +258,13 @@ existing read access.
 and is safe in every environment — there is no new RBAC, no network
 egress beyond the existing probes, and no token cost. Disable with
 `CHA_INVESTIGATOR=off` only if you want bit-identical output to the
-pre-v1.5 binary. The paid LLM-backed Investigator is opt-in and lands
-on the same DriftReport field, the same Slack block, and the same
-audit-event taxonomy as the rule-based version — so swapping is a
-configuration change, not a re-integration.
+pre-v1.5 binary. The paid LLM-backed deep-RCA investigator is opt-in
+and lands on the same DriftReport field, the same Slack block, and the
+same audit-event taxonomy as the rule-based version — so swapping is a
+configuration change, not a re-integration. Firecrawl egress is
+explicitly opt-in (key env must be set); without the key, web research
+is silently skipped and the investigator falls back to cluster-only
+evidence.
 
 ### T1 — Approved deterministic fix
 
@@ -288,6 +337,18 @@ initialize at 0 tokens by default rather than full capacity.
 Operators who can't extract a free burst on each pod restart. Set
 `ai.rateLimit.coldStartFull: true` if you need the legacy
 burst-on-startup behavior.
+
+**RAG short-circuit (v0.2.0-alpha.1, default ON).** `--rag-short-circuit` is
+now **on by default** (inert unless `--memory-store-url` is set). When
+a previously-CLEARED, replayable fix for the same diagnostic class
+exceeds the `--rag-short-circuit-threshold` (default `0.92`) cosine
+similarity, the LLM proposal call is skipped and the prior fix is
+replayed directly. Replayed fixes still pass the G6 precondition
+re-check, autonomy gate, and post-apply verification, and their
+outcomes are recorded to the RAG. Default-on means existing
+deployments without a memory store are unaffected; deployments with
+`--memory-store-url` automatically benefit once outcome records
+accumulate.
 
 **Tamper-evident audit (Sprint 3.6).** Wrapping any `AuditSink` in
 `ChainedSink` (from `CHA-com/ai/audit/`) appends `prev_hash` and

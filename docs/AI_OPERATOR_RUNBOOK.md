@@ -188,6 +188,111 @@ or without the `🔬` block.
 
 ---
 
+## Scenario 8a — Firecrawl deep-RCA not enriching investigations
+
+**Context**: CHA-com v0.2.0-alpha.1 paid binary; `ai.enabled=true`; `--firecrawl-enabled`
+defaults to `true` but is inert without the API key.
+
+**Symptom**: Investigation `🔬` blocks appear but contain no web citations or
+external root-cause context; `ai.investigator.tool_call` events show no
+`details.tool=firecrawl` entries.
+
+**Check**:
+```sh
+# Confirm the key env is set on the aiwatch pod
+kubectl -n cluster-health-autopilot exec deploy/bionic-aiwatch -- \
+  sh -c 'echo ${FIRECRAWL_API_KEY:0:4}...'
+
+# Check ESO sync
+kubectl -n cluster-health-autopilot get externalsecret cha-firecrawl-key
+```
+
+**Remediation — provision the ESO ExternalSecret**:
+```yaml
+# Vault path: secret/data/shared/api-keys  key: firecrawl_api_key
+# Produces: K8s Secret cha-firecrawl-key  key: FIRECRAWL_API_KEY
+apiVersion: external-secrets.io/v1beta1
+kind: ExternalSecret
+metadata:
+  name: cha-firecrawl-key
+  namespace: cluster-health-autopilot
+spec:
+  refreshInterval: 1h
+  secretStoreRef: { name: vault-backend, kind: ClusterSecretStore }
+  target: { name: cha-firecrawl-key, creationPolicy: Owner }
+  data:
+    - secretKey: FIRECRAWL_API_KEY
+      remoteRef: { key: shared/api-keys, property: firecrawl_api_key }
+```
+Then patch the aiwatch Deployment to mount the secret as an env var:
+```sh
+kubectl -n cluster-health-autopilot set env deploy/bionic-aiwatch \
+  --from=secret/cha-firecrawl-key
+```
+
+**Flags reference**:
+| Flag | Default | Notes |
+|---|---|---|
+| `--firecrawl-endpoint` | `https://api.firecrawl.dev` | Override for self-hosted Firecrawl |
+| `--firecrawl-enabled` | `true` | Set `false` to disable entirely |
+| `--firecrawl-api-key-env` | `FIRECRAWL_API_KEY` | Name of the env var holding the key |
+| `--investigator-web-timeout` | `8s` | Wall-clock cap per Firecrawl request |
+
+---
+
+## Scenario 8b — RAG short-circuit replaying stale fixes
+
+**Symptom**: T1 proposals are being applied without a fresh LLM proposal;
+proposals reference an older fix that no longer applies to the current state.
+
+**Background**: `--rag-short-circuit` now defaults **on**. When a prior
+cleared fix scores ≥ `--rag-short-circuit-threshold` (default `0.92`) cosine
+similarity, the LLM proposal call is skipped and the prior fix is replayed.
+Replayed fixes still pass the G6 precondition re-check.
+
+**Check**:
+```sh
+# Look for replay events (rag_short_circuit=true in proposal details)
+kubectl -n cluster-health-autopilot get events \
+  --field-selector reason=AIProposalCreated -o json | \
+  jq '.items[] | select(.metadata.annotations."cha.bionicaisolutions.com/audit-details"
+      | contains("rag_short_circuit"))'
+```
+
+**Remediation** — lower the threshold or disable via the operator CR `spec.ai.extraArgs`:
+
+CHA-com flags are passed through the `ClusterHealthAutopilot` CR, not Helm values.
+Edit the CR directly:
+
+```sh
+kubectl edit clusterhealthautopilot bionic -n cluster-health-autopilot
+```
+
+Then adjust `spec.ai.extraArgs`. Examples:
+
+```yaml
+spec:
+  ai:
+    extraArgs:
+      # ... existing args such as --rag-store-url, --autonomy=true, etc. ...
+
+      # Require a tighter similarity match (default is 0.92):
+      - --rag-short-circuit-threshold=0.97
+
+      # To disable the short-circuit entirely, add:
+      - --rag-short-circuit=false
+      # (omitting the flag leaves it ON, which is the default)
+```
+
+Save and exit; the operator will roll out a new aiwatch pod with the updated flags.
+Confirm the new flag is active:
+```sh
+kubectl -n cluster-health-autopilot exec deploy/bionic-aiwatch -- \
+  cha-com --help 2>&1 | grep rag-short-circuit
+```
+
+---
+
 ## Scenario 8 — Click-to-fix URL gives 401 Unauthorized
 
 **Symptom**: SRE clicks the Apply Fix URL, sees:

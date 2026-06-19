@@ -61,7 +61,7 @@ Each tier is documented in [AI_TIERS.md](AI_TIERS.md). Quick overview:
 | Tier | What it adds | What it does **NOT** add |
 |---|---|---|
 | **T0 Narration** | LLM-generated 2–4 sentence root-cause narrative under each diagnostic | Any mutation capability. Tier 0 is read-only enrichment. |
-| **L2 Investigator (LLM-backed)** | Replaces the OSS rule-based investigator with an LLM that picks read-only tools dynamically from the same closed `Environment` enum. Renders under the same `🔬` block. | Any new tool, any mutation capability, any new RBAC. The action surface is unchanged. |
+| **L2 Investigator (LLM-backed deep-RCA, v0.2.0-alpha.1)** | Replaces the OSS rule-based investigator with an LLM that picks read-only cluster tools dynamically from the same closed `Environment` enum, synthesizes a client-redacted Firecrawl web query for external documentation search, persists the root-cause analysis to the `cha_investigations` Qdrant collection, and forwards the RCA to every AI tier (T0–T3) via a `<root_cause>` prompt block. | Any new cluster tool, any mutation capability, any new RBAC. Firecrawl is opt-in (key env must be set); the cluster tool surface is unchanged. |
 | **T1 Single fix** | One-click signed URLs that apply an existing OSS fixer to a specific target | New verbs, new RBAC, autonomous execution |
 | **T2 Multi-step plan** | Sequential multi-action plans with per-step approval | Bypass of step-by-step approval; plans cannot self-modify |
 | **T3 Vault runbook** | Generated `vault kv patch` runbook + dual-approval recording | CHA-com NEVER writes to Vault. Runbook is human-run. |
@@ -118,7 +118,7 @@ neither CHA-com nor the LLM ever see.
 | Data class | OSS engine has | Sent to LLM? |
 |---|---|---|
 | Diagnostic struct | yes | YES (redacted) |
-| K8s event messages | yes (in analyzers) | **Scrubbed via `pkg/ai.RedactEvents` (Sprint 3.4) — identifiers + secret-shaped substrings (AWS keys, Vault hvs.*, JWTs, GitHub PATs, Slack tokens) replaced with `[REDACTED]` before the Layer-2 investigator sees them.** The same redaction now applies to `Diagnostic.Message` so analyzers that copy event text into Findings can't leak secrets through that path either. |
+| K8s event messages | yes (in analyzers) | **Scrubbed via `pkg/ai.RedactEvents` (Sprint 3.4) — identifiers + secret-shaped substrings (AWS keys, Vault hvs.*, JWTs, GitHub PATs, Slack tokens) replaced with `[REDACTED]` before the Layer-2 investigator sees them.** The same redaction now applies to `Diagnostic.Message` so analyzers that copy event text into Findings can't leak secrets through that path either. For Firecrawl: a second LLM synthesizes a generic search query from the already-redacted message; `RedactDiagnostic`/`RedactEventMessage` are the backstop. |
 | Pod logs | no | **NO** |
 | Secret bytes | no (CHA never reads) | **NO** |
 | Secret key NAMES | yes | YES (already in Diagnostic message) |
@@ -130,6 +130,28 @@ neither CHA-com nor the LLM ever see.
 
 The redactor lives in CHA-com (`ai/redactor.go`). Unit tests assert
 no raw identifier leaks into constructed prompts.
+
+---
+
+## New flags in v0.2.0-alpha.1 (CHA-com)
+
+| Flag | Default | Notes |
+|---|---|---|
+| `--firecrawl-endpoint` | `https://api.firecrawl.dev` | Firecrawl API base URL; override for self-hosted instances |
+| `--firecrawl-enabled` | `true` | Enable web-research in the deep-RCA investigator. Inert without the key env. |
+| `--firecrawl-api-key-env` | `FIRECRAWL_API_KEY` | Name of the env var holding the Firecrawl API key |
+| `--investigator-web-timeout` | `8s` | Wall-clock cap per Firecrawl HTTP request |
+| `--rag-short-circuit` | `true` (previously `false`) | Reuse a prior cleared fix (skip LLM proposal) when cosine similarity ≥ threshold. Inert without `--memory-store-url`. |
+| `--rag-short-circuit-threshold` | `0.92` | Minimum cosine similarity for RAG short-circuit reuse |
+
+**ESO setup for the Firecrawl API key** (Vault → ESO → env):
+```
+Vault:  secret/data/shared/api-keys   key: firecrawl_api_key
+ESO:    ExternalSecret cha-firecrawl-key  (ns: cluster-health-autopilot)
+        target Secret key: FIRECRAWL_API_KEY
+```
+See [AI_OPERATOR_RUNBOOK.md §Scenario 8a](AI_OPERATOR_RUNBOOK.md) for the
+full ExternalSecret manifest and Deployment patch.
 
 ---
 

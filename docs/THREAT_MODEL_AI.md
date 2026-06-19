@@ -15,9 +15,22 @@ There are two distinct AI surfaces in scope:
    read-only tools and attaches a root-cause hint to CRITICAL
    DriftReports. **Two implementations**: a deterministic rule-based
    investigator that ships in OSS (no LLM, most LLM-specific rows are
-   N/A), and an LLM-backed investigator that ships in CHA-com and
-   inherits the same closed-enum Environment surface and the same
-   wall-clock bound. Reviewed in ADVERSARIAL_ANALYSIS.md §9.
+   N/A), and an LLM-backed **deep-RCA investigator** that ships in
+   CHA-com (v0.2.0-alpha.1) and extends the closed-enum Environment with optional
+   Firecrawl web research. Reviewed in ADVERSARIAL_ANALYSIS.md §9.
+
+**External egress exception (v0.2.0-alpha.1, CHA-com only):** Firecrawl is the
+one deliberate exception to the "payload never leaves the cluster"
+invariant. Mitigation layers (defense in depth):
+
+| Layer | Mechanism |
+|---|---|
+| LLM query synthesis | An LLM call produces a generic technical search query from the *already-redacted* message before any external call is made. Namespace, pod name, host, IP, and secret identifiers are absent from the query by construction. |
+| `RedactDiagnostic` backstop | `pkg/ai/redact.go:RedactDiagnostic` SHA-256-hashes namespace/name, class-tags IPs, and replaces UIDs/internal hostnames before the message reaches the query-synthesis step. |
+| `RedactEventMessage` backstop | `pkg/ai/redact.go:RedactEvents` strips AWS keys, Vault `hvs.*` tokens, JWTs, GitHub PATs, Slack tokens, base64≥40, and hex≥32 strings from event text before it is included in the diagnostic used to synthesize the query. |
+| Env observation privacy | `runEnvTools` populates `Observation.Args` from the REDACTED subject (not the live `ns/name`) so raw cluster identifiers never reach the RCA LLM prompt. |
+| Opt-in gate | `--firecrawl-enabled` defaults to `true` but is inert unless `FIRECRAWL_API_KEY` is set. Deployments without the key never make external calls. |
+| Audit | Each Firecrawl call produces an `ai.investigator.tool_call` event with `details.tool = "firecrawl"` for compliance review. |
 
 The Layer-2 Investigator is structurally simpler than the T0–T3 tier
 because it has no approval/mutation path: the surface is dominated by
@@ -192,12 +205,17 @@ under the OWASP 2025 LLM10 rename — see also LLM10 below):
   on namespaced resources. `Environment.Describe` and
   `Environment.GetEvents` route through `snapshot.Source`, which
   preserves the v0.2 privacy contract (`for k := range secret.Data`).
-- *LLM-backed investigator (CHA-com)*: every tool output is passed
-  through `pkg/ai.ContainsSecretLike` (base64≥40, hex≥32 patterns
-  per `pkg/ai/redact.go`) before being added to the prompt; the
-  investigation summary is scrubbed before it is written into the
-  DriftReport. `Environment` exposes **no Secret read** — there is
-  no method that returns Secret values. Vault is not touched.
+- *LLM-backed deep-RCA investigator (CHA-com, v0.2.0-alpha.1)*: every tool
+  output is actively redacted via `pkg/ai.RedactEventMessage` /
+  `pkg/ai.RedactEvents` (`pkg/ai/redact.go`) — substituting AWS keys,
+  Vault `hvs.*` tokens, JWTs, GitHub PATs, Slack tokens, base64≥40, and
+  hex≥32 strings with `[REDACTED]` — before being added to the prompt;
+  the investigation summary is scrubbed before it is written into the
+  DriftReport. `Environment` exposes **no Secret read** — there
+  is no method that returns Secret values. Vault is not touched.
+  For the Firecrawl path, see the **External egress exception** section
+  above — the multi-layer redaction chain ensures no cluster identifier
+  reaches the external search service.
 
 ### LLM07 — Insecure Plugin Design
 

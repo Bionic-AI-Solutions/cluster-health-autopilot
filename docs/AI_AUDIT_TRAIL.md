@@ -30,14 +30,27 @@ events to keep its zero-dependency posture):
 
 ```
 ai.investigator.started      (investigation entered the cycle)
-  ├─ ai.investigator.tool_call    (one per Environment method invoked)
+  ├─ ai.investigator.tool_call    (one per Environment method invoked;
+  │                                details.tool = "describe" | "events" |
+  │                                "firecrawl" | "citation" | ...)
   ├─ ai.investigator.tool_call    ...
   └─ ai.investigator.completed    (or ai.investigator.budget_exceeded)
 ```
 
+A **Firecrawl web-research call** produces an `ai.investigator.tool_call`
+event with `details.tool = "firecrawl"`. The query sent to Firecrawl is
+the synthesized, client-redacted string — raw cluster identifiers never
+appear in this event.
+
 These events share a `correlation_id` = the DriftReport name being
 investigated, so a full per-report trace links cleanly to the enrichment,
 proposal, approval, and action chains that may follow.
+
+**Ticket-closure recording** (v0.2.0-alpha.1): when a Jira/ServiceNow ticket is
+resolved (finding cleared), an `ai.memory.recorded` event is emitted with
+`details.verdict = "cleared"` and `details.delivery = "ticket-closed"`.
+This is best-effort; a recording failure emits `ai.memory.record_failed`
+but never affects the ticket resolution response.
 
 ---
 
@@ -69,9 +82,11 @@ proposal, approval, and action chains that may follow.
 | `ai.circuit_breaker.tripped` | T1+ | Warning | Auto-disable after N failures |
 | `ai.circuit_breaker.reset` | T1+ | Normal | Counter reset (success or manual) |
 | `ai.investigator.started` | L2 (paid) | Normal | LLM-backed investigation began for a DriftReport |
-| `ai.investigator.tool_call` | L2 (paid) | Normal | One `Environment` method invoked; `details.tool` names which |
+| `ai.investigator.tool_call` | L2 (paid) | Normal | One `Environment` method invoked; `details.tool` names which (e.g. `describe`, `events`, `firecrawl`, `citation`) |
 | `ai.investigator.completed` | L2 (paid) | Normal | Summary attached to DriftReport |
 | `ai.investigator.budget_exceeded` | L2 (paid) | Warning | Per-cycle 20s cap or per-investigation token budget exhausted |
+| `ai.memory.recorded` | T1+ / L2 (paid) | Normal | Outcome (proposal result or ticket closure) persisted to RAG; `details.delivery` = `human-approved` \| `autonomy` \| `human-denied` \| `ticket-closed` |
+| `ai.memory.record_failed` | T1+ / L2 (paid) | Warning | RAG write failed (best-effort; does not affect the operation that triggered it) |
 
 The OSS rule-based investigator emits no audit events. To audit it,
 read the DriftReport CR's `spec.investigation` field directly (the
@@ -160,6 +175,12 @@ kubectl -n cluster-health-autopilot get driftreport "$CID" \
 
 # Circuit breaker trips
 {job="cha-ai", event_type=~"ai\\.circuit_breaker\\..*"}
+
+# Firecrawl web-research calls (deep-RCA investigator)
+{job="cha-ai", event_type="ai.investigator.tool_call"} | json | details_tool="firecrawl"
+
+# Ticket-closure outcomes persisted to RAG
+{job="cha-ai", event_type="ai.memory.recorded"} | json | details_delivery="ticket-closed"
 ```
 
 ---

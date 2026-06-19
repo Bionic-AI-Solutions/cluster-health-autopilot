@@ -16,15 +16,23 @@ binary, and on every cycle it:
    cluster's API state (no metrics scraping, no log shipping). Read-only.
 2. **Suppresses flakes** (v1.4) — a single failed probe doesn't page; only a
    second consecutive failure does. Transient blips get an in-cycle retry.
-3. **Investigates** (v1.5) — on every CRITICAL finding, a read-only
+3. **Investigates** (v1.5+) — on every CRITICAL finding, a read-only
    Investigator runs a deep-dive (DNS / HTTP probe / TLS inspect / kubectl
    describe / recent events) and attaches a one-line root-cause Summary.
+   In CHA-com with `ai.enabled=true`, the deep-RCA investigator additionally
+   synthesizes a **Firecrawl-grounded web query** (all cluster identifiers
+   redacted by the LLM before any external call) and persists the root-cause
+   analysis to the `cha_investigations` Qdrant collection; that analysis is
+   then forwarded into every AI tier (T0–T3) via a `<root_cause>` prompt block.
 4. **Remediates** — if enabled, runs a whitelist of safe, idempotent,
    reversible fixers (delete a Failed pod, kill a frozen Job, rollout-restart
    a wedged ReplicaSet, delete a terminal CertificateRequest, optionally
    repoint an Ingress to the correct TLS Secret).
 5. **Re-verifies** — re-runs the analyzers; the diagnostic for the fixed
-   subject must clear or the action is recorded as failed.
+   subject must clear or the action is recorded as failed. When a
+   Jira/ServiceNow ticket is resolved (finding cleared), ticket closure is
+   recorded to the RAG/audit as an Outcome with
+   `verdict=cleared, delivery=ticket-closed` (best-effort).
 6. **Reports** — posts a Slack message, fires Alertmanager alerts, and
    upserts a `DriftReport` custom resource that any other tooling (ArgoCD
    events, OPA admission, your own scripts) can read with kubectl.
@@ -138,6 +146,12 @@ help, LLM-backed investigation) — never *autonomy*.
 - **Send cluster state to any third-party SaaS by default.** Outbound traffic
   goes to the destinations the operator configures (Slack webhook, optional
   Alertmanager, optional Vault). No vendor analytics. No telemetry.
+  **One deliberate exception (CHA-com paid, opt-in):** when
+  `--firecrawl-enabled` is set and `FIRECRAWL_API_KEY` is present, the
+  deep-RCA investigator sends a **client-redacted** web search query to
+  Firecrawl. All namespace, pod, host, IP, and secret identifiers are
+  stripped by the LLM and by `RedactDiagnostic`/`RedactEventMessage`
+  before the query is constructed. Inert when the key is absent.
 - **Page on a single transient failure.** First failure is tagged
   `[transient, 1/2]` and emits at warning; only a second consecutive failure
   promotes to CRITICAL. Deterministic failures (TLS error, status mismatch)
@@ -180,9 +194,13 @@ Both share these invariants:
   DNS failure, slow-DNS root cause, transient-recovery (when a follow-up
   probe succeeds), HTTP status mismatches, and ExternalSecret / Certificate
   diagnostic states. Attaches a 🔬 Summary block. No LLM call.
-- **Layer-2 Investigator (Paid, LLM-backed)** — same `Investigator` interface,
-  same closed-enum `Environment`. The LLM picks which tool to call next based
-  on prior observations. Catches failure modes the rule engine doesn't recognize.
+- **Layer-2 Investigator (Paid, LLM-backed deep-RCA)** — same `Investigator`
+  interface, same closed-enum `Environment` for cluster tools. Additionally
+  synthesizes a client-redacted Firecrawl web query, scrapes relevant docs/
+  runbooks, and persists the root-cause analysis to the `cha_investigations`
+  Qdrant collection. The RCA is forwarded to every AI tier (T0–T3) via a
+  `<root_cause>` prompt block, grounding proposals in the actual failure
+  evidence gathered for that cycle.
 - **T0 Enricher** — adds a 2–4 sentence root-cause narrative (🤖 block) to
   Diagnostics. Read-only.
 - **T1 Fix Proposer** — proposes one mutation matching an existing OSS fixer
