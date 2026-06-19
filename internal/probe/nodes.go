@@ -8,6 +8,7 @@ import (
 	"fmt"
 
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/snapshot"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 
 // Nodes ports probe_nodes from cluster-health-report.sh:249-274.
@@ -107,4 +108,12 @@ func getSliceField(m map[string]any, path ...string) ([]any, bool, error) {
 		}
 	}
 	return nil, false, nil
+}
+
+// isTerminating returns true when the pod has a non-nil deletionTimestamp,
+// meaning the kubelet has been asked to stop and delete it. Terminating pods
+// are intentionally going away; flagging them as stuck/not-ready/crashlooping
+// produces "already resolved" noise and useless AI remediation proposals.
+func isTerminating(pod unstructured.Unstructured) bool {
+	return pod.GetDeletionTimestamp() != nil
 }

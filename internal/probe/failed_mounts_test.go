@@ -138,3 +138,45 @@ func TestFailedMounts_ProvisioningFailed(t *testing.T) {
 		t.Errorf("remediation should mention StorageClass: %q", r.Findings[0].Remediation)
 	}
 }
+
+// podTerminatingContainerCreating has deletionTimestamp set, is Pending/ContainerCreating,
+// and has a corresponding FailedMount event. Should be silently skipped.
+const podTerminatingContainerCreating = `{
+  "apiVersion": "v1", "kind": "PodList",
+  "items": [
+    {"apiVersion": "v1", "kind": "Pod",
+     "metadata": {"name": "old-mounter", "namespace": "demo",
+                  "creationTimestamp": "2026-06-19T09:00:00Z",
+                  "deletionTimestamp": "2026-06-19T10:00:00Z"},
+     "status": {"phase": "Pending",
+                "containerStatuses": [
+                  {"state": {"waiting": {"reason": "ContainerCreating"}}}
+                ]}}
+  ]
+}`
+
+const eventsTerminatingMount = `{
+  "apiVersion": "v1", "kind": "EventList",
+  "items": [
+    {"apiVersion": "v1", "kind": "Event",
+     "reason": "FailedMount",
+     "involvedObject": {"kind": "Pod", "namespace": "demo", "name": "old-mounter"},
+     "message": "Unable to attach or mount volumes: ..."}
+  ]
+}`
+
+func TestFailedMounts_TerminatingPodSkipped(t *testing.T) {
+	src := loadProbeSrc(t, map[string]string{
+		"pods.json":   podTerminatingContainerCreating,
+		"events.json": eventsTerminatingMount,
+	})
+	fm := FailedMounts{MinAge: -1} // disable grace period to isolate the terminating check
+	r := fm.Run(context.Background(), src)
+	if r.Component.Status != "HEALTHY" {
+		t.Errorf("Terminating pod with FailedMount must be skipped; got Status=%q Detail=%q",
+			r.Component.Status, r.Component.Detail)
+	}
+	if len(r.Findings) != 0 {
+		t.Errorf("expected 0 findings for terminating pod, got %+v", r.Findings)
+	}
+}

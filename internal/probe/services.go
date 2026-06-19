@@ -62,6 +62,9 @@ func (s Services) Run(ctx context.Context, src snapshot.Source) Result {
 		matched := 0
 		ready := 0
 		for _, pod := range list.Items {
+			if isTerminating(pod) {
+				continue
+			}
 			labels := pod.GetLabels()
 			if labels[key] != val {
 				continue

@@ -57,6 +57,9 @@ func (e ETCD) Run(ctx context.Context, src snapshot.Source) Result {
 	}
 	var members []member
 	for _, pod := range pods.Items {
+		if isTerminating(pod) {
+			continue
+		}
 		if !looksLikeEtcdPod(pod) {
 			continue
 		}

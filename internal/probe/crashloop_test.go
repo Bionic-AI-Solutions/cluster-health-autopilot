@@ -158,3 +158,40 @@ func TestCrashLoop_EmptyCluster(t *testing.T) {
 		t.Errorf("empty cluster should be HEALTHY, got %q", r.Component.Status)
 	}
 }
+
+// podTerminatingCrashLoop is a pod with deletionTimestamp set AND
+// CrashLoopBackOff — should be silently skipped.
+const podTerminatingCrashLoop = `{
+  "apiVersion": "v1", "kind": "PodList",
+  "items": [
+    {"apiVersion": "v1", "kind": "Pod",
+     "metadata": {"name": "old-pod", "namespace": "demo",
+                  "deletionTimestamp": "2026-06-19T10:00:00Z"},
+     "status": {"phase": "Running",
+                "containerStatuses": [{
+                  "restartCount": 5,
+                  "state": {"waiting": {"reason": "CrashLoopBackOff"}}
+                }]}}
+  ]
+}`
+
+func TestCrashLoop_TerminatingPodSkipped(t *testing.T) {
+	src := loadProbeSrc(t, map[string]string{"pods.json": podTerminatingCrashLoop})
+	r := CrashLoopBackOff{}.Run(context.Background(), src)
+	if r.Component.Status != "HEALTHY" {
+		t.Errorf("Terminating pod with CrashLoopBackOff must be skipped; got Status=%q Detail=%q",
+			r.Component.Status, r.Component.Detail)
+	}
+	if len(r.Findings) != 0 {
+		t.Errorf("expected 0 findings for terminating pod, got %+v", r.Findings)
+	}
+}
+
+func TestCrashLoop_NonTerminatingCrashLoopStillFlagged(t *testing.T) {
+	// Regression: removing the deletionTimestamp means the pod IS flagged.
+	src := loadProbeSrc(t, map[string]string{"pods.json": podUserNsLowRestarts})
+	r := CrashLoopBackOff{}.Run(context.Background(), src)
+	if r.Component.Status == "HEALTHY" {
+		t.Errorf("non-terminating CrashLoopBackOff pod must still be flagged; got HEALTHY")
+	}
+}

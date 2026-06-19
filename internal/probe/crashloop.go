@@ -55,6 +55,9 @@ func (c CrashLoopBackOff) Run(ctx context.Context, src snapshot.Source) Result {
 	}
 	var critical, warning []hit
 	for _, pod := range pods.Items {
+		if isTerminating(pod) {
+			continue
+		}
 		// We don't restrict to Running — kubelet sometimes reports
 		// Pending/CrashLoopBackOff during init-container retries.
 		restarts, found, reason := podMaxRestartCount(pod)

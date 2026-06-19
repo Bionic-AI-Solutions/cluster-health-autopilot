@@ -157,3 +157,33 @@ func TestETCD_CustomNamespace(t *testing.T) {
 		t.Errorf("custom namespace should be honored, got %q", r.Component.Status)
 	}
 }
+
+// podsEtcdTerminating has one terminating etcd pod (not-ready, 2 restarts).
+// Since it's terminating (being replaced), the probe must not flag it.
+const podsEtcdTerminating = `{
+  "apiVersion": "v1", "kind": "PodList",
+  "items": [
+    {"apiVersion": "v1", "kind": "Pod",
+     "metadata": {"name": "etcd-node-a", "namespace": "kube-system",
+                  "deletionTimestamp": "2026-06-19T10:00:00Z"},
+     "status": {"conditions": [{"type": "Ready", "status": "False"}],
+                "containerStatuses": [{"restartCount": 2}]}}
+  ]
+}`
+
+func TestETCD_TerminatingPodSkipped(t *testing.T) {
+	src := loadProbeSrc(t, map[string]string{"pods.json": podsEtcdTerminating})
+	r := ETCD{}.Run(context.Background(), src)
+	// With 0 non-terminating etcd pods, the probe should fall through to the
+	// "external etcd" WARNING — NOT to CRITICAL.
+	if r.Component.Status == "CRITICAL" {
+		t.Errorf("Terminating etcd pod must not cause CRITICAL; got Status=%q Detail=%q",
+			r.Component.Status, r.Component.Detail)
+	}
+	// Specifically must not have a "not ready" or "restarted" finding.
+	for _, f := range r.Findings {
+		if f.Severity == SeverityCritical {
+			t.Errorf("must not produce a CRITICAL finding for terminating pod; got %q", f.Message)
+		}
+	}
+}

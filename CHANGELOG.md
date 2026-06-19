@@ -13,6 +13,11 @@ serves the latest tagged chart cut.
 
 ## [Unreleased]
 
+## [0.2.0-alpha.4] — 2026-06-19
+
+### Fixed
+- **Terminating pods are no longer flagged as stuck/not-ready.** Pod probes (CrashLoopBackOff, PendingPods, FailedMounts, Services, ETCD) now skip pods with a `metadata.deletionTimestamp` (i.e. already Terminating) — they're intentionally being deleted, so flagging them (and proposing DeletePod, which then "already resolved" on click) was pure noise. Most visible during rollouts, including CHA's own pods. Non-terminating pods in the same state are still detected.
+
 ## [0.2.0-alpha.3] — 2026-06-19
 
 ### Added

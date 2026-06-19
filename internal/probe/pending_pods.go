@@ -64,6 +64,9 @@ func (p PendingPods) Run(ctx context.Context, src snapshot.Source) Result {
 	}
 	var hits []pending
 	for _, pod := range pods.Items {
+		if isTerminating(pod) {
+			continue
+		}
 		phase, _, _ := unstructured.NestedString(pod.Object, "status", "phase")
 		if phase != "Pending" {
 			continue

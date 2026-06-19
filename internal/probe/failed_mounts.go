@@ -92,6 +92,9 @@ func (f FailedMounts) Run(ctx context.Context, src snapshot.Source) Result {
 	}
 
 	for _, pod := range pods.Items {
+		if isTerminating(pod) {
+			continue
+		}
 		phase, _, _ := unstructured.NestedString(pod.Object, "status", "phase")
 		if phase != "Pending" {
 			continue

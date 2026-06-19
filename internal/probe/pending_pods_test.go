@@ -176,3 +176,42 @@ func TestPendingPods_NoPods(t *testing.T) {
 		t.Errorf("empty cluster should be HEALTHY, got %q", r.Component.Status)
 	}
 }
+
+// podTerminatingPending is a Pending pod with PodScheduled=False AND a
+// deletionTimestamp — should be silently skipped.
+const podTerminatingPending = `{
+  "apiVersion": "v1", "kind": "PodList",
+  "items": [
+    {"apiVersion": "v1", "kind": "Pod",
+     "metadata": {"name": "old-pending", "namespace": "demo",
+                  "creationTimestamp": "2026-05-22T10:00:00Z",
+                  "deletionTimestamp": "2026-06-19T10:00:00Z"},
+     "status": {"phase": "Pending",
+                "conditions": [
+                  {"type": "PodScheduled", "status": "False",
+                   "reason": "Unschedulable",
+                   "message": "0/4 nodes are available: 4 Insufficient cpu."}
+                ]}}
+  ]
+}`
+
+func TestPendingPods_TerminatingPodSkipped(t *testing.T) {
+	src := loadProbeSrc(t, map[string]string{"pods.json": podTerminatingPending})
+	r := PendingPods{Now: fixedNow("2026-05-22T12:00:00Z")}.Run(context.Background(), src)
+	if r.Component.Status != "HEALTHY" {
+		t.Errorf("Terminating pending pod must be skipped; got Status=%q Detail=%q",
+			r.Component.Status, r.Component.Detail)
+	}
+	if len(r.Findings) != 0 {
+		t.Errorf("expected 0 findings for terminating pod, got %+v", r.Findings)
+	}
+}
+
+func TestPendingPods_NonTerminatingPendingStillFlagged(t *testing.T) {
+	// Regression: same pod without deletionTimestamp is still flagged.
+	src := loadProbeSrc(t, map[string]string{"pods.json": podStuckInsufficientCPU})
+	r := PendingPods{Now: fixedNow("2026-05-22T12:00:00Z")}.Run(context.Background(), src)
+	if r.Component.Status != "CRITICAL" {
+		t.Errorf("non-terminating Pending pod must still be flagged; got Status=%q", r.Component.Status)
+	}
+}
