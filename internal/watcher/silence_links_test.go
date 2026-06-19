@@ -104,6 +104,109 @@ func TestAttachApprovalURLs_NoLinksWhenUnconfigured(t *testing.T) {
 	}
 }
 
+// TestAttachSilenceLinks_WarningAdvisoryFinding verifies that warning/advisory
+// findings (e.g. RBAC drift with no ApprovalURL) DO get silence links when the
+// SilenceLinks config is populated. This is the regression guard for the
+// production report that advisory findings showed only a kubectl snippet instead
+// of the one-click Silence button.
+//
+// Root-cause investigation: the attachSilenceLinks path has NO severity gate and
+// NO early-return for advisory findings. The kubectl fallback in renderSilenceSnippet
+// only fires when SilenceSubjectURL is empty. If advisory findings show the kubectl
+// snippet in production, the root cause is that SilenceLinks is NOT configured in
+// the live deployment (no signing key + approval-server URL), not a code defect.
+// This test confirms the code-level path is correct for any severity.
+func TestAttachSilenceLinks_WarningAdvisoryFinding_GetsLinks(t *testing.T) {
+	pub, priv, err := pkgai.GenerateSigningKey()
+	if err != nil {
+		t.Fatalf("keygen: %v", err)
+	}
+	fixed := time.Now().UTC()
+	w := &Watcher{
+		now: func() time.Time { return fixed },
+		cfg: Config{
+			SilenceLinks: report.SilenceLinkConfig{
+				PrivateKey: priv,
+				BaseURL:    "https://cha-approve.example.com",
+				ShortDur:   24 * time.Hour,
+				LongDur:    90 * 24 * time.Hour,
+			},
+		},
+	}
+
+	// Warning-severity advisory finding — no ApprovalURL (no Approve/Deny button).
+	// Mirrors what RBAC drift produces: "ClusterRole X grants wildcard verb".
+	e := &seenEntry{
+		subject:  "ClusterRole/cluster-admin-wildcard",
+		source:   "RBACDrift",
+		severity: "warning",
+		message:  "ClusterRole grants wildcard verbs on all resources",
+	}
+	state := map[string]*seenEntry{e.subject: e}
+	w.attachApprovalURLs(state)
+
+	if e.silenceSubjectURL == "" {
+		t.Errorf("warning/advisory finding must get a subject-scoped silence link; silenceSubjectURL is empty")
+	}
+	if e.silenceClassLongURL == "" {
+		t.Errorf("warning/advisory finding must get a class-scoped silence link; silenceClassLongURL is empty")
+	}
+
+	// Verify the subject link points at this specific subject.
+	subjClaims := verifySilenceURL(t, pub, e.silenceSubjectURL)
+	if subjClaims.Subject != "ClusterRole/cluster-admin-wildcard" {
+		t.Errorf("subject link matcher.subject = %q; want exact finding subject", subjClaims.Subject)
+	}
+	if subjClaims.Source != "RBACDrift" {
+		t.Errorf("subject link matcher.source = %q; want 'RBACDrift'", subjClaims.Source)
+	}
+
+	// The DeltaDiag projection must carry the links through so the renderer
+	// can emit the click-link rather than the kubectl fallback.
+	d := seenEntryToDeltaDiag(e)
+	if d.SilenceSubjectURL == "" || d.SilenceClassLongURL == "" {
+		t.Errorf("DeltaDiag must carry silence URLs for advisory finding: subj=%q class=%q",
+			d.SilenceSubjectURL, d.SilenceClassLongURL)
+	}
+}
+
+// TestAttachSilenceLinks_EmptySource_SubjectFallback verifies that a finding
+// with an empty Source (legacy probe findings without an explicit source field)
+// still gets silence links — the subject is used as the source fallback so
+// MintSilenceLinks can proceed.
+func TestAttachSilenceLinks_EmptySource_SubjectFallback(t *testing.T) {
+	_, priv, err := pkgai.GenerateSigningKey()
+	if err != nil {
+		t.Fatalf("keygen: %v", err)
+	}
+	fixed := time.Now().UTC()
+	w := &Watcher{
+		now: func() time.Time { return fixed },
+		cfg: Config{
+			SilenceLinks: report.SilenceLinkConfig{
+				PrivateKey: priv,
+				BaseURL:    "https://cha-approve.example.com",
+				ShortDur:   24 * time.Hour,
+				LongDur:    90 * 24 * time.Hour,
+			},
+		},
+	}
+
+	// Finding with empty Source (e.g. legacy probe or analyzer that doesn't set Source).
+	e := &seenEntry{
+		subject:  "ServiceAccount/prod/orphan-sa",
+		source:   "", // intentionally empty
+		severity: "warning",
+		message:  "ServiceAccount has no RoleBinding",
+	}
+	state := map[string]*seenEntry{e.subject: e}
+	w.attachApprovalURLs(state)
+
+	if e.silenceSubjectURL == "" {
+		t.Errorf("empty-source finding must fall back to subject for silence minting; silenceSubjectURL is empty")
+	}
+}
+
 func verifySilenceURL(t *testing.T, pub []byte, raw string) *pkgai.SilenceTokenClaims {
 	t.Helper()
 	i := strings.Index(raw, "token=")

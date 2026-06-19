@@ -273,7 +273,7 @@ func SplitCriticalPayloadsConfig(unfixable []DeltaDiag, resolved []ResolvedDiag,
 		resolvedSection = b.String()
 	}
 
-	headerLine := fmt.Sprintf("*CHA Alert — Human Action Required* — %s\n", time.Now().UTC().Format("2006-01-02 15:04:05 UTC"))
+	headerLine := fmt.Sprintf("%s — %s\n", alertTitle(hasActionableFindings(unfixable)), time.Now().UTC().Format("2006-01-02 15:04:05 UTC"))
 	newHeader := fmt.Sprintf("\n*🆕 New this cycle (%d):*\n", newCount)
 	critHeader := fmt.Sprintf("\n*🔴 Critical (%d):*\n", len(critRendered))
 	diagHeader := fmt.Sprintf("\n*⚠️ Diagnostics (%d):*\n", len(diagRendered))
@@ -402,10 +402,14 @@ func SplitCriticalPayloadsConfig(unfixable []DeltaDiag, resolved []ResolvedDiag,
 // watcher is alive (the alternative — silently skipping the post —
 // is indistinguishable from a crashed agent).
 func emitNoChangeDigest(stableTotal int) []SlackPayload {
+	// No-change digest: nothing new, nothing resolved → purely advisory.
+	// There is no Approve/Deny button here; "Human Action Required" would
+	// be misleading. Use the advisory title unconditionally.
 	text := fmt.Sprintf(
-		"*CHA Alert — Human Action Required* — %s\n\n"+
+		"%s — %s\n\n"+
 			"*✨ No new issues since last cycle* — steady state at %d finding%s. "+
 			"_Run `cha diagnose` or check #ceph-critical history for the active list._\n",
+		alertTitle(false),
 		time.Now().UTC().Format("2006-01-02 15:04:05 UTC"),
 		stableTotal, plural(stableTotal),
 	)
@@ -432,6 +436,32 @@ func plural(n int) string {
 	return "s"
 }
 
+// hasActionableFindings reports whether any finding in ds carries a signed
+// ApprovalURL — i.e. an Approve/Deny button will appear in the Slack post.
+// Used to choose between "Human Action Required" (approve/deny buttons
+// present) and "Advisory — Review (no action required)" (purely informational
+// findings with no interactive controls) as the Slack alert title.
+func hasActionableFindings(ds []DeltaDiag) bool {
+	for _, d := range ds {
+		if d.ApprovalURL != "" {
+			return true
+		}
+	}
+	return false
+}
+
+// alertTitle returns the Slack header string appropriate for the given finding
+// set. When any finding is actionable (carries an ApprovalURL) the operator
+// must choose Approve/Deny — use the "Human Action Required" title. When ALL
+// findings are purely advisory (no approve/deny buttons) use the softer
+// "Advisory — Review" title so on-call engineers can triage at a glance.
+func alertTitle(actionable bool) string {
+	if actionable {
+		return "*CHA Alert — Human Action Required*"
+	}
+	return "*CHA Advisory — Review (no action required)*"
+}
+
 // FormatCriticalPayload renders the #ceph-critical message for a watcher cycle
 // where issues require human intervention — either unfixable by CHA or still
 // active after fixers ran.
@@ -443,7 +473,7 @@ func FormatCriticalPayload(unfixable []DeltaDiag, resolved []ResolvedDiag) Slack
 	now := time.Now().UTC()
 	var b strings.Builder
 
-	fmt.Fprintf(&b, "*CHA Alert — Human Action Required* — %s\n", now.Format("2006-01-02 15:04:05 UTC"))
+	fmt.Fprintf(&b, "%s — %s\n", alertTitle(hasActionableFindings(unfixable)), now.Format("2006-01-02 15:04:05 UTC"))
 
 	crits := 0
 	diags := 0

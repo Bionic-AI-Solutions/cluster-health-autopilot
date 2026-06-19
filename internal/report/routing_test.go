@@ -450,3 +450,170 @@ func TestSplitCriticalPayloadsConfig_NoChangeDigest_FallsThroughWhenResolvedExis
 		t.Errorf("resolved finding must still render")
 	}
 }
+
+// --- Conditional title (Part A of fix/advisory-alert-title) ---
+//
+// Slack alerts must use "Human Action Required" only when an Approve/Deny
+// button is present. When ALL findings are purely advisory (no ApprovalURL),
+// the title must be "CHA Advisory — Review (no action required)" so on-call
+// engineers can triage at a glance without hunting for a non-existent button.
+
+// TestSplitCriticalPayloads_AdvisoryTitleWhenNoActionable asserts that a
+// payload containing ONLY advisory findings (no ApprovalURL on any finding)
+// renders the softer "CHA Advisory" title, NOT "Human Action Required".
+func TestSplitCriticalPayloads_AdvisoryTitleWhenNoActionable(t *testing.T) {
+	unfixable := []DeltaDiag{
+		{Subject: "ClusterRole/wildcard-role", Severity: "warning", Message: "grants wildcard verb"},
+		{Subject: "ServiceAccount/ns/orphan", Severity: "warning", Message: "no RoleBinding"},
+	}
+	payloads := SplitCriticalPayloads(unfixable, nil)
+	if len(payloads) == 0 {
+		t.Fatal("expected ≥ 1 payload")
+	}
+	text := payloads[0].Attachments[0].Text
+	if strings.Contains(text, "Human Action Required") {
+		t.Errorf("advisory-only payload must NOT use 'Human Action Required' title; got:\n%s", text)
+	}
+	if !strings.Contains(text, "CHA Advisory") {
+		t.Errorf("advisory-only payload must use 'CHA Advisory' title; got:\n%s", text)
+	}
+	if !strings.Contains(text, "no action required") {
+		t.Errorf("advisory title must include 'no action required'; got:\n%s", text)
+	}
+}
+
+// TestSplitCriticalPayloads_ActionableTitleWhenAnyActionable asserts that a
+// payload containing even ONE finding with an ApprovalURL keeps the
+// "Human Action Required" title — the operator must click Approve or Deny.
+func TestSplitCriticalPayloads_ActionableTitleWhenAnyActionable(t *testing.T) {
+	unfixable := []DeltaDiag{
+		{Subject: "ClusterRole/wildcard-role", Severity: "warning", Message: "grants wildcard verb"},
+		{
+			Subject:     "NetworkPolicy/ns/missing",
+			Severity:    "warning",
+			Message:     "missing egress rule",
+			ApprovalURL: "https://cha-approve.example.com/approve?token=abc",
+		},
+	}
+	payloads := SplitCriticalPayloads(unfixable, nil)
+	if len(payloads) == 0 {
+		t.Fatal("expected ≥ 1 payload")
+	}
+	text := payloads[0].Attachments[0].Text
+	if !strings.Contains(text, "Human Action Required") {
+		t.Errorf("payload with actionable finding must use 'Human Action Required' title; got:\n%s", text)
+	}
+	if strings.Contains(text, "CHA Advisory") {
+		t.Errorf("payload with actionable finding must NOT use 'CHA Advisory' title; got:\n%s", text)
+	}
+}
+
+// TestSplitCriticalPayloads_MixedFindings_HumanActionRequired asserts that
+// a mix of advisory and actionable findings → "Human Action Required" title.
+func TestSplitCriticalPayloads_MixedFindings_HumanActionRequired(t *testing.T) {
+	unfixable := []DeltaDiag{
+		{Subject: "Advisory/only/one", Severity: "warning", Message: "advisory"},
+		{Subject: "Advisory/only/two", Severity: "critical", Message: "advisory critical"},
+		{Subject: "Actionable/one", Severity: "warning", Message: "needs human",
+			ApprovalURL: "https://cha-approve.example.com/approve?token=xyz"},
+	}
+	payloads := SplitCriticalPayloads(unfixable, nil)
+	if len(payloads) == 0 {
+		t.Fatal("expected ≥ 1 payload")
+	}
+	text := payloads[0].Attachments[0].Text
+	if !strings.Contains(text, "Human Action Required") {
+		t.Errorf("mixed payload must use 'Human Action Required'; got:\n%s", text)
+	}
+}
+
+// TestFormatCriticalPayload_AdvisoryTitle asserts the single-payload legacy
+// renderer also uses the advisory title when no findings are actionable.
+func TestFormatCriticalPayload_AdvisoryTitle(t *testing.T) {
+	payload := FormatCriticalPayload(
+		[]DeltaDiag{
+			{Subject: "ClusterRole/wildcard-role", Severity: "warning", Message: "wildcard verb"},
+		},
+		nil,
+	)
+	text := payload.Attachments[0].Text
+	if strings.Contains(text, "Human Action Required") {
+		t.Errorf("advisory-only legacy payload must NOT use 'Human Action Required'; got:\n%s", text)
+	}
+	if !strings.Contains(text, "CHA Advisory") {
+		t.Errorf("advisory-only legacy payload must use 'CHA Advisory'; got:\n%s", text)
+	}
+}
+
+// TestFormatCriticalPayload_ActionableTitle asserts the single-payload
+// renderer uses "Human Action Required" when an ApprovalURL is present.
+func TestFormatCriticalPayload_ActionableTitle(t *testing.T) {
+	payload := FormatCriticalPayload(
+		[]DeltaDiag{
+			{Subject: "Advisory/one", Severity: "warning", Message: "advisory"},
+			{Subject: "Actionable/one", Severity: "warning", Message: "needs human",
+				ApprovalURL: "https://cha-approve.example.com/approve?token=tok"},
+		},
+		nil,
+	)
+	text := payload.Attachments[0].Text
+	if !strings.Contains(text, "Human Action Required") {
+		t.Errorf("payload with actionable finding must use 'Human Action Required'; got:\n%s", text)
+	}
+}
+
+// TestEmitNoChangeDigest_AdvisoryTitle asserts the no-change digest always
+// uses the advisory title (there are never Approve/Deny buttons in a digest).
+func TestEmitNoChangeDigest_AdvisoryTitle(t *testing.T) {
+	// Five stable findings with no actionable items → emitNoChangeDigest path.
+	unfixable := make([]DeltaDiag, 5)
+	for i := range unfixable {
+		unfixable[i] = DeltaDiag{Subject: fmt.Sprintf("Pod/ns/stable-%d", i), Severity: "warning", Message: "broken"}
+	}
+	payloads := SplitCriticalPayloadsConfig(unfixable, nil, CriticalRenderConfig{NoChangeDigest: true})
+	if len(payloads) != 1 {
+		t.Fatalf("no-change digest must yield 1 payload; got %d", len(payloads))
+	}
+	text := payloads[0].Attachments[0].Text
+	if strings.Contains(text, "Human Action Required") {
+		t.Errorf("no-change digest must NOT use 'Human Action Required'; got:\n%s", text)
+	}
+	if !strings.Contains(text, "CHA Advisory") {
+		t.Errorf("no-change digest must use 'CHA Advisory'; got:\n%s", text)
+	}
+}
+
+// TestSplitCriticalPayloads_PartMarkerPreservesConditionalTitle asserts that
+// multi-chunk payloads keep the correct conditional title on every chunk
+// (including the (part N/M) marker format).
+func TestSplitCriticalPayloads_PartMarkerPreservesConditionalTitle(t *testing.T) {
+	// Build enough advisory findings to force ≥2 chunks.
+	const N = 200
+	unfixable := make([]DeltaDiag, 0, N)
+	for i := 0; i < N; i++ {
+		unfixable = append(unfixable, DeltaDiag{
+			Subject:     fmt.Sprintf("ClusterRole/rbac-drift-%03d", i),
+			Severity:    "warning",
+			Message:     strings.Repeat("advisory finding detail ", 10),
+			Remediation: strings.Repeat("remediation text here ", 10),
+		})
+	}
+	payloads := SplitCriticalPayloads(unfixable, nil)
+	if len(payloads) < 2 {
+		t.Fatalf("expected ≥2 chunks for %d findings; got %d", N, len(payloads))
+	}
+	for i, p := range payloads {
+		text := p.Attachments[0].Text
+		if strings.Contains(text, "Human Action Required") {
+			t.Errorf("chunk %d: advisory-only payload must NOT use 'Human Action Required'; got first 300:\n%s", i, text[:min(300, len(text))])
+		}
+		if !strings.Contains(text, "CHA Advisory") {
+			t.Errorf("chunk %d: advisory-only payload must use 'CHA Advisory'; got first 300:\n%s", i, text[:min(300, len(text))])
+		}
+		// Part marker must still appear on multi-chunk payloads.
+		marker := fmt.Sprintf("_(part %d/%d)_", i+1, len(payloads))
+		if !strings.Contains(text, marker) {
+			t.Errorf("chunk %d: missing part marker %q; text first 300:\n%s", i, marker, text[:min(300, len(text))])
+		}
+	}
+}
