@@ -13,6 +13,11 @@ serves the latest tagged chart cut.
 
 ## [Unreleased]
 
+## [0.2.0-alpha.2] — 2026-06-19
+
+### Fixed
+- **RBAC-drift noise reduction.** The `RBACDrift` analyzer no longer pages "wildcard verb" / "unbound ServiceAccount" warnings for well-known third-party operator and system components that legitimately hold wildcard verbs. The allowlist (previously only `kube-system`/`system:`/`cluster-admin`) now also skips operator namespaces (calico-system, tigera-operator, minio-operator, kasten-io, olm, rook-ceph, cert-manager, longhorn-system, cnpg-system, external-secrets, vault, local-path-storage, cattle-system, openshift-operators) and role-name prefixes (k10-, kasten-, calico-, tigera-, minio-, olm., k3s-, local-path-, console-, rook-, cert-manager, velero, longhorn-, cnpg-, external-secrets, vault-, openshift-), plus the canonical `admin`/`edit`/`view`/`cluster-owner`/`local-clusterowner` roles by exact name. Genuine user-defined wildcard roles (and roles like `custom-admin`/`payments-admin` that merely end in `-admin`) are still flagged.
+
 ## [0.2.0-alpha.1] — 2026-06-19
 
 ### Fixed
