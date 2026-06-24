@@ -19,6 +19,12 @@ rules:
   - apiGroups: [""]
     resources: ["pods", "nodes", "persistentvolumeclaims", "persistentvolumes", "events", "namespaces", "services", "endpoints", "resourcequotas"]
     verbs: ["get", "list", "watch"]
+  # pods/log — the Layer-2 investigator reads container logs (current +
+  # --previous) to identify crash root causes instead of punting a kubectl
+  # command to the operator. Subresource, so it needs its own rule; "get" only.
+  - apiGroups: [""]
+    resources: ["pods/log"]
+    verbs: ["get"]
   # DisruptionDrift (P1.2, v1.26.0) — PDB blocked-evictions signal.
   # Without this grant the analyzer's poddisruptionbudgets list returns
   # `forbidden` and its soft-fail made it return nothing every cycle.

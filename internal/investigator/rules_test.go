@@ -25,6 +25,10 @@ type fakeEnv struct {
 	tlsResp  ai.TLSResult
 	desc     ai.DescribeResult
 	events   []ai.EventInfo
+	logsPrev  ai.LogsResult // returned when LogsOptions.Previous
+	logsCur   ai.LogsResult // returned otherwise
+	latestPod string        // returned by LatestByPrefix(kind=Pod)
+	latestJob string        // returned by LatestByPrefix(kind=Job)
 }
 
 func (f *fakeEnv) DNSLookup(ctx context.Context, host string) (ai.DNSResult, error) {
@@ -48,6 +52,18 @@ func (f *fakeEnv) Describe(ctx context.Context, kind, ns, name string) (ai.Descr
 }
 func (f *fakeEnv) GetEvents(ctx context.Context, ns, kind, name string, since time.Duration) ([]ai.EventInfo, error) {
 	return f.events, nil
+}
+func (f *fakeEnv) Logs(ctx context.Context, ns, pod string, opts ai.LogsOptions) (ai.LogsResult, error) {
+	if opts.Previous {
+		return f.logsPrev, nil
+	}
+	return f.logsCur, nil
+}
+func (f *fakeEnv) LatestByPrefix(ctx context.Context, kind, ns, prefix string) (string, error) {
+	if strings.EqualFold(kind, "Job") {
+		return f.latestJob, nil
+	}
+	return f.latestPod, nil
 }
 
 func TestRuleBased_TLSExpiry(t *testing.T) {
@@ -181,5 +197,204 @@ func TestRuleBased_UnmatchedFindingReturnsEmpty(t *testing.T) {
 	}
 	if len(r.Observations) != 0 {
 		t.Errorf("expected zero observations; got %d", len(r.Observations))
+	}
+}
+
+func TestRuleBased_CrashLoop_NoSubcommand(t *testing.T) {
+	// The exact shape of CHA's own mis-deployed runner: prints CLI usage and
+	// exits. The investigator must identify the missing-subcommand cause.
+	env := &fakeEnv{logsPrev: ai.LogsResult{
+		Previous: true,
+		Lines: []string{
+			"Cluster Health Autopilot",
+			"Usage:",
+			"  cha [command]",
+			"Available Commands:",
+			"  diagnose    Run probes + analyzers",
+			"  watch       Event-driven cluster health watcher",
+		},
+	}}
+	f := probe.Finding{
+		Component: "CrashLoopBackOff",
+		Severity:  probe.SeverityCritical,
+		Message:   "Pod cluster-health-autopilot/cha-runner-xyz in CrashLoopBackOff (64 restarts)",
+	}
+	res, err := RuleBased{}.InvestigateFinding(context.Background(), f, env)
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if res.Conclusion != ai.ConclusionRootCauseIdentified {
+		t.Errorf("conclusion: %q", res.Conclusion)
+	}
+	if !strings.Contains(res.Summary, "command/args") {
+		t.Errorf("summary should name the missing-subcommand cause; got: %q", res.Summary)
+	}
+}
+
+func TestRuleBased_CrashLoop_OOM(t *testing.T) {
+	env := &fakeEnv{logsPrev: ai.LogsResult{Previous: true, Lines: []string{
+		"server starting",
+		"fatal error: runtime: out of memory",
+	}}}
+	f := probe.Finding{
+		Component: "CrashLoopBackOff",
+		Severity:  probe.SeverityCritical,
+		Message:   "Pod prod/api-7f in CrashLoopBackOff (12 restarts)",
+	}
+	res, _ := RuleBased{}.InvestigateFinding(context.Background(), f, env)
+	if !strings.Contains(strings.ToLower(res.Summary), "memory") {
+		t.Errorf("OOM summary expected; got: %q", res.Summary)
+	}
+}
+
+func TestRuleBased_ImagePull_SurfacesPullErrorEvent(t *testing.T) {
+	// No logs (image never pulled) → surface the informative Failed event
+	// (manifest unknown), not the generic BackOff.
+	env := &fakeEnv{
+		logsPrev: ai.LogsResult{Error: "container is waiting to start: ImagePullBackOff"},
+		logsCur:  ai.LogsResult{Error: "container is waiting to start: ImagePullBackOff"},
+		events: []ai.EventInfo{
+			{Reason: "BackOff", Message: "Back-off pulling image"},
+			{Reason: "Failed", Message: "Failed to pull image \"x:latest\": manifest unknown"},
+		},
+	}
+	f := probe.Finding{
+		Component: "CrashLoopBackOff", Severity: probe.SeverityCritical,
+		Message: "Pod prod/api-7f matched pattern ImagePullBackOff",
+	}
+	res, _ := RuleBased{}.InvestigateFinding(context.Background(), f, env)
+	if !strings.Contains(res.Summary, "manifest unknown") {
+		t.Errorf("should surface the pull-error event; got: %q", res.Summary)
+	}
+}
+
+func TestRuleBased_RejectedPod_UsesStatusCause(t *testing.T) {
+	// No logs (pod rejected) → surface the status rejection reason from describe.
+	env := &fakeEnv{
+		logsPrev: ai.LogsResult{Error: "terminated"},
+		logsCur:  ai.LogsResult{Error: "terminated"},
+		desc:     ai.DescribeResult{Reason: "UnexpectedAdmissionError", Message: "Pod was rejected: Allocate failed — nvidia.com/gpu unavailable"},
+	}
+	f := probe.Finding{
+		Component: "FailedPods", Severity: probe.SeverityCritical,
+		Message: "Pod prod/gpu-job is in terminal Failed phase (reason=UnexpectedAdmissionError)",
+	}
+	res, _ := RuleBased{}.InvestigateFinding(context.Background(), f, env)
+	if !strings.Contains(res.Summary, "nvidia.com/gpu") {
+		t.Errorf("should surface the GPU rejection cause; got: %q", res.Summary)
+	}
+}
+
+func TestRuleBased_GenericBackOff_StaysSilent(t *testing.T) {
+	// No logs, no status cause, only a generic BackOff event that adds nothing →
+	// stay SILENT rather than emit a misleading "couldn't determine" line.
+	env := &fakeEnv{
+		logsPrev: ai.LogsResult{Error: "terminated"},
+		logsCur:  ai.LogsResult{Error: "terminated"},
+		events:   []ai.EventInfo{{Reason: "BackOff", Message: "Back-off restarting failed container"}},
+	}
+	f := probe.Finding{
+		Component: "CrashLoopBackOff", Severity: probe.SeverityCritical,
+		Message: "Pod prod/api-7f in CrashLoopBackOff (3 restarts)",
+	}
+	res, _ := RuleBased{}.InvestigateFinding(context.Background(), f, env)
+	if res.Summary != "" {
+		t.Errorf("generic BackOff should not produce a root-cause line; got: %q", res.Summary)
+	}
+}
+
+func TestRuleBased_CronJobStuck_ReadsFailedPodLogs(t *testing.T) {
+	// CronJobStuck diagnostic → investigator finds the failed Job pod and
+	// reports the cause from its logs instead of a kubectl recipe.
+	env := &fakeEnv{
+		latestPod: "retention-sweep-29012345-abcde",
+		logsCur: ai.LogsResult{Lines: []string{
+			"connecting to db...",
+			"panic: dial tcp 10.0.0.5:5432: connect: connection refused",
+		}},
+	}
+	d := diagnose.Diagnostic{
+		Source:   "CronJobStuck",
+		Subject:  "CronJob/livekit-agents/retention-sweep",
+		Severity: "warning",
+		Message:  "CronJob livekit-agents/retention-sweep has not had a successful run in 152h.",
+	}
+	res, err := RuleBased{}.InvestigateDiagnostic(context.Background(), d, env)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Conclusion != ai.ConclusionRootCauseIdentified {
+		t.Errorf("conclusion: %q", res.Conclusion)
+	}
+	if !strings.Contains(res.Summary, "retention-sweep") {
+		t.Errorf("summary should name the cronjob; got %q", res.Summary)
+	}
+	if !strings.Contains(strings.ToLower(res.Summary), "panic") && !strings.Contains(res.Summary, "dependency") {
+		t.Errorf("summary should carry the log-derived cause; got %q", res.Summary)
+	}
+}
+
+func TestRuleBased_CronJobStuck_NoPod_FallsBackToEvents(t *testing.T) {
+	env := &fakeEnv{
+		latestPod: "", // pods GC'd
+		events:    []ai.EventInfo{{Reason: "BackoffLimitExceeded", Message: "Job has reached the specified backoff limit"}},
+	}
+	d := diagnose.Diagnostic{
+		Source:  "CronJobStuck",
+		Subject: "CronJob/ns/sweep", Severity: "warning",
+		Message: "CronJob ns/sweep has not had a successful run in 152h.",
+	}
+	res, _ := RuleBased{}.InvestigateDiagnostic(context.Background(), d, env)
+	if !strings.Contains(res.Summary, "BackoffLimitExceeded") {
+		t.Errorf("should fall back to events; got %q", res.Summary)
+	}
+}
+
+func TestRuleBased_CronJob_GCdPods_ReadsJobEvents(t *testing.T) {
+	// Pods garbage-collected, but the Job survives and its events name the
+	// start failure (missing Secret) — the investigator must surface it.
+	env := &fakeEnv{
+		latestPod: "", // pods GC'd
+		latestJob: "wp-verify-weekly-29700240",
+		events: []ai.EventInfo{
+			{Reason: "FailedCreate", Message: "Error creating: secret \"verify-creds\" not found"},
+		},
+	}
+	d := diagnose.Diagnostic{
+		Source: "CronJobStuck", Subject: "CronJob/storethesoup/wp-verify-weekly", Severity: "warning",
+		Message: "CronJob storethesoup/wp-verify-weekly has not had a successful run in 85h.",
+	}
+	res, _ := RuleBased{}.InvestigateDiagnostic(context.Background(), d, env)
+	if !strings.Contains(res.Summary, "not found") || !strings.Contains(res.Summary, "verify-creds") {
+		t.Errorf("should surface the Job's missing-secret start failure; got %q", res.Summary)
+	}
+}
+
+func TestRuleBased_ImagePull_PrefersDetailedEvent(t *testing.T) {
+	// kubelet emits BOTH a generic "Error: ImagePullBackOff" (newest) and a
+	// detailed "Failed to pull ... pull access denied" — surface the detailed one.
+	env := &fakeEnv{
+		logsPrev: ai.LogsResult{Error: "ImagePullBackOff"},
+		logsCur:  ai.LogsResult{Error: "ImagePullBackOff"},
+		events: []ai.EventInfo{
+			{Reason: "Failed", Message: "Error: ImagePullBackOff"}, // newest, generic
+			{Reason: "Failed", Message: "Failed to pull image \"x:v0\": pull access denied, repository does not exist"},
+		},
+	}
+	f := probe.Finding{Component: "CrashLoopBackOff", Severity: probe.SeverityCritical,
+		Message: "Pod ns/p matched pattern ImagePullBackOff"}
+	res, _ := RuleBased{}.InvestigateFinding(context.Background(), f, env)
+	if !strings.Contains(res.Summary, "pull access denied") {
+		t.Errorf("should surface the detailed pull error; got %q", res.Summary)
+	}
+}
+
+func TestContainerWaitingCause_PrefersDetailed(t *testing.T) {
+	notes := []string{
+		"container app: img",
+		"container app waiting: ImagePullBackOff — Back-off pulling image: pull access denied, repository does not exist",
+	}
+	if got := containerWaitingCause(notes); !strings.Contains(got, "pull access denied") {
+		t.Errorf("got %q", got)
 	}
 }

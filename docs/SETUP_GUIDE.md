@@ -257,7 +257,8 @@ watcher:
     dryRun: false
   slack:
     postOnResolved: true
-    repeatInterval: 4h
+    repeatInterval: 6h
+    criticalRepeatInterval: "2h"   # Criticals stay loud (0 = fall back to repeatInterval)
 
 slack:
   alerts:
@@ -742,8 +743,9 @@ watcher:
   debounce: 10s            # Wait after the last event before running diagnostics
   resyncPeriod: 10m        # Full re-diagnose regardless of events
   slack:
-    postOnResolved: true   # Post when a diagnostic resolves
-    repeatInterval: 4h     # Re-post still-active issues at this cadence (0 = never)
+    postOnResolved: true        # Post when a diagnostic resolves
+    repeatInterval: 6h          # Re-post still-active warning/info issues at this cadence (0 = never)
+    criticalRepeatInterval: "2h" # Re-post still-active criticals (default 2h; 0 = fall back to repeatInterval)
   remedy:
     enabled: false         # Run auto-fixers after each diagnose cycle
     dryRun: false          # Evaluate fixers without cluster mutation
@@ -775,7 +777,8 @@ cha watch --live \
   --slack-alerts=$SLACK_ALERTS_URL \
   --slack-critical=$SLACK_CRITICAL_URL \
   --slack-post-on-resolved=true \
-  --slack-repeat-interval=4h \
+  --slack-repeat-interval=6h \
+  --slack-critical-repeat-interval=2h \
   --write-driftreports=true
 ```
 
@@ -792,8 +795,8 @@ cha watch --live \
 | `--slack-alerts` | — | Slack webhook for `#ceph-alerts` (CHA-fixed issues) |
 | `--slack-critical` | — | Slack webhook for `#ceph-critical` (unfixable issues) |
 | `--slack-post-on-resolved` | `true` | Post when a diagnostic resolves |
-| `--slack-repeat-interval` | `4h` | Re-post still-active warning/info diagnostics; `0` disables |
-| `--slack-critical-repeat-interval` | `0` (= use `--slack-repeat-interval`) | Per-severity override for **critical** diagnostics. Lets operators keep criticals loud (e.g. `4h`) while warnings calm down (e.g. `--slack-repeat-interval=24h`). New in v1.6.1. |
+| `--slack-repeat-interval` | `6h` | Re-post still-active warning/info diagnostics; `0` disables |
+| `--slack-critical-repeat-interval` | `2h` (= criticals stay loud; `0` falls back to `--slack-repeat-interval`) | Per-severity override for **critical** diagnostics. Defaults to `2h` so unresolved criticals keep re-posting while warnings calm down at `--slack-repeat-interval` (`6h`). New in v1.6.1. |
 | `--write-driftreports` | `true` | Upsert DriftReport CRs on every cycle |
 | `--remedy` | `false` | Run auto-fixers after each diagnose cycle |
 | `--dry-run` | `false` | With `--remedy`: evaluate without mutating |
@@ -1572,7 +1575,8 @@ watcher:
   resyncPeriod: 10m
   slack:
     postOnResolved: true
-    repeatInterval: 4h
+    repeatInterval: 6h
+    criticalRepeatInterval: "2h"
   remedy:
     enabled: false
     dryRun: false

@@ -11,10 +11,16 @@ import (
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/fix"
 )
 
-// DeltaDiag is a new or changed diagnostic surfaced in a watcher Slack post.
+// DeltaDiag is the CANONICAL alert model for the report layer. Every delivery
+// adapter — Slack (native), ticketing, and (when enabled) Alertmanager —
+// consumes this one struct; none re-derives content or severity. The watcher
+// builds it once (seenEntryToDeltaDiag) with the severity already normalized,
+// and the render/ticketing layers only FORMAT it. The shared renderGuidance /
+// RecommendedAction helpers compose the operator-facing "what's wrong + what to
+// do" identically across adapters, root-cause-first.
 type DeltaDiag struct {
 	Subject     string
-	Severity    string // info | warning | critical
+	Severity    string // info | warning | critical (normalized at build time)
 	Message     string
 	Remediation string
 
@@ -100,9 +106,53 @@ type DeltaDiag struct {
 }
 
 // ResolvedDiag is a diagnostic that no longer appears in the current cycle.
+// It carries the same canonical content as DeltaDiag so a resolution message
+// can say WHAT was wrong (root cause) and that it cleared — not just the bare
+// subject. Severity/Remediation/Investigation are empty on legacy callers.
 type ResolvedDiag struct {
-	Subject string
-	Message string
+	Subject       string
+	Message       string
+	Severity      string
+	Remediation   string
+	Investigation string
+}
+
+// renderGuidance writes the operator-facing guidance for one finding,
+// root-cause-FIRST: the Layer-2 investigator's definitive cause (when present)
+// before the generic remediation steps. This is the single composition every
+// Slack renderer uses, so "definitive cause, not a kubectl recipe" is true
+// uniformly. Caller controls indentation via the leading spaces here.
+func renderGuidance(b *strings.Builder, investigation, remediation string) {
+	if investigation != "" {
+		fmt.Fprintf(b, "  🔬 _Root cause: %s_\n", investigation)
+	}
+	if remediation != "" {
+		fmt.Fprintf(b, "  _→ %s_\n", remediation)
+	}
+}
+
+// renderResolvedRootCause appends the cleared finding's root cause so a
+// resolution message says WHAT was wrong, not just that it cleared. No-op when
+// the resolved finding carried no investigation.
+func renderResolvedRootCause(b *strings.Builder, r ResolvedDiag) {
+	if r.Investigation != "" {
+		fmt.Fprintf(b, "  🔬 _was: %s_\n", r.Investigation)
+	}
+}
+
+// RecommendedAction composes a one-string, root-cause-first guidance value for
+// non-Slack consumers (ticketing bodies, Alertmanager annotations): the
+// investigator's cause leads, then the remediation steps. Falls back to
+// whichever side is present.
+func RecommendedAction(investigation, remediation string) string {
+	switch {
+	case investigation != "" && remediation != "":
+		return "Root cause: " + investigation + "\n\nNext steps: " + remediation
+	case investigation != "":
+		return "Root cause: " + investigation
+	default:
+		return remediation
+	}
 }
 
 // FormatSlackDelta renders a condensed watcher-mode message containing only
@@ -124,17 +174,13 @@ func FormatSlackDelta(
 		for _, d := range newOrChanged {
 			icon := severityWatchIcon(d.Severity)
 			fmt.Fprintf(&b, "• %s *%s*\n  %s\n", icon, d.Subject, d.Message)
-			if d.Remediation != "" {
-				fmt.Fprintf(&b, "  _→ %s_\n", d.Remediation)
-			}
-			// Silence affordance: signed one-click links when the watcher
-			// minted them (signer + approval base URL configured), else
-			// the kubectl heredoc fallback so air-gapped installs keep a
-			// way to mute THIS finding. Shared with the routing.go live
-			// renderer (renderSilenceSnippet) so both stay in sync.
-			renderSilenceSnippet(&b, d)
-			if d.Investigation != "" {
-				fmt.Fprintf(&b, "  🔬 _%s_\n", d.Investigation)
+			// Root-cause-first guidance (investigation before remediation).
+			renderGuidance(&b, d.Investigation, d.Remediation)
+			// Silence affordance: only for findings that have been present
+			// for at least one cycle. A brand-new problem should be
+			// investigated, not immediately silenced.
+			if !d.IsNewThisCycle {
+				renderSilenceSnippet(&b, d)
 			}
 			if d.Enrichment != "" {
 				fmt.Fprintf(&b, "  🤖 _%s_\n", d.Enrichment)
@@ -186,6 +232,7 @@ func FormatSlackDelta(
 			if r.Message != "" {
 				fmt.Fprintf(&b, "  _%s_\n", r.Message)
 			}
+			renderResolvedRootCause(&b, r)
 		}
 	}
 

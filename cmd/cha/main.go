@@ -460,6 +460,7 @@ func watchCmd() *cobra.Command {
 		repeatInterval           time.Duration
 		criticalRepeatInterval   time.Duration
 		noChangeSlackDigest      bool
+		approvalDwellDuration    time.Duration
 		writeDriftReports        bool
 		remedy                   bool
 		dryRun                   bool
@@ -481,6 +482,7 @@ func watchCmd() *cobra.Command {
 		ticketingDryRun          bool
 		ticketingResolveOnClear  bool
 		ticketingCommentInterval time.Duration
+		ticketingMinSeverity     string
 
 		// Cloud probe flags
 		cloudAWSEnabled          bool
@@ -557,6 +559,16 @@ the post-fix cluster state.`,
 				return err
 			}
 
+			// Typed clientset for the Layer-2 investigator's pod-logs access
+			// (Environment.Logs). Best-effort: if it can't be built the
+			// investigator still runs (describe + events), it just can't read
+			// container logs, so a failure here must not abort the watcher.
+			kubeClientset, kcErr := snapshot.BuildKubeClientset(kubeconfig)
+			if kcErr != nil {
+				log.Printf("watch: pod-logs client unavailable (investigator will run without logs): %v", kcErr)
+				kubeClientset = nil
+			}
+
 			reg := catalog.Default()
 			if vaultAddr != "" {
 				vc, verr := buildVaultClient(vaultAddr, vaultMount, vaultRole)
@@ -595,6 +607,7 @@ the post-fix cluster state.`,
 				DryRun:          ticketingDryRun,
 				ResolveOnClear:  ticketingResolveOnClear,
 				CommentInterval: ticketingCommentInterval,
+				MinSeverity:     ticketingMinSeverity,
 			})
 			if terr != nil {
 				return terr
@@ -685,6 +698,8 @@ the post-fix cluster state.`,
 				RepeatInterval:         repeatInterval,
 				CriticalRepeatInterval: criticalRepeatInterval,
 				NoChangeSlackDigest:    noChangeSlackDigest,
+				ApprovalDwellDuration:  approvalDwellDuration,
+				KubeClientset:          kubeClientset,
 				WriteDriftReports:      writeDriftReports,
 				RunRemediation:         remedy,
 				DryRun:                 dryRun,
@@ -770,9 +785,10 @@ the post-fix cluster state.`,
 	c.Flags().StringVar(&slackAlerts, "slack-alerts", "", "Slack webhook for #ceph-alerts — CHA acted (auto-fixed issues); used as fallback when --alertmanager-url is not set")
 	c.Flags().StringVar(&slackCritical, "slack-critical", "", "Slack webhook for #ceph-critical — human action required; used as fallback when --alertmanager-url is not set")
 	c.Flags().BoolVar(&postOnResolved, "slack-post-on-resolved", true, "Post to Slack when a diagnostic resolves")
-	c.Flags().DurationVar(&repeatInterval, "slack-repeat-interval", 4*time.Hour, "Re-post still-active diagnostics at this interval (0 = never repeat). Applies to warning + info severities; critical uses --slack-critical-repeat-interval when set.")
-	c.Flags().DurationVar(&criticalRepeatInterval, "slack-critical-repeat-interval", 0, "Re-post still-active CRITICAL diagnostics at this interval (0 = use --slack-repeat-interval). Use to keep criticals loud (e.g. 4h) while warnings calm down (e.g. 24h).")
+	c.Flags().DurationVar(&repeatInterval, "slack-repeat-interval", 6*time.Hour, "Re-post still-active diagnostics at this interval (0 = never repeat). Applies to warning + info severities; critical uses --slack-critical-repeat-interval when set.")
+	c.Flags().DurationVar(&criticalRepeatInterval, "slack-critical-repeat-interval", 2*time.Hour, "Re-post still-active CRITICAL diagnostics at this interval (0 = use --slack-repeat-interval). Defaults to 2h so unresolved criticals stay loud on #ceph-critical while warnings calm down at --slack-repeat-interval (6h).")
 	c.Flags().BoolVar(&noChangeSlackDigest, "slack-no-change-digest", false, "On cycles with zero new findings + zero resolved transitions, replace the full re-post of stable findings with a compact '✨ No new issues since last cycle' digest. Default false to preserve byte-identical legacy behaviour.")
+	c.Flags().DurationVar(&approvalDwellDuration, "approval-dwell", 0, "How long a finding must persist before the watcher attaches Approve/Deny buttons. Transient findings that clear within the dwell window are never queued for human action. 0 = attach immediately (legacy). Recommended: 5m.")
 	c.Flags().BoolVar(&writeDriftReports, "write-driftreports", true, "Upsert DriftReport CRs on every cycle (live mode only)")
 	c.Flags().BoolVar(&remedy, "remedy", false, "Run auto-fixers after each diagnose cycle; post-fix state is reported")
 	c.Flags().BoolVar(&dryRun, "dry-run", false, "With --remedy: evaluate fixers without applying changes")
@@ -792,6 +808,7 @@ the post-fix cluster state.`,
 	c.Flags().BoolVar(&ticketingDryRun, "ticketing-dry-run", false, "Log intended ticketing operations without calling the MCP server")
 	c.Flags().BoolVar(&ticketingResolveOnClear, "ticketing-resolve-on-clear", envBool("TICKETING_RESOLVE_ON_CLEAR", true), "Auto-close the ticket when its finding clears (M2). Defaults ON; no-op when ticketing is disabled.")
 	c.Flags().DurationVar(&ticketingCommentInterval, "ticketing-comment-interval", envDurationOrDefault("TICKETING_COMMENT_INTERVAL", time.Hour), "Debounce window for comment-on-recurrence (M2). A recurring/severity-changed finding gets at most one comment per window. 0 disables recurrence commenting.")
+	c.Flags().StringVar(&ticketingMinSeverity, "ticketing-min-severity", envOrDefault("TICKETING_MIN_SEVERITY", "critical"), "Minimum severity to FILE a ticket: 'critical' (human-action only, default), 'warning' (warning+critical), or 'info' (everything). Findings below the floor are tracked via DriftReport/Slack only and never clutter the issue tracker; tickets already filed below a newly-raised floor are auto-closed.")
 
 	// Cloud probe flags. Per the design (docs/design/2026-05-cloud-probe-framework.md)
 	// each cloud has its own enable + region/project/subscription identifier;
@@ -903,6 +920,7 @@ type ticketingOpts struct {
 	DryRun                                              bool
 	ResolveOnClear                                      bool
 	CommentInterval                                     time.Duration
+	MinSeverity                                         string
 }
 
 // buildTicketingConfig assembles a report.TicketingConfig from CLI flags.
@@ -953,6 +971,7 @@ func buildTicketingConfig(o ticketingOpts) (report.TicketingConfig, error) {
 			Labels:          o.Labels,
 			ResolveOnClear:  o.ResolveOnClear,
 			CommentInterval: o.CommentInterval,
+			MinSeverity:     o.MinSeverity,
 		}, nil
 	default:
 		return report.TicketingConfig{}, fmt.Errorf("unsupported ticketing provider %q (OSS supports: openproject)", o.Provider)

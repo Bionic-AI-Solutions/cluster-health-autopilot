@@ -92,7 +92,12 @@ func (SecretKeyMissing) Run(ctx context.Context, src snapshot.Source) []Diagnost
 		}
 		out = append(out, Diagnostic{
 			Subject: "Secret/" + dedupe,
-			Message: hint,
+			// Critical: a pod stuck in CreateContainerConfigError on a missing
+			// Secret key never starts — the workload is hard-down. Matches the
+			// website/docs, which label SecretKeyMissing a Critical analyzer.
+			// (Previously emitted with empty severity → normalized to "warning".)
+			Severity: "critical",
+			Message:  hint,
 		})
 	}
 	return out

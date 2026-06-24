@@ -98,6 +98,9 @@ func rollupStatus(findings []probe.Finding) string {
 	return status
 }
 
+// backupRetentionWarnDays is the minimum recommended backup retention period.
+const backupRetentionWarnDays = 7
+
 // evaluateInstance is pure — easy to unit-test exhaustively. Returns
 // zero or more findings per instance.
 func evaluateInstance(db pkgaws.DBInstance, region string) []probe.Finding {
@@ -150,6 +153,34 @@ func evaluateInstance(db pkgaws.DBInstance, region string) []probe.Finding {
 			Component: subject,
 			Severity:  probe.SeverityWarning,
 			Message:   fmt.Sprintf("RDS instance %q storage at %d%% of %d GB (>= %d%%)", db.Identifier, db.StorageUsedPercent, db.AllocatedStorageGB, storageWarnPercent),
+		})
+	}
+
+	// Multi-AZ check: warn for primary instances (not read replicas) that
+	// are not multi-AZ — single point of failure for production workloads.
+	isReadReplica := db.ReadReplicaSourceDBInstanceIdentifier != ""
+	if !db.MultiAZ && !isReadReplica {
+		out = append(out, probe.Finding{
+			Component:   subject,
+			Severity:    probe.SeverityWarning,
+			Message:     fmt.Sprintf("RDS instance %q is not multi-AZ (single-AZ deployment, no automatic failover)", db.Identifier),
+			Remediation: fmt.Sprintf("aws rds modify-db-instance --db-instance-identifier %s --multi-az --apply-immediately", db.Identifier),
+		})
+	}
+
+	// Backup retention check.
+	if db.BackupRetentionPeriod == 0 {
+		out = append(out, probe.Finding{
+			Component:   subject,
+			Severity:    probe.SeverityWarning,
+			Message:     fmt.Sprintf("RDS instance %q has automated backups disabled (BackupRetentionPeriod=0)", db.Identifier),
+			Remediation: fmt.Sprintf("aws rds modify-db-instance --db-instance-identifier %s --backup-retention-period 7 --apply-immediately", db.Identifier),
+		})
+	} else if db.BackupRetentionPeriod < backupRetentionWarnDays {
+		out = append(out, probe.Finding{
+			Component: subject,
+			Severity:  probe.SeverityInfo,
+			Message:   fmt.Sprintf("RDS instance %q backup retention is only %d days (recommended: >=%d days)", db.Identifier, db.BackupRetentionPeriod, backupRetentionWarnDays),
 		})
 	}
 

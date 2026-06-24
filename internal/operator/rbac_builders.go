@@ -121,6 +121,14 @@ func readerPolicyRules() []rbacv1.PolicyRule {
 			Resources: []string{"pods", "nodes", "persistentvolumeclaims", "persistentvolumes", "events", "namespaces", "services", "endpoints", "resourcequotas"},
 			Verbs:     []string{"get", "list", "watch"},
 		},
+		// pods/log — Layer-2 investigator reads container logs (current +
+		// --previous) to identify crash root causes. Subresource → own rule,
+		// "get" only. Kept in parity with the chart's clusterrole-reader.yaml.
+		{
+			APIGroups: []string{""},
+			Resources: []string{"pods/log"},
+			Verbs:     []string{"get"},
+		},
 		// DisruptionDrift (P1.2, v1.26.0) — PDB blocked-evictions signal.
 		// resourcequotas (saturated-quota signal) rides the core rule
 		// above. Without these grants the analyzer's list calls return

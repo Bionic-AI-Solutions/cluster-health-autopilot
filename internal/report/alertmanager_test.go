@@ -4,6 +4,7 @@
 package report
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
@@ -79,5 +80,44 @@ func TestBuildActiveAlerts_ActionableFilter(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestAMRemediationLeadsWithRootCause(t *testing.T) {
+	d := DeltaDiag{
+		Subject:       "Probe/CrashLoopBackOff/CrashLoopBackOff",
+		Severity:      "critical",
+		Message:       "Pod ns/p in CrashLoopBackOff (75 restarts)",
+		Remediation:   "Inspect crash cause: kubectl logs p -n ns --previous.",
+		Investigation: "ns/p: container printed CLI usage/help and exited — no command/args.",
+	}
+	got := BuildActiveAlerts([]DeltaDiag{d}, "c", time.Minute)
+	if len(got) != 1 {
+		t.Fatalf("alerts=%d want 1", len(got))
+	}
+	ann := got[0].Annotations
+	if ann["investigation"] != d.Investigation {
+		t.Errorf("investigation annotation = %q", ann["investigation"])
+	}
+	rem := ann["remediation"]
+	if !strings.HasPrefix(rem, "Root cause: ") {
+		t.Errorf("remediation should LEAD with root cause; got %q", rem)
+	}
+	if !strings.Contains(rem, "printed CLI usage/help") {
+		t.Errorf("remediation should contain the root cause; got %q", rem)
+	}
+	if !strings.Contains(rem, "Next steps:") {
+		t.Errorf("remediation should still carry next steps; got %q", rem)
+	}
+}
+
+func TestAMRemediationNoInvestigationUnchanged(t *testing.T) {
+	d := DeltaDiag{Subject: "x", Severity: "critical", Message: "m", Remediation: "do the thing"}
+	got := BuildActiveAlerts([]DeltaDiag{d}, "c", time.Minute)
+	if got[0].Annotations["remediation"] != "do the thing" {
+		t.Errorf("no-investigation remediation should be unchanged; got %q", got[0].Annotations["remediation"])
+	}
+	if _, ok := got[0].Annotations["investigation"]; ok {
+		t.Errorf("investigation annotation should be absent when empty")
 	}
 }

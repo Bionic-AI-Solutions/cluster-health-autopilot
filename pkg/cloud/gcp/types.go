@@ -67,12 +67,13 @@ type GKECluster struct {
 // values: PROVISIONING, RUNNING, RUNNING_WITH_ERROR, RECONCILING,
 // STOPPING, ERROR.
 type GKENodePool struct {
-	Name        string `json:"name"`
-	ClusterName string `json:"clusterName"`
-	Status      string `json:"status"`
-	NodeCount   int64  `json:"nodeCount,omitempty"`
-	Version     string `json:"version,omitempty"` // node k8s version
-	Autoscaling bool   `json:"autoscaling,omitempty"`
+	Name           string `json:"name"`
+	ClusterName    string `json:"clusterName"`
+	Status         string `json:"status"`
+	NodeCount      int64  `json:"nodeCount,omitempty"`
+	Version        string `json:"version,omitempty"`        // node k8s version
+	ClusterVersion string `json:"clusterVersion,omitempty"` // control-plane version for drift comparison
+	Autoscaling    bool   `json:"autoscaling,omitempty"`
 }
 
 // ServiceAccount is the narrow projection of an IAM service account.

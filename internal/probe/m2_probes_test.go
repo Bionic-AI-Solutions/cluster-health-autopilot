@@ -263,7 +263,7 @@ func TestVelero_StaleCompleted_Critical(t *testing.T) {
 	if r.Component.Status != "CRITICAL" {
 		t.Fatalf("status=%s want CRITICAL (stale backup)", r.Component.Status)
 	}
-	if !strings.Contains(r.Findings[0].Message, "older than") {
+	if !strings.Contains(r.Findings[0].Message, "more than") {
 		t.Errorf("expected stale-SLA finding; got: %+v", r.Findings)
 	}
 }

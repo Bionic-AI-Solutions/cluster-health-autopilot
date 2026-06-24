@@ -30,7 +30,7 @@ func TestLogPatternMatcher_Name(t *testing.T) {
 	}
 }
 
-func TestLogPatternMatcher_ImagePullBackOff_Warning(t *testing.T) {
+func TestLogPatternMatcher_ImagePullBackOff_Critical(t *testing.T) {
 	src := &memSourceDD{byResource: map[string][]unstructured.Unstructured{
 		"events": {
 			makeEvent("Pod", "ns", "app-1", "Back-off pulling image: ErrImagePull: manifest unknown"),
@@ -43,7 +43,8 @@ func TestLogPatternMatcher_ImagePullBackOff_Warning(t *testing.T) {
 	if got[0].Source != "LogPatternMatcher.ImagePullBackOff" {
 		t.Errorf("source: %q", got[0].Source)
 	}
-	if got[0].Severity != "warning" {
+	// A container kubelet cannot pull is hard-down → critical.
+	if got[0].Severity != "critical" {
 		t.Errorf("severity: %q", got[0].Severity)
 	}
 }

@@ -18,6 +18,18 @@ import (
 //     a security smell) → warning
 //   - SAs with > 2 user-managed keys → warning (long-lived key
 //     sprawl; Workload Identity is the recommended keyless path)
+//   - SAs with a Workload Identity binding AND user-managed keys →
+//     warning (mixed configuration: both auth paths active, which
+//     can cause confusion and weakens the keyless posture)
+//
+// The OAuth2Bound field signals a Workload Identity binding (the live
+// client derives it from a roles/iam.workloadIdentityUser binding on the
+// SA's IAM policy; see live.go hasWorkloadIdentityBinding). It is treated
+// as a *positive* signal only: a finding fires when WI is present AND keys
+// coexist. We deliberately do NOT flag the *absence* of a binding — that
+// would false-positive on the recommended keyless WI posture and on any
+// SA whose IAM policy we couldn't read (best-effort getIamPolicy), which
+// would page operators on their best-practice service accounts.
 //
 // Mirrors the AWS IAMRoles probe's "posture, not health" framing.
 type IAMServiceAccounts struct{}
@@ -60,6 +72,23 @@ func (IAMServiceAccounts) Run(ctx context.Context, src cloud.Source) probe.Resul
 				Severity:    probe.SeverityWarning,
 				Message:     fmt.Sprintf("Service account %s has %d user-managed keys (> %d); long-lived key sprawl", sa.Email, sa.KeyCount, keySprawlThreshold),
 				Remediation: fmt.Sprintf("Prefer Workload Identity over keys. Audit: gcloud iam service-accounts keys list --iam-account=%s; migrate workloads to WI and delete keys.", sa.Email),
+			})
+		}
+		// Workload Identity binding drift check (positive-signal only).
+		// OAuth2Bound==true means we positively detected a
+		// roles/iam.workloadIdentityUser binding on this SA, so a
+		// coexisting user-managed key is a genuine mixed-mode finding.
+		// We do NOT flag !OAuth2Bound: a keyless WI SA is the recommended
+		// posture, and a getIamPolicy read failure must never page it.
+		if sa.OAuth2Bound && sa.KeyCount > 0 {
+			// Mixed configuration: SA has both a Workload Identity binding
+			// and user-managed keys. The keys undermine the keyless posture
+			// and can cause confusion (which credential wins?).
+			findings = append(findings, probe.Finding{
+				Component:   subject,
+				Severity:    probe.SeverityWarning,
+				Message:     fmt.Sprintf("GCP service account %s has both Workload Identity binding and %d user-managed key(s) (mixed configuration)", sa.Email, sa.KeyCount),
+				Remediation: fmt.Sprintf("Remove user-managed keys to enforce Workload Identity: gcloud iam service-accounts keys list --iam-account=%s", sa.Email),
 			})
 		}
 	}

@@ -90,8 +90,12 @@ func BuildActiveAlerts(active []DeltaDiag, clusterName string, ttl time.Duration
 			continue
 		}
 		annotations := map[string]string{
-			"summary":     d.Message,
-			"remediation": d.Remediation,
+			"summary": d.Message,
+			// remediation leads with the Layer-2 investigator's definitive root
+			// cause when available (the shared canonical composer), so receivers
+			// that render `remediation` (including a stock Alertmanager Slack
+			// template) show WHY the issue happened, not a "go run kubectl".
+			"remediation": RecommendedAction(d.Investigation, d.Remediation),
 			// `silence_snippet` is a ready-to-run kubectl command an
 			// SRE can paste to suppress this exact finding-class for a
 			// bounded duration. Surfaces via the Silence CRD (Phase 1c)
@@ -101,6 +105,12 @@ func BuildActiveAlerts(active []DeltaDiag, clusterName string, ttl time.Duration
 			// noise → silence. Bounded to 24h by default; SRE edits
 			// spec.until before applying.
 			"silence_snippet": buildSilenceSnippet(d, 24*time.Hour),
+		}
+		// Dedicated annotation so templates can render the root cause in its
+		// own block (e.g. {{ .Annotations.investigation }}). Populated by the
+		// Layer-2 investigator (rule-based in OSS, LLM in CHA-com).
+		if d.Investigation != "" {
+			annotations["investigation"] = d.Investigation
 		}
 		// AI tier annotations — populated only when CHA-com active.
 		// Alertmanager templates can reference {{ .Annotations.ai_enrichment }}

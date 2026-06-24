@@ -26,6 +26,16 @@ var ProtectedNamespaces = map[string]struct{}{
 	"vault":            {},
 	"external-secrets": {},
 	"cnpg-system":      {},
+	// CNI namespaces — a default-deny NetworkPolicy in these namespaces
+	// can break node-to-node Calico dataplane traffic and the Tigera
+	// operator reconciliation loop, causing cluster-wide connectivity
+	// loss. Never propose policies here.
+	"calico-system":   {},
+	"tigera-operator": {},
+	// CHA's own namespace — never auto-act on ourselves. Deleting the
+	// watcher/aiwatch/approval-server pods is self-disruption and a probe
+	// blip on a standby replica must not trigger a proposal to delete it.
+	"cluster-health-autopilot": {},
 }
 
 // IsProtectedNamespace reports whether ns is on the no-touch list —
@@ -53,7 +63,9 @@ func IsProtectedNamespace(ns string) bool {
 //   - Target.Kind, Target.Namespace, Target.Name all non-empty
 //   - Target.Namespace must NOT be a protected namespace
 //   - Rollback.Description must be non-empty (no proposal without rollback)
-//   - PatchPayload must be empty unless ActionKind == ActionPatchDeployment
+//   - PatchPayload must be empty unless ActionKind is a patch verb
+//     (ActionPatchDeployment or ActionPatchProbe); ActionPatchProbe must
+//     carry a payload and target a Deployment/StatefulSet/DaemonSet
 //   - CreatedAt and ExpiresAt must be set; ExpiresAt > CreatedAt
 //   - Tier must be a valid AllowsProposals tier (T1/T2/T3)
 //
@@ -116,8 +128,27 @@ func (a *AIProposedAction) validateStructural() error {
 	if IsProtectedNamespace(a.Target.Namespace) {
 		return ErrProtectedNamespace
 	}
-	if len(a.PatchPayload) > 0 && a.ActionKind != ActionPatchDeployment {
+	// PatchPayload is permitted only for the patch verbs:
+	// ActionPatchDeployment (rollout-restart annotation) and
+	// ActionPatchProbe (probe-timing scalars). The CHA-com validator
+	// enforces the per-verb closed shape; here we only gate the pairing.
+	if len(a.PatchPayload) > 0 &&
+		a.ActionKind != ActionPatchDeployment &&
+		a.ActionKind != ActionPatchProbe {
 		return ErrInvalidActionKind
+	}
+	// ActionPatchProbe MUST carry a payload (the probe patch) and target a
+	// pod-template-bearing workload. The detailed shape/bounds check lives
+	// in the CHA-com approval validator; this is the structural floor.
+	if a.ActionKind == ActionPatchProbe {
+		if len(a.PatchPayload) == 0 {
+			return ErrInvalidActionKind
+		}
+		switch a.Target.Kind {
+		case "Deployment", "StatefulSet", "DaemonSet":
+		default:
+			return ErrInvalidActionKind
+		}
 	}
 	// v1.15.0: ManifestYAML must be paired with ActionApplyManifest, and
 	// when present must pass the safe-apply validator. Per the design,

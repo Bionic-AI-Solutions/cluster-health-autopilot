@@ -49,6 +49,41 @@ type TicketingConfig struct {
 	// (the already-ticketed path stays a no-op, matching M1). Typical
 	// default: 1h.
 	CommentInterval time.Duration
+
+	// MinSeverity is the floor for filing a ticket. A finding is ticketed
+	// only when its severity is at least this level — so an issue tracker
+	// holds genuine human-action items, not every warning/info observation.
+	// Findings below the floor never open a ticket and never re-comment on
+	// one. Values: "info" (everything), "warning" (warning+critical),
+	// "critical" (critical only — the default the wiring layer sets, since
+	// critical is CHA's human-action / unfixable tier). Empty = "critical".
+	MinSeverity string
+}
+
+// ticketSeverityRank maps a CHA severity to a comparable rank. Unknown
+// severities sort as warning (the historical default for empty-severity
+// diagnostics) so a stray value is never silently treated as critical.
+func ticketSeverityRank(s string) int {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "critical":
+		return 3
+	case "warning":
+		return 2
+	case "info":
+		return 1
+	default:
+		return 2
+	}
+}
+
+// meetsTicketThreshold reports whether a finding of the given severity is at
+// or above the configured MinSeverity floor. Empty floor defaults to critical.
+func (c TicketingConfig) meetsTicketThreshold(severity string) bool {
+	floor := c.MinSeverity
+	if strings.TrimSpace(floor) == "" {
+		floor = "critical"
+	}
+	return ticketSeverityRank(severity) >= ticketSeverityRank(floor)
 }
 
 // RouteTickets is the ticketing analogue of RouteAndPost. It runs AFTER
@@ -97,7 +132,15 @@ func RouteTickets(
 	log.Printf("ticketing: indexed %d existing driftreports", len(bySubject))
 
 	created := 0
+	skippedBelowThreshold := 0
 	for _, d := range toPost {
+		// Human-action filter: only file tickets for findings at or above the
+		// severity floor (default critical). Warnings / info / observations are
+		// surfaced via Slack + DriftReports but do NOT clutter the issue tracker.
+		if !cfg.meetsTicketThreshold(d.Severity) {
+			skippedBelowThreshold++
+			continue
+		}
 		if !postFixSubjects[d.Subject] {
 			log.Printf("ticketing: skip %s (fixed this cycle)", d.Subject)
 			continue
@@ -129,7 +172,15 @@ func RouteTickets(
 		}
 		created++
 	}
-	log.Printf("ticketing: cycle end (created=%d)", created)
+	log.Printf("ticketing: cycle end (created=%d, skipped-below-%s=%d)", created, ticketFloorLabel(cfg), skippedBelowThreshold)
+}
+
+// ticketFloorLabel returns the effective MinSeverity for log lines.
+func ticketFloorLabel(cfg TicketingConfig) string {
+	if strings.TrimSpace(cfg.MinSeverity) == "" {
+		return "critical"
+	}
+	return cfg.MinSeverity
 }
 
 // ticketFromDelta builds a ticketing.Ticket from a routing DeltaDiag.
@@ -153,11 +204,13 @@ func buildTicketBody(d DeltaDiag, cluster, runID string) string {
 	if d.Message != "" {
 		fmt.Fprintf(&b, "## Diagnostic\n\n%s\n\n", d.Message)
 	}
-	if d.Remediation != "" {
-		fmt.Fprintf(&b, "## Remediation\n\n%s\n\n", d.Remediation)
-	}
+	// Root-cause-first: the investigator's definitive cause leads, then the
+	// remediation steps — same composition order as every Slack adapter.
 	if d.Investigation != "" {
-		fmt.Fprintf(&b, "## Investigation\n\n%s\n\n", d.Investigation)
+		fmt.Fprintf(&b, "## Root cause\n\n%s\n\n", d.Investigation)
+	}
+	if d.Remediation != "" {
+		fmt.Fprintf(&b, "## Recommended action\n\n%s\n\n", d.Remediation)
 	}
 	fmt.Fprintf(&b, "---\n\nCluster: `%s` · Run: `%s` · Filed by CHA at %s",
 		cluster, runID, time.Now().UTC().Format(time.RFC3339))

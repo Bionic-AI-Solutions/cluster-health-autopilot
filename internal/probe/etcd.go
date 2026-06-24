@@ -104,23 +104,32 @@ func (e ETCD) Run(ctx context.Context, src snapshot.Source) Result {
 	}
 
 	sort.Slice(members, func(i, j int) bool { return members[i].name < members[j].name })
-	var notReady, restarted []string
+	var notReady []string
+	var restartedCritical, restartedWarning []string
 	for _, m := range members {
 		if !m.ready {
 			notReady = append(notReady, m.name)
 		}
 		if m.restarts > 0 {
-			restarted = append(restarted, fmt.Sprintf("%s(%d)", m.name, m.restarts))
+			tag := fmt.Sprintf("%s(%d)", m.name, m.restarts)
+			if m.ready {
+				// Member restarted but is currently Ready — likely a post-maintenance
+				// restart (node drain/reboot cycle). Warn rather than page.
+				restartedWarning = append(restartedWarning, tag)
+			} else {
+				// Member restarted AND is not Ready — likely stuck in a crash loop.
+				restartedCritical = append(restartedCritical, tag)
+			}
 		}
 	}
 
-	if len(notReady) == 0 && len(restarted) == 0 {
+	if len(notReady) == 0 && len(restartedCritical) == 0 && len(restartedWarning) == 0 {
 		r.Component.Status = "HEALTHY"
 		r.Component.Detail = fmt.Sprintf("All %d etcd member(s) ready", len(members))
 		return r
 	}
 
-	parts := []string{}
+	var parts []string
 	if len(notReady) > 0 {
 		parts = append(parts, fmt.Sprintf("%d not ready: %s", len(notReady), strings.Join(notReady, ",")))
 		r.Findings = append(r.Findings, Finding{
@@ -131,18 +140,33 @@ func (e ETCD) Run(ctx context.Context, src snapshot.Source) Result {
 				"Check disk space and IO latency on the host; etcd needs <100ms fsync.",
 		})
 	}
-	if len(restarted) > 0 {
-		parts = append(parts, fmt.Sprintf("%d restarted: %s", len(restarted), strings.Join(restarted, ",")))
+	if len(restartedCritical) > 0 {
+		parts = append(parts, fmt.Sprintf("%d restarted+unready: %s", len(restartedCritical), strings.Join(restartedCritical, ",")))
 		r.Findings = append(r.Findings, Finding{
 			Component: "ETCD",
 			Severity:  SeverityCritical,
-			Message:   fmt.Sprintf("ETCD member(s) restarted: %s", strings.Join(restarted, ", ")),
+			Message:   fmt.Sprintf("ETCD member(s) restarted and not Ready (crash-loop suspected): %s", strings.Join(restartedCritical, ", ")),
 			Remediation: "Check etcd logs on the affected node: `kubectl logs <pod> -n " + ns + " --previous`. " +
 				"Common causes: disk IO latency, OOM (raise etcd memory limit), quorum loss.",
 		})
 	}
+	if len(restartedWarning) > 0 {
+		parts = append(parts, fmt.Sprintf("%d restarted (ready): %s", len(restartedWarning), strings.Join(restartedWarning, ",")))
+		r.Findings = append(r.Findings, Finding{
+			Component: "ETCD",
+			Severity:  SeverityWarning,
+			Message: fmt.Sprintf("ETCD member(s) restarted but currently Ready (post-maintenance restart likely): %s",
+				strings.Join(restartedWarning, ", ")),
+			Remediation: "Monitor: if restart count keeps climbing, check `kubectl logs <pod> -n " + ns + " --previous` for crash reason. " +
+				"One restart per maintenance window is normal.",
+		})
+	}
 
-	r.Component.Status = "CRITICAL"
+	if len(notReady) > 0 || len(restartedCritical) > 0 {
+		r.Component.Status = "CRITICAL"
+	} else {
+		r.Component.Status = "WARNING"
+	}
 	r.Component.Detail = strings.Join(parts, "; ")
 	return r
 }

@@ -60,6 +60,9 @@ func (RuleBased) investigateFinding(ctx context.Context, f probe.Finding, env ai
 	target := extractURL(msg)
 
 	switch {
+	case isCrashClass(low):
+		ns, pod := parsePodRef(msg)
+		return investigateCrash(ctx, ns, pod, msg, env)
 	case strings.Contains(low, "tls verification failed"):
 		return investigateTLS(ctx, target, env, msg)
 	case strings.Contains(low, "context deadline exceeded"),
@@ -227,6 +230,21 @@ func (RuleBased) investigateDiagnostic(ctx context.Context, d diagnose.Diagnosti
 	// Pattern: cert-expiry/<ns>/<name>
 	if strings.HasPrefix(subj, "cert-expiry/") {
 		return investigateCertExpiry(ctx, subj, env)
+	}
+	// Pattern: CronJob/<ns>/<name> (CronJobStuck) — read the failed Job pod's
+	// logs and report WHY it keeps failing instead of a kubectl recipe.
+	if strings.HasPrefix(subj, "CronJob/") {
+		ns, name := parseKindNsName(subj)
+		return investigateCronJob(ctx, ns, name, msg, env)
+	}
+	// Crash-class pod findings (FailedPods, log-pattern crashes): read the
+	// container logs and classify the cause rather than punting to the human.
+	if isCrashClass(strings.ToLower(msg)) {
+		ns, pod := parseKindNsName(subj) // structured "Pod/<ns>/<pod>" subject
+		if ns == "" {
+			ns, pod = parsePodRef(msg)
+		}
+		return investigateCrash(ctx, ns, pod, msg, env)
 	}
 	_ = src // reserved for future per-source heuristics
 	return ai.InvestigationResult{}, nil

@@ -57,14 +57,17 @@ func (c CertExpiry) Run(ctx context.Context, src snapshot.Source) []Diagnostic {
 		cert := certs.Items[i]
 		ns := cert.GetNamespace()
 		name := cert.GetName()
-		subject := fmt.Sprintf("cert-expiry/%s/%s", ns, name)
+		subject := fmt.Sprintf("Certificate/%s/%s", ns, name)
 
 		// Not-Ready condition takes priority — it captures renewal failures,
 		// issuer connectivity problems, etc. before the cert actually expires.
 		if readyStatus, _ := certReadyCondition(cert); readyStatus == "False" {
 			msg, rem := certNotReadyDetail(ctx, src, ns, name)
 			out = append(out, Diagnostic{
-				Subject:     subject,
+				Subject: subject,
+				// Critical: a not-Ready Certificate means renewal/issuance is
+				// failing — TLS will break. Matches the docs' Critical/Warning split.
+				Severity:    "critical",
 				Message:     msg,
 				Remediation: rem,
 			})
@@ -85,6 +88,9 @@ func (c CertExpiry) Run(ctx context.Context, src snapshot.Source) []Diagnostic {
 		case now.After(notAfter):
 			out = append(out, Diagnostic{
 				Subject: subject,
+				// Critical: an already-expired certificate breaks TLS for every
+				// consumer on next restart. Docs promise Critical for this case.
+				Severity: "critical",
 				Message: fmt.Sprintf(
 					"Certificate `%s/%s` EXPIRED at %s. "+
 						"Pods consuming this TLS secret will fail on next restart.",
@@ -95,6 +101,9 @@ func (c CertExpiry) Run(ctx context.Context, src snapshot.Source) []Diagnostic {
 			daysLeft := int(time.Until(notAfter).Hours() / 24)
 			out = append(out, Diagnostic{
 				Subject: subject,
+				// Warning: still valid but approaching expiry — proactive heads-up
+				// so cert-manager renewal can be checked before it breaks.
+				Severity: "warning",
 				Message: fmt.Sprintf(
 					"Certificate `%s/%s` expires in %d day(s) (%s). "+
 						"cert-manager renewal may have stalled — check Issuer status.",

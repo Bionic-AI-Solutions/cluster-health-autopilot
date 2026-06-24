@@ -80,4 +80,11 @@ type Client interface {
 	// ListKeyVaults lists Key Vaults with their soft-delete /
 	// purge-protection posture.
 	ListKeyVaults(ctx context.Context) ([]KeyVault, error)
+
+	// ListKeyVaultItems calls the Key Vault data-plane API to list keys
+	// and secrets within a vault. vaultURL is the vault's data-plane base
+	// URL (e.g. "https://<name>.vault.azure.net"). Returns (nil, nil, nil)
+	// when the vault has no items or RBAC is insufficient (callers should
+	// skip silently on error).
+	ListKeyVaultItems(ctx context.Context, vaultURL string) ([]KeyVaultKey, []KeyVaultSecret, error)
 }

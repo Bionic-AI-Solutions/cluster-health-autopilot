@@ -74,6 +74,27 @@ const (
 	ActionDeleteCertRequest ActionKind = "DeleteCertRequest"
 	ActionDeleteACMEOrder   ActionKind = "DeleteACMEOrder"
 
+	// ActionPatchProbe applies a STRATEGIC-merge patch that tunes ONLY
+	// the safe scalar fields of a container's liveness/readiness/startup
+	// probe (timeoutSeconds, periodSeconds, failureThreshold,
+	// successThreshold, initialDelaySeconds). It is the concrete fix the
+	// AI tier proposes when it diagnoses a probe misconfiguration (e.g. a
+	// 1s startup-probe timeout that kills a slow-booting StatefulSet) —
+	// instead of the useless "delete the pod", it proposes the actual
+	// config change and routes it through the same Approve/Deny flow.
+	//
+	// Target.Kind selects the workload: Deployment, StatefulSet, or
+	// DaemonSet. PatchPayload carries the strategic-merge JSON, keyed by
+	// container name so it touches exactly one container's probe. The
+	// validator (CHA-com ai/approval) enforces a closed allow-list of
+	// probe-tuning paths + numeric bounds; the LLM cannot smuggle any
+	// other field through this verb.
+	//
+	// Only used for NON-GitOps-managed workloads — a live patch on a
+	// GitOps-reconciled resource would drift and revert, so for those the
+	// proposer emits ActionProposePullRequest instead (see IsGitOpsManaged).
+	ActionPatchProbe ActionKind = "PatchProbe"
+
 	// ActionApplyManifest is v1.15.0 (Phase 2d-δ). It accepts a
 	// pre-rendered Kubernetes manifest in `ManifestYAML` and applies
 	// it via `kubectl apply -f -`. The safe-apply validator enforces
@@ -113,7 +134,8 @@ func (ak ActionKind) IsValid() bool {
 	switch ak {
 	case ActionDeletePod, ActionDeleteJob, ActionPatchDeployment,
 		ActionDeleteCertRequest, ActionDeleteACMEOrder,
-		ActionApplyManifest, ActionProposePullRequest:
+		ActionApplyManifest, ActionProposePullRequest,
+		ActionPatchProbe:
 		return true
 	}
 	return false
@@ -188,12 +210,13 @@ type AIProposedAction struct {
 	// Target is the Kubernetes object the action operates on.
 	Target ObjectRef `json:"target"`
 
-	// PatchPayload is set only when ActionKind == ActionPatchDeployment.
-	// It is the strategic-merge-patch JSON the executor will apply.
-	// The validator enforces a closed schema on the patch shape so the
-	// LLM cannot smuggle arbitrary patches (e.g. it can patch the
-	// kubectl.kubernetes.io/restartedAt annotation but not the image
-	// or env vars).
+	// PatchPayload is set when ActionKind is a patch verb —
+	// ActionPatchDeployment (rollout-restart annotation only) or
+	// ActionPatchProbe (probe-tuning scalars only). It is the
+	// strategic-merge-patch JSON the executor will apply. The validator
+	// enforces a closed schema per verb so the LLM cannot smuggle
+	// arbitrary patches (e.g. it can patch the restartedAt annotation or
+	// a probe timeout, but not the image or env vars).
 	PatchPayload []byte `json:"patch_payload,omitempty"`
 
 	// ManifestYAML is set only when ActionKind == ActionApplyManifest

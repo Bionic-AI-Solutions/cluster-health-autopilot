@@ -65,7 +65,7 @@ spec:
       containers:
         - name: aiwatch
           image: {{ include "cha.aiImage" . }}
-          imagePullPolicy: {{ (.Values.ai.image).pullPolicy | default "IfNotPresent" }}
+          imagePullPolicy: {{ (.Values.ai.image).pullPolicy | default "Always" }}
           args:
             {{- include "cha.aiArgs" . | nindent 12 }}
           {{- if (.Values.ai.metrics).addr }}

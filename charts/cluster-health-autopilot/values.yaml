@@ -15,10 +15,11 @@ image:
   # to use it.
   repository: docker4zerocool/cluster-health-autopilot
   tag: ""                         # default = .Chart.appVersion (e.g. v0.1.0-alpha.1)
-  # pullPolicy is left empty so the `cha.pullPolicy` helper picks it
-  # automatically: Always for mutable tags (latest / main / dev /
-  # `*-latest`) and IfNotPresent for semver-pinned tags. Override only
-  # when you specifically need to force one or the other.
+  # pullPolicy is left empty so the `cha.pullPolicy` helper picks it.
+  # Default is Always: a re-pushed tag must never be served stale from a
+  # node's cache (IfNotPresent once caused old code to keep running across a
+  # "successful" rollout). Set IfNotPresent explicitly for immutable tags or
+  # digest pins if you want to skip the per-restart pull.
   pullPolicy: ""
   pullSecrets: []                 # e.g. [{name: dockerhub-secret}]
 
@@ -425,9 +426,15 @@ watcher:
     #   value: "true"
   slack:
     postOnResolved: true           # Post when a diagnostic disappears.
-    repeatInterval: 4h             # Re-post still-active warning/info at this cadence (0=never).
-    criticalRepeatInterval: ""     # Re-post still-active CRITICAL at this cadence (empty = fall back to repeatInterval).
-                                   # Use to keep criticals loud (e.g. "4h") while letting warnings calm down (e.g. set repeatInterval=24h).
+    repeatInterval: 6h             # Re-post still-active warning/info at this cadence (0=never).
+    criticalRepeatInterval: "2h"   # Re-post still-active CRITICAL at this cadence. Defaults to 2h so urgent
+                                   # findings stay loud without repeatInterval needing to match. Set to ""
+                                   # to fall back to repeatInterval.
+  approval:
+    dwellDuration: ""              # How long a finding must persist before Approve/Deny buttons are shown.
+                                   # Transient findings that self-resolve within the window never enter the
+                                   # human approval queue. Empty/0 = attach buttons immediately (legacy).
+                                   # Recommended: "5m". Requires AI tier (CHA-com) to have any effect.
   remedy:
     enabled: false                 # Run auto-fixers after each cycle (live mutation).
     dryRun: false                  # Evaluate fixers without mutating cluster state.
@@ -884,6 +891,11 @@ analyzers:
     # ImagePullBackOff caused by missing/invalid pull credentials
     # (namespace missing pull secret or deployment missing
     # imagePullSecrets).
+    enabled: true
+  failedPods:
+    # Pods in the terminal status.phase=Failed state — Evicted,
+    # UnexpectedAdmissionError, NodeLost — that no controller replaced.
+    # Critical: the replica is permanently down until deleted/rescheduled.
     enabled: true
   certExpiry:
     # cert-manager Certificates close to / past expiry or stuck not

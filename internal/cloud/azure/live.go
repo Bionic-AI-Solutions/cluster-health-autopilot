@@ -5,9 +5,15 @@ package azure
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"strings"
+	"time"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/monitor/azquery"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appservice/armappservice/v4"
@@ -39,6 +45,11 @@ import (
 type LiveClient struct {
 	subscription string
 	location     string
+
+	// cred is kept for data-plane API calls (e.g. Key Vault keys/secrets
+	// endpoint) that require bearer token auth but are not exposed by
+	// any ARM SDK client.
+	cred azcore.TokenCredential
 
 	sqlServers  *armsql.ServersClient
 	sqlDBs      *armsql.DatabasesClient
@@ -143,6 +154,7 @@ func NewLiveClient(ctx context.Context, subscription, location string) (*LiveCli
 	return &LiveClient{
 		subscription: subscription,
 		location:     location,
+		cred:         cred,
 		sqlServers:   sqlServers,
 		sqlDBs:       sqlDBs,
 		disks:        disks,
@@ -319,6 +331,8 @@ func (l *LiveClient) GetAKSCluster(ctx context.Context, name string) (*pkgazure.
 
 // ListAKSNodePools satisfies pkgazure.Client. Needs the cluster's
 // resource group, which we resolve by locating the cluster first.
+// Also populates Version (currentOrchestratorVersion) and ClusterVersion
+// (the control-plane kubernetesVersion) for version-drift comparison.
 func (l *LiveClient) ListAKSNodePools(ctx context.Context, clusterName string) ([]pkgazure.AKSNodePool, error) {
 	cluster, err := l.GetAKSCluster(ctx, clusterName)
 	if err != nil || cluster == nil {
@@ -336,8 +350,9 @@ func (l *LiveClient) ListAKSNodePools(ctx context.Context, clusterName string) (
 				continue
 			}
 			rec := pkgazure.AKSNodePool{
-				Name:        *p.Name,
-				ClusterName: clusterName,
+				Name:           *p.Name,
+				ClusterName:    clusterName,
+				ClusterVersion: cluster.KubernetesVersion,
 			}
 			if p.Properties != nil {
 				if p.Properties.ProvisioningState != nil {
@@ -351,6 +366,9 @@ func (l *LiveClient) ListAKSNodePools(ctx context.Context, clusterName string) (
 				}
 				if p.Properties.EnableAutoScaling != nil {
 					rec.Autoscaling = *p.Properties.EnableAutoScaling
+				}
+				if p.Properties.CurrentOrchestratorVersion != nil {
+					rec.Version = *p.Properties.CurrentOrchestratorVersion
 				}
 			}
 			out = append(out, rec)
@@ -631,9 +649,123 @@ func (l *LiveClient) ListKeyVaults(ctx context.Context) ([]pkgazure.KeyVault, er
 				if v.Properties.PublicNetworkAccess != nil {
 					rec.PublicNetwork = strings.EqualFold(*v.Properties.PublicNetworkAccess, "Enabled")
 				}
+				if v.Properties.VaultURI != nil {
+					rec.VaultURL = strings.TrimSuffix(*v.Properties.VaultURI, "/")
+				}
 			}
 			out = append(out, rec)
 		}
+	}
+	return out, nil
+}
+
+// kvDataPlaneListResponse is the shape of GET {vaultURL}/keys?api-version=7.4
+// and GET {vaultURL}/secrets?api-version=7.4.
+type kvDataPlaneListResponse struct {
+	Value    []kvDataPlaneItem `json:"value"`
+	NextLink string            `json:"nextLink,omitempty"`
+}
+
+type kvDataPlaneItem struct {
+	// ID is the full item URL, e.g.
+	// https://<vault>.vault.azure.net/keys/<name>
+	ID         string               `json:"id"`
+	Attributes kvDataPlaneAttr      `json:"attributes"`
+}
+
+type kvDataPlaneAttr struct {
+	Enabled bool  `json:"enabled"`
+	Exp     *int64 `json:"exp,omitempty"` // Unix timestamp; nil = no expiry
+}
+
+// ListKeyVaultItems satisfies pkgazure.Client. It calls the Key Vault
+// data-plane API to enumerate keys and secrets in the vault.
+// Returns (nil, nil, nil) when the caller lacks data-plane RBAC — the
+// probe skips silently.
+func (l *LiveClient) ListKeyVaultItems(ctx context.Context, vaultURL string) ([]pkgazure.KeyVaultKey, []pkgazure.KeyVaultSecret, error) {
+	if l.cred == nil || vaultURL == "" {
+		return nil, nil, nil
+	}
+	// Acquire bearer token for the Key Vault data-plane scope.
+	tok, err := l.cred.GetToken(ctx, policy.TokenRequestOptions{
+		Scopes: []string{"https://vault.azure.net/.default"},
+	})
+	if err != nil {
+		// Auth failure — caller skips silently.
+		return nil, nil, err
+	}
+	bearer := "Bearer " + tok.Token
+
+	vaultName := lastSegment(strings.TrimSuffix(vaultURL, "/"))
+	keys, err := kvListItems(ctx, bearer, vaultURL+"/keys?api-version=7.4")
+	if err != nil {
+		return nil, nil, err
+	}
+	secrets, err := kvListItems(ctx, bearer, vaultURL+"/secrets?api-version=7.4")
+	if err != nil {
+		return nil, nil, err
+	}
+
+	var outKeys []pkgazure.KeyVaultKey
+	for _, item := range keys {
+		k := pkgazure.KeyVaultKey{
+			VaultName: vaultName,
+			KeyName:   lastSegment(item.ID),
+			Enabled:   item.Attributes.Enabled,
+		}
+		if item.Attributes.Exp != nil {
+			t := time.Unix(*item.Attributes.Exp, 0).UTC()
+			k.ExpiresAt = &t
+		}
+		outKeys = append(outKeys, k)
+	}
+
+	var outSecrets []pkgazure.KeyVaultSecret
+	for _, item := range secrets {
+		s := pkgazure.KeyVaultSecret{
+			VaultName:  vaultName,
+			SecretName: lastSegment(item.ID),
+			Enabled:    item.Attributes.Enabled,
+		}
+		if item.Attributes.Exp != nil {
+			t := time.Unix(*item.Attributes.Exp, 0).UTC()
+			s.ExpiresAt = &t
+		}
+		outSecrets = append(outSecrets, s)
+	}
+
+	return outKeys, outSecrets, nil
+}
+
+// kvListItems pages through the Key Vault data-plane list endpoint and
+// returns all items. Uses raw HTTP with a pre-acquired bearer token.
+func kvListItems(ctx context.Context, bearer, url string) ([]kvDataPlaneItem, error) {
+	var out []kvDataPlaneItem
+	for url != "" {
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+		if err != nil {
+			return nil, err
+		}
+		req.Header.Set("Authorization", bearer)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			return nil, err
+		}
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if resp.StatusCode == http.StatusForbidden || resp.StatusCode == http.StatusUnauthorized {
+			// Insufficient RBAC — caller skips silently.
+			return nil, fmt.Errorf("keyvault data-plane: %s (insufficient RBAC)", resp.Status)
+		}
+		if resp.StatusCode != http.StatusOK {
+			return nil, fmt.Errorf("keyvault data-plane: unexpected status %s", resp.Status)
+		}
+		var page kvDataPlaneListResponse
+		if err := json.Unmarshal(body, &page); err != nil {
+			return nil, err
+		}
+		out = append(out, page.Value...)
+		url = page.NextLink
 	}
 	return out, nil
 }

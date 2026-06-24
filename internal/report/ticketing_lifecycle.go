@@ -83,6 +83,63 @@ func RouteResolves(
 	log.Printf("ticketing: resolve-on-clear (cleared=%d resolved=%d)", len(clearedSubjects), resolved)
 }
 
+// RouteTicketCleanup closes any still-open ticket whose finding severity is
+// now BELOW the MinSeverity floor. It retires the backlog left behind when the
+// floor is tightened (e.g. raising it to "critical" auto-closes the warning /
+// info / observation tickets filed under the old, looser policy) so the issue
+// tracker converges on genuine human-action items only.
+//
+// Idempotent: a ticket already marked resolved is skipped, so once the backlog
+// is drained this is a no-op. Best-effort, like the rest of ticketing.
+//
+// Runs BEFORE Reconcile (same as RouteResolves) so the persisted TicketRef on
+// status.ticket is still readable.
+func RouteTicketCleanup(
+	ctx context.Context,
+	cfg TicketingConfig,
+	src snapshot.Source,
+	mut snapshot.Mutator,
+	cycleTime time.Time,
+) {
+	if cfg.Sink == nil || mut == nil || !cfg.ResolveOnClear {
+		return
+	}
+	bySubject, err := indexDriftReportsBySubject(ctx, src)
+	if err != nil {
+		log.Printf("ticketing: cleanup list driftreports: %v", err)
+		return
+	}
+	reason := fmt.Sprintf("CHA: closed — finding severity is below the ticketing floor (%s); no human action required. Tracked via DriftReport / Slack only. (%s)",
+		ticketFloorLabel(cfg), cycleTime.UTC().Format(time.RFC3339))
+	closed := 0
+	for _, cr := range bySubject {
+		ref, ok := readTicketRef(cr)
+		if !ok || ticketResolved(cr) {
+			continue
+		}
+		if cfg.meetsTicketThreshold(driftReportSeverity(cr)) {
+			continue // still at/above floor — legitimately open
+		}
+		if err := cfg.Sink.Resolve(ctx, ref, reason); err != nil {
+			log.Printf("ticketing: cleanup resolve %s/%s: %v", ref.Provider, ref.Key, err)
+			continue
+		}
+		if err := markTicketResolved(ctx, mut, cr.GetName(), cycleTime); err != nil {
+			log.Printf("ticketing: cleanup persist resolved flag %s: %v", ref.Key, err)
+		}
+		closed++
+	}
+	if closed > 0 {
+		log.Printf("ticketing: cleanup closed %d below-floor ticket(s)", closed)
+	}
+}
+
+// driftReportSeverity reads spec.severity off a DriftReport CR.
+func driftReportSeverity(cr *unstructured.Unstructured) string {
+	s, _, _ := unstructured.NestedString(cr.Object, "spec", "severity")
+	return s
+}
+
 // maybeCommentOnRecurrence handles a still-present finding that already has
 // a ticket. It posts a debounced comment to the existing ticket rather than
 // opening a new one.

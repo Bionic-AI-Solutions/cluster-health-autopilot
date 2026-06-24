@@ -160,7 +160,7 @@ func (g GitOpsDrift) checkArgoApplications(ctx context.Context, src snapshot.Sou
 			}
 			out = append(out, Diagnostic{
 				Source:   "GitOpsDrift",
-				Subject:  subject + " (health)",
+				Subject:  subject,
 				Severity: severity,
 				Message: fmt.Sprintf(
 					"Argo Application %s/%s health=%s (last reconciled %s ago)",

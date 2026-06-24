@@ -58,7 +58,7 @@ all configured receivers. Fallback to direct three-channel Slack
 Read role and Write role are **separate** ClusterRoles. The Write (remediator) role grants exactly:
 `pods/delete`, `jobs/delete`, `deployments/patch`, `certificaterequests/delete`, `orders/delete`. Never Secret/ConfigMap/CRD writes.
 
-Seven platform namespaces are always skipped — `kube-system`, `kube-public`, `kube-node-lease`, `rook-ceph`, `vault`, `external-secrets`, `cnpg-system`. Enforced both **in code** AND **by RBAC**. The fix list is the source code; an SRE can audit every action the tool will ever take in one afternoon.
+Nine platform namespaces are always skipped — `kube-system`, `kube-public`, `kube-node-lease`, `rook-ceph`, `vault`, `external-secrets`, `cnpg-system`, `calico-system`, `tigera-operator`. Enforced both **in code** AND **by RBAC**. The fix list is the source code; an SRE can audit every action the tool will ever take in one afternoon.
 
 ## Zero LLM in the hot path
 
@@ -70,10 +70,10 @@ The paid CHA-com binary adds AI tiers (T0–T3) and an optional LLM-backed Inves
 
 | Component | License | Tier |
 |---|---|---|
-| CLI engine + default catalog + Helm chart | Apache 2.0 | Free / OSS |
-| **Verified Signature Library** (curated, regression-tested patterns added monthly) | Commercial | Paid (per-cluster sub) |
-| **Hosted Fleet Console** (multi-cluster aggregation, history, SLO dashboards) | Commercial | SaaS |
-| **SOC 2 / private deployment / SLA support** | Commercial | Enterprise |
+| CLI engine + all probes + analyzers + fixers + 30 cloud probes + Helm chart + operator | Apache 2.0 | Free / OSS |
+| **CHA-com AI tiers** (T0 narration, T1 fix proposals, T2 multi-step plans, T3 Vault runbooks) + approval-server with signed click-to-fix URLs | Commercial | AI SRE (per-cluster/mo) |
+| **CHA-com Enterprise** — above + Jira/ServiceNow ticketing, multi-cluster federation, RAG memory, confidence-gated auto-merge, Loki/OTLP audit sinks | Commercial | Enterprise (per-cluster/mo) |
+| **Federal/Sovereign** — air-gap installer, SBOM + signed images, dedicated security eng, SLA | Commercial | Contact sales |
 
 ## Real-world validation
 

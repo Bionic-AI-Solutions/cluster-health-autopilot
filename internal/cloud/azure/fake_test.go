@@ -45,6 +45,10 @@ type fakeAzure struct {
 
 	vaults    []pkgazure.KeyVault
 	vaultsErr error
+
+	kvKeys      []pkgazure.KeyVaultKey
+	kvSecrets   []pkgazure.KeyVaultSecret
+	kvItemsErr  error
 }
 
 func (f *fakeAzure) SubscriptionID() string { return f.subscription }
@@ -88,6 +92,10 @@ func (f *fakeAzure) ListStorageAccounts(_ context.Context) ([]pkgazure.StorageAc
 
 func (f *fakeAzure) ListKeyVaults(_ context.Context) ([]pkgazure.KeyVault, error) {
 	return f.vaults, f.vaultsErr
+}
+
+func (f *fakeAzure) ListKeyVaultItems(_ context.Context, _ string) ([]pkgazure.KeyVaultKey, []pkgazure.KeyVaultSecret, error) {
+	return f.kvKeys, f.kvSecrets, f.kvItemsErr
 }
 
 type fakeSource struct {

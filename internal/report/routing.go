@@ -25,9 +25,14 @@ type SlackChannels struct {
 	Critical string // #ceph-critical — event-driven, needs human
 }
 
-// renderAIBlocks appends optional AI-tier blocks (enrichment, approval URL)
-// to a Slack message builder. Renders nothing when no AI fields are populated
-// — OSS deployments produce identical output to today.
+// renderAIBlocks appends optional AI-tier blocks (investigation, enrichment,
+// approval URL) to a Slack message builder. Renders nothing when no AI fields
+// are populated — OSS deployments produce identical output to today.
+// renderAIBlocks emits the AI-tier addenda for one finding: the LLM narrative
+// enrichment and the Approve/Deny action row. The Layer-2 investigation
+// (root cause) is NOT rendered here — it leads the guidance block via
+// renderGuidance so every finding is root-cause-first; rendering it here too
+// would duplicate it.
 func renderAIBlocks(b *strings.Builder, d DeltaDiag) {
 	if d.Enrichment != "" {
 		fmt.Fprintf(b, "  🤖 _%s_\n", d.Enrichment)
@@ -207,6 +212,7 @@ func SplitCriticalPayloadsConfig(unfixable []DeltaDiag, resolved []ResolvedDiag,
 	var newRendered []string
 	var newCount int
 	var stableCritCount, stableDiagCount int
+	var hasNewCritical bool
 	for _, d := range unfixable {
 		var b strings.Builder
 		if d.Severity == "critical" {
@@ -214,14 +220,21 @@ func SplitCriticalPayloadsConfig(unfixable []DeltaDiag, resolved []ResolvedDiag,
 		} else {
 			fmt.Fprintf(&b, "• ⚠️ *%s*\n  %s\n", d.Subject, d.Message)
 		}
-		if d.Remediation != "" {
-			fmt.Fprintf(&b, "  _→ %s_\n", d.Remediation)
+		// Root-cause-first guidance (investigation before remediation).
+		renderGuidance(&b, d.Investigation, d.Remediation)
+		// Only show the silence affordance for findings that have been
+		// around at least one cycle — a brand-new problem should be
+		// investigated, not immediately silenced.
+		if !d.IsNewThisCycle {
+			renderSilenceSnippet(&b, d)
 		}
-		renderSilenceSnippet(&b, d)
 		renderAIBlocks(&b, d)
 		if d.IsNewThisCycle {
 			newRendered = append(newRendered, b.String())
 			newCount++
+			if d.Severity == "critical" {
+				hasNewCritical = true
+			}
 			continue
 		}
 		if d.Severity == "critical" {
@@ -269,6 +282,7 @@ func SplitCriticalPayloadsConfig(unfixable []DeltaDiag, resolved []ResolvedDiag,
 			if r.Message != "" {
 				fmt.Fprintf(&b, "  _%s_\n", r.Message)
 			}
+			renderResolvedRootCause(&b, r)
 		}
 		resolvedSection = b.String()
 	}
@@ -367,13 +381,13 @@ func SplitCriticalPayloadsConfig(unfixable []DeltaDiag, resolved []ResolvedDiag,
 		}
 	}
 
-	// Pick color per chunk: danger if any critical, warning if only
-	// diagnostics, good if neither (resolved-only).
+	// Pick color per chunk: danger if any critical (stable or new-this-cycle),
+	// warning if only diagnostics/new-warnings, good if neither (resolved-only).
 	color := "danger"
-	if len(critRendered) == 0 && len(diagRendered) > 0 {
+	if len(critRendered) == 0 && !hasNewCritical && len(diagRendered) > 0 {
 		color = "warning"
 	}
-	if len(critRendered) == 0 && len(diagRendered) == 0 {
+	if len(critRendered) == 0 && !hasNewCritical && len(diagRendered) == 0 {
 		color = "good"
 	}
 
@@ -436,14 +450,19 @@ func plural(n int) string {
 	return "s"
 }
 
-// hasActionableFindings reports whether any finding in ds carries a signed
-// ApprovalURL — i.e. an Approve/Deny button will appear in the Slack post.
-// Used to choose between "Human Action Required" (approve/deny buttons
-// present) and "Advisory — Review (no action required)" (purely informational
-// findings with no interactive controls) as the Slack alert title.
+// hasActionableFindings reports whether the Slack alert should carry the
+// "Human Action Required" title rather than the softer advisory form.
+//
+// Two conditions qualify: an ApprovalURL is present (the operator must click
+// Approve/Deny) OR any finding is critical severity (the operator must act
+// even if no Approve/Deny button exists — OSS deployments have no approval
+// server but critical findings still need a human response).
 func hasActionableFindings(ds []DeltaDiag) bool {
 	for _, d := range ds {
 		if d.ApprovalURL != "" {
+			return true
+		}
+		if d.Severity == "critical" {
 			return true
 		}
 	}
@@ -492,9 +511,7 @@ func FormatCriticalPayload(unfixable []DeltaDiag, resolved []ResolvedDiag) Slack
 				continue
 			}
 			fmt.Fprintf(&b, "• ❌ *%s*\n  %s\n", d.Subject, d.Message)
-			if d.Remediation != "" {
-				fmt.Fprintf(&b, "  _→ %s_\n", d.Remediation)
-			}
+			renderGuidance(&b, d.Investigation, d.Remediation)
 			renderSilenceSnippet(&b, d)
 			renderAIBlocks(&b, d)
 		}
@@ -507,9 +524,7 @@ func FormatCriticalPayload(unfixable []DeltaDiag, resolved []ResolvedDiag) Slack
 				continue
 			}
 			fmt.Fprintf(&b, "• ⚠️ *%s*\n  %s\n", d.Subject, d.Message)
-			if d.Remediation != "" {
-				fmt.Fprintf(&b, "  _→ %s_\n", d.Remediation)
-			}
+			renderGuidance(&b, d.Investigation, d.Remediation)
 			renderSilenceSnippet(&b, d)
 			renderAIBlocks(&b, d)
 		}
@@ -522,6 +537,7 @@ func FormatCriticalPayload(unfixable []DeltaDiag, resolved []ResolvedDiag) Slack
 			if r.Message != "" {
 				fmt.Fprintf(&b, "  _%s_\n", r.Message)
 			}
+			renderResolvedRootCause(&b, r)
 		}
 	}
 

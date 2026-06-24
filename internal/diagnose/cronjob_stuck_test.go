@@ -118,3 +118,31 @@ func TestCronJobStuck_Name(t *testing.T) {
 		t.Error("Name mismatch")
 	}
 }
+
+func TestCronInterval_ScheduleAware(t *testing.T) {
+	cases := map[string]time.Duration{
+		"0 4 * * 0":   7 * 24 * time.Hour,  // weekly
+		"0 0 1 * *":   30 * 24 * time.Hour, // monthly (fixed day-of-month)
+		"0 2 * * *":   24 * time.Hour,      // daily
+		"*/5 * * * *": 5 * time.Minute,     // every 5 min
+		"0 * * * *":   time.Hour,           // hourly
+		"bad":         24 * time.Hour,      // unparseable → daily default
+	}
+	for sched, want := range cases {
+		if got := cronInterval(sched); got != want {
+			t.Errorf("cronInterval(%q) = %v, want %v", sched, got, want)
+		}
+	}
+}
+
+func TestCronJobStuck_WeeklyNotFlaggedAt85h(t *testing.T) {
+	// A weekly cronjob that succeeded 85h ago is HEALTHY (within 1.5×7d).
+	src := &memSourceDD{byResource: map[string][]unstructured.Unstructured{
+		"cronjobs": {
+			makeCronJob("ns", "wk", "0 4 * * 0", false, 85*time.Hour, 85*time.Hour, 60*24*time.Hour),
+		},
+	}}
+	if got := (CronJobStuck{}).Run(context.Background(), src); len(got) != 0 {
+		t.Errorf("weekly job 85h since success must NOT flag; got %d: %+v", len(got), got)
+	}
+}

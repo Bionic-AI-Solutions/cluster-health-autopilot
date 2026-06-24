@@ -118,7 +118,7 @@ func TestImagePullAuth_AuthFailureEmitsDiagnostic(t *testing.T) {
 	if len(got) != 1 {
 		t.Fatalf("expected 1 diagnostic, got %d", len(got))
 	}
-	if got[0].Subject != "image-pull-auth/prod/api/api" {
+	if got[0].Subject != "Pod/prod/api" {
 		t.Errorf("unexpected subject: %s", got[0].Subject)
 	}
 	if !containsAny(got[0].Message, []string{"imagePullSecret", "auth"}) {
@@ -174,7 +174,7 @@ func TestImagePullAuth_InitContainerBackoff(t *testing.T) {
 	if len(got) != 1 {
 		t.Fatalf("expected 1 diagnostic for init container, got %d", len(got))
 	}
-	if got[0].Subject != "image-pull-auth/staging/migrate/init" {
+	if got[0].Subject != "Pod/staging/migrate" {
 		t.Errorf("unexpected subject: %s", got[0].Subject)
 	}
 }

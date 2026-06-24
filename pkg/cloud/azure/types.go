@@ -70,6 +70,12 @@ type AKSNodePool struct {
 	PowerState        string `json:"powerState,omitempty"`
 	Count             int64  `json:"count,omitempty"`
 	Autoscaling       bool   `json:"autoscaling,omitempty"`
+	// Version is the Kubernetes version the node pool's nodes run.
+	// Populated from currentOrchestratorVersion in the ARM API response.
+	Version string `json:"version,omitempty"`
+	// ClusterVersion is the control-plane Kubernetes version; populated
+	// by the client for version-drift comparison in the probe.
+	ClusterVersion string `json:"clusterVersion,omitempty"`
 }
 
 // ManagedIdentity is the narrow projection of a user-assigned managed
@@ -144,7 +150,26 @@ type StorageAccount struct {
 type KeyVault struct {
 	Name            string `json:"name"`
 	ResourceGroup   string `json:"resourceGroup,omitempty"`
-	SoftDelete      bool   `json:"softDelete"`      // recovery window for deleted secrets
-	PurgeProtection bool   `json:"purgeProtection"` // prevents permanent delete during window
-	PublicNetwork   bool   `json:"publicNetwork"`   // reachable from public internet
+	VaultURL        string `json:"vaultURL,omitempty"`  // data-plane URL, e.g. https://<name>.vault.azure.net
+	SoftDelete      bool   `json:"softDelete"`          // recovery window for deleted secrets
+	PurgeProtection bool   `json:"purgeProtection"`     // prevents permanent delete during window
+	PublicNetwork   bool   `json:"publicNetwork"`       // reachable from public internet
+}
+
+// KeyVaultKey is the narrow projection of an Azure Key Vault data-plane key.
+// ExpiresAt is nil when no expiry is set.
+type KeyVaultKey struct {
+	VaultName string     `json:"vaultName"`
+	KeyName   string     `json:"keyName"`
+	ExpiresAt *time.Time `json:"expiresAt,omitempty"`
+	Enabled   bool       `json:"enabled"`
+}
+
+// KeyVaultSecret is the narrow projection of an Azure Key Vault data-plane secret.
+// ExpiresAt is nil when no expiry is set.
+type KeyVaultSecret struct {
+	VaultName  string     `json:"vaultName"`
+	SecretName string     `json:"secretName"`
+	ExpiresAt  *time.Time `json:"expiresAt,omitempty"`
+	Enabled    bool       `json:"enabled"`
 }

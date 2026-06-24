@@ -131,6 +131,22 @@ func (c *SnapshotClient) DescribeSubnets(_ context.Context) ([]pkgaws.VPCSubnet,
 	return readJSON[pkgaws.VPCSubnet](c.dir, "vpc-subnets.json")
 }
 
+// ListEKSAddons returns addons for the named cluster from
+// eks-addons.json.
+func (c *SnapshotClient) ListEKSAddons(_ context.Context, clusterName string) ([]pkgaws.EKSAddon, error) {
+	all, err := readJSON[pkgaws.EKSAddon](c.dir, "eks-addons.json")
+	if err != nil {
+		return nil, err
+	}
+	out := make([]pkgaws.EKSAddon, 0, len(all))
+	for _, a := range all {
+		if a.ClusterName == clusterName {
+			out = append(out, a)
+		}
+	}
+	return out, nil
+}
+
 // readJSON is a small generic helper so additional Describe* methods
 // can be one-liners as more probes land.
 func readJSON[T any](dir, file string) ([]T, error) {

@@ -81,6 +81,14 @@ func Filter(diags []diagnose.Diagnostic, silences []chav1alpha1.Silence, now tim
 	return out
 }
 
+// MatchesAny reports whether d is suppressed by any active silence.
+// Useful for callers that check one finding at a time (e.g. filtering
+// probe.Result findings, which have a different Go type from
+// diagnose.Diagnostic and must be projected by the caller).
+func MatchesAny(silences []chav1alpha1.Silence, d diagnose.Diagnostic, now time.Time) bool {
+	return anyMatch(silences, d, now)
+}
+
 func anyMatch(silences []chav1alpha1.Silence, d diagnose.Diagnostic, now time.Time) bool {
 	for i := range silences {
 		if Matches(silences[i], d, now) {

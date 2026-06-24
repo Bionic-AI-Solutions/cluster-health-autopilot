@@ -57,8 +57,7 @@ curl -X POST -H "X-Forwarded-User: $YOU" http://localhost:8443/admin/reset
 **Symptom**: A T3 runbook posted; first approver clicked; second
 approver not available.
 
-**Behavior**: After 60 min from the first approval, the runbook
-expires automatically. The next watcher cycle will generate a fresh
+**Behavior**: The runbook expires 90 minutes after creation (not after the first approval click). The next watcher cycle will generate a fresh
 runbook if the underlying diagnostic remains.
 
 **Remediation**: Update the `cha.io/approver` group to include
@@ -69,8 +68,7 @@ kubectl get rolebinding -n cluster-health-autopilot cha-approvers -o yaml | \
   kubectl apply -f -
 ```
 
-If a specific runbook must be approved urgently (cannot wait 60 min
-for re-generation), the first approver can either:
+If a specific runbook must be approved urgently (cannot wait for re-generation), the first approver can either:
 1. Wait for a different second approver to come online, then click their slot
 2. Mark the diagnostic resolved manually via `kubectl annotate driftreport`
 

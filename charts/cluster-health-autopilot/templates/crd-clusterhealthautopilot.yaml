@@ -552,6 +552,15 @@ spec:
                       description: |
                         Debounce window (Go duration, e.g. "1h") for
                         comment-on-recurrence (M2). "0" disables it.
+                    minSeverity:
+                      type: string
+                      enum: [info, warning, critical]
+                      description: |
+                        Floor for filing a ticket so the tracker holds genuine
+                        human-action items, not every warning/info observation.
+                        "critical" (default), "warning", or "info". Findings
+                        below the floor are tracked via DriftReport + Slack only;
+                        tickets already filed below a raised floor auto-close.
                     auth:
                       type: object
                       properties:

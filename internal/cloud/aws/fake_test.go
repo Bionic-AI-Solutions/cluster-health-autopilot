@@ -48,6 +48,9 @@ type fakeAWS struct {
 
 	subnets    []pkgaws.VPCSubnet
 	subnetsErr error
+
+	addons    []pkgaws.EKSAddon
+	addonsErr error
 }
 
 func (f *fakeAWS) Region() string { return f.region }
@@ -115,6 +118,19 @@ func (f *fakeAWS) ListS3BucketPAB(_ context.Context) ([]pkgaws.S3BucketPAB, erro
 
 func (f *fakeAWS) DescribeSubnets(_ context.Context) ([]pkgaws.VPCSubnet, error) {
 	return f.subnets, f.subnetsErr
+}
+
+func (f *fakeAWS) ListEKSAddons(_ context.Context, clusterName string) ([]pkgaws.EKSAddon, error) {
+	if f.addonsErr != nil {
+		return nil, f.addonsErr
+	}
+	out := make([]pkgaws.EKSAddon, 0, len(f.addons))
+	for _, a := range f.addons {
+		if a.ClusterName == clusterName {
+			out = append(out, a)
+		}
+	}
+	return out, nil
 }
 
 // fakeSource implements cloud.Source for unit tests. AWS is settable;

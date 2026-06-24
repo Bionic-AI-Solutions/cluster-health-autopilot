@@ -63,7 +63,7 @@ infrastructure.
 | Capability | Free OSS (single cluster) | Paid (per cluster) | Enterprise |
 |---|---|---|---|
 | Zero-trust snapshot + live watcher | ✓ | ✓ | ✓ |
-| 12 probes · 8 analyzers · 4 default fixers + 1 opt-in (TLSSecretMismatch) | ✓ | ✓ | ✓ |
+| 21 probes · 20 analyzers · 4 default fixers + 1 opt-in (TLSSecretMismatch) | ✓ | ✓ | ✓ |
 | `VaultPathMissing` analyzer source (Apache-2.0; you supply the Vault client) | ✓ | ✓ | ✓ |
 | Ingress host auto-discovery (v1.2) | ✓ | ✓ | ✓ |
 | Layer-1 flake suppression — retry + 2-of-2 streak (v1.4) | ✓ | ✓ | ✓ |

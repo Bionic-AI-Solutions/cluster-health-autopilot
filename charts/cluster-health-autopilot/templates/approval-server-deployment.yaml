@@ -43,7 +43,7 @@ spec:
       containers:
         - name: approval-server
           image: {{ .Values.approval.image.repository }}:{{ .Values.approval.image.tag | default (printf "v%s" .Chart.AppVersion) }}
-          imagePullPolicy: {{ .Values.approval.image.pullPolicy | default "IfNotPresent" }}
+          imagePullPolicy: {{ .Values.approval.image.pullPolicy | default "Always" }}
           args:
             - approval-server
             - --listen=:8443

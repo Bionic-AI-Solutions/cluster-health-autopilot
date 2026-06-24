@@ -11,6 +11,15 @@ import (
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/netpol"
 )
 
+// DefaultNetpolMaxPerCycle is the default cap on the number of
+// NetworkPolicy proposals emitted per watcher cycle. Without a cap,
+// a cluster with many uncovered namespaces generates one Slack
+// approval request per namespace — all in the same message — which
+// is unusable. Remaining namespaces are summarised in a single
+// info-level "N more namespaces need NetworkPolicies" diagnostic so
+// operators know work remains without being flooded.
+const DefaultNetpolMaxPerCycle = 5
+
 // NetworkPolicyProposer is the OSS-side hook of Phase 2d-β. On clusters
 // where the CNI actually enforces NetworkPolicy (Calico / Cilium / AWS
 // VPC CNI / etc. — see netpol.DetectCNI), it walks every user namespace
@@ -33,6 +42,11 @@ type NetworkPolicyProposer struct {
 	// Proposer is the implementation that generates the YAML. Defaults
 	// to netpol.SnapshotProposer{} when nil. Tests inject fakes.
 	Proposer netpol.Proposer
+
+	// MaxPerCycle caps the number of approval proposals emitted per
+	// watcher cycle to prevent Slack flooding on clusters with many
+	// uncovered namespaces. 0 = use DefaultNetpolMaxPerCycle.
+	MaxPerCycle int
 }
 
 // Name returns the analyzer identifier.
@@ -60,7 +74,13 @@ func (a NetworkPolicyProposer) Run(ctx context.Context, src snapshot.Source) []D
 		return nil
 	}
 
+	cap := a.MaxPerCycle
+	if cap <= 0 {
+		cap = DefaultNetpolMaxPerCycle
+	}
+
 	var out []Diagnostic
+	var skipped []string
 	for i := range nsList.Items {
 		ns := &nsList.Items[i]
 		name := ns.GetName()
@@ -70,6 +90,11 @@ func (a NetworkPolicyProposer) Run(ctx context.Context, src snapshot.Source) []D
 
 		proposal, err := proposer.ProposeForNamespace(ctx, src, name)
 		if err != nil || proposal == nil {
+			continue
+		}
+
+		if len(out) >= cap {
+			skipped = append(skipped, name)
 			continue
 		}
 
@@ -91,5 +116,20 @@ func (a NetworkPolicyProposer) Run(ctx context.Context, src snapshot.Source) []D
 			ProposedPolicyKind: proposal.PolicyKind,
 		})
 	}
+
+	// Emit a single summary diagnostic for capped namespaces so operators
+	// know work remains without being flooded with approval requests.
+	if len(skipped) > 0 {
+		out = append(out, Diagnostic{
+			Source:   "NetworkPolicyProposer",
+			Subject:  "Namespace/cluster/batched/missing-network-policy",
+			Severity: "info",
+			Message: fmt.Sprintf(
+				"%d more namespace(s) on this %s cluster have no NetworkPolicy (batched to avoid Slack flood): %v. "+
+					"Approve the current %d proposals; remaining namespaces will be proposed in subsequent cycles.",
+				len(skipped), cni.CNIName, skipped, cap),
+		})
+	}
+
 	return out
 }

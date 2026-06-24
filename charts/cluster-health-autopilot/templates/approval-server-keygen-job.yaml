@@ -73,7 +73,7 @@ spec:
       containers:
         - name: keygen
           image: {{ .Values.approval.image.repository }}:{{ .Values.approval.image.tag | default (printf "v%s" .Chart.AppVersion) }}
-          imagePullPolicy: {{ .Values.approval.image.pullPolicy | default "IfNotPresent" }}
+          imagePullPolicy: {{ .Values.approval.image.pullPolicy | default "Always" }}
           args:
             - gen-signing-key
             - --namespace={{ .Release.Namespace }}

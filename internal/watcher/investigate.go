@@ -6,6 +6,7 @@ package watcher
 import (
 	"context"
 	"log"
+	"strings"
 	"time"
 
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/investigator"
@@ -31,13 +32,17 @@ func (w *Watcher) investigateDiagnostics(ctx context.Context, diagnostics []diag
 	}
 	cycleCtx, cancel := context.WithTimeout(ctx, investigationTimeout)
 	defer cancel()
-	env := investigator.NewLiveEnvironment(w.lv)
+	env := investigator.NewLiveEnvironmentWithLogs(w.lv, w.cfg.KubeClientset)
 
 	out := make([]diagnose.Diagnostic, len(diagnostics))
 	copy(out, diagnostics)
 	for i := range out {
 		if cycleCtx.Err() != nil {
 			return out
+		}
+		// Skip info-level observations — they aren't worth a root-cause pass.
+		if strings.EqualFold(out[i].Severity, "info") {
+			continue
 		}
 		res, err := inv.InvestigateDiagnostic(cycleCtx, out[i], env)
 		if err != nil {
@@ -62,7 +67,7 @@ func (w *Watcher) investigateProbeResults(ctx context.Context, results []probe.R
 	}
 	cycleCtx, cancel := context.WithTimeout(ctx, investigationTimeout)
 	defer cancel()
-	env := investigator.NewLiveEnvironment(w.lv)
+	env := investigator.NewLiveEnvironmentWithLogs(w.lv, w.cfg.KubeClientset)
 
 	for ri := range results {
 		for fi := range results[ri].Findings {
@@ -70,7 +75,9 @@ func (w *Watcher) investigateProbeResults(ctx context.Context, results []probe.R
 				return results
 			}
 			f := results[ri].Findings[fi]
-			if f.Severity != probe.SeverityCritical {
+			// Investigate warning + critical; info findings are pure
+			// observations and aren't worth a root-cause pass.
+			if f.Severity == probe.SeverityInfo {
 				continue
 			}
 			res, err := inv.InvestigateFinding(cycleCtx, f, env)

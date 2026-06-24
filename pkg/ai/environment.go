@@ -43,6 +43,55 @@ type Environment interface {
 	// newest-first. Used to surface the "why" behind a failing pod / job /
 	// deployment (ImagePullBackOff reasons, FailedScheduling, etc.).
 	GetEvents(ctx context.Context, namespace, kind, name string, since time.Duration) ([]EventInfo, error)
+
+	// Logs returns the tail of a pod container's logs (analogous to
+	// `kubectl logs [--previous]`). This is the capability that lets the
+	// investigator find the ACTUAL crash cause — the line in the container's
+	// stdout/stderr — instead of telling a human to run kubectl. Lines are
+	// redacted before return. Implementations without a typed client (e.g.
+	// snapshot mode) return LogsResult{Error: ...} rather than a hard error,
+	// so the investigation pass degrades gracefully.
+	Logs(ctx context.Context, namespace, pod string, opts LogsOptions) (LogsResult, error)
+
+	// LatestByPrefix returns the name of the most-recently-created object of
+	// the given kind in the namespace whose name starts with prefix. For pods
+	// it prefers a NOT-Running/Succeeded (failed) instance. It bridges a
+	// finding that names a CONTROLLER to the child that holds the cause —
+	// CronJob "<name>" → Job "<name>-<ts>" (start failures, BackoffLimitExceeded)
+	// or pod "<name>-<job>-<pod>" (the failing command's logs). Returns "" (no
+	// error) when no matching object exists or the kind is unknown.
+	LatestByPrefix(ctx context.Context, kind, namespace, prefix string) (string, error)
+}
+
+// LogsOptions tunes one pod-logs fetch.
+type LogsOptions struct {
+	// Container selects a specific container. Empty = the pod's first
+	// container (kubectl's default).
+	Container string
+	// Previous fetches the logs of the last TERMINATED instance of the
+	// container (kubectl logs --previous) — essential for CrashLoopBackOff,
+	// where the current attempt may not have started or logged yet.
+	Previous bool
+	// TailLines caps how many trailing lines are returned. Zero =
+	// DefaultLogTailLines.
+	TailLines int64
+}
+
+// DefaultLogTailLines is the tail size used when LogsOptions.TailLines is 0.
+const DefaultLogTailLines = 50
+
+// LogsResult is the redacted tail of a container's logs.
+type LogsResult struct {
+	Namespace string   `json:"namespace"`
+	Pod       string   `json:"pod"`
+	Container string   `json:"container,omitempty"`
+	Previous  bool     `json:"previous,omitempty"`
+	Lines     []string `json:"lines,omitempty"`
+	// Truncated is true when older lines were dropped to honour TailLines.
+	Truncated bool `json:"truncated,omitempty"`
+	// Error carries a soft failure (logs unavailable, container never
+	// started, snapshot mode) — the investigation continues without logs.
+	Error string `json:"error,omitempty"`
 }
 
 // DNSResult is one DNS resolution outcome.

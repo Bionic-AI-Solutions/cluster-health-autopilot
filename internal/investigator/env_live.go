@@ -28,6 +28,7 @@ import (
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/ai"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/client-go/kubernetes"
 )
 
 // LiveEnvironment is the production Environment implementation. It wires
@@ -36,6 +37,10 @@ import (
 type LiveEnvironment struct {
 	src      snapshot.Source
 	resolver *net.Resolver
+	// logs is the typed clientset used by Logs() to stream pod logs. nil in
+	// snapshot mode (and when no clientset was threaded through), in which
+	// case Logs() returns a soft error instead of streaming.
+	logs kubernetes.Interface
 }
 
 // NewLiveEnvironment constructs an Environment using the given Source for
@@ -43,11 +48,24 @@ type LiveEnvironment struct {
 // the watcher; snapshot-mode callers may pass a File source and the
 // network tools will still work (against the real network — there is no
 // offline simulation of HTTP/DNS).
+//
+// Pod-logs access is disabled (Logs() returns a soft error). Use
+// NewLiveEnvironmentWithLogs to enable log-based investigation.
 func NewLiveEnvironment(src snapshot.Source) *LiveEnvironment {
 	return &LiveEnvironment{
 		src:      src,
 		resolver: net.DefaultResolver,
 	}
+}
+
+// NewLiveEnvironmentWithLogs is NewLiveEnvironment plus a typed clientset so
+// Logs() can stream container logs (the capability that lets the investigator
+// find the actual crash cause). A nil logsClient degrades to the no-logs
+// behaviour of NewLiveEnvironment.
+func NewLiveEnvironmentWithLogs(src snapshot.Source, logsClient kubernetes.Interface) *LiveEnvironment {
+	e := NewLiveEnvironment(src)
+	e.logs = logsClient
+	return e
 }
 
 var _ ai.Environment = (*LiveEnvironment)(nil)
@@ -311,7 +329,12 @@ func readCommonStatus(obj *unstructured.Unstructured) (status, reason, msg strin
 	if v, _, _ := unstructured.NestedString(obj.Object, "status", "phase"); v != "" {
 		status = v
 	}
-	// status.conditions[Ready] (most controller-managed resources)
+	// status.conditions — prefer a Ready condition (most controller-managed
+	// resources), but fall back to a terminal Job-style condition. A failed
+	// Job records its cause as `type: Failed, status: True, reason:
+	// DeadlineExceeded|BackoffLimitExceeded` — there is NO Ready condition and
+	// no top-level status.reason, so without this the investigator misses the
+	// one field that names why a CronJob's runs keep failing.
 	conds, _, _ := unstructured.NestedSlice(obj.Object, "status", "conditions")
 	for _, raw := range conds {
 		cm, ok := raw.(map[string]any)
@@ -330,6 +353,49 @@ func readCommonStatus(obj *unstructured.Unstructured) (status, reason, msg strin
 			}
 			break
 		}
+	}
+	// Terminal Job/batch conditions (only when a Ready condition didn't
+	// already supply a reason). Failed wins over Complete — a failure cause is
+	// what the operator needs.
+	if reason == "" {
+		for _, want := range []string{"Failed", "Complete"} {
+			for _, raw := range conds {
+				cm, ok := raw.(map[string]any)
+				if !ok {
+					continue
+				}
+				if cm["type"] != want {
+					continue
+				}
+				s, _ := cm["status"].(string)
+				if s != "True" {
+					continue
+				}
+				if status == "" {
+					status = want + "=True"
+				}
+				if r, ok := cm["reason"].(string); ok && r != "" {
+					reason = r
+				}
+				if m, ok := cm["message"].(string); ok && m != "" {
+					msg = m
+				}
+				break
+			}
+			if reason != "" {
+				break
+			}
+		}
+	}
+	// Top-level status.reason / status.message — where rejected / Failed-phase
+	// pods record the cause (admission + scheduling failures, e.g. "Pod was
+	// rejected: Allocate failed ... nvidia.com/gpu unavailable"). These do NOT
+	// appear in a Ready condition, so the investigator would otherwise miss them.
+	if reason == "" {
+		reason, _, _ = unstructured.NestedString(obj.Object, "status", "reason")
+	}
+	if msg == "" {
+		msg, _, _ = unstructured.NestedString(obj.Object, "status", "message")
 	}
 	return
 }
@@ -358,8 +424,16 @@ func readSpecHighlights(obj *unstructured.Unstructured, kind string) []string {
 			}
 			if waiting, ok := cm["state"].(map[string]any)["waiting"].(map[string]any); ok && waiting != nil {
 				reason, _ := waiting["reason"].(string)
+				wmsg, _ := waiting["message"].(string)
 				if reason != "" {
-					notes = append(notes, fmt.Sprintf("container %s waiting: %s", n, reason))
+					note := fmt.Sprintf("container %s waiting: %s", n, reason)
+					if wmsg != "" {
+						// The detailed pull / config error ("pull access denied,
+						// repository does not exist …") persists here even after
+						// the Failed event ages out.
+						note += " — " + wmsg
+					}
+					notes = append(notes, note)
 				}
 			}
 		}
@@ -391,4 +465,54 @@ func readSpecHighlights(obj *unstructured.Unstructured, kind string) []string {
 		}
 	}
 	return notes
+}
+
+// Logs streams the tail of a pod container's logs (kubectl logs [--previous]).
+// Returns a soft LogsResult.Error (never a hard error for the common cases) so
+// the investigation pass degrades gracefully when logs aren't available:
+//   - no clientset wired (snapshot mode) -> "pod logs unavailable ..."
+//   - container never started / no previous instance -> API error surfaced
+//     in LogsResult.Error
+//
+// Lines are redacted via ai.RedactEventMessage before return so secrets in
+// log output never reach a prompt or a Slack post.
+func (e *LiveEnvironment) Logs(ctx context.Context, namespace, pod string, opts ai.LogsOptions) (ai.LogsResult, error) {
+	return ai.FetchPodLogs(ctx, e.logs, namespace, pod, opts), nil
+}
+
+// LatestByPrefix lists objects of `kind` in the namespace and returns the name
+// of the most-recently-created one whose name starts with prefix. For pods it
+// prefers a not-Running/Succeeded (failed) instance; for other kinds it takes
+// the newest.
+func (e *LiveEnvironment) LatestByPrefix(ctx context.Context, kind, namespace, prefix string) (string, error) {
+	gvr, ok := kindToGVR(kind)
+	if !ok {
+		return "", nil
+	}
+	list, err := e.src.List(ctx, gvr, namespace)
+	if err != nil || list == nil {
+		return "", nil // soft-fail: investigation degrades to events
+	}
+	isPod := strings.EqualFold(kind, "pod")
+	var bestName, bestTS string
+	var bestFailed bool
+	for i := range list.Items {
+		o := &list.Items[i]
+		name := o.GetName()
+		if !strings.HasPrefix(name, prefix) {
+			continue
+		}
+		failed := true
+		if isPod {
+			phase, _, _ := unstructured.NestedString(o.Object, "status", "phase")
+			failed = phase != "Running" && phase != "Succeeded"
+		}
+		ts := o.GetCreationTimestamp().UTC().Format(time.RFC3339Nano)
+		if bestName == "" ||
+			(failed && !bestFailed) ||
+			(failed == bestFailed && ts > bestTS) {
+			bestName, bestTS, bestFailed = name, ts, failed
+		}
+	}
+	return bestName, nil
 }

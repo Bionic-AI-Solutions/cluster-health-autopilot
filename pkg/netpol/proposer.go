@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 
+	pkgai "github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/ai"
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/snapshot"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
@@ -136,13 +137,12 @@ type SnapshotProposer struct {
 	IncludeLoadBalancerExternalAllow *bool
 }
 
-// systemNamespaces are the kube* namespaces the proposer should never
-// touch. Mirrors the SecurityDrift analyzer's skip list intentionally.
-var systemNamespaces = map[string]struct{}{
-	"kube-system":     {},
-	"kube-public":     {},
-	"kube-node-lease": {},
-}
+// isProtectedNS delegates to the canonical ai.IsProtectedNamespace guard,
+// which covers kube-system/public/node-lease + rook-ceph + vault +
+// external-secrets + cnpg-system + calico-system + tigera-operator
+// and any operator-appended extras (CHA_PROTECTED_NAMESPACES_EXTRA).
+// This replaces the old local 3-entry map that diverged from the floor.
+func isProtectedNS(ns string) bool { return pkgai.IsProtectedNamespace(ns) }
 
 // commonIngressControllerNamespaces is the fallback list when Ingress
 // discovery returns nothing.
@@ -152,7 +152,7 @@ var commonIngressControllerNamespaces = []string{
 
 // ProposeForNamespace implements Proposer.
 func (p SnapshotProposer) ProposeForNamespace(ctx context.Context, src snapshot.Source, namespace string) (*Proposal, error) {
-	if _, isSystem := systemNamespaces[namespace]; isSystem {
+	if isProtectedNS(namespace) {
 		return nil, nil
 	}
 

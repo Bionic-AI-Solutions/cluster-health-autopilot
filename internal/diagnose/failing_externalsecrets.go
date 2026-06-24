@@ -62,19 +62,11 @@ func (FailingExternalSecrets) Run(ctx context.Context, src snapshot.Source) []Di
 		// Cap the line length for the Slack render.
 		errMsg = truncate(strings.TrimSpace(errMsg), 200)
 
-		t6Hint := ""
-		if vaultPath := extractESOVaultPath(eso); vaultPath != "" && !strings.HasPrefix(vaultPath, "t6-apps/") {
-			t6Hint = fmt.Sprintf(
-				" Vault path `%s` does not follow t6 hierarchy; expected: `secret/t6-apps/%s/config`.",
-				vaultPath, ns,
-			)
-		}
-
 		out = append(out, Diagnostic{
 			Subject: "ExternalSecret/" + ns + "/" + name,
 			Message: fmt.Sprintf(
-				"ExternalSecret `%s/%s` not Ready: %s. Check Vault path / property names.%s",
-				ns, name, errMsg, t6Hint,
+				"ExternalSecret `%s/%s` not Ready: %s. Check Vault path / property names.",
+				ns, name, errMsg,
 			),
 		})
 	}
@@ -142,29 +134,3 @@ func truncate(s string, n int) string {
 	return s[:n]
 }
 
-// extractESOVaultPath returns the Vault path from the first spec.data or
-// spec.dataFrom entry of the ExternalSecret, or "" if not determinable.
-// Used to populate the t6 hierarchy hint in failing-ESO diagnostics.
-func extractESOVaultPath(eso unstructured.Unstructured) string {
-	data, _, _ := unstructured.NestedSlice(eso.Object, "spec", "data")
-	for _, d := range data {
-		dm, ok := d.(map[string]any)
-		if !ok {
-			continue
-		}
-		if key, _, _ := unstructured.NestedString(dm, "remoteRef", "key"); key != "" {
-			return key
-		}
-	}
-	dataFrom, _, _ := unstructured.NestedSlice(eso.Object, "spec", "dataFrom")
-	for _, df := range dataFrom {
-		dfm, ok := df.(map[string]any)
-		if !ok {
-			continue
-		}
-		if key, _, _ := unstructured.NestedString(dfm, "extract", "key"); key != "" {
-			return key
-		}
-	}
-	return ""
-}

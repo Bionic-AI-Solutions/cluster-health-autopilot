@@ -158,17 +158,19 @@ func pullSecretRefs(names []string) []corev1.LocalObjectReference {
 }
 
 // pullPolicy returns the PullPolicy to stamp on the container.
-// Honors an explicit spec value; otherwise infers IfNotPresent for
-// semver tags and Always for mutable tags (latest / main / dev).
+//
+// Defaults to Always. A re-pushed tag must never be silently served from a
+// node's cache: IfNotPresent caused a multi-hour stale-image incident where a
+// rebuilt :1.26.3 kept running old code across a "successful" rollout. Always
+// guarantees the running image matches the registry for the tag. Operators who
+// pin genuinely-immutable tags or digests and want to avoid the per-restart
+// pull can set spec.image.pullPolicy: IfNotPresent (or ai/approval.image.
+// pullPolicy) explicitly.
 func pullPolicy(spec chav1alpha1.ImageSpec) corev1.PullPolicy {
 	if spec.PullPolicy != "" {
 		return corev1.PullPolicy(spec.PullPolicy)
 	}
-	switch spec.Tag {
-	case "latest", "main", "dev":
-		return corev1.PullAlways
-	}
-	return corev1.PullIfNotPresent
+	return corev1.PullAlways
 }
 
 // BuildServiceAccount returns the ServiceAccount the controller owns.
@@ -664,6 +666,15 @@ func ticketingArgs(t *chav1alpha1.TicketingSpec) []string {
 	if t.CommentInterval != "" {
 		out = append(out, "--ticketing-comment-interval="+t.CommentInterval)
 	}
+	// MinSeverity floor. Default critical (human-action only): emit it
+	// explicitly when unset so an operator-managed watcher never reverts to
+	// ticketing every warning/info observation. Operators widen with
+	// "warning" / "info" in the CR.
+	minSev := t.MinSeverity
+	if minSev == "" {
+		minSev = "critical"
+	}
+	out = append(out, "--ticketing-min-severity="+minSev)
 	return out
 }
 

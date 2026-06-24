@@ -43,6 +43,26 @@ var authSignals = []string{
 	"credential",
 }
 
+// notFoundSignals are substrings that DEFINITIVELY indicate the image tag or
+// name does not exist at the registry, even when the event also contains an
+// auth-signal keyword. We only include patterns that are unambiguous:
+//
+//   - "manifest unknown"  — image/tag genuinely absent; returned by most
+//     compliant registries (GCR, ECR, GHCR) when the tag does not exist.
+//   - "name unknown"      — GCR / Google Artifact Registry specific: the image
+//     name/project does not exist at all.
+//
+// NOT included:
+//   - "repository does not exist" — Docker Hub uses this in its combined
+//     "repository does not exist or may require 'docker login'" message for
+//     BOTH non-existent images AND private images with wrong/missing creds.
+//     Including it would suppress real auth-failure diagnostics.
+//   - "not found" / "does not exist" — too broad; appear in unrelated contexts.
+var notFoundSignals = []string{
+	"manifest unknown",
+	"name unknown",
+}
+
 // Run walks every pod in the cluster. For each pod with a container waiting
 // on ImagePullBackOff or ErrImagePull it checks the pod's Warning events for
 // auth-signal keywords. Returns one Diagnostic per (namespace, pod, image)
@@ -79,11 +99,21 @@ func (ImagePullAuth) Run(ctx context.Context, src snapshot.Source) []Diagnostic 
 		seen[key] = true
 
 		out = append(out, Diagnostic{
-			Subject: fmt.Sprintf("image-pull-auth/%s/%s/%s", ns, name, containerName),
+			// Use Pod/ns/name so the investigator can Describe the Pod and
+			// inspect its imagePullSecrets. The container name is captured in
+			// the Message — it was previously in the Subject which broke the
+			// Kind/namespace/name convention that all investigators expect.
+			Subject: fmt.Sprintf("Pod/%s/%s", ns, name),
+			// Critical: a container that cannot pull its image is hard-down —
+			// the workload never runs. This matches the website/docs, which
+			// label ImagePullAuth a Critical analyzer. (Previously emitted with
+			// an empty severity, which normalizes to "warning" and routed away
+			// from the human-action channel.)
+			Severity: "critical",
 			Message: fmt.Sprintf(
 				"Pod `%s/%s` container %q cannot pull image %q: auth failure. "+
 					"Check imagePullSecret in pod spec or ServiceAccount. Event: %s",
-				ns, name, containerName, truncate(img, 80), truncate(msg, 160),
+				ns, name, containerName, truncate(img, 80), truncate(msg, 300),
 			),
 		})
 	}
@@ -153,6 +183,14 @@ func pullAuthEvent(ctx context.Context, src snapshot.Source, ns, podName, image 
 		}
 		msg, _, _ := unstructured.NestedString(e.Object, "message")
 		msgLow := strings.ToLower(msg)
+		// Docker Hub returns HTTP 401 for non-existent images to avoid
+		// disclosing whether a repository is private. Prioritize the
+		// not-found check so a missing image isn't misclassified as an auth
+		// failure (which would lead operators to investigate pull secrets
+		// instead of the image name).
+		if containsAny(msgLow, notFoundSignals) {
+			continue
+		}
 		if !containsAny(msgLow, authSignals) {
 			continue
 		}

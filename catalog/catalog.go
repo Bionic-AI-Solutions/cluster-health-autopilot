@@ -204,6 +204,9 @@ func RegisterOSS(r *registry.Registry) {
 	if os.Getenv("CHA_ANALYZER_IMAGE_PULL_AUTH") != "off" {
 		r.RegisterAnalyzer(diagnose.ImagePullAuth{})
 	}
+	if os.Getenv("CHA_ANALYZER_FAILED_PODS") != "off" {
+		r.RegisterAnalyzer(diagnose.FailedPods{})
+	}
 	if os.Getenv("CHA_ANALYZER_CERT_EXPIRY") != "off" {
 		r.RegisterAnalyzer(diagnose.CertExpiry{})
 	}

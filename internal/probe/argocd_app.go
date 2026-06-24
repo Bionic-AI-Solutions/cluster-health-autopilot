@@ -60,7 +60,7 @@ func (ArgoCDApplication) Run(ctx context.Context, src snapshot.Source) Result {
 		operationMessage, _, _ := unstructured.NestedString(app.Object, "status", "operationState", "message")
 
 		switch healthStatus {
-		case "Degraded", "Missing", "Suspended":
+		case "Degraded", "Missing":
 			findings = append(findings, Finding{
 				Component: subject,
 				Severity:  SeverityCritical,
@@ -68,6 +68,18 @@ func (ArgoCDApplication) Run(ctx context.Context, src snapshot.Source) Result {
 					ns, name, healthStatus, syncStatus),
 				Remediation: fmt.Sprintf("argocd app get %s/%s; argocd app sync %s/%s --strategy hook. Last operation message: %s",
 					ns, name, ns, name, operationMessage),
+			})
+			continue
+		case "Suspended":
+			// Suspended is an intentional operator action (e.g. argocd app pause).
+			// It signals "sync is paused" not "app is broken" — warn, do not page.
+			findings = append(findings, Finding{
+				Component: subject,
+				Severity:  SeverityWarning,
+				Message: fmt.Sprintf("Argo Application %s/%s health=Suspended (sync=%s) — sync is paused",
+					ns, name, syncStatus),
+				Remediation: fmt.Sprintf("If this suspension is unintentional: `argocd app resume %s`. "+
+					"Otherwise this is expected and can be silenced.", name),
 			})
 			continue
 		}

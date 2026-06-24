@@ -132,7 +132,7 @@ func (w WorkloadStateDrift) checkCNPGClusters(ctx context.Context, src snapshot.
 		if desired > 0 && ready < desired && phase != "" && strings.Contains(strings.ToLower(phase), "healthy") {
 			out = append(out, Diagnostic{
 				Source:   "WorkloadStateDrift",
-				Subject:  subject + " (followers)",
+				Subject:  subject,
 				Severity: "warning",
 				Message: fmt.Sprintf(
 					"CNPG cluster %s/%s reports phase=Healthy but only %d/%d instances ready",
@@ -152,7 +152,7 @@ func (w WorkloadStateDrift) checkCNPGClusters(ctx context.Context, src snapshot.
 		if primary != "" && targetPrimary != "" && primary != targetPrimary {
 			out = append(out, Diagnostic{
 				Source:   "WorkloadStateDrift",
-				Subject:  subject + " (primary)",
+				Subject:  subject,
 				Severity: "critical",
 				Message: fmt.Sprintf(
 					"CNPG cluster %s/%s primary switchover stuck: currentPrimary=%q, targetPrimary=%q",

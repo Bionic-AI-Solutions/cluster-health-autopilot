@@ -13,6 +13,27 @@ serves the latest tagged chart cut.
 
 ## [Unreleased]
 
+## [0.2.0-alpha.6] — 2026-06-23
+
+### Fixed
+- **NetworkPolicy approval links now honor `--approval-ttl`.** `ManifestBridge` and `BuildApplyManifestProposalWithTTL` (new) accept a configurable TTL; the old `BuildApplyManifestProposal` is preserved for backward compatibility (delegates to TTL=0 → `DefaultProposalTTL`). Previously every NetworkPolicy approve/deny link expired in 15 minutes regardless of the operator-configured TTL, because `BuildApplyManifestProposal` hardcoded `DefaultProposalTTL`. The CHA-com aiwatch now passes `--approval-ttl` (default 4h) here so on-call SREs have a full window to respond. `ManifestBridge` gains a `ProposalTTL` field for OSS callers that register it directly.
+- **Probes: Spilo / Zalando PGO probe now scans all namespaces.** Previously hardcoded to the `pg` namespace; rewritten to cluster-wide list + per-cluster grouping by `cluster-name` label so multi-cluster and non-default-namespace Spilo deployments are detected.
+- **Probes: CrashLoopBackOff no longer mismatches container and restart count.** `podMaxRestartCount` previously took the highest restart count across all containers but the reason from the last container in a waiting state — completely unrelated containers. Now only waiting containers (reason != "") contribute and the winner is the waiting container with the most restarts.
+- **Probes: PVC `Lost` phase detected as critical.** Only `Pending` was previously checked. Lost PVCs (data-loss scenario) now emit a CRITICAL finding with PVC names and remediation.
+- **Probes: ETCD restarts on Ready members downgraded to WARNING.** Any restart count > 0 previously triggered CRITICAL, causing false pages after routine node maintenance where the pod came back healthy. A Ready member with restarts is now WARNING; CRITICAL is reserved for non-Ready + restarted (crash-loop) or not-Ready (quorum risk).
+- **Probes: Velero staleness check uses `completionTimestamp`.** Was using `creationTimestamp`, which could fire a "stale" critical for a long-running backup that had completed hours earlier. Now uses `status.completionTimestamp` (falls back to `startedAt` for in-progress).
+- **Probes: ArgoCD `Suspended` health is WARNING, not CRITICAL.** Suspension is an intentional operator action (`argocd app suspend`). Was incorrectly emitting CRITICAL alongside Degraded/Missing states.
+- **Analyzers: ImagePullAuth subject is now `Pod/ns/name`.** Was `image-pull-auth/ns/pod/container`, breaking the OSS investigator's `Kind/ns/name` parse and the CHA-com `runEnvTools` lookup.
+- **Analyzers: CertExpiry subject is now `Certificate/ns/name`.** Was `cert-expiry/ns/name`.
+- **Analyzers: WorkloadStateDrift subjects no longer carry `(followers)`/`(primary)` suffixes.** These suffixes broke CHA-com's `runEnvTools` subject parse.
+- **Analyzers: ImagePullAuth `notFoundSignals` guard narrows false-positive suppression.** Guard now restricted to `manifest unknown` and `name unknown` — unambiguous "image not found" signals. Removed `repository does not exist` (ambiguous on Docker Hub: also returned for private repos with wrong credentials).
+- **Analyzers: ImagePullAuth message truncation increased to 300 chars** (was 160) to retain enough registry error detail for diagnosis.
+- **Analyzers: ConfigDrift rollout remediation uses correct kubectl syntax.** Was emitting `kubectl rollout restart Workload/ns/name`; now emits `kubectl rollout restart deployment/name -n ns`.
+- **Report: `renderAIBlocks` now renders the `Investigation` field.** Was silently dropped — only `Enrichment` and `ApprovalURL` were rendered. Investigation (🔬) now renders before Enrichment (🤖).
+- **Report: `hasActionableFindings` returns true for critical severity** even without an `ApprovalURL`. Criticals were previously routed to "Advisory — Review (no action required)" when no approve/deny link was minted, giving a misleading low-urgency label to real incidents.
+- **Report: First-seen criticals no longer render green.** The Slack attachment color was computed only from stable (`critRendered`/`diagRendered`) findings, ignoring new-this-cycle criticals. A first-time critical fired green. Fixed by tracking `hasNewCritical` across the render loop.
+- **Report: `renderSilenceSnippet` no longer shown for brand-new findings.** A finding that just appeared this cycle should be investigated, not immediately silenced. The silence affordance (kubectl one-liner or signed click-link) is now gated on `!IsNewThisCycle`.
+
 ## [0.2.0-alpha.5] — 2026-06-19
 
 ### Changed

@@ -81,6 +81,12 @@ spec:
             {{- with .Values.watcher.slack.criticalRepeatInterval }}
             - --slack-critical-repeat-interval={{ . }}
             {{- end }}
+            {{- /* approval.dwellDuration: 0/empty = disable (attach URLs immediately,
+                  legacy behaviour). Render only when explicitly set so existing
+                  installs are byte-identical. */}}
+            {{- with ((.Values.watcher.approval).dwellDuration) }}
+            - --approval-dwell={{ . }}
+            {{- end }}
             {{- end }}
             {{- if and .Values.alertmanager.enabled .Values.alertmanager.url }}
             - --alertmanager-url={{ .Values.alertmanager.url }}

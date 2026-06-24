@@ -42,6 +42,14 @@ response. Every mutation passes through:
 Higher tiers grow *coverage* (what kinds of issues the AI can analyze
 and propose), not *autonomy*.
 
+**One opt-in exception:** the `cha-com watch` loop ships a
+confidence-gated **auto-apply** tier (`--autonomy`). It is **off by
+default** — when unset, the cardinal rule holds exactly as stated above.
+When an operator explicitly enables it, a narrow class of *reversible,
+low-risk* proposals may apply without a human click, but only when every
+gate in the [G7 autonomy section](#g7--confidence-gated-auto-apply---autonomy)
+passes. See that section for the full gate list.
+
 Layer-2 is a special case: it is **read-only by construction** (the
 Environment interface is a closed set of read-only tools) and therefore
 sits outside the proposal/approval/execution chain. It runs whether or
@@ -59,7 +67,7 @@ ships in OSS uses no LLM at all.
 | **LLM output** | EnrichedDiagnostic JSON | OSS: none (rule-driven). Paid: tool selections → InvestigationResult | AIProposedAction | up to 5 sequential actions | VaultRunbook |
 | **Mutation surface** | None | **None** (Environment is closed read-only enum) | OSS whitelist (5 verbs) | Same as T1 | Zero — runbook is human-run |
 | **Approval gate** | n/a — read-only | n/a — read-only | One-click signed URL | One-click per step | **Dual** (2 distinct approvers, 30-min audit window) |
-| **Click TTL** | n/a | n/a | 15 min | 15 min | 90 min |
+| **Click TTL** | n/a | n/a | 4h (default; `--approval-ttl`) | 4h (default; `--approval-ttl`) | 90 min |
 | **Replay protection** | n/a | n/a | JTI one-time-use | JTI one-time-use | JTI one-time-use |
 | **Protected NS blocked** | n/a | n/a (read-only) | LLM + validator + admission | Per-step | n/a — Vault path allowlist |
 | **Rollback required** | n/a | n/a | Yes | Per-step | Manual runbook step |
@@ -378,6 +386,9 @@ post-apply verification passes.
       "rollback": { ... },
       "prerequisite_step": 0
     },
+    // Note (v0.2.0-alpha): the planner enforces strictly sequential ordering.
+    // The `prerequisite_step` field is reserved for future DAG support and is
+    // currently ignored.
     ...
   ]
 }
@@ -450,6 +461,56 @@ SRE clicks "Mark Resolved" → CHA-com re-runs VaultPathMissing analyzer
 Recommended posture: keep T3 disabled by default. Enable per-namespace
 via Helm value when an incident class repeatedly requires the same
 recovery action.
+
+---
+
+## G7 — Confidence-gated auto-apply (`--autonomy`)
+
+This is the **only** path by which CHA-com mutates cluster state without a
+human click, and it is **OFF by default**. It is enabled with the
+`cha-com watch --autonomy` flag, which additionally requires
+`--memory-store-url` to supply the confidence signal. With `--autonomy`
+unset, nothing ever auto-applies and the cardinal rule holds unchanged.
+
+When enabled, a proposal is auto-applied **only when ALL of the following
+gates pass** (defense-in-depth — the decider is a pure function that fails
+fast on the first failing gate, and that gate is reported and audited):
+
+1. **Confidence ≥ threshold.** Default **0.95**
+   (`DefaultMinAutonomyConfidence`; configurable via
+   `--autonomy-min-confidence`). Confidence is
+   `max(cosine similarity to a verifiably-cleared prior fix, Wilson lower
+   bound of the (source, action-kind) class success rate)`. The Wilson
+   lower bound (z = 1.96) prevents a 1/1 success from scoring as 1.0.
+2. **Reversible low-risk action.** The action kind must be in the
+   `--autonomy-allow` allowlist. Default:
+   `DeletePod, DeleteCertRequest, DeleteACMEOrder` (controller-recreated /
+   reversible). The default **explicitly excludes** `PatchDeployment` and
+   `DeleteJob`. An empty allowlist disables autonomy regardless of the
+   master switch — there is no implicit "all kinds" default for a mutation
+   gate.
+3. **Unprotected namespace.** The target namespace must not be a protected
+   namespace.
+4. **Circuit breaker closed.** If the breaker has tripped, autonomy is
+   suspended until it resets.
+5. **A near-identical prior fix verifiably cleared.** Only a prior with the
+   *same action kind* whose post-apply verdict was `cleared` counts toward
+   the similarity score — a cleared prior using a different action is not
+   evidence that *this* action works.
+
+A retrieved prior is necessary but not sufficient: the live-state
+precondition is re-validated at apply time, and the post-apply verifier +
+circuit breaker still bound the blast radius of a bad call. The proposal
+must also carry a rollback (reversible) or it is refused.
+
+**Audit / observability**: auto-applies are recorded with
+`Delivery="autonomy"` and surface in the per-cycle
+`outcomes: … applied=N …` log line and the `cha_autonomy_total{result=…}`
+metric.
+
+**Recommended posture**: keep `--autonomy` disabled until you have a track
+record of cleared priors for a recurring, reversible incident class, then
+enable it scoped to that class via `--autonomy-allow`.
 
 ---
 
