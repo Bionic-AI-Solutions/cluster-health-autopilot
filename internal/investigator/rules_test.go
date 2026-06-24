@@ -369,3 +369,32 @@ func TestRuleBased_CronJob_GCdPods_ReadsJobEvents(t *testing.T) {
 		t.Errorf("should surface the Job's missing-secret start failure; got %q", res.Summary)
 	}
 }
+
+func TestRuleBased_ImagePull_PrefersDetailedEvent(t *testing.T) {
+	// kubelet emits BOTH a generic "Error: ImagePullBackOff" (newest) and a
+	// detailed "Failed to pull ... pull access denied" — surface the detailed one.
+	env := &fakeEnv{
+		logsPrev: ai.LogsResult{Error: "ImagePullBackOff"},
+		logsCur:  ai.LogsResult{Error: "ImagePullBackOff"},
+		events: []ai.EventInfo{
+			{Reason: "Failed", Message: "Error: ImagePullBackOff"}, // newest, generic
+			{Reason: "Failed", Message: "Failed to pull image \"x:v0\": pull access denied, repository does not exist"},
+		},
+	}
+	f := probe.Finding{Component: "CrashLoopBackOff", Severity: probe.SeverityCritical,
+		Message: "Pod ns/p matched pattern ImagePullBackOff"}
+	res, _ := RuleBased{}.InvestigateFinding(context.Background(), f, env)
+	if !strings.Contains(res.Summary, "pull access denied") {
+		t.Errorf("should surface the detailed pull error; got %q", res.Summary)
+	}
+}
+
+func TestContainerWaitingCause_PrefersDetailed(t *testing.T) {
+	notes := []string{
+		"container app: img",
+		"container app waiting: ImagePullBackOff — Back-off pulling image: pull access denied, repository does not exist",
+	}
+	if got := containerWaitingCause(notes); !strings.Contains(got, "pull access denied") {
+		t.Errorf("got %q", got)
+	}
+}

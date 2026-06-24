@@ -386,8 +386,16 @@ func readSpecHighlights(obj *unstructured.Unstructured, kind string) []string {
 			}
 			if waiting, ok := cm["state"].(map[string]any)["waiting"].(map[string]any); ok && waiting != nil {
 				reason, _ := waiting["reason"].(string)
+				wmsg, _ := waiting["message"].(string)
 				if reason != "" {
-					notes = append(notes, fmt.Sprintf("container %s waiting: %s", n, reason))
+					note := fmt.Sprintf("container %s waiting: %s", n, reason)
+					if wmsg != "" {
+						// The detailed pull / config error ("pull access denied,
+						// repository does not exist …") persists here even after
+						// the Failed event ages out.
+						note += " — " + wmsg
+					}
+					notes = append(notes, note)
 				}
 			}
 		}

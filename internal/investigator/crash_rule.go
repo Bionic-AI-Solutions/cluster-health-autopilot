@@ -109,11 +109,25 @@ func investigateCrash(ctx context.Context, ns, pod, originalMsg string, env ai.E
 			}
 		}
 
-		// 2) Pod status carries admission/scheduling rejection reasons
+		desc, _ := env.Describe(ctx, "Pod", ns, pod)
+
+		// 2) Container waiting message — the authoritative, PERSISTENT source
+		//    for image-pull / config errors ("pull access denied, repository
+		//    does not exist"); unlike events it does not age out. Surfaced into
+		//    desc.Notes as "container <c> waiting: <reason> — <message>".
+		if wmsg := containerWaitingCause(desc.Notes); wmsg != "" && !messageAlreadyExplains(originalMsg, wmsg) {
+			res.Observations = append(res.Observations, ai.Observation{
+				Tool: "describe", Args: fmt.Sprintf("%s/%s", ns, pod), Result: clip(wmsg, 200),
+			})
+			res.Conclusion = ai.ConclusionRootCauseIdentified
+			res.Summary = fmt.Sprintf("%s/%s: %s", ns, pod, clip(wmsg, 280))
+			return res, nil
+		}
+
+		// 3) Pod status carries admission/scheduling rejection reasons
 		//    (e.g. "Pod was rejected: Allocate failed ... nvidia.com/gpu
 		//    unavailable"). If the finding MESSAGE already states this, the
 		//    message speaks for itself — stay silent rather than repeat it.
-		desc, _ := env.Describe(ctx, "Pod", ns, pod)
 		statusCause := strings.TrimSpace(desc.Message)
 		if statusCause == "" {
 			statusCause = strings.TrimSpace(desc.Reason)
@@ -140,6 +154,28 @@ func investigateCrash(ctx context.Context, ns, pod, originalMsg string, env ai.E
 	return res, nil
 }
 
+// containerWaitingCause extracts the most detailed container-waiting line from
+// Describe Notes — "container <c> waiting: <reason> — <message>" — preferring an
+// entry that carries a message (the detailed pull/config error) over a bare
+// reason. Empty when no container is waiting.
+func containerWaitingCause(notes []string) string {
+	var bare string
+	for _, n := range notes {
+		i := strings.Index(n, "waiting: ")
+		if i < 0 {
+			continue
+		}
+		cause := strings.TrimSpace(n[i+len("waiting: "):])
+		if strings.Contains(cause, " — ") { // has the detailed message
+			return cause
+		}
+		if bare == "" {
+			bare = cause
+		}
+	}
+	return bare
+}
+
 // messageAlreadyExplains reports whether the finding message already conveys the
 // status cause (so the investigator shouldn't repeat it). Compares on a
 // distinctive slice of the cause to tolerate truncation/whitespace differences.
@@ -155,26 +191,42 @@ func messageAlreadyExplains(message, cause string) bool {
 	return strings.Contains(strings.ToLower(message), strings.ToLower(probe))
 }
 
-// informativeFailureEvent returns the most useful failure event for a pod that
-// produced no logs: a "Failed" event (or one carrying image-pull / error
-// keywords) in preference to a generic "BackOff"/"Pulling" line. Empty when no
-// event adds information.
+// causeKeywords mark an event MESSAGE that names a concrete failure cause
+// (registry pull errors, scheduling/admission failures) — as opposed to a
+// generic "Error: ImagePullBackOff" / "BackOff" line.
+var causeKeywords = []string{
+	"manifest unknown", "does not exist", "not found", "no such host",
+	"unauthorized", "401", "403", "access denied", "denied", "forbidden",
+	"failed to pull image", "invalidimagename", "errimagepull",
+	"insufficient", "exceeded", "no space", "invalid reference",
+}
+
+// informativeFailureEvent returns the most USEFUL failure event for a pod that
+// produced no logs. It prefers an event whose MESSAGE names a concrete cause
+// (e.g. "pull access denied, repository does not exist") over a generic
+// "Failed: Error: ImagePullBackOff" — kubelet emits both, newest-first, and the
+// generic one is newer, so a naive "first Failed event" picks the useless one.
 func informativeFailureEvent(ctx context.Context, env ai.Environment, ns, pod string) string {
 	evs, _ := env.GetEvents(ctx, ns, "Pod", pod, 0)
-	keywords := []string{"manifest unknown", "not found", "unauthorized", "401", "403",
-		"denied", "no such host", "forbidden", "exceeded", "invalid", "failed to pull"}
-	var best string
+	// Pass 1: an event whose message names a concrete cause (most specific).
 	for _, e := range evs {
-		low := strings.ToLower(e.Reason + " " + e.Message)
-		// Strongest signal: a Failed event that names a concrete cause.
-		if strings.EqualFold(e.Reason, "Failed") || containsAny(low, keywords) {
+		if containsAny(strings.ToLower(e.Message), causeKeywords) {
 			return e.Reason + ": " + ai.RedactEventMessage(e.Message)
 		}
-		if best == "" && e.Reason != "BackOff" && e.Reason != "Pulling" {
-			best = e.Reason + ": " + ai.RedactEventMessage(e.Message)
+	}
+	// Pass 2: any Failed event, even with a generic message.
+	for _, e := range evs {
+		if strings.EqualFold(e.Reason, "Failed") {
+			return e.Reason + ": " + ai.RedactEventMessage(e.Message)
 		}
 	}
-	return best
+	// Pass 3: anything non-generic.
+	for _, e := range evs {
+		if e.Reason != "BackOff" && e.Reason != "Pulling" {
+			return e.Reason + ": " + ai.RedactEventMessage(e.Message)
+		}
+	}
+	return ""
 }
 
 func containsAny(s string, subs []string) bool {
