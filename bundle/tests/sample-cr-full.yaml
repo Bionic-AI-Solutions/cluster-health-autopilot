@@ -186,6 +186,7 @@ spec:
     dryRun: true
     resolveOnClear: true
     commentInterval: "1h"
+    minSeverity: critical
     auth:
       enabled: false
       secretName: "fake-ticketing-api-key-secret"

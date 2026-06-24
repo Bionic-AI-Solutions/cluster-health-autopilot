@@ -666,6 +666,15 @@ func ticketingArgs(t *chav1alpha1.TicketingSpec) []string {
 	if t.CommentInterval != "" {
 		out = append(out, "--ticketing-comment-interval="+t.CommentInterval)
 	}
+	// MinSeverity floor. Default critical (human-action only): emit it
+	// explicitly when unset so an operator-managed watcher never reverts to
+	// ticketing every warning/info observation. Operators widen with
+	// "warning" / "info" in the CR.
+	minSev := t.MinSeverity
+	if minSev == "" {
+		minSev = "critical"
+	}
+	out = append(out, "--ticketing-min-severity="+minSev)
 	return out
 }
 

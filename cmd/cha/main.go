@@ -482,6 +482,7 @@ func watchCmd() *cobra.Command {
 		ticketingDryRun          bool
 		ticketingResolveOnClear  bool
 		ticketingCommentInterval time.Duration
+		ticketingMinSeverity     string
 
 		// Cloud probe flags
 		cloudAWSEnabled          bool
@@ -606,6 +607,7 @@ the post-fix cluster state.`,
 				DryRun:          ticketingDryRun,
 				ResolveOnClear:  ticketingResolveOnClear,
 				CommentInterval: ticketingCommentInterval,
+				MinSeverity:     ticketingMinSeverity,
 			})
 			if terr != nil {
 				return terr
@@ -806,6 +808,7 @@ the post-fix cluster state.`,
 	c.Flags().BoolVar(&ticketingDryRun, "ticketing-dry-run", false, "Log intended ticketing operations without calling the MCP server")
 	c.Flags().BoolVar(&ticketingResolveOnClear, "ticketing-resolve-on-clear", envBool("TICKETING_RESOLVE_ON_CLEAR", true), "Auto-close the ticket when its finding clears (M2). Defaults ON; no-op when ticketing is disabled.")
 	c.Flags().DurationVar(&ticketingCommentInterval, "ticketing-comment-interval", envDurationOrDefault("TICKETING_COMMENT_INTERVAL", time.Hour), "Debounce window for comment-on-recurrence (M2). A recurring/severity-changed finding gets at most one comment per window. 0 disables recurrence commenting.")
+	c.Flags().StringVar(&ticketingMinSeverity, "ticketing-min-severity", envOrDefault("TICKETING_MIN_SEVERITY", "critical"), "Minimum severity to FILE a ticket: 'critical' (human-action only, default), 'warning' (warning+critical), or 'info' (everything). Findings below the floor are tracked via DriftReport/Slack only and never clutter the issue tracker; tickets already filed below a newly-raised floor are auto-closed.")
 
 	// Cloud probe flags. Per the design (docs/design/2026-05-cloud-probe-framework.md)
 	// each cloud has its own enable + region/project/subscription identifier;
@@ -917,6 +920,7 @@ type ticketingOpts struct {
 	DryRun                                              bool
 	ResolveOnClear                                      bool
 	CommentInterval                                     time.Duration
+	MinSeverity                                         string
 }
 
 // buildTicketingConfig assembles a report.TicketingConfig from CLI flags.
@@ -967,6 +971,7 @@ func buildTicketingConfig(o ticketingOpts) (report.TicketingConfig, error) {
 			Labels:          o.Labels,
 			ResolveOnClear:  o.ResolveOnClear,
 			CommentInterval: o.CommentInterval,
+			MinSeverity:     o.MinSeverity,
 		}, nil
 	default:
 		return report.TicketingConfig{}, fmt.Errorf("unsupported ticketing provider %q (OSS supports: openproject)", o.Provider)

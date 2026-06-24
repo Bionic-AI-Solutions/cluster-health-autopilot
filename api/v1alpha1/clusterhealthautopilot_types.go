@@ -1128,6 +1128,16 @@ type TicketingSpec struct {
 	// +optional
 	CommentInterval string `json:"commentInterval,omitempty"`
 
+	// MinSeverity is the floor for FILING a ticket so the issue tracker
+	// holds genuine human-action items, not every warning/info observation.
+	// "critical" (default — CHA's human-action / unfixable tier), "warning"
+	// (warning+critical), or "info" (everything). Findings below the floor
+	// are tracked via DriftReport + Slack only. Tickets already filed below a
+	// newly-raised floor are auto-closed. Empty → "critical".
+	// +kubebuilder:validation:Enum=info;warning;critical
+	// +optional
+	MinSeverity string `json:"minSeverity,omitempty"`
+
 	// Auth optionally configures an MCP API key (typically used when
 	// the MCP server is fronted by Kong key-auth). Leave nil for
 	// in-cluster HTTP traffic.

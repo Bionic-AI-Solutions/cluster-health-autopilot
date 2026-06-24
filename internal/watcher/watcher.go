@@ -806,6 +806,13 @@ func (w *Watcher) runCycle(ctx context.Context) {
 				report.RouteResolves(ctx, w.cfg.Ticketing, w.lv, mut, clearedSubjects, time.Now())
 			}
 
+			// Retire tickets now below the severity floor (e.g. after the
+			// floor was tightened to critical). Runs before Reconcile so the
+			// TicketRef on status.ticket is still readable. No-op once drained.
+			if w.cfg.Ticketing.Sink != nil {
+				report.RouteTicketCleanup(ctx, w.cfg.Ticketing, w.lv, mut, time.Now())
+			}
+
 			entries := report.AssembleEntries(probeResults, diagnostics, fixResults)
 			c, u, d, err := report.Reconcile(ctx, w.lv, mut, entries, runID)
 			if err != nil {
