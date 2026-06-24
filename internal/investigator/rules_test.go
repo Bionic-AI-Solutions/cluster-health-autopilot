@@ -27,7 +27,8 @@ type fakeEnv struct {
 	events   []ai.EventInfo
 	logsPrev  ai.LogsResult // returned when LogsOptions.Previous
 	logsCur   ai.LogsResult // returned otherwise
-	latestPod string        // returned by LatestPodByPrefix
+	latestPod string        // returned by LatestByPrefix(kind=Pod)
+	latestJob string        // returned by LatestByPrefix(kind=Job)
 }
 
 func (f *fakeEnv) DNSLookup(ctx context.Context, host string) (ai.DNSResult, error) {
@@ -58,7 +59,10 @@ func (f *fakeEnv) Logs(ctx context.Context, ns, pod string, opts ai.LogsOptions)
 	}
 	return f.logsCur, nil
 }
-func (f *fakeEnv) LatestPodByPrefix(ctx context.Context, ns, prefix string) (string, error) {
+func (f *fakeEnv) LatestByPrefix(ctx context.Context, kind, ns, prefix string) (string, error) {
+	if strings.EqualFold(kind, "Job") {
+		return f.latestJob, nil
+	}
 	return f.latestPod, nil
 }
 
@@ -343,5 +347,25 @@ func TestRuleBased_CronJobStuck_NoPod_FallsBackToEvents(t *testing.T) {
 	res, _ := RuleBased{}.InvestigateDiagnostic(context.Background(), d, env)
 	if !strings.Contains(res.Summary, "BackoffLimitExceeded") {
 		t.Errorf("should fall back to events; got %q", res.Summary)
+	}
+}
+
+func TestRuleBased_CronJob_GCdPods_ReadsJobEvents(t *testing.T) {
+	// Pods garbage-collected, but the Job survives and its events name the
+	// start failure (missing Secret) — the investigator must surface it.
+	env := &fakeEnv{
+		latestPod: "", // pods GC'd
+		latestJob: "wp-verify-weekly-29700240",
+		events: []ai.EventInfo{
+			{Reason: "FailedCreate", Message: "Error creating: secret \"verify-creds\" not found"},
+		},
+	}
+	d := diagnose.Diagnostic{
+		Source: "CronJobStuck", Subject: "CronJob/storethesoup/wp-verify-weekly", Severity: "warning",
+		Message: "CronJob storethesoup/wp-verify-weekly has not had a successful run in 85h.",
+	}
+	res, _ := RuleBased{}.InvestigateDiagnostic(context.Background(), d, env)
+	if !strings.Contains(res.Summary, "not found") || !strings.Contains(res.Summary, "verify-creds") {
+		t.Errorf("should surface the Job's missing-secret start failure; got %q", res.Summary)
 	}
 }

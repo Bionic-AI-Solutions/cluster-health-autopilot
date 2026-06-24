@@ -94,7 +94,22 @@ func investigateCrash(ctx context.Context, ns, pod, originalMsg string, env ai.E
 	// EVENTS, not in logs. Reading the right source is what separates a useful
 	// answer from "couldn't determine".
 	if len(logs.Lines) == 0 {
-		// 1) Pod status carries admission/scheduling rejection reasons
+		// 1) Events carry the MOST SPECIFIC cause for a pod that never started:
+		//    the exact image-pull failure ("Failed to pull image X: manifest
+		//    unknown" / "401 Unauthorized") or scheduling failure. Prefer this
+		//    over the generic pod status ("containers with unready status").
+		if ev := informativeFailureEvent(ctx, env, ns, pod); ev != "" {
+			if !messageAlreadyExplains(originalMsg, ev) {
+				res.Observations = append(res.Observations, ai.Observation{
+					Tool: "get_events", Args: fmt.Sprintf("%s/%s", ns, pod), Result: clip(ev, 200),
+				})
+				res.Conclusion = ai.ConclusionRootCauseIdentified
+				res.Summary = fmt.Sprintf("%s/%s: %s", ns, pod, clip(ev, 240))
+				return res, nil
+			}
+		}
+
+		// 2) Pod status carries admission/scheduling rejection reasons
 		//    (e.g. "Pod was rejected: Allocate failed ... nvidia.com/gpu
 		//    unavailable"). If the finding MESSAGE already states this, the
 		//    message speaks for itself — stay silent rather than repeat it.
@@ -103,30 +118,12 @@ func investigateCrash(ctx context.Context, ns, pod, originalMsg string, env ai.E
 		if statusCause == "" {
 			statusCause = strings.TrimSpace(desc.Reason)
 		}
-		if statusCause != "" {
+		if statusCause != "" && !messageAlreadyExplains(originalMsg, statusCause) {
 			res.Observations = append(res.Observations, ai.Observation{
 				Tool: "describe", Args: fmt.Sprintf("%s/%s", ns, pod), Result: clip(statusCause, 200),
 			})
-			if messageAlreadyExplains(originalMsg, statusCause) {
-				// The finding message already carries the cause; don't append
-				// a redundant (or contradicting) root-cause line.
-				res.Conclusion = ai.ConclusionRootCauseIdentified
-				return res, nil
-			}
 			res.Conclusion = ai.ConclusionRootCauseIdentified
 			res.Summary = fmt.Sprintf("%s/%s rejected: %s", ns, pod, clip(statusCause, 240))
-			return res, nil
-		}
-
-		// 2) Events carry image-pull failures (manifest unknown / 401 / not
-		//    found). Pick the most informative failure event, not just the
-		//    newest (which is often a generic "BackOff").
-		if ev := informativeFailureEvent(ctx, env, ns, pod); ev != "" {
-			res.Observations = append(res.Observations, ai.Observation{
-				Tool: "get_events", Args: fmt.Sprintf("%s/%s", ns, pod), Result: clip(ev, 200),
-			})
-			res.Conclusion = ai.ConclusionRootCauseIdentified
-			res.Summary = fmt.Sprintf("%s/%s: %s", ns, pod, clip(ev, 240))
 			return res, nil
 		}
 
@@ -200,42 +197,92 @@ func investigateCronJob(ctx context.Context, ns, name, originalMsg string, env a
 		return res, nil
 	}
 
-	pod, _ := env.LatestPodByPrefix(ctx, ns, name)
-	if pod == "" {
-		// No pod survives (GC'd) — fall back to CronJob events.
-		evs, _ := env.GetEvents(ctx, ns, "CronJob", name, 0)
-		res.Observations = append(res.Observations, ai.Observation{
-			Tool: "latest_pod", Args: fmt.Sprintf("%s/%s* (none found)", ns, name),
-		})
-		if len(evs) > 0 {
-			res.Conclusion = ai.ConclusionInsufficientData
-			res.Summary = fmt.Sprintf("CronJob %s/%s: no recent Job pod survives to read logs. Latest event: %s — %s.",
-				ns, name, evs[0].Reason, ai.RedactEventMessage(evs[0].Message))
+	// 1) Best source: the failing Job pod's logs (the command's own output).
+	if pod, _ := env.LatestByPrefix(ctx, "Pod", ns, name); pod != "" {
+		logs, _ := env.Logs(ctx, ns, pod, ai.LogsOptions{Previous: false})
+		if logs.Error != "" || len(logs.Lines) == 0 {
+			logs, _ = env.Logs(ctx, ns, pod, ai.LogsOptions{Previous: true})
+		}
+		if len(logs.Lines) > 0 {
+			res.Observations = append(res.Observations, ai.Observation{
+				Tool: "pod_logs", Args: fmt.Sprintf("%s/%s (cronjob %s)", ns, pod, name), Result: logsObsResult(logs),
+			})
+			res.Conclusion = ai.ConclusionRootCauseIdentified
+			res.Summary = fmt.Sprintf("CronJob %s/%s failing — last run (pod %s): %s", ns, name, pod, classifyCrashLogs(logs.Lines))
 			return res, nil
 		}
-		res.Conclusion = ai.ConclusionInsufficientData
-		res.Summary = fmt.Sprintf("CronJob %s/%s has not succeeded, but no recent Job pod or event survives to determine why (pods likely garbage-collected; raise the Job's ttlSecondsAfterFinished or failedJobsHistoryLimit to retain them).", ns, name)
-		return res, nil
 	}
 
-	// Job pods are terminated, so current logs hold the last run's output.
-	logs, _ := env.Logs(ctx, ns, pod, ai.LogsOptions{Previous: false})
-	if logs.Error != "" || len(logs.Lines) == 0 {
-		logs, _ = env.Logs(ctx, ns, pod, ai.LogsOptions{Previous: true})
+	// 2) Pods garbage-collected — the JOB outlives them and records WHY it
+	//    failed: start failures (missing Secret/ConfigMap, quota, RBAC) live in
+	//    the Job's events; "BackoffLimitExceeded"/"DeadlineExceeded" live in the
+	//    Job's status. This is how we still know the actual issue without logs.
+	if job, _ := env.LatestByPrefix(ctx, "Job", ns, name); job != "" {
+		// Job events first — they name concrete start failures.
+		if ev := informativeFailureEvent2(ctx, env, ns, "Job", job); ev != "" {
+			res.Observations = append(res.Observations, ai.Observation{Tool: "job_events", Args: ns + "/" + job, Result: clip(ev, 200)})
+			res.Conclusion = ai.ConclusionRootCauseIdentified
+			res.Summary = fmt.Sprintf("CronJob %s/%s failing — last Job %s: %s", ns, name, job, clip(ev, 240))
+			return res, nil
+		}
+		// Job status condition (Failed reason/message).
+		if reason, msg := jobFailureCondition(ctx, env, ns, job); reason != "" {
+			res.Observations = append(res.Observations, ai.Observation{Tool: "describe", Args: ns + "/" + job, Result: reason + ": " + clip(msg, 160)})
+			res.Conclusion = ai.ConclusionRootCauseIdentified
+			res.Summary = fmt.Sprintf("CronJob %s/%s failing — last Job %s: %s%s. Pod logs were garbage-collected; raise the Job's ttlSecondsAfterFinished / failedJobsHistoryLimit to capture the failing command's output.",
+				ns, name, job, reason, sep(": ", clip(msg, 160)))
+			return res, nil
+		}
 	}
-	res.Observations = append(res.Observations, ai.Observation{
-		Tool: "pod_logs", Args: fmt.Sprintf("%s/%s (cronjob %s)", ns, pod, name),
-		Result: logsObsResult(logs),
-	})
-	if len(logs.Lines) == 0 {
+
+	// 3) Nothing survives — say so honestly, and how to retain evidence.
+	if evs, _ := env.GetEvents(ctx, ns, "CronJob", name, 0); len(evs) > 0 {
 		res.Conclusion = ai.ConclusionInsufficientData
-		res.Summary = fmt.Sprintf("CronJob %s/%s last ran as pod %s but its logs are unavailable (%s).", ns, name, pod, logs.Error)
+		res.Summary = fmt.Sprintf("CronJob %s/%s: no surviving Job pod to read. Latest CronJob event: %s — %s.",
+			ns, name, evs[0].Reason, ai.RedactEventMessage(evs[0].Message))
 		return res, nil
 	}
-	cause := classifyCrashLogs(logs.Lines)
-	res.Conclusion = ai.ConclusionRootCauseIdentified
-	res.Summary = fmt.Sprintf("CronJob %s/%s failing — last run (pod %s): %s", ns, name, pod, cause)
+	res.Conclusion = ai.ConclusionInsufficientData
+	res.Summary = fmt.Sprintf("CronJob %s/%s has not succeeded, but its Jobs/pods were garbage-collected so the failure can't be read. Raise the Job's ttlSecondsAfterFinished / failedJobsHistoryLimit to retain the next failure for diagnosis.", ns, name)
 	return res, nil
+}
+
+// informativeFailureEvent2 is informativeFailureEvent for an arbitrary kind
+// (Job events name missing-Secret/quota/RBAC start failures).
+func informativeFailureEvent2(ctx context.Context, env ai.Environment, ns, kind, name string) string {
+	evs, _ := env.GetEvents(ctx, ns, kind, name, 0)
+	keywords := []string{"not found", "forbidden", "exceeded", "invalid", "unauthorized",
+		"denied", "no such", "failedcreate", "deadline", "backofflimit", "couldn't"}
+	var best string
+	for _, e := range evs {
+		low := strings.ToLower(e.Reason + " " + e.Message)
+		if strings.EqualFold(e.Reason, "Failed") || strings.EqualFold(e.Reason, "FailedCreate") || containsAny(low, keywords) {
+			return e.Reason + ": " + ai.RedactEventMessage(e.Message)
+		}
+		if best == "" && e.Reason != "SuccessfulCreate" && e.Reason != "Completed" {
+			best = e.Reason + ": " + ai.RedactEventMessage(e.Message)
+		}
+	}
+	return best
+}
+
+// jobFailureCondition returns the Failed condition's reason+message from a Job's
+// status (e.g. "BackoffLimitExceeded": "Job has reached the specified backoff
+// limit"), via Describe. Empty when the Job has no Failed condition.
+func jobFailureCondition(ctx context.Context, env ai.Environment, ns, job string) (reason, msg string) {
+	d, err := env.Describe(ctx, "Job", ns, job)
+	if err != nil {
+		return "", ""
+	}
+	// Describe surfaces the most salient condition into Reason/Message.
+	return strings.TrimSpace(d.Reason), strings.TrimSpace(d.Message)
+}
+
+func sep(s, v string) string {
+	if v == "" {
+		return ""
+	}
+	return s + v
 }
 
 // classifyCrashLogs pattern-matches a container's log tail to a concrete root

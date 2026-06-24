@@ -53,13 +53,14 @@ type Environment interface {
 	// so the investigation pass degrades gracefully.
 	Logs(ctx context.Context, namespace, pod string, opts LogsOptions) (LogsResult, error)
 
-	// LatestPodByPrefix returns the name of the most-recently-created pod in
-	// the namespace whose name starts with prefix, preferring pods that are
-	// NOT Running/Succeeded (i.e. the failed one). It bridges findings that
-	// name a CONTROLLER (CronJob, Job, Deployment) to the pod whose logs hold
-	// the actual failure — CronJob "<name>" → pod "<name>-<job>-<pod>". Returns
-	// "" (no error) when no matching pod exists.
-	LatestPodByPrefix(ctx context.Context, namespace, prefix string) (string, error)
+	// LatestByPrefix returns the name of the most-recently-created object of
+	// the given kind in the namespace whose name starts with prefix. For pods
+	// it prefers a NOT-Running/Succeeded (failed) instance. It bridges a
+	// finding that names a CONTROLLER to the child that holds the cause —
+	// CronJob "<name>" → Job "<name>-<ts>" (start failures, BackoffLimitExceeded)
+	// or pod "<name>-<job>-<pod>" (the failing command's logs). Returns "" (no
+	// error) when no matching object exists or the kind is unknown.
+	LatestByPrefix(ctx context.Context, kind, namespace, prefix string) (string, error)
 }
 
 // LogsOptions tunes one pod-logs fetch.

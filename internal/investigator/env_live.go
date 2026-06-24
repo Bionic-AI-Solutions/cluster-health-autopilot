@@ -434,27 +434,34 @@ func (e *LiveEnvironment) Logs(ctx context.Context, namespace, pod string, opts 
 	return ai.FetchPodLogs(ctx, e.logs, namespace, pod, opts), nil
 }
 
-// LatestPodByPrefix lists pods in the namespace and returns the name of the
-// most-recently-created one whose name starts with prefix, preferring pods
-// that are not Running/Succeeded (the failed instance an investigator wants).
-func (e *LiveEnvironment) LatestPodByPrefix(ctx context.Context, namespace, prefix string) (string, error) {
-	pods, err := e.src.List(ctx, snapshot.GVRPod, namespace)
-	if err != nil || pods == nil {
-		return "", nil // soft-fail: no logs path, investigation degrades to events
+// LatestByPrefix lists objects of `kind` in the namespace and returns the name
+// of the most-recently-created one whose name starts with prefix. For pods it
+// prefers a not-Running/Succeeded (failed) instance; for other kinds it takes
+// the newest.
+func (e *LiveEnvironment) LatestByPrefix(ctx context.Context, kind, namespace, prefix string) (string, error) {
+	gvr, ok := kindToGVR(kind)
+	if !ok {
+		return "", nil
 	}
-	var bestName string
-	var bestTS string
+	list, err := e.src.List(ctx, gvr, namespace)
+	if err != nil || list == nil {
+		return "", nil // soft-fail: investigation degrades to events
+	}
+	isPod := strings.EqualFold(kind, "pod")
+	var bestName, bestTS string
 	var bestFailed bool
-	for i := range pods.Items {
-		p := &pods.Items[i]
-		name := p.GetName()
+	for i := range list.Items {
+		o := &list.Items[i]
+		name := o.GetName()
 		if !strings.HasPrefix(name, prefix) {
 			continue
 		}
-		phase, _, _ := unstructured.NestedString(p.Object, "status", "phase")
-		failed := phase != "Running" && phase != "Succeeded"
-		ts := p.GetCreationTimestamp().UTC().Format(time.RFC3339Nano)
-		// Prefer a failed pod; among same-failed-state, prefer newest.
+		failed := true
+		if isPod {
+			phase, _, _ := unstructured.NestedString(o.Object, "status", "phase")
+			failed = phase != "Running" && phase != "Succeeded"
+		}
+		ts := o.GetCreationTimestamp().UTC().Format(time.RFC3339Nano)
 		if bestName == "" ||
 			(failed && !bestFailed) ||
 			(failed == bestFailed && ts > bestTS) {
