@@ -15,10 +15,11 @@ image:
   # to use it.
   repository: docker4zerocool/cluster-health-autopilot
   tag: ""                         # default = .Chart.appVersion (e.g. v0.1.0-alpha.1)
-  # pullPolicy is left empty so the `cha.pullPolicy` helper picks it
-  # automatically: Always for mutable tags (latest / main / dev /
-  # `*-latest`) and IfNotPresent for semver-pinned tags. Override only
-  # when you specifically need to force one or the other.
+  # pullPolicy is left empty so the `cha.pullPolicy` helper picks it.
+  # Default is Always: a re-pushed tag must never be served stale from a
+  # node's cache (IfNotPresent once caused old code to keep running across a
+  # "successful" rollout). Set IfNotPresent explicitly for immutable tags or
+  # digest pins if you want to skip the per-restart pull.
   pullPolicy: ""
   pullSecrets: []                 # e.g. [{name: dockerhub-secret}]
 

@@ -158,17 +158,19 @@ func pullSecretRefs(names []string) []corev1.LocalObjectReference {
 }
 
 // pullPolicy returns the PullPolicy to stamp on the container.
-// Honors an explicit spec value; otherwise infers IfNotPresent for
-// semver tags and Always for mutable tags (latest / main / dev).
+//
+// Defaults to Always. A re-pushed tag must never be silently served from a
+// node's cache: IfNotPresent caused a multi-hour stale-image incident where a
+// rebuilt :1.26.3 kept running old code across a "successful" rollout. Always
+// guarantees the running image matches the registry for the tag. Operators who
+// pin genuinely-immutable tags or digests and want to avoid the per-restart
+// pull can set spec.image.pullPolicy: IfNotPresent (or ai/approval.image.
+// pullPolicy) explicitly.
 func pullPolicy(spec chav1alpha1.ImageSpec) corev1.PullPolicy {
 	if spec.PullPolicy != "" {
 		return corev1.PullPolicy(spec.PullPolicy)
 	}
-	switch spec.Tag {
-	case "latest", "main", "dev":
-		return corev1.PullAlways
-	}
-	return corev1.PullIfNotPresent
+	return corev1.PullAlways
 }
 
 // BuildServiceAccount returns the ServiceAccount the controller owns.

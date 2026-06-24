@@ -108,13 +108,13 @@ cached digest. Always-pull on mutable tags makes the chart safe for
 operators who don't enforce immutable-tag discipline upstream.
 */}}
 {{- define "cha.pullPolicy" -}}
-{{- $tag := .Values.image.tag | default .Chart.AppVersion -}}
 {{- if .Values.image.pullPolicy -}}
 {{- .Values.image.pullPolicy -}}
-{{- else if or (eq $tag "latest") (hasSuffix "-latest" $tag) (eq $tag "main") (eq $tag "dev") -}}
-Always
 {{- else -}}
-IfNotPresent
+{{- /* Default Always: a re-pushed tag must never be served stale from a
+       node's cache (IfNotPresent caused a multi-hour stale-image incident).
+       Pin an explicit image.pullPolicy: IfNotPresent for immutable tags. */ -}}
+Always
 {{- end -}}
 {{- end -}}
 

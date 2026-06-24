@@ -481,12 +481,25 @@ func TestPullPolicy_MutableTagDefaultsAlways(t *testing.T) {
 	}
 }
 
-func TestPullPolicy_SemverTagDefaultsIfNotPresent(t *testing.T) {
+func TestPullPolicy_SemverTagDefaultsAlways(t *testing.T) {
+	// A re-pushed tag must never be served stale from a node's cache, so the
+	// default is Always even for semver tags. Operators opt into IfNotPresent
+	// explicitly for genuinely-immutable tags.
 	cr := sampleCR()
 	cr.Spec.Watcher = &chav1alpha1.WatcherSpec{Enabled: true}
 	d := BuildWatcherDeployment(cr)
+	if got := d.Spec.Template.Spec.Containers[0].ImagePullPolicy; got != corev1.PullAlways {
+		t.Errorf("semver tag pullPolicy=%v want Always (stale-cache safety)", got)
+	}
+}
+
+func TestPullPolicy_ExplicitIfNotPresentHonored(t *testing.T) {
+	cr := sampleCR()
+	cr.Spec.Image.PullPolicy = "IfNotPresent"
+	cr.Spec.Watcher = &chav1alpha1.WatcherSpec{Enabled: true}
+	d := BuildWatcherDeployment(cr)
 	if got := d.Spec.Template.Spec.Containers[0].ImagePullPolicy; got != corev1.PullIfNotPresent {
-		t.Errorf("semver tag pullPolicy=%v want IfNotPresent", got)
+		t.Errorf("explicit IfNotPresent not honored; got %v", got)
 	}
 }
 
