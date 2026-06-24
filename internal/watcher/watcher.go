@@ -33,6 +33,7 @@ import (
 
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	kwwatch "k8s.io/apimachinery/pkg/watch"
+	"k8s.io/client-go/kubernetes"
 
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/diagnose"
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/fix"
@@ -127,6 +128,12 @@ type Config struct {
 	// Default 10 minutes when zero. Set via `--cloud-cadence` CLI flag
 	// or `cloud.cadence` Helm value.
 	CloudCadence time.Duration
+
+	// KubeClientset is the typed Kubernetes client used by the Layer-2
+	// investigator to stream pod logs (Environment.Logs). When nil the
+	// investigator still runs but cannot read container logs — it falls back
+	// to describe + events only. Set from cmd/cha via snapshot.BuildKubeClientset.
+	KubeClientset kubernetes.Interface
 
 	// RunRemediation runs fixers after each diagnose cycle and re-diagnoses
 	// post-fix to report accurate state.

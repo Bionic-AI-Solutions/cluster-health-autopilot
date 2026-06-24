@@ -558,6 +558,16 @@ the post-fix cluster state.`,
 				return err
 			}
 
+			// Typed clientset for the Layer-2 investigator's pod-logs access
+			// (Environment.Logs). Best-effort: if it can't be built the
+			// investigator still runs (describe + events), it just can't read
+			// container logs, so a failure here must not abort the watcher.
+			kubeClientset, kcErr := snapshot.BuildKubeClientset(kubeconfig)
+			if kcErr != nil {
+				log.Printf("watch: pod-logs client unavailable (investigator will run without logs): %v", kcErr)
+				kubeClientset = nil
+			}
+
 			reg := catalog.Default()
 			if vaultAddr != "" {
 				vc, verr := buildVaultClient(vaultAddr, vaultMount, vaultRole)
@@ -687,6 +697,7 @@ the post-fix cluster state.`,
 				CriticalRepeatInterval: criticalRepeatInterval,
 				NoChangeSlackDigest:    noChangeSlackDigest,
 				ApprovalDwellDuration:  approvalDwellDuration,
+				KubeClientset:          kubeClientset,
 				WriteDriftReports:      writeDriftReports,
 				RunRemediation:         remedy,
 				DryRun:                 dryRun,

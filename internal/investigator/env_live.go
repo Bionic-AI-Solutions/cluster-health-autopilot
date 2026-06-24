@@ -28,6 +28,7 @@ import (
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/ai"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/client-go/kubernetes"
 )
 
 // LiveEnvironment is the production Environment implementation. It wires
@@ -36,6 +37,10 @@ import (
 type LiveEnvironment struct {
 	src      snapshot.Source
 	resolver *net.Resolver
+	// logs is the typed clientset used by Logs() to stream pod logs. nil in
+	// snapshot mode (and when no clientset was threaded through), in which
+	// case Logs() returns a soft error instead of streaming.
+	logs kubernetes.Interface
 }
 
 // NewLiveEnvironment constructs an Environment using the given Source for
@@ -43,11 +48,24 @@ type LiveEnvironment struct {
 // the watcher; snapshot-mode callers may pass a File source and the
 // network tools will still work (against the real network — there is no
 // offline simulation of HTTP/DNS).
+//
+// Pod-logs access is disabled (Logs() returns a soft error). Use
+// NewLiveEnvironmentWithLogs to enable log-based investigation.
 func NewLiveEnvironment(src snapshot.Source) *LiveEnvironment {
 	return &LiveEnvironment{
 		src:      src,
 		resolver: net.DefaultResolver,
 	}
+}
+
+// NewLiveEnvironmentWithLogs is NewLiveEnvironment plus a typed clientset so
+// Logs() can stream container logs (the capability that lets the investigator
+// find the actual crash cause). A nil logsClient degrades to the no-logs
+// behaviour of NewLiveEnvironment.
+func NewLiveEnvironmentWithLogs(src snapshot.Source, logsClient kubernetes.Interface) *LiveEnvironment {
+	e := NewLiveEnvironment(src)
+	e.logs = logsClient
+	return e
 }
 
 var _ ai.Environment = (*LiveEnvironment)(nil)
@@ -391,4 +409,17 @@ func readSpecHighlights(obj *unstructured.Unstructured, kind string) []string {
 		}
 	}
 	return notes
+}
+
+// Logs streams the tail of a pod container's logs (kubectl logs [--previous]).
+// Returns a soft LogsResult.Error (never a hard error for the common cases) so
+// the investigation pass degrades gracefully when logs aren't available:
+//   - no clientset wired (snapshot mode) -> "pod logs unavailable ..."
+//   - container never started / no previous instance -> API error surfaced
+//     in LogsResult.Error
+//
+// Lines are redacted via ai.RedactEventMessage before return so secrets in
+// log output never reach a prompt or a Slack post.
+func (e *LiveEnvironment) Logs(ctx context.Context, namespace, pod string, opts ai.LogsOptions) (ai.LogsResult, error) {
+	return ai.FetchPodLogs(ctx, e.logs, namespace, pod, opts), nil
 }

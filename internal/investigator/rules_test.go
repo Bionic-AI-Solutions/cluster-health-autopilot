@@ -25,6 +25,8 @@ type fakeEnv struct {
 	tlsResp  ai.TLSResult
 	desc     ai.DescribeResult
 	events   []ai.EventInfo
+	logsPrev ai.LogsResult // returned when LogsOptions.Previous
+	logsCur  ai.LogsResult // returned otherwise
 }
 
 func (f *fakeEnv) DNSLookup(ctx context.Context, host string) (ai.DNSResult, error) {
@@ -48,6 +50,12 @@ func (f *fakeEnv) Describe(ctx context.Context, kind, ns, name string) (ai.Descr
 }
 func (f *fakeEnv) GetEvents(ctx context.Context, ns, kind, name string, since time.Duration) ([]ai.EventInfo, error) {
 	return f.events, nil
+}
+func (f *fakeEnv) Logs(ctx context.Context, ns, pod string, opts ai.LogsOptions) (ai.LogsResult, error) {
+	if opts.Previous {
+		return f.logsPrev, nil
+	}
+	return f.logsCur, nil
 }
 
 func TestRuleBased_TLSExpiry(t *testing.T) {
@@ -181,5 +189,69 @@ func TestRuleBased_UnmatchedFindingReturnsEmpty(t *testing.T) {
 	}
 	if len(r.Observations) != 0 {
 		t.Errorf("expected zero observations; got %d", len(r.Observations))
+	}
+}
+
+func TestRuleBased_CrashLoop_NoSubcommand(t *testing.T) {
+	// The exact shape of CHA's own mis-deployed runner: prints CLI usage and
+	// exits. The investigator must identify the missing-subcommand cause.
+	env := &fakeEnv{logsPrev: ai.LogsResult{
+		Previous: true,
+		Lines: []string{
+			"Cluster Health Autopilot",
+			"Usage:",
+			"  cha [command]",
+			"Available Commands:",
+			"  diagnose    Run probes + analyzers",
+			"  watch       Event-driven cluster health watcher",
+		},
+	}}
+	f := probe.Finding{
+		Component: "CrashLoopBackOff",
+		Severity:  probe.SeverityCritical,
+		Message:   "Pod cluster-health-autopilot/cha-runner-xyz in CrashLoopBackOff (64 restarts)",
+	}
+	res, err := RuleBased{}.InvestigateFinding(context.Background(), f, env)
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if res.Conclusion != ai.ConclusionRootCauseIdentified {
+		t.Errorf("conclusion: %q", res.Conclusion)
+	}
+	if !strings.Contains(res.Summary, "command/args") {
+		t.Errorf("summary should name the missing-subcommand cause; got: %q", res.Summary)
+	}
+}
+
+func TestRuleBased_CrashLoop_OOM(t *testing.T) {
+	env := &fakeEnv{logsPrev: ai.LogsResult{Previous: true, Lines: []string{
+		"server starting",
+		"fatal error: runtime: out of memory",
+	}}}
+	f := probe.Finding{
+		Component: "CrashLoopBackOff",
+		Severity:  probe.SeverityCritical,
+		Message:   "Pod prod/api-7f in CrashLoopBackOff (12 restarts)",
+	}
+	res, _ := RuleBased{}.InvestigateFinding(context.Background(), f, env)
+	if !strings.Contains(strings.ToLower(res.Summary), "memory") {
+		t.Errorf("OOM summary expected; got: %q", res.Summary)
+	}
+}
+
+func TestRuleBased_CrashLoop_LogsUnavailable_FallsBackToEvents(t *testing.T) {
+	env := &fakeEnv{
+		logsPrev: ai.LogsResult{Error: "previous terminated container not found"},
+		logsCur:  ai.LogsResult{Error: "container is waiting to start"},
+		events:   []ai.EventInfo{{Reason: "BackOff", Message: "Back-off restarting failed container"}},
+	}
+	f := probe.Finding{
+		Component: "CrashLoopBackOff",
+		Severity:  probe.SeverityCritical,
+		Message:   "Pod prod/api-7f in CrashLoopBackOff (3 restarts)",
+	}
+	res, _ := RuleBased{}.InvestigateFinding(context.Background(), f, env)
+	if !strings.Contains(res.Summary, "BackOff") {
+		t.Errorf("expected event fallback; got: %q", res.Summary)
 	}
 }

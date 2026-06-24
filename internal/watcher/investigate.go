@@ -31,7 +31,7 @@ func (w *Watcher) investigateDiagnostics(ctx context.Context, diagnostics []diag
 	}
 	cycleCtx, cancel := context.WithTimeout(ctx, investigationTimeout)
 	defer cancel()
-	env := investigator.NewLiveEnvironment(w.lv)
+	env := investigator.NewLiveEnvironmentWithLogs(w.lv, w.cfg.KubeClientset)
 
 	out := make([]diagnose.Diagnostic, len(diagnostics))
 	copy(out, diagnostics)
@@ -62,7 +62,7 @@ func (w *Watcher) investigateProbeResults(ctx context.Context, results []probe.R
 	}
 	cycleCtx, cancel := context.WithTimeout(ctx, investigationTimeout)
 	defer cancel()
-	env := investigator.NewLiveEnvironment(w.lv)
+	env := investigator.NewLiveEnvironmentWithLogs(w.lv, w.cfg.KubeClientset)
 
 	for ri := range results {
 		for fi := range results[ri].Findings {
