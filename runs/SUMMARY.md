@@ -1,6 +1,6 @@
 # Cluster Health Autopilot — Run Summary
 
-_Auto-generated 2026-06-25 06:15 UTC · 52 run(s) · 2026-05-04 → 2026-06-24_
+_Auto-generated 2026-06-26 06:18 UTC · 53 run(s) · 2026-05-04 → 2026-06-25_
 
 ## Health trend
 
@@ -58,33 +58,34 @@ _Auto-generated 2026-06-25 06:15 UTC · 52 run(s) · 2026-05-04 → 2026-06-24_
 | 2026-06-22 | run-2026-06-22 | 21 | 15 | 0 | 2 | 19 | 473 |
 | 2026-06-23 | run-2026-06-23 | 21 | 16 | 0 | 1 | 23 | 484 |
 | 2026-06-24 | run-2026-06-24 | 21 | 15 | 0 | 2 | 24 | 484 |
+| 2026-06-25 | run-2026-06-25 | 21 | 15 | 0 | 2 | 24 | 489 |
 
 ## Diagnostic patterns (top categories, anonymized)
 
 | Category | Occurrences |
 |---|---|
-| `Namespace` | 3946 |
-| `Pod` | 2501 |
-| `Workload` | 2191 |
-| `PersistentVolume` | 1924 |
-| `DNSChainDrift` | 557 |
-| `ClusterRole` | 510 |
-| `HorizontalPodAutoscaler` | 171 |
+| `Namespace` | 4109 |
+| `Pod` | 2511 |
+| `Workload` | 2353 |
+| `PersistentVolume` | 2049 |
+| `DNSChainDrift` | 568 |
+| `ClusterRole` | 514 |
+| `HorizontalPodAutoscaler` | 177 |
 | `ServiceAccount` | 72 |
-| `CronJob` | 56 |
-| `PodDisruptionBudget` | 52 |
+| `CronJob` | 59 |
+| `PodDisruptionBudget` | 56 |
 
 ## Component findings (top, anonymized)
 
 | Severity/Component | Occurrences |
 |---|---|
-| `warning/component-cfedf38b` | 218 |
-| `warning/component-68fc25e4` | 61 |
-| `warning/component-09858a0e` | 30 |
-| `info/component-80741754` | 25 |
-| `critical/component-68fc25e4` | 23 |
+| `warning/component-cfedf38b` | 236 |
+| `warning/component-68fc25e4` | 63 |
+| `warning/component-09858a0e` | 31 |
+| `info/component-80741754` | 26 |
+| `critical/component-68fc25e4` | 24 |
 | `warning/component-a733dc9e` | 22 |
-| `critical/component-35605956` | 9 |
+| `critical/component-35605956` | 10 |
 | `critical/component-e7e62774` | 1 |
 | `warning/Ceph Storage` | 1 |
 | `warning/Critical Services` | 1 |
@@ -14277,6 +14278,567 @@ _Auto-generated 2026-06-25 06:15 UTC · 52 run(s) · 2026-05-04 → 2026-06-24_
 | 482 | `DNSChainDrift` | Ingress `0ec4366c/67b36f81` for host *host-a214c828* references Service `0ec4366c/07241358` which has `spec.type=ExternalName`. ExternalName Services proxy to an external DNS name, not in-cluster pods; the Ingress may not behave as expected. |
 | 483 | `DNSChainDrift` | Ingress `3d69f4a0/3d69f4a0` for host *host-238e6042* references Service `3d69f4a0/a2909668` which has `spec.type=ExternalName`. ExternalName Services proxy to an external DNS name, not in-cluster pods; the Ingress may not behave as expected. |
 | 484 | `DNSChainDrift` | Cloudflare credentials not configured; external DNS hop not checked for 37 host(s). Set `CHA_CLOUDFLARE_API_TOKEN` (and optionally `CHA_CLOUDFLARE_ZONE_ID`) to enable the full DNS-chain analysis including the Cloudflare layer. |
+
+</details>
+
+<details>
+<summary><strong>2026-06-25</strong> — 21 component(s) · 489 diagnostic(s)</summary>
+
+### Probes
+
+| Component | Status | Detail |
+|---|---|---|
+| Ceph Storage | HEALTHY | 1 cluster(s): rook-ceph@rook-ceph OK (14.6% used) |
+| Cluster Nodes | HEALTHY | All 6 nodes ready |
+| PostgreSQL | HEALTHY | 1 CNPG cluster(s): pg-ceph@pg (2/2 ready, primary=pg-ceph-5) |
+| Storage Claims | HEALTHY | All 82 PVCs bound |
+| Critical Services | HEALTHY | All 0 critical services operational |
+| component-a733dc9e | HEALTHY | All 38 endpoints reachable (38 auto-discovered) |
+| component-6f130a4d | HEALTHY | All 6 nodes pressure-clear |
+| component-35605956 | CRITICAL | 1/6 system DaemonSets degraded: calico-system/calico-node (5/6 ready, 1 unavailable) |
+| component-e7e62774 | HEALTHY | No pods Pending past grace period |
+| component-244066f0 | HEALTHY | No CrashLoopBackOff pods detected |
+| component-09858a0e | WARNING | No in-cluster etcd pods found in kube-system (external etcd or non-kubeadm install) |
+| component-514d9b4b | HEALTHY | No pods stuck on volume mount |
+| component-aee58c5b | HEALTHY | 86 KongPlugin resource(s) inspected |
+| component-cfedf38b | WARNING | 18 issue(s) across 61 Kong-managed Ingress(es) |
+| component-528667e1 | OK | 1 GPU node(s) — all Ready + Schedulable with allocatable GPUs |
+| component-68fc25e4 | CRITICAL | 9 HPA(s) inspected |
+| component-2e83246f | HEALTHY | no Argo CD Applications |
+| component-f929c3bb | HEALTHY | no Velero Backup resources |
+| component-0cd84b69 | SKIPPED | Traefik CRDs not installed |
+| component-b46467bf | HEALTHY | no local-path PVCs found |
+| component-80741754 | HEALTHY | k3s SQLite datastore (single-node); no etcd pods expected |
+
+### Findings
+
+| Component | Severity | Message |
+|---|---|---|
+| component-35605956 | critical | DaemonSet calico-system/calico-node is degraded: 5/6 pods ready, 1 unavailable |
+| component-09858a0e | warning | ETCD probe is blind: no in-cluster etcd pods captured. Cluster may be using external etcd. |
+| component-cfedf38b | warning | Ingress Ingress/bionic-platform/dify-web host=host-b9f5e313 backend Service bionic-platform/oauth2-proxy-dify has no ready endpoints — Kong will return 503 for any request hitting this path. |
+| component-cfedf38b | warning | Ingress Ingress/cluster-health-autopilot/cha-approve host=host-f1ba8d59 backend Service cluster-health-autopilot/oauth2-proxy-cha-approve has no ready endpoints — Kong will return 503 for any request hitting this path. |
+| component-cfedf38b | warning | Ingress Ingress/comfyui/comfyui-kong-ingress host=host-df442be8 backend Service comfyui/oauth2-proxy-comfyui has no ready endpoints — Kong will return 503 for any request hitting this path. |
+| component-cfedf38b | warning | Ingress Ingress/livekit/livekit-dashboard-ingress host=host-3b05cb67 backend Service livekit/oauth2-proxy-livekit-dashboard has no ready endpoints — Kong will return 503 for any request hitting this path. |
+| component-cfedf38b | warning | Ingress Ingress/mcp/avatalk-api-ingress host=host-32225d86 backend Service mcp/avatalk-api-host has no ready endpoints — Kong will return 503 for any request hitting this path. |
+| component-cfedf38b | warning | Ingress Ingress/mcp/avatalk-api-ingress host=host-32225d86 backend Service mcp/avatalk-api-host has no ready endpoints — Kong will return 503 for any request hitting this path. |
+| component-cfedf38b | warning | Ingress Ingress/mcp/mcp-qdrant-ingress host=host-32225d86 backend Service mcp/qdrant-mcp-service has no ready endpoints — Kong will return 503 for any request hitting this path. |
+| component-cfedf38b | warning | Ingress Ingress/mcp/mcp-qdrant-ingress host=host-32225d86 backend Service mcp/qdrant-mcp-service has no ready endpoints — Kong will return 503 for any request hitting this path. |
+| component-cfedf38b | warning | Ingress Ingress/mcp/mcp-qdrant-ingress host=host-32225d86 backend Service mcp/qdrant-mcp-service has no ready endpoints — Kong will return 503 for any request hitting this path. |
+| component-cfedf38b | warning | Ingress Ingress/mcp/mcp-qdrant-ingress host=host-32225d86 backend Service mcp/qdrant-mcp-service has no ready endpoints — Kong will return 503 for any request hitting this path. |
+| component-cfedf38b | warning | Ingress Ingress/mcp/mcp-qdrant-ingress host=host-32225d86 backend Service mcp/qdrant-mcp-service has no ready endpoints — Kong will return 503 for any request hitting this path. |
+| component-cfedf38b | warning | Ingress Ingress/miroshark/miroshark-ingress host=host-d63bb08e backend Service miroshark/oauth2-proxy-miroshark has no ready endpoints — Kong will return 503 for any request hitting this path. |
+| component-cfedf38b | warning | Ingress Ingress/repomind/repomind-ingress host=host-4e3d9acc backend Service repomind/oauth2-proxy-repomind has no ready endpoints — Kong will return 503 for any request hitting this path. |
+| component-cfedf38b | warning | Ingress Ingress/socialx/social-x host=host-ca5821c0 backend Service socialx/oauth2-proxy-socialx has no ready endpoints — Kong will return 503 for any request hitting this path. |
+| component-cfedf38b | warning | Ingress Ingress/tutor/player-ui host=host-bda455e8 backend Service tutor/oauth2-proxy-tutor-confidential has no ready endpoints — Kong will return 503 for any request hitting this path. |
+| component-cfedf38b | warning | Ingress Ingress/vc-livekit/vc-livekit-ingress host=host-a214c828 backend Service vc-livekit/oauth2-proxy-vc-livekit has no ready endpoints — Kong will return 503 for any request hitting this path. |
+| component-cfedf38b | warning | Ingress Ingress/vc-livekit/vc-livekit-ingress host=host-a214c828 backend Service vc-livekit/oauth2-proxy-vc-livekit has no ready endpoints — Kong will return 503 for any request hitting this path. |
+| component-cfedf38b | warning | Ingress Ingress/vc-tools/vc-tools host=host-238e6042 backend Service vc-tools/oauth2-proxy-vc-tools has no ready endpoints — Kong will return 503 for any request hitting this path. |
+| component-7d31b4b6 | warning | HPA mcp-gateway/mcp-context-forge-hpa autoscaling inactive (reason=ScalingDisabled) — expected when the target is scaled to zero / KEDA scale-to-zero; not an outage |
+| component-d52b37e4 | critical | HPA pg/haproxy-hpa ScalingActive=False (reason=FailedGetResourceMetric) |
+| component-2167a950 | warning | HPA vc-tools/agentchat autoscaling inactive (reason=ScalingDisabled) — expected when the target is scaled to zero / KEDA scale-to-zero; not an outage |
+| component-80741754 | info | k3s cluster appears to use SQLite (single-node, no etcd static pods found); no HA for the datastore |
+
+### Diagnostics
+
+| # | Category | Message |
+|---|---|---|
+| 1 | `ClusterRole` | ClusterRole p-k4z5l-namespaces-edit grants wildcard verb (verbs=[*], apiGroups=[], resources=[namespaces]) |
+| 2 | `ClusterRole` | ClusterRole p-nkvmw-namespaces-edit grants wildcard verb (verbs=[*], apiGroups=[], resources=[namespaces]) |
+| 3 | `ClusterRole` | ClusterRole packagemanifests-v1-admin grants wildcard verb (verbs=[*], apiGroups=[host-2c241f60], resources=[packagemanifests]) |
+| 4 | `ClusterRole` | ClusterRole prometheus-operator grants wildcard verb (verbs=[*], apiGroups=[host-3168fa50], resources=[alertmanagers alertmanagers/finalizers alertmanagers/status alertmanagerconfigs prometheuses prometheuses/finalizers prometheuses/status prometheusagents prometheusagents/finalizers prometheusagents/status thanosrulers thanosrulers/finalizers thanosrulers/status scrapeconfigs servicemonitors podmonitors probes prometheusrules]) |
+| 5 | `RBACDrift` | 20 expected-system RBAC finding(s) suppressed as allowlisted: ClusterRole/cluster/admin, ClusterRole/cluster/calico-tiered-policy-passthrough, ClusterRole/cluster/cluster-admin, ClusterRole/cluster/cluster-owner, ClusterRole/cluster/console-sa-role, ClusterRole/cluster/k10-admin, ClusterRole/cluster/k10-basic, ClusterRole/cluster/k10-mc-admin, ClusterRole/cluster/k3s-cloud-controller-manager, ClusterRole/cluster/kasten-admin, ClusterRole/cluster/kasten-aggregatedapis-svc, ClusterRole/cluster/local-clusterowner +8 more |
+| 6 | `HorizontalPodAutoscaler` | HPA letta/letta-server pinned at minReplicas=3 for >720h0m0s with maxReplicas=10 unused; HPA is not load-driven (effectively decorative) |
+| 7 | `HorizontalPodAutoscaler` | HPA livekit/livekit-dashboard-hpa pinned at minReplicas=2 for >720h0m0s with maxReplicas=5 unused; HPA is not load-driven (effectively decorative) |
+| 8 | `HorizontalPodAutoscaler` | HPA mcp-gateway/mcp-context-forge-hpa pinned at minReplicas=2 for >720h0m0s with maxReplicas=10 unused; HPA is not load-driven (effectively decorative) |
+| 9 | `HorizontalPodAutoscaler` | HPA pg/haproxy-hpa pinned at minReplicas=2 for >720h0m0s with maxReplicas=4 unused; HPA is not load-driven (effectively decorative) |
+| 10 | `HorizontalPodAutoscaler` | HPA vc-tools/agentchat pinned at minReplicas=1 for >720h0m0s with maxReplicas=5 unused; HPA is not load-driven (effectively decorative) |
+| 11 | `HorizontalPodAutoscaler` | HPA vc-tools/vc-tools pinned at minReplicas=2 for >720h0m0s with maxReplicas=10 unused; HPA is not load-driven (effectively decorative) |
+| 12 | `Namespace` | Namespace agents has no host-42bc1117/enforce label; admission applies the cluster-wide default (typically privileged) |
+| 13 | `Namespace` | Namespace auth-proxy has no host-42bc1117/enforce label; admission applies the cluster-wide default (typically privileged) |
+| 14 | `Namespace` | Namespace bionic-platform has no host-42bc1117/enforce label; admission applies the cluster-wide default (typically privileged) |
+| 15 | `Namespace` | Namespace calico-system explicitly enforces PSS=privileged — the most-permissive profile |
+| 16 | `Namespace` | Namespace cert-manager has no host-42bc1117/enforce label; admission applies the cluster-wide default (typically privileged) |
+| 17 | `Namespace` | Namespace cha-demo has no host-42bc1117/enforce label; admission applies the cluster-wide default (typically privileged) |
+| 18 | `Namespace` | Namespace cha-website has no host-42bc1117/enforce label; admission applies the cluster-wide default (typically privileged) |
+| 19 | `Namespace` | Namespace cluster-health-autopilot has no host-42bc1117/enforce label; admission applies the cluster-wide default (typically privileged) |
+| 20 | `Namespace` | Namespace code has no host-42bc1117/enforce label; admission applies the cluster-wide default (typically privileged) |
+| 21 | `Namespace` | Namespace default has no host-42bc1117/enforce label; admission applies the cluster-wide default (typically privileged) |
+| 22 | `Namespace` | Namespace etcd has no host-42bc1117/enforce label; admission applies the cluster-wide default (typically privileged) |
+| 23 | `Namespace` | Namespace gpu-monitor explicitly enforces PSS=privileged — the most-permissive profile |
+| 24 | `Namespace` | Namespace guruji has no host-42bc1117/enforce label; admission applies the cluster-wide default (typically privileged) |
+| 25 | `Namespace` | Namespace immersive has no host-42bc1117/enforce label; admission applies the cluster-wide default (typically privileged) |
+| 26 | `Namespace` | Namespace jarvis has no host-42bc1117/enforce label; admission applies the cluster-wide default (typically privileged) |
+| 27 | `Namespace` | Namespace kb-system has no host-42bc1117/enforce label; admission applies the cluster-wide default (typically privileged) |
+| 28 | `Namespace` | Namespace keda has no host-42bc1117/enforce label; admission applies the cluster-wide default (typically privileged) |
+| 29 | `Namespace` | Namespace keycloak has no host-42bc1117/enforce label; admission applies the cluster-wide default (typically privileged) |
+| 30 | `Namespace` | Namespace kong has no host-42bc1117/enforce label; admission applies the cluster-wide default (typically privileged) |
+| 31 | `Namespace` | Namespace kube-flannel explicitly enforces PSS=privileged — the most-permissive profile |
+| 32 | `Namespace` | Namespace letta has no host-42bc1117/enforce label; admission applies the cluster-wide default (typically privileged) |
+| 33 | `Namespace` | Namespace livekit has no host-42bc1117/enforce label; admission applies the cluster-wide default (typically privileged) |
+| 34 | `Namespace` | Namespace livekit-agents has no host-42bc1117/enforce label; admission applies the cluster-wide default (typically privileged) |
+| 35 | `Namespace` | Namespace local-path-storage has no host-42bc1117/enforce label; admission applies the cluster-wide default (typically privileged) |
+| 36 | `Namespace` | Namespace mail has no host-42bc1117/enforce label; admission applies the cluster-wide default (typically privileged) |
+| 37 | `Namespace` | Namespace mcp has no host-42bc1117/enforce label; admission applies the cluster-wide default (typically privileged) |
+| 38 | `Namespace` | Namespace mcp-gateway has no host-42bc1117/enforce label; admission applies the cluster-wide default (typically privileged) |
+| 39 | `Namespace` | Namespace media-services has no host-42bc1117/enforce label; admission applies the cluster-wide default (typically privileged) |
+| 40 | `Namespace` | Namespace meilisearch has no host-42bc1117/enforce label; admission applies the cluster-wide default (typically privileged) |
+| 41 | `Namespace` | Namespace metallb-system explicitly enforces PSS=privileged — the most-permissive profile |
+| 42 | `Namespace` | Namespace minio has no host-42bc1117/enforce label; admission applies the cluster-wide default (typically privileged) |
+| 43 | `Namespace` | Namespace minio-operator has no host-42bc1117/enforce label; admission applies the cluster-wide default (typically privileged) |
+| 44 | `Namespace` | Namespace miroshark has no host-42bc1117/enforce label; admission applies the cluster-wide default (typically privileged) |
+| 45 | `Namespace` | Namespace nextcloud has no host-42bc1117/enforce label; admission applies the cluster-wide default (typically privileged) |
+| 46 | `Namespace` | Namespace nfs-provisioner has no host-42bc1117/enforce label; admission applies the cluster-wide default (typically privileged) |
+| 47 | `Namespace` | Namespace observability has no host-42bc1117/enforce label; admission applies the cluster-wide default (typically privileged) |
+| 48 | `Namespace` | Namespace pg has no host-42bc1117/enforce label; admission applies the cluster-wide default (typically privileged) |
+| 49 | `Namespace` | Namespace radar has no host-42bc1117/enforce label; admission applies the cluster-wide default (typically privileged) |
+| 50 | `Namespace` | Namespace redis has no host-42bc1117/enforce label; admission applies the cluster-wide default (typically privileged) |
+| 51 | `Namespace` | Namespace repomind has no host-42bc1117/enforce label; admission applies the cluster-wide default (typically privileged) |
+| 52 | `Namespace` | Namespace search-infrastructure has no host-42bc1117/enforce label; admission applies the cluster-wide default (typically privileged) |
+| 53 | `Namespace` | Namespace socialx has no host-42bc1117/enforce label; admission applies the cluster-wide default (typically privileged) |
+| 54 | `Namespace` | Namespace srenix-website has no host-42bc1117/enforce label; admission applies the cluster-wide default (typically privileged) |
+| 55 | `Namespace` | Namespace storethesoup has no host-42bc1117/enforce label; admission applies the cluster-wide default (typically privileged) |
+| 56 | `Namespace` | Namespace tigera-operator explicitly enforces PSS=privileged — the most-permissive profile |
+| 57 | `Namespace` | Namespace tutor has no host-42bc1117/enforce label; admission applies the cluster-wide default (typically privileged) |
+| 58 | `Namespace` | Namespace vc-livekit has no host-42bc1117/enforce label; admission applies the cluster-wide default (typically privileged) |
+| 59 | `Namespace` | Namespace vc-tools has no host-42bc1117/enforce label; admission applies the cluster-wide default (typically privileged) |
+| 60 | `Namespace` | Namespace voice-studio has no host-42bc1117/enforce label; admission applies the cluster-wide default (typically privileged) |
+| 61 | `Namespace` | Namespace wabuilder has no host-42bc1117/enforce label; admission applies the cluster-wide default (typically privileged) |
+| 62 | `Namespace` | Namespace web has no host-42bc1117/enforce label; admission applies the cluster-wide default (typically privileged) |
+| 63 | `Workload` | Workload agents/token-server-c5fdd6cfd mounts 1 container image(s) without digest pin: token-server=node:18-alpine |
+| 64 | `Workload` | Workload auth-proxy/oauth2-proxy-bionic-platform-845774f499 mounts 1 container image(s) without digest pin: oauth2-proxy=img-cb3f717e:tag |
+| 65 | `Workload` | Workload auth-proxy/oauth2-proxy-cha-approve-5dddbccf64 mounts 1 container image(s) without digest pin: oauth2-proxy=img-cb3f717e:tag |
+| 66 | `Workload` | Workload auth-proxy/oauth2-proxy-comfyui-6dd59c49bb mounts 1 container image(s) without digest pin: oauth2-proxy=img-cb3f717e:tag |
+| 67 | `Workload` | Workload auth-proxy/oauth2-proxy-dify-5f8b86d976 mounts 1 container image(s) without digest pin: oauth2-proxy=img-cb3f717e:tag |
+| 68 | `Workload` | Workload auth-proxy/oauth2-proxy-livekit-dashboard-7497bbcc6 mounts 1 container image(s) without digest pin: oauth2-proxy=img-cb3f717e:tag |
+| 69 | `Workload` | Workload auth-proxy/oauth2-proxy-miroshark-7656694988 mounts 1 container image(s) without digest pin: oauth2-proxy=img-cb3f717e:tag |
+| 70 | `Workload` | Workload auth-proxy/oauth2-proxy-repomind-f5f9bf597 mounts 1 container image(s) without digest pin: oauth2-proxy=img-cb3f717e:tag |
+| 71 | `Workload` | Workload auth-proxy/oauth2-proxy-socialx-94ccdd76c mounts 1 container image(s) without digest pin: oauth2-proxy=img-cb3f717e:tag |
+| 72 | `Workload` | Workload auth-proxy/oauth2-proxy-tutor-confidential-655c8d6b8 mounts 1 container image(s) without digest pin: oauth2-proxy=img-cb3f717e:tag |
+| 73 | `Workload` | Workload auth-proxy/oauth2-proxy-vc-livekit-65ff5d687 mounts 1 container image(s) without digest pin: oauth2-proxy=img-cb3f717e:tag |
+| 74 | `Workload` | Workload auth-proxy/oauth2-proxy-vc-tools-59d855755d mounts 1 container image(s) without digest pin: oauth2-proxy=img-cb3f717e:tag |
+| 75 | `Workload` | Workload bionic-platform/bionic-platform-8477f75475 mounts 1 container image(s) without digest pin: platform=img-30228fd3:tag |
+| 76 | `Workload` | Workload bionic-platform/dify-api-6c4c5b5c7b mounts 1 container image(s) without digest pin: dify-api=img-ecb36086:tag |
+| 77 | `Workload` | Workload bionic-platform/dify-plugin-daemon-5f49c6c6b mounts 1 container image(s) without digest pin: plugin-daemon=img-e2e051d8:tag |
+| 78 | `Workload` | Workload bionic-platform/dify-sandbox-59b45f4494 mounts 1 container image(s) without digest pin: dify-sandbox=img-dd019946:tag |
+| 79 | `Workload` | Workload bionic-platform/dify-web-fc549b9f5 mounts 1 container image(s) without digest pin: dify-web=img-9852494f:tag |
+| 80 | `Workload` | Workload bionic-platform/dify-worker-66d8546898 mounts 1 container image(s) without digest pin: dify-worker=img-ecb36086:tag |
+| 81 | `Workload` | Workload calico-apiserver/calico-apiserver-5ccb8577bd mounts 1 container image(s) without digest pin: calico-apiserver=img-5cec013e:tag (across 2 replica pods) |
+| 82 | `Workload` | Workload calico-system/calico-kube-controllers-567df65779 mounts 1 container image(s) without digest pin: calico-kube-controllers=img-a71fdf02:tag |
+| 83 | `Workload` | Workload calico-system/calico-node mounts 1 container image(s) without digest pin: calico-node=img-e9bef616:tag (across 6 replica pods) |
+| 84 | `Workload` | Workload calico-system/calico-typha-6b7b66bf88 mounts 1 container image(s) without digest pin: calico-typha=img-8f517df9:tag (across 3 replica pods) |
+| 85 | `Workload` | Workload calico-system/csi-node-driver mounts 2 container image(s) without digest pin: calico-csi=img-483c6cef:tag, csi-node-driver-registrar=img-6ab0cf22:tag (across 6 replica pods) |
+| 86 | `Workload` | Workload cert-manager/cert-manager-78dccc55b5 mounts 1 container image(s) without digest pin: cert-manager-controller=img-f8ff9f0e:tag |
+| 87 | `Workload` | Workload cert-manager/cert-manager-cainjector-ddc4bfbdd mounts 1 container image(s) without digest pin: cert-manager-cainjector=img-d72005ed:tag |
+| 88 | `Workload` | Workload cert-manager/cert-manager-webhook-6c549d4946 mounts 1 container image(s) without digest pin: cert-manager-webhook=img-f54054e7:tag |
+| 89 | `Workload` | Workload cha-demo/payments-api-6b4ff64c58 mounts 1 container image(s) without digest pin: nonexistent-cha-demo=img-e43e7381:tag |
+| 90 | `Workload` | Workload cha-website/cha-website-6fd8f49587 mounts 1 container image(s) without digest pin: cha-website=img-22dab534:tag |
+| 91 | `Workload` | Workload cluster-health-autopilot/bionic-aiwatch-94895d55d mounts 1 container image(s) without digest pin: aiwatch=img-8cd780f7:tag (across 2 replica pods) |
+| 92 | `Workload` | Workload cluster-health-autopilot/bionic-approval-server-665d49fc55 mounts 1 container image(s) without digest pin: approval-server=img-8cd780f7:tag (across 2 replica pods) |
+| 93 | `Workload` | Workload cluster-health-autopilot/bionic-diagnose-29704860 mounts 1 container image(s) without digest pin: diagnose=img-94908202:tag |
+| 94 | `Workload` | Workload cluster-health-autopilot/bionic-diagnose-29706300 mounts 1 container image(s) without digest pin: diagnose=img-94908202:tag |
+| 95 | `Workload` | Workload cluster-health-autopilot/bionic-rag mounts 1 container image(s) without digest pin: qdrant=img-6d810a04:tag |
+| 96 | `Workload` | Workload cluster-health-autopilot/bionic-remediate-29704860 mounts 1 container image(s) without digest pin: remediate=img-94908202:tag |
+| 97 | `Workload` | Workload cluster-health-autopilot/bionic-remediate-29706300 mounts 1 container image(s) without digest pin: remediate=img-94908202:tag |
+| 98 | `Workload` | Workload cluster-health-autopilot/bionic-watcher-54985fbc64 mounts 1 container image(s) without digest pin: watcher=img-94908202:tag |
+| 99 | `Workload` | Workload cluster-health-autopilot/cha-cluster-health-autopilot-operator-76bbc56b85 mounts 1 container image(s) without digest pin: operator=img-94908202:tag |
+| 100 | `Workload` | Workload cluster-health-autopilot/cha-cluster-health-autopilot-runner-9b8769976 mounts 1 container image(s) without digest pin: runner=img-1d1d87c3:tag |
+| 101 | `Workload` | Workload code/devcontainer-56dd7bcf6f mounts 2 container image(s) without digest pin: dev=ubuntu:24.04, dind=img-d548c5b8:tag |
+| 102 | `Workload` | Workload comfyui/comfyui-55c85c7955 mounts 1 container image(s) without digest pin: comfyui=img-7a816a1e:tag |
+| 103 | `Workload` | Workload default/coder-8728a118-34a7-4b17-b807-04dfac7af2bd-5c5696867f mounts 1 container image(s) without digest pin: kanister-sidecar=img-973cc84e:tag |
+| 104 | `Workload` | Workload etcd/etcd-ceph mounts 1 container image(s) without digest pin: etcd=img-aaa6a3c2:tag (across 3 replica pods) |
+| 105 | `Workload` | Workload gharkaam/gharkaam-redis-567db6f5d4 mounts 1 container image(s) without digest pin: redis=redis:7-alpine |
+| 106 | `Workload` | Workload gharkaam/gharkaam-web-789944587f mounts 1 container image(s) without digest pin: gharkaam=img-ce00959c:tag (across 2 replica pods) |
+| 107 | `Workload` | Workload gpu-monitor/blackbox-external-6b47677649 mounts 1 container image(s) without digest pin: blackbox=img-bd3c227d:tag |
+| 108 | `Workload` | Workload gpu-monitor/blackbox-origin-5c597dc5f mounts 1 container image(s) without digest pin: blackbox=img-bd3c227d:tag |
+| 109 | `Workload` | Workload gpu-monitor/dcgm-exporter mounts 1 container image(s) without digest pin: dcgm-exporter=img-b6449f77:tag |
+| 110 | `Workload` | Workload gpu-monitor/gpu-process-exporter mounts 1 container image(s) without digest pin: exporter=python:3.12-slim |
+| 111 | `Workload` | Workload gpu-monitor/grafana-6fdb9c88bb mounts 1 container image(s) without digest pin: grafana=img-df4f9b9c:tag |
+| 112 | `Workload` | Workload gpu-monitor/kube-state-metrics-5fb788945 mounts 1 container image(s) without digest pin: kube-state-metrics=img-9e1cd8a9:tag |
+| 113 | `Workload` | Workload guruji/agent-physics-7b98f444f mounts 1 container image(s) without digest pin: agent=img-482cf9d7:tag |
+| 114 | `Workload` | Workload jarvis/player-ui-545fdf7b9c mounts 1 container image(s) without digest pin: player-ui=img-3cff2a31:tag |
+| 115 | `Workload` | Workload kasten-io/aggregatedapis-svc-575bd999bb mounts 1 container image(s) without digest pin: aggregatedapis-svc=img-b6bdc186:tag |
+| 116 | `Workload` | Workload kasten-io/auth-svc-7c566bc8d5 mounts 1 container image(s) without digest pin: auth-svc=img-fbbb51f0:tag |
+| 117 | `Workload` | Workload kasten-io/catalog-svc-596fdcbcd9 mounts 2 container image(s) without digest pin: catalog-svc=img-a0a74c93:tag, kanister-sidecar=img-973cc84e:tag |
+| 118 | `Workload` | Workload kasten-io/controllermanager-svc-75f8bb657f mounts 1 container image(s) without digest pin: controllermanager-svc=img-24b333e4:tag |
+| 119 | `Workload` | Workload kasten-io/crypto-svc-5f544c9ff5 mounts 4 container image(s) without digest pin: crypto-svc=img-6fe0d4e6:tag, bloblifecyclemanager-svc=img-579f75ce:tag, garbagecollector-svc=img-43933de6:tag, repositories-svc=img-645ceb9a:tag |
+| 120 | `Workload` | Workload kasten-io/dashboardbff-svc-758dbf4b58 mounts 2 container image(s) without digest pin: dashboardbff-svc=img-add94ad0:tag, vbrintegrationapi-svc=img-1c7aa493:tag |
+| 121 | `Workload` | Workload kasten-io/executor-svc-8695797855 mounts 1 container image(s) without digest pin: executor-svc=img-3166c66d:tag (across 3 replica pods) |
+| 122 | `Workload` | Workload kasten-io/frontend-svc-5587d84db9 mounts 1 container image(s) without digest pin: frontend-svc=img-52c47c9e:tag |
+| 123 | `Workload` | Workload kasten-io/gateway-5797fd9ddf mounts 1 container image(s) without digest pin: gateway=img-100058ed:tag |
+| 124 | `Workload` | Workload kasten-io/jobs-svc-69656b9bbf mounts 1 container image(s) without digest pin: jobs-svc=img-11f3880a:tag |
+| 125 | `Workload` | Workload kasten-io/kanister-svc-65b7dff6c4 mounts 1 container image(s) without digest pin: kanister-svc=img-773f8d1c:tag |
+| 126 | `Workload` | Workload kasten-io/logging-svc-57549b6b94 mounts 1 container image(s) without digest pin: logging-svc=img-96ac81d4:tag |
+| 127 | `Workload` | Workload kasten-io/metering-svc-54fbfb454d mounts 1 container image(s) without digest pin: metering-svc=img-6d1c011b:tag |
+| 128 | `Workload` | Workload kasten-io/prometheus-server-5f8b6d7cf5 mounts 2 container image(s) without digest pin: prometheus-server-configmap-reload=img-0bbcb73e:tag, prometheus-server=img-134afd0b:tag |
+| 129 | `Workload` | Workload kasten-io/state-svc-fcb5d75f4 mounts 2 container image(s) without digest pin: state-svc=img-eed87270:tag, events-svc=img-e78d28f8:tag |
+| 130 | `Workload` | Workload kb-system/snapshot-controller-6f58df9c mounts 1 container image(s) without digest pin: snapshot-controller=img-e250bd1d:tag |
+| 131 | `Workload` | Workload keda/keda-add-ons-http-controller-manager-5fcbf79c9c mounts 1 container image(s) without digest pin: keda-add-ons-http-operator=img-e7ebf4bd:tag |
+| 132 | `Workload` | Workload keda/keda-add-ons-http-external-scaler-f965d99b8 mounts 1 container image(s) without digest pin: keda-add-ons-http-external-scaler=img-d1d8f140:tag (across 3 replica pods) |
+| 133 | `Workload` | Workload keda/keda-add-ons-http-interceptor-6846778b66 mounts 1 container image(s) without digest pin: keda-add-ons-http-interceptor=img-356ff8dd:tag |
+| 134 | `Workload` | Workload keda/keda-admission-webhooks-7b4b4b9657 mounts 1 container image(s) without digest pin: keda-admission-webhooks=img-ea9f30f1:tag |
+| 135 | `Workload` | Workload keda/keda-operator-d7cf58dbf mounts 1 container image(s) without digest pin: keda-operator=img-4c7ff1a2:tag |
+| 136 | `Workload` | Workload keda/keda-operator-metrics-apiserver-75f7bbc7f8 mounts 1 container image(s) without digest pin: keda-operator-metrics-apiserver=img-f2a96f66:tag |
+| 137 | `Workload` | Workload keycloak/keycloak mounts 2 container image(s) without digest pin: keycloak=img-a351cffb:tag, kanister-sidecar=img-973cc84e:tag |
+| 138 | `Workload` | Workload kong/kong-kong-78587c8f46 mounts 2 container image(s) without digest pin: ingress-controller=img-b7101a2b:tag, proxy=img-28877ae8:tag |
+| 139 | `Workload` | Workload langfuse/langfuse-clickhouse-shard0 mounts 2 container image(s) without digest pin: clickhouse=img-f72637ad:tag, kanister-sidecar=img-973cc84e:tag (across 3 replica pods) |
+| 140 | `Workload` | Workload langfuse/langfuse-s3-5d6c644945 mounts 2 container image(s) without digest pin: minio=img-14773e69:tag, kanister-sidecar=img-973cc84e:tag |
+| 141 | `Workload` | Workload langfuse/langfuse-web-5bfd5c67c mounts 1 container image(s) without digest pin: kanister-sidecar=img-973cc84e:tag (across 2 replica pods) |
+| 142 | `Workload` | Workload langfuse/langfuse-worker-589cdbfd89 mounts 1 container image(s) without digest pin: kanister-sidecar=img-973cc84e:tag |
+| 143 | `Workload` | Workload langfuse/langfuse-zookeeper mounts 2 container image(s) without digest pin: zookeeper=img-eab8cce1:tag, kanister-sidecar=img-973cc84e:tag (across 3 replica pods) |
+| 144 | `Workload` | Workload letta/letta-server-99f7fd9df mounts 1 container image(s) without digest pin: letta-server=img-d234e890:tag (across 3 replica pods) |
+| 145 | `Workload` | Workload live-avatar/flashhead-engine-99d94f6cc mounts 1 container image(s) without digest pin: flashhead-engine=img-6adb70fa:tag |
+| 146 | `Workload` | Workload livekit/livekit-egress-74d8647f76 mounts 1 container image(s) without digest pin: livekit-egress=img-48369a33:tag (across 2 replica pods) |
+| 147 | `Workload` | Workload livekit/livekit-server-78bf5dcb6 mounts 1 container image(s) without digest pin: livekit-server=img-c20d64f7:tag |
+| 148 | `Workload` | Workload livekit/livekit-sip-server-84b4d95b69 mounts 1 container image(s) without digest pin: livekit-sip-server=img-4e2f040a:tag |
+| 149 | `Workload` | Workload livekit/livekit-token-server-64cb59c747 mounts 1 container image(s) without digest pin: token-server=img-f2eb9a07:tag |
+| 150 | `Workload` | Workload livekit-agents/counsellor-agent-78cff476bd mounts 1 container image(s) without digest pin: agent=img-f658050f:tag |
+| 151 | `Workload` | Workload livekit-agents/flash-agent-57f696d5c mounts 1 container image(s) without digest pin: agent=img-f658050f:tag |
+| 152 | `Workload` | Workload livekit-agents/persona-agent-57f8896ffb mounts 1 container image(s) without digest pin: agent=img-f658050f:tag |
+| 153 | `Workload` | Workload local-path-storage/local-path-provisioner-57794bf4cd mounts 1 container image(s) without digest pin: local-path-provisioner=img-48a86045:tag |
+| 154 | `Workload` | Workload mail/mail-service-78756555f8 mounts 1 container image(s) without digest pin: mail-service=img-7c154a40:tag (across 2 replica pods) |
+| 155 | `Workload` | Workload mcp/mcp-ai-mcp-server-978566885 mounts 1 container image(s) without digest pin: kanister-sidecar=img-973cc84e:tag |
+| 156 | `Workload` | Workload mcp/mcp-calculator-server-56747d68b8 mounts 1 container image(s) without digest pin: kanister-sidecar=img-973cc84e:tag |
+| 157 | `Workload` | Workload mcp/mcp-comfy-server-77f6d5587b mounts 1 container image(s) without digest pin: kanister-sidecar=img-973cc84e:tag |
+| 158 | `Workload` | Workload mcp/mcp-ffmpeg-server-867ff5bf96 mounts 1 container image(s) without digest pin: kanister-sidecar=img-973cc84e:tag |
+| 159 | `Workload` | Workload mcp/mcp-genimage-server-7f856585f7 mounts 1 container image(s) without digest pin: kanister-sidecar=img-973cc84e:tag |
+| 160 | `Workload` | Workload mcp/mcp-inspector-64ddc4446d mounts 1 container image(s) without digest pin: kanister-sidecar=img-973cc84e:tag |
+| 161 | `Workload` | Workload mcp/mcp-langfuse-server-7c8f954fdc mounts 1 container image(s) without digest pin: kanister-sidecar=img-973cc84e:tag |
+| 162 | `Workload` | Workload mcp/mcp-letta-server-695d7f696c mounts 1 container image(s) without digest pin: kanister-sidecar=img-973cc84e:tag |
+| 163 | `Workload` | Workload mcp/mcp-mail-server-74d6bc8485 mounts 1 container image(s) without digest pin: kanister-sidecar=img-973cc84e:tag |
+| 164 | `Workload` | Workload mcp/mcp-meilisearch-server-657dd5c6f7 mounts 1 container image(s) without digest pin: kanister-sidecar=img-973cc84e:tag |
+| 165 | `Workload` | Workload mcp/mcp-minio-server-55c55688f8 mounts 1 container image(s) without digest pin: kanister-sidecar=img-973cc84e:tag |
+| 166 | `Workload` | Workload mcp/mcp-openproject-server-7c5c6f848d mounts 1 container image(s) without digest pin: kanister-sidecar=img-973cc84e:tag |
+| 167 | `Workload` | Workload mcp/mcp-pdf-generator-server-ff6b9f79f mounts 1 container image(s) without digest pin: kanister-sidecar=img-973cc84e:tag |
+| 168 | `Workload` | Workload mcp/mcp-postgres-server-784448d895 mounts 1 container image(s) without digest pin: kanister-sidecar=img-973cc84e:tag |
+| 169 | `Workload` | Workload mcp/mcp-redis-server-ccbf9fc87 mounts 1 container image(s) without digest pin: kanister-sidecar=img-973cc84e:tag |
+| 170 | `Workload` | Workload mcp/redis-7b5cc855d6 mounts 2 container image(s) without digest pin: redis=redis:7-alpine, kanister-sidecar=img-973cc84e:tag |
+| 171 | `Workload` | Workload mcp/search-mcp-server-747bdbf6db mounts 1 container image(s) without digest pin: kanister-sidecar=img-973cc84e:tag (across 5 replica pods) |
+| 172 | `Workload` | Workload mcp/yt-helper-66c9576f55 mounts 1 container image(s) without digest pin: kanister-sidecar=img-973cc84e:tag |
+| 173 | `Workload` | Workload media-services/animate-api-bb696b78b mounts 1 container image(s) without digest pin: animate-api=img-31f48fba:tag |
+| 174 | `Workload` | Workload media-services/scenes-worker-7749b5f855 mounts 1 container image(s) without digest pin: scenes-worker=img-ae1e1a06:tag |
+| 175 | `Workload` | Workload meilisearch/meilisearch mounts 1 container image(s) without digest pin: meilisearch=img-b196c46d:tag |
+| 176 | `Workload` | Workload metallb-system/controller-6fbb9f9499 mounts 1 container image(s) without digest pin: controller=img-71b010f2:tag |
+| 177 | `Workload` | Workload metallb-system/speaker mounts 1 container image(s) without digest pin: speaker=img-5ed2c981:tag (across 6 replica pods) |
+| 178 | `Workload` | Workload minio/minio-tenant-pool-0 mounts 2 container image(s) without digest pin: minio=img-c811a0c7:tag, sidecar=img-8285f064:tag (across 3 replica pods) |
+| 179 | `Workload` | Workload minio-operator/console-6bb586bb94 mounts 1 container image(s) without digest pin: console=img-8285f064:tag |
+| 180 | `Workload` | Workload minio-operator/minio-operator-5ccf8c86d7 mounts 1 container image(s) without digest pin: minio-operator=img-8285f064:tag (across 2 replica pods) |
+| 181 | `Workload` | Workload neo4j/neo4j-6c75c665f9 mounts 1 container image(s) without digest pin: neo4j=img-13fd9e77:tag |
+| 182 | `Workload` | Workload nextcloud/nextcloud-6846455664 mounts 2 container image(s) without digest pin: nextcloud=img-a75a0c2a:tag, nextcloud-cron=img-a75a0c2a:tag |
+| 183 | `Workload` | Workload nfs-provisioner/nfs-client-provisioner-676b4b9644 mounts 1 container image(s) without digest pin: nfs-client-provisioner=img-a483476c:tag |
+| 184 | `Workload` | Workload observability/otel-collector-667d959779 mounts 1 container image(s) without digest pin: otel-collector=img-cd28a5e1:tag |
+| 185 | `Workload` | Workload openproject/openproject-memcached-766d8d8d88 mounts 2 container image(s) without digest pin: memcached=img-6e51047e:tag, kanister-sidecar=img-973cc84e:tag |
+| 186 | `Workload` | Workload openproject/openproject-web-5cb5dcfbdb mounts 2 container image(s) without digest pin: openproject=img-328d2632:tag, kanister-sidecar=img-973cc84e:tag |
+| 187 | `Workload` | Workload openproject/openproject-worker-default-64799b9f75 mounts 2 container image(s) without digest pin: openproject=img-328d2632:tag, kanister-sidecar=img-973cc84e:tag |
+| 188 | `Workload` | Workload pg/alertmanager-postgresql-alertmanager mounts 2 container image(s) without digest pin: alertmanager=img-238e2809:tag, config-reloader=img-09aee518:tag |
+| 189 | `Workload` | Workload pg/haproxy-589cbf7fb7 mounts 2 container image(s) without digest pin: haproxy=img-cb2a3980:tag, kanister-sidecar=img-973cc84e:tag (across 2 replica pods) |
+| 190 | `Workload` | Workload pg/pg-bionicaisolutions-com-4-3455128589-3562261222 mounts 1 container image(s) without digest pin: acmesolver=img-e94e2e74:tag |
+| 191 | `Workload` | Workload pg/pg-ceph mounts 1 container image(s) without digest pin: postgres=img-2fdbd549:tag (across 2 replica pods) |
+| 192 | `Workload` | Workload pg/pgadmin-75b78585db mounts 1 container image(s) without digest pin: kanister-sidecar=img-973cc84e:tag |
+| 193 | `Workload` | Workload pg/pgadmin-cbc677d59 mounts 1 container image(s) without digest pin: kanister-sidecar=img-973cc84e:tag |
+| 194 | `Workload` | Workload pg/postgres-minio-backup-29704500 mounts 1 container image(s) without digest pin: postgres-backup=postgres:17 |
+| 195 | `Workload` | Workload pg/postgres-minio-backup-29705940 mounts 1 container image(s) without digest pin: postgres-backup=postgres:17 |
+| 196 | `Workload` | Workload pg/postgres-minio-backup-29707380 mounts 1 container image(s) without digest pin: postgres-backup=postgres:17 |
+| 197 | `Workload` | Workload pg/postgres-nfs-backup-29704440 mounts 1 container image(s) without digest pin: postgres-backup=postgres:17 |
+| 198 | `Workload` | Workload pg/postgres-nfs-backup-29705880 mounts 1 container image(s) without digest pin: postgres-backup=postgres:17 |
+| 199 | `Workload` | Workload pg/postgres-nfs-backup-29707320 mounts 1 container image(s) without digest pin: postgres-backup=postgres:17 |
+| 200 | `Workload` | Workload radar/radar-58c4596675 mounts 1 container image(s) without digest pin: radar=img-7c18e752:tag |
+| 201 | `Workload` | Workload redis/redis-cluster-ceph mounts 2 container image(s) without digest pin: redis=redis:7.2-alpine, kanister-sidecar=img-973cc84e:tag (across 3 replica pods) |
+| 202 | `Workload` | Workload redis/redis-livekit-79bdfcf7cd mounts 2 container image(s) without digest pin: redis=redis:7-alpine, kanister-sidecar=img-973cc84e:tag |
+| 203 | `Workload` | Workload redis/redis-proxy-746f8f8c59 mounts 2 container image(s) without digest pin: envoy=img-b8f88d7b:tag, kanister-sidecar=img-973cc84e:tag (across 2 replica pods) |
+| 204 | `Workload` | Workload srenix-website/srenix-website-68b895bfb5 mounts 1 container image(s) without digest pin: srenix-website=img-01592277:tag |
+| 205 | `Workload` | Workload storethesoup/mariadb mounts 1 container image(s) without digest pin: mariadb=img-e08f4c9c:tag |
+| 206 | `Workload` | Workload storethesoup/redis-55cdd6df98 mounts 1 container image(s) without digest pin: redis=redis:7-alpine |
+| 207 | `Workload` | Workload storethesoup/wordpress-5f454cf4cf mounts 1 container image(s) without digest pin: wordpress=img-e9c0ca1e:tag |
+| 208 | `Workload` | Workload storethesoup/wp-backup-29704440 mounts 1 container image(s) without digest pin: backup=alpine:3.20 |
+| 209 | `Workload` | Workload storethesoup/wp-backup-29705880 mounts 1 container image(s) without digest pin: backup=alpine:3.20 |
+| 210 | `Workload` | Workload storethesoup/wp-backup-29707320 mounts 1 container image(s) without digest pin: backup=alpine:3.20 |
+| 211 | `Workload` | Workload storethesoup/wp-loader mounts 1 container image(s) without digest pin: loader=alpine:3.20 |
+| 212 | `Workload` | Workload storethesoup/wp-verify-weekly-29690160 mounts 1 container image(s) without digest pin: verify=alpine:3.20 |
+| 213 | `Workload` | Workload storethesoup/wp-verify-weekly-29700240 mounts 1 container image(s) without digest pin: verify=alpine:3.20 |
+| 214 | `Workload` | Workload tigera-operator/tigera-operator-6ffc76f5d mounts 1 container image(s) without digest pin: tigera-operator=img-b2621568:tag |
+| 215 | `Workload` | Workload tutor/player-ui-5787697985 mounts 1 container image(s) without digest pin: player-ui=img-3cff2a31:tag |
+| 216 | `Workload` | Workload vc-livekit/backend-675cd66b9d mounts 1 container image(s) without digest pin: backend=img-56bc67bf:tag (across 2 replica pods) |
+| 217 | `Workload` | Workload vc-livekit/frontend-58458fc46b mounts 1 container image(s) without digest pin: frontend=img-5e9d5a78:tag (across 2 replica pods) |
+| 218 | `Workload` | Workload vc-livekit/livekit-agent-64bd77c58f mounts 1 container image(s) without digest pin: livekit-agent=img-93275bff:tag |
+| 219 | `Workload` | Workload vc-livekit/registry-64d9dc9bcb mounts 1 container image(s) without digest pin: registry=img-872491a3:tag |
+| 220 | `Workload` | Workload voice-studio/voice-studio-backend-557f6b5fb7 mounts 1 container image(s) without digest pin: backend=img-5107d098:tag |
+| 221 | `Workload` | Workload voice-studio/voice-studio-frontend-68c7574d4d mounts 1 container image(s) without digest pin: frontend=img-31a07165:tag (across 2 replica pods) |
+| 222 | `Workload` | Workload voice-studio/voice-studio-worker-6556d59d69 mounts 1 container image(s) without digest pin: worker=img-5107d098:tag |
+| 223 | `Workload` | Workload web/baisoln-web-8d589455f mounts 1 container image(s) without digest pin: web=img-fde54743:tag (across 2 replica pods) |
+| 224 | `Workload` | Workload web/contact-api-5795f9dd9c mounts 1 container image(s) without digest pin: api=img-5192394b:tag |
+| 225 | `Namespace` | Namespace agents runs pods but has zero NetworkPolicies; any pod can reach any other pod cluster-wide |
+| 226 | `Namespace` | Namespace auth-proxy runs pods but has zero NetworkPolicies; any pod can reach any other pod cluster-wide |
+| 227 | `Namespace` | Namespace bionic-platform runs pods but has zero NetworkPolicies; any pod can reach any other pod cluster-wide |
+| 228 | `Namespace` | Namespace calico-system runs pods but has zero NetworkPolicies; any pod can reach any other pod cluster-wide |
+| 229 | `Namespace` | Namespace cert-manager runs pods but has zero NetworkPolicies; any pod can reach any other pod cluster-wide |
+| 230 | `Namespace` | Namespace cha-demo runs pods but has zero NetworkPolicies; any pod can reach any other pod cluster-wide |
+| 231 | `Namespace` | Namespace cha-website runs pods but has zero NetworkPolicies; any pod can reach any other pod cluster-wide |
+| 232 | `Namespace` | Namespace cluster-health-autopilot runs pods but has zero NetworkPolicies; any pod can reach any other pod cluster-wide |
+| 233 | `Namespace` | Namespace code runs pods but has zero NetworkPolicies; any pod can reach any other pod cluster-wide |
+| 234 | `Namespace` | Namespace comfyui runs pods but has zero NetworkPolicies; any pod can reach any other pod cluster-wide |
+| 235 | `Namespace` | Namespace default runs pods but has zero NetworkPolicies; any pod can reach any other pod cluster-wide |
+| 236 | `Namespace` | Namespace etcd runs pods but has zero NetworkPolicies; any pod can reach any other pod cluster-wide |
+| 237 | `Namespace` | Namespace gharkaam runs pods but has zero NetworkPolicies; any pod can reach any other pod cluster-wide |
+| 238 | `Namespace` | Namespace gpu-monitor runs pods but has zero NetworkPolicies; any pod can reach any other pod cluster-wide |
+| 239 | `Namespace` | Namespace guruji runs pods but has zero NetworkPolicies; any pod can reach any other pod cluster-wide |
+| 240 | `Namespace` | Namespace jarvis runs pods but has zero NetworkPolicies; any pod can reach any other pod cluster-wide |
+| 241 | `Namespace` | Namespace kasten-io runs pods but has zero NetworkPolicies; any pod can reach any other pod cluster-wide |
+| 242 | `Namespace` | Namespace kb-system runs pods but has zero NetworkPolicies; any pod can reach any other pod cluster-wide |
+| 243 | `Namespace` | Namespace keda runs pods but has zero NetworkPolicies; any pod can reach any other pod cluster-wide |
+| 244 | `Namespace` | Namespace keycloak runs pods but has zero NetworkPolicies; any pod can reach any other pod cluster-wide |
+| 245 | `Namespace` | Namespace kong runs pods but has zero NetworkPolicies; any pod can reach any other pod cluster-wide |
+| 246 | `Namespace` | Namespace langfuse runs pods but has zero NetworkPolicies; any pod can reach any other pod cluster-wide |
+| 247 | `Namespace` | Namespace letta runs pods but has zero NetworkPolicies; any pod can reach any other pod cluster-wide |
+| 248 | `Namespace` | Namespace live-avatar runs pods but has zero NetworkPolicies; any pod can reach any other pod cluster-wide |
+| 249 | `Namespace` | Namespace livekit runs pods but has zero NetworkPolicies; any pod can reach any other pod cluster-wide |
+| 250 | `Namespace` | Namespace livekit-agents runs pods but has zero NetworkPolicies; any pod can reach any other pod cluster-wide |
+| 251 | `Namespace` | Namespace local-path-storage runs pods but has zero NetworkPolicies; any pod can reach any other pod cluster-wide |
+| 252 | `Namespace` | Namespace mail runs pods but has zero NetworkPolicies; any pod can reach any other pod cluster-wide |
+| 253 | `Namespace` | Namespace mcp runs pods but has zero NetworkPolicies; any pod can reach any other pod cluster-wide |
+| 254 | `Namespace` | Namespace mcp-gateway runs pods but has zero NetworkPolicies; any pod can reach any other pod cluster-wide |
+| 255 | `Namespace` | Namespace media-services runs pods but has zero NetworkPolicies; any pod can reach any other pod cluster-wide |
+| 256 | `Namespace` | Namespace meilisearch runs pods but has zero NetworkPolicies; any pod can reach any other pod cluster-wide |
+| 257 | `Namespace` | Namespace metallb-system runs pods but has zero NetworkPolicies; any pod can reach any other pod cluster-wide |
+| 258 | `Namespace` | Namespace minio runs pods but has zero NetworkPolicies; any pod can reach any other pod cluster-wide |
+| 259 | `Namespace` | Namespace minio-operator runs pods but has zero NetworkPolicies; any pod can reach any other pod cluster-wide |
+| 260 | `Namespace` | Namespace miroshark runs pods but has zero NetworkPolicies; any pod can reach any other pod cluster-wide |
+| 261 | `Namespace` | Namespace neo4j runs pods but has zero NetworkPolicies; any pod can reach any other pod cluster-wide |
+| 262 | `Namespace` | Namespace nextcloud runs pods but has zero NetworkPolicies; any pod can reach any other pod cluster-wide |
+| 263 | `Namespace` | Namespace nfs-provisioner runs pods but has zero NetworkPolicies; any pod can reach any other pod cluster-wide |
+| 264 | `Namespace` | Namespace observability runs pods but has zero NetworkPolicies; any pod can reach any other pod cluster-wide |
+| 265 | `Namespace` | Namespace openproject runs pods but has zero NetworkPolicies; any pod can reach any other pod cluster-wide |
+| 266 | `Namespace` | Namespace pg runs pods but has zero NetworkPolicies; any pod can reach any other pod cluster-wide |
+| 267 | `Namespace` | Namespace radar runs pods but has zero NetworkPolicies; any pod can reach any other pod cluster-wide |
+| 268 | `Namespace` | Namespace redis runs pods but has zero NetworkPolicies; any pod can reach any other pod cluster-wide |
+| 269 | `Namespace` | Namespace repomind runs pods but has zero NetworkPolicies; any pod can reach any other pod cluster-wide |
+| 270 | `Namespace` | Namespace search-infrastructure runs pods but has zero NetworkPolicies; any pod can reach any other pod cluster-wide |
+| 271 | `Namespace` | Namespace socialx runs pods but has zero NetworkPolicies; any pod can reach any other pod cluster-wide |
+| 272 | `Namespace` | Namespace srenix-website runs pods but has zero NetworkPolicies; any pod can reach any other pod cluster-wide |
+| 273 | `Namespace` | Namespace storethesoup runs pods but has zero NetworkPolicies; any pod can reach any other pod cluster-wide |
+| 274 | `Namespace` | Namespace tigera-operator runs pods but has zero NetworkPolicies; any pod can reach any other pod cluster-wide |
+| 275 | `Namespace` | Namespace tutor runs pods but has zero NetworkPolicies; any pod can reach any other pod cluster-wide |
+| 276 | `Namespace` | Namespace vc-livekit runs pods but has zero NetworkPolicies; any pod can reach any other pod cluster-wide |
+| 277 | `Namespace` | Namespace vc-tools runs pods but has zero NetworkPolicies; any pod can reach any other pod cluster-wide |
+| 278 | `Namespace` | Namespace voice-studio runs pods but has zero NetworkPolicies; any pod can reach any other pod cluster-wide |
+| 279 | `Namespace` | Namespace wabuilder runs pods but has zero NetworkPolicies; any pod can reach any other pod cluster-wide |
+| 280 | `Namespace` | Namespace web runs pods but has zero NetworkPolicies; any pod can reach any other pod cluster-wide |
+| 281 | `PodDisruptionBudget` | PodDisruptionBudget kube-system/calico-kube-controllers has blocked ALL evictions for >5m0s (minAvailable/maxUnavailable=). Drains will hang. |
+| 282 | `PodDisruptionBudget` | PodDisruptionBudget livekit/livekit-server-pdb has blocked ALL evictions for >5m0s (minAvailable/maxUnavailable=). Drains will hang. |
+| 283 | `PodDisruptionBudget` | PodDisruptionBudget pg/pg-ceph-primary has blocked ALL evictions for >5m0s (minAvailable/maxUnavailable=). Drains will hang. |
+| 284 | `PodDisruptionBudget` | PodDisruptionBudget qdrant/qdrant has blocked ALL evictions for >5m0s (minAvailable/maxUnavailable=). Drains will hang. |
+| 285 | `PersistentVolume` | PersistentVolume pvc-06436a78-6c7a-4c59-b892-b87f788765bc has been Released for >168h0m0s (storageClass=cephfs-with-secrets, capacity=5Gi, reclaimPolicy=Retain). The PVC was deleted; this volume may still be billing on the underlying cloud disk. |
+| 286 | `PersistentVolume` | PersistentVolume pvc-07155827-3764-4498-ac34-050b822baf26 has been Released for >168h0m0s (storageClass=ceph-rbd-fastpool, capacity=10Gi, reclaimPolicy=Retain). The PVC was deleted; this volume may still be billing on the underlying cloud disk. |
+| 287 | `PersistentVolume` | PersistentVolume pvc-0a456c08-256d-4f32-9361-286dd65c3a90 has been Released for >168h0m0s (storageClass=cephfs-with-secrets, capacity=5Gi, reclaimPolicy=Retain). The PVC was deleted; this volume may still be billing on the underlying cloud disk. |
+| 288 | `PersistentVolume` | PersistentVolume pvc-0b666700-a2a6-4ea1-a16b-f0c844aeca50 has been Released for >168h0m0s (storageClass=cephfs-with-secrets, capacity=5Gi, reclaimPolicy=Retain). The PVC was deleted; this volume may still be billing on the underlying cloud disk. |
+| 289 | `PersistentVolume` | PersistentVolume pvc-0b7ca786-7718-489f-b2ee-b8a8670ef7b7 has been Released for >168h0m0s (storageClass=ceph-rbd-fastpool, capacity=10Gi, reclaimPolicy=Retain). The PVC was deleted; this volume may still be billing on the underlying cloud disk. |
+| 290 | `PersistentVolume` | PersistentVolume pvc-0d42ccc6-bee8-4fd9-bd4f-ca40d54ba5b5 has been Released for >168h0m0s (storageClass=ceph-rbd-fastpool, capacity=10Gi, reclaimPolicy=Retain). The PVC was deleted; this volume may still be billing on the underlying cloud disk. |
+| 291 | `PersistentVolume` | PersistentVolume pvc-106edc61-1f04-446c-bd59-b0ee13661a35 has been Released for >168h0m0s (storageClass=cephfs-with-secrets, capacity=5Gi, reclaimPolicy=Retain). The PVC was deleted; this volume may still be billing on the underlying cloud disk. |
+| 292 | `PersistentVolume` | PersistentVolume pvc-118bb8b6-48db-41f7-bea2-0a2b4a217098 has been Released for >168h0m0s (storageClass=ceph-rbd-fast, capacity=5Gi, reclaimPolicy=Retain). The PVC was deleted; this volume may still be billing on the underlying cloud disk. |
+| 293 | `PersistentVolume` | PersistentVolume pvc-11bd7940-ef31-43b0-9543-3dc0c770c4c2 has been Released for >168h0m0s (storageClass=cephfs-with-secrets, capacity=10Gi, reclaimPolicy=Retain). The PVC was deleted; this volume may still be billing on the underlying cloud disk. |
+| 294 | `PersistentVolume` | PersistentVolume pvc-123b270b-5995-407c-9dd1-b43f6d05eca9 has been Released for >168h0m0s (storageClass=ceph-rbd-fastpool, capacity=10Gi, reclaimPolicy=Retain). The PVC was deleted; this volume may still be billing on the underlying cloud disk. |
+| 295 | `PersistentVolume` | PersistentVolume pvc-12cee45b-5953-4210-b0cc-d1325f9db564 has been Released for >168h0m0s (storageClass=cephfs-with-secrets, capacity=5Gi, reclaimPolicy=Retain). The PVC was deleted; this volume may still be billing on the underlying cloud disk. |
+| 296 | `PersistentVolume` | PersistentVolume pvc-12d68f99-79c7-4f0f-ad43-4bba71404916 has been Released for >168h0m0s (storageClass=ceph-rbd-fast, capacity=10Gi, reclaimPolicy=Retain). The PVC was deleted; this volume may still be billing on the underlying cloud disk. |
+| 297 | `PersistentVolume` | PersistentVolume pvc-13144deb-daff-423a-a81c-28f41bad0beb has been Released for >168h0m0s (storageClass=cephfs-with-secrets, capacity=5Gi, reclaimPolicy=Retain). The PVC was deleted; this volume may still be billing on the underlying cloud disk. |
+| 298 | `PersistentVolume` | PersistentVolume pvc-1420dd27-d0a8-4eca-a774-8404f683256a has been Released for >168h0m0s (storageClass=ceph-rbd-fast, capacity=10Gi, reclaimPolicy=Retain). The PVC was deleted; this volume may still be billing on the underlying cloud disk. |
+| 299 | `PersistentVolume` | PersistentVolume pvc-1447999d-5f43-4852-897a-869ae976f2d1 has been Released for >168h0m0s (storageClass=ceph-rbd-fastpool, capacity=10Gi, reclaimPolicy=Retain). The PVC was deleted; this volume may still be billing on the underlying cloud disk. |
+| 300 | `PersistentVolume` | PersistentVolume pvc-15b2fa0b-b0cb-4ea2-b132-e4ca698da3d6 has been Released for >168h0m0s (storageClass=ceph-rbd-fast, capacity=50Gi, reclaimPolicy=Retain). The PVC was deleted; this volume may still be billing on the underlying cloud disk. |
+| 301 | `PersistentVolume` | PersistentVolume pvc-16b66ed1-ad6c-4ab9-82ae-dcba1293806f has been Released for >168h0m0s (storageClass=ceph-rbd-fast, capacity=50Gi, reclaimPolicy=Retain). The PVC was deleted; this volume may still be billing on the underlying cloud disk. |
+| 302 | `PersistentVolume` | PersistentVolume pvc-17396f05-cb07-436d-803d-f5cfa2d7802a has been Released for >168h0m0s (storageClass=cephfs-with-secrets, capacity=5Gi, reclaimPolicy=Retain). The PVC was deleted; this volume may still be billing on the underlying cloud disk. |
+| 303 | `PersistentVolume` | PersistentVolume pvc-174f6c72-72e8-44fb-a13a-7ab99118d56b has been Released for >168h0m0s (storageClass=cephfs-with-secrets, capacity=5Gi, reclaimPolicy=Retain). The PVC was deleted; this volume may still be billing on the underlying cloud disk. |
+| 304 | `PersistentVolume` | PersistentVolume pvc-17c9ed69-7dd3-4632-b1d9-4f532a620c67 has been Released for >168h0m0s (storageClass=ceph-rbd-fast, capacity=20Gi, reclaimPolicy=Retain). The PVC was deleted; this volume may still be billing on the underlying cloud disk. |
+| 305 | `PersistentVolume` | PersistentVolume pvc-1ac417d7-5175-4bfe-8755-880775d60948 has been Released for >168h0m0s (storageClass=ceph-rbd-fastpool, capacity=10Gi, reclaimPolicy=Retain). The PVC was deleted; this volume may still be billing on the underlying cloud disk. |
+| 306 | `PersistentVolume` | PersistentVolume pvc-1d2bb647-283d-46e3-ab54-cae8a03579df has been Released for >168h0m0s (storageClass=ceph-rbd-fastpool, capacity=1Gi, reclaimPolicy=Retain). The PVC was deleted; this volume may still be billing on the underlying cloud disk. |
+| 307 | `PersistentVolume` | PersistentVolume pvc-1d8bd219-f45b-449f-81f7-7f8cdcd4dbbc has been Released for >168h0m0s (storageClass=ceph-rbd-fastpool, capacity=1Gi, reclaimPolicy=Retain). The PVC was deleted; this volume may still be billing on the underlying cloud disk. |
+| 308 | `PersistentVolume` | PersistentVolume pvc-22aba290-8021-4fe1-b635-ef251a644254 has been Released for >168h0m0s (storageClass=ceph-rbd-fastpool, capacity=10Gi, reclaimPolicy=Retain). The PVC was deleted; this volume may still be billing on the underlying cloud disk. |
+| 309 | `PersistentVolume` | PersistentVolume pvc-22ffb0ce-1498-4feb-bd3f-090a97c546b3 has been Released for >168h0m0s (storageClass=ceph-rbd-fastpool, capacity=1Gi, reclaimPolicy=Retain). The PVC was deleted; this volume may still be billing on the underlying cloud disk. |
+| 310 | `PersistentVolume` | PersistentVolume pvc-24011c0f-c9fe-4948-8e47-6fa6953bc60a has been Released for >168h0m0s (storageClass=cephfs-with-secrets, capacity=5Gi, reclaimPolicy=Retain). The PVC was deleted; this volume may still be billing on the underlying cloud disk. |
+| 311 | `PersistentVolume` | PersistentVolume pvc-2705a55d-d86f-4424-83d9-0987bc77a463 has been Released for >168h0m0s (storageClass=ceph-rbd-fastpool, capacity=10Gi, reclaimPolicy=Retain). The PVC was deleted; this volume may still be billing on the underlying cloud disk. |
+| 312 | `PersistentVolume` | PersistentVolume pvc-27bb6383-590a-47b6-882f-80d100d772a3 has been Released for >168h0m0s (storageClass=ceph-rbd-fast, capacity=50Gi, reclaimPolicy=Retain). The PVC was deleted; this volume may still be billing on the underlying cloud disk. |
+| 313 | `PersistentVolume` | PersistentVolume pvc-29563e1d-04a7-40fa-b090-4012ef003bdf has been Released for >168h0m0s (storageClass=ceph-rbd-fastpool, capacity=10Gi, reclaimPolicy=Retain). The PVC was deleted; this volume may still be billing on the underlying cloud disk. |
+| 314 | `PersistentVolume` | PersistentVolume pvc-297b3b66-696f-4797-b026-e390921c2abb has been Released for >168h0m0s (storageClass=ceph-rbd-fast, capacity=10Gi, reclaimPolicy=Retain). The PVC was deleted; this volume may still be billing on the underlying cloud disk. |
+| 315 | `PersistentVolume` | PersistentVolume pvc-2c364ce2-2a55-4035-a545-938b0ad468b9 has been Released for >168h0m0s (storageClass=cephfs-with-secrets, capacity=5Gi, reclaimPolicy=Retain). The PVC was deleted; this volume may still be billing on the underlying cloud disk. |
+| 316 | `PersistentVolume` | PersistentVolume pvc-2eabc82f-206f-4348-936b-af8343305f91 has been Released for >168h0m0s (storageClass=cephfs-with-secrets, capacity=5Gi, reclaimPolicy=Retain). The PVC was deleted; this volume may still be billing on the underlying cloud disk. |
+| 317 | `PersistentVolume` | PersistentVolume pvc-2f373232-178c-44c0-affc-d83145f561c4 has been Released for >168h0m0s (storageClass=ceph-rbd-fast, capacity=50Gi, reclaimPolicy=Retain). The PVC was deleted; this volume may still be billing on the underlying cloud disk. |
+| 318 | `PersistentVolume` | PersistentVolume pvc-2fc74ebc-82cf-49b3-9674-3ab70c438008 has been Released for >168h0m0s (storageClass=ceph-rbd-fastpool, capacity=10Gi, reclaimPolicy=Retain). The PVC was deleted; this volume may still be billing on the underlying cloud disk. |
+| 319 | `PersistentVolume` | PersistentVolume pvc-3110ea5f-58bd-493d-8db6-a89c2e8578de has been Released for >168h0m0s (storageClass=cephfs-with-secrets, capacity=5Gi, reclaimPolicy=Retain). The PVC was deleted; this volume may still be billing on the underlying cloud disk. |
+| 320 | `PersistentVolume` | PersistentVolume pvc-31df42d0-3fd9-4bfc-b633-9a1698e6b3e6 has been Released for >168h0m0s (storageClass=cephfs-with-secrets, capacity=5Gi, reclaimPolicy=Retain). The PVC was deleted; this volume may still be billing on the underlying cloud disk. |
+| 321 | `PersistentVolume` | PersistentVolume pvc-32d1cfa5-d716-4abe-a5ee-ca804cee3bf4 has been Released for >168h0m0s (storageClass=ceph-rbd-fastpool, capacity=1Gi, reclaimPolicy=Retain). The PVC was deleted; this volume may still be billing on the underlying cloud disk. |
+| 322 | `PersistentVolume` | PersistentVolume pvc-337e569c-b909-488f-865c-043636d7c49d has been Released for >168h0m0s (storageClass=ceph-rbd-fast, capacity=1Gi, reclaimPolicy=Retain). The PVC was deleted; this volume may still be billing on the underlying cloud disk. |
+| 323 | `PersistentVolume` | PersistentVolume pvc-3d02a933-64bd-4622-aa73-c25be6ee8bdf has been Released for >168h0m0s (storageClass=ceph-rbd-fastpool, capacity=1Gi, reclaimPolicy=Retain). The PVC was deleted; this volume may still be billing on the underlying cloud disk. |
+| 324 | `PersistentVolume` | PersistentVolume pvc-3d8d0cc7-fc41-4e5d-a78c-874e9a1713f7 has been Released for >168h0m0s (storageClass=ceph-rbd-fastpool, capacity=10Gi, reclaimPolicy=Retain). The PVC was deleted; this volume may still be billing on the underlying cloud disk. |
+| 325 | `PersistentVolume` | PersistentVolume pvc-40542b4e-dbb7-479c-aa26-24751bb2fae5 has been Released for >168h0m0s (storageClass=ceph-rbd-fastpool, capacity=10Gi, reclaimPolicy=Retain). The PVC was deleted; this volume may still be billing on the underlying cloud disk. |
+| 326 | `PersistentVolume` | PersistentVolume pvc-412bda05-cd10-403d-8d3c-91e1d1cf2a4b has been Released for >168h0m0s (storageClass=cephfs-with-secrets, capacity=5Gi, reclaimPolicy=Retain). The PVC was deleted; this volume may still be billing on the underlying cloud disk. |
+| 327 | `PersistentVolume` | PersistentVolume pvc-43c558db-8138-4249-8060-1570d5d4d3f5 has been Released for >168h0m0s (storageClass=ceph-rbd-fastpool, capacity=10Gi, reclaimPolicy=Retain). The PVC was deleted; this volume may still be billing on the underlying cloud disk. |
+| 328 | `PersistentVolume` | PersistentVolume pvc-44cdb5cf-5703-4b5e-946b-0299116b842e has been Released for >168h0m0s (storageClass=cephfs-with-secrets, capacity=5Gi, reclaimPolicy=Retain). The PVC was deleted; this volume may still be billing on the underlying cloud disk. |
+| 329 | `PersistentVolume` | PersistentVolume pvc-47fa3ba8-e0db-4251-ac25-7df753f4a1f7 has been Released for >168h0m0s (storageClass=ceph-rbd-fastpool, capacity=1Gi, reclaimPolicy=Retain). The PVC was deleted; this volume may still be billing on the underlying cloud disk. |
+| 330 | `PersistentVolume` | PersistentVolume pvc-48383d6a-f786-4575-8c47-cd56c213bd6d has been Released for >168h0m0s (storageClass=ceph-rbd-fastpool, capacity=10Gi, reclaimPolicy=Retain). The PVC was deleted; this volume may still be billing on the underlying cloud disk. |
+| 331 | `PersistentVolume` | PersistentVolume pvc-4abb227c-8fc1-47dd-84a6-b491fe7c4ec3 has been Released for >168h0m0s (storageClass=cephfs-with-secrets, capacity=5Gi, reclaimPolicy=Retain). The PVC was deleted; this volume may still be billing on the underlying cloud disk. |
+| 332 | `PersistentVolume` | PersistentVolume pvc-4b30615e-95e7-469c-8a6b-ec8e5d4dd50d has been Released for >168h0m0s (storageClass=cephfs-with-secrets, capacity=5Gi, reclaimPolicy=Retain). The PVC was deleted; this volume may still be billing on the underlying cloud disk. |
+| 333 | `PersistentVolume` | PersistentVolume pvc-4c9bceaa-9ff4-49bc-9216-f7c25a166d35 has been Released for >168h0m0s (storageClass=cephfs-with-secrets, capacity=5Gi, reclaimPolicy=Retain). The PVC was deleted; this volume may still be billing on the underlying cloud disk. |
+| 334 | `PersistentVolume` | PersistentVolume pvc-591236a7-89d6-4817-a02f-96fb2bf94d1c has been Released for >168h0m0s (storageClass=cephfs-with-secrets, capacity=5Gi, reclaimPolicy=Retain). The PVC was deleted; this volume may still be billing on the underlying cloud disk. |
+| 335 | `PersistentVolume` | PersistentVolume pvc-5b5474ab-1412-4a67-a33d-1d8132c86a70 has been Released for >168h0m0s (storageClass=cephfs-with-secrets, capacity=5Gi, reclaimPolicy=Retain). The PVC was deleted; this volume may still be billing on the underlying cloud disk. |
+| 336 | `PersistentVolume` | PersistentVolume pvc-5db3b785-4d76-40c9-8d1f-b5d723cea530 has been Released for >168h0m0s (storageClass=ceph-rbd-fast, capacity=1Gi, reclaimPolicy=Retain). The PVC was deleted; this volume may still be billing on the underlying cloud disk. |
+| 337 | `PersistentVolume` | PersistentVolume pvc-5fda26ad-73bd-4206-a4d3-e70cb35106ee has been Released for >168h0m0s (storageClass=cephfs-with-secrets, capacity=5Gi, reclaimPolicy=Retain). The PVC was deleted; this volume may still be billing on the underlying cloud disk. |
+| 338 | `PersistentVolume` | PersistentVolume pvc-60e982ef-fc2c-4f47-9ae4-b53adf3f4bf9 has been Released for >168h0m0s (storageClass=cephfs-with-secrets, capacity=5Gi, reclaimPolicy=Retain). The PVC was deleted; this volume may still be billing on the underlying cloud disk. |
+| 339 | `PersistentVolume` | PersistentVolume pvc-66727a05-e087-455c-8741-c8055976f197 has been Released for >168h0m0s (storageClass=ceph-rbd-fastpool, capacity=10Gi, reclaimPolicy=Retain). The PVC was deleted; this volume may still be billing on the underlying cloud disk. |
+| 340 | `PersistentVolume` | PersistentVolume pvc-68be5ce3-fd88-44bc-bb4a-c26b451f1484 has been Released for >168h0m0s (storageClass=ceph-rbd-fast, capacity=10Gi, reclaimPolicy=Retain). The PVC was deleted; this volume may still be billing on the underlying cloud disk. |
+| 341 | `PersistentVolume` | PersistentVolume pvc-6b249394-2c83-4f5e-93dc-741a93048e5b has been Released for >168h0m0s (storageClass=ceph-rbd-fast, capacity=10Gi, reclaimPolicy=Retain). The PVC was deleted; this volume may still be billing on the underlying cloud disk. |
+| 342 | `PersistentVolume` | PersistentVolume pvc-6c73a987-abbe-4c9e-afe4-564233b3a18d has been Released for >168h0m0s (storageClass=cephfs-with-secrets, capacity=5Gi, reclaimPolicy=Retain). The PVC was deleted; this volume may still be billing on the underlying cloud disk. |
+| 343 | `PersistentVolume` | PersistentVolume pvc-6e16e031-6e46-4214-a8e7-59af467196a4 has been Released for >168h0m0s (storageClass=ceph-rbd-fast, capacity=5Gi, reclaimPolicy=Retain). The PVC was deleted; this volume may still be billing on the underlying cloud disk. |
+| 344 | `PersistentVolume` | PersistentVolume pvc-71b4df0d-0312-4057-ad52-2855881566e5 has been Released for >168h0m0s (storageClass=ceph-rbd-fastpool, capacity=10Gi, reclaimPolicy=Retain). The PVC was deleted; this volume may still be billing on the underlying cloud disk. |
+| 345 | `PersistentVolume` | PersistentVolume pvc-72446922-64b3-4092-ab17-d7abbe83f4c1 has been Released for >168h0m0s (storageClass=ceph-rbd-fast, capacity=10Gi, reclaimPolicy=Retain). The PVC was deleted; this volume may still be billing on the underlying cloud disk. |
+| 346 | `PersistentVolume` | PersistentVolume pvc-7a402e7e-e1f6-4398-b75b-c52634588465 has been Released for >168h0m0s (storageClass=ceph-rbd-fastpool, capacity=10Gi, reclaimPolicy=Retain). The PVC was deleted; this volume may still be billing on the underlying cloud disk. |
+| 347 | `PersistentVolume` | PersistentVolume pvc-7a53a1c3-9103-4c49-840d-9d17cac068ee has been Released for >168h0m0s (storageClass=ceph-rbd-fastpool, capacity=10Gi, reclaimPolicy=Retain). The PVC was deleted; this volume may still be billing on the underlying cloud disk. |
+| 348 | `PersistentVolume` | PersistentVolume pvc-7d1c8787-08d9-4ec6-9490-ba237a568d44 has been Released for >168h0m0s (storageClass=cephfs-with-secrets, capacity=5Gi, reclaimPolicy=Retain). The PVC was deleted; this volume may still be billing on the underlying cloud disk. |
+| 349 | `PersistentVolume` | PersistentVolume pvc-8008e41b-6420-4ee9-9ce1-4ab742bf5032 has been Released for >168h0m0s (storageClass=ceph-rbd-fast, capacity=1Gi, reclaimPolicy=Retain). The PVC was deleted; this volume may still be billing on the underlying cloud disk. |
+| 350 | `PersistentVolume` | PersistentVolume pvc-8205039d-4754-4ce8-8544-a3d3092a6424 has been Released for >168h0m0s (storageClass=ceph-rbd-fastpool, capacity=10Gi, reclaimPolicy=Retain). The PVC was deleted; this volume may still be billing on the underlying cloud disk. |
+| 351 | `PersistentVolume` | PersistentVolume pvc-8226e140-1007-4a55-8839-39c3b81055e2 has been Released for >168h0m0s (storageClass=cephfs-with-secrets, capacity=5Gi, reclaimPolicy=Retain). The PVC was deleted; this volume may still be billing on the underlying cloud disk. |
+| 352 | `PersistentVolume` | PersistentVolume pvc-8309dbb6-7535-4e5d-8047-6dfd6269b9b4 has been Released for >168h0m0s (storageClass=ceph-rbd-fastpool, capacity=10Gi, reclaimPolicy=Retain). The PVC was deleted; this volume may still be billing on the underlying cloud disk. |
+| 353 | `PersistentVolume` | PersistentVolume pvc-8719ccb9-5ed6-49eb-bfc1-45f125c7102b has been Released for >168h0m0s (storageClass=ceph-rbd-fastpool, capacity=10Gi, reclaimPolicy=Retain). The PVC was deleted; this volume may still be billing on the underlying cloud disk. |
+| 354 | `PersistentVolume` | PersistentVolume pvc-8c6bade9-805b-47ce-92b1-4b3c508477db has been Released for >168h0m0s (storageClass=cephfs-with-secrets, capacity=5Gi, reclaimPolicy=Retain). The PVC was deleted; this volume may still be billing on the underlying cloud disk. |
+| 355 | `PersistentVolume` | PersistentVolume pvc-8d5a1909-b6d2-4a34-9147-fff504923d1f has been Released for >168h0m0s (storageClass=ceph-rbd-fast, capacity=20Gi, reclaimPolicy=Retain). The PVC was deleted; this volume may still be billing on the underlying cloud disk. |
+| 356 | `PersistentVolume` | PersistentVolume pvc-9554871b-9ead-421a-8a18-7a71c2a38834 has been Released for >168h0m0s (storageClass=ceph-rbd-fast, capacity=50Gi, reclaimPolicy=Retain). The PVC was deleted; this volume may still be billing on the underlying cloud disk. |
+| 357 | `PersistentVolume` | PersistentVolume pvc-95843752-049e-4393-abc0-f823ea6153d2 has been Released for >168h0m0s (storageClass=cephfs-with-secrets, capacity=5Gi, reclaimPolicy=Retain). The PVC was deleted; this volume may still be billing on the underlying cloud disk. |
+| 358 | `PersistentVolume` | PersistentVolume pvc-96ef4152-6286-4fe0-a4d9-866acf90f031 has been Released for >168h0m0s (storageClass=ceph-rbd-fastpool, capacity=10Gi, reclaimPolicy=Retain). The PVC was deleted; this volume may still be billing on the underlying cloud disk. |
+| 359 | `PersistentVolume` | PersistentVolume pvc-9e85c004-f62c-49dc-a285-63732b91479a has been Released for >168h0m0s (storageClass=cephfs-with-secrets, capacity=5Gi, reclaimPolicy=Retain). The PVC was deleted; this volume may still be billing on the underlying cloud disk. |
+| 360 | `PersistentVolume` | PersistentVolume pvc-a00127bc-80cc-4136-9283-79e647e53d13 has been Released for >168h0m0s (storageClass=cephfs-with-secrets, capacity=5Gi, reclaimPolicy=Retain). The PVC was deleted; this volume may still be billing on the underlying cloud disk. |
+| 361 | `PersistentVolume` | PersistentVolume pvc-a0495f3b-85ef-42ee-b5c3-bc0493a7d8ee has been Released for >168h0m0s (storageClass=cephfs-with-secrets, capacity=5Gi, reclaimPolicy=Retain). The PVC was deleted; this volume may still be billing on the underlying cloud disk. |
+| 362 | `PersistentVolume` | PersistentVolume pvc-a1fb99fa-8920-424b-a811-a05778e744eb has been Released for >168h0m0s (storageClass=cephfs-with-secrets, capacity=5Gi, reclaimPolicy=Retain). The PVC was deleted; this volume may still be billing on the underlying cloud disk. |
+| 363 | `PersistentVolume` | PersistentVolume pvc-a2540797-031e-4da1-a102-74beb4992abf has been Released for >168h0m0s (storageClass=ceph-rbd-fast, capacity=5Gi, reclaimPolicy=Retain). The PVC was deleted; this volume may still be billing on the underlying cloud disk. |
+| 364 | `PersistentVolume` | PersistentVolume pvc-a336bfa4-a442-4ff6-a737-605090557810 has been Released for >168h0m0s (storageClass=ceph-rbd-fastpool, capacity=10Gi, reclaimPolicy=Retain). The PVC was deleted; this volume may still be billing on the underlying cloud disk. |
+| 365 | `PersistentVolume` | PersistentVolume pvc-a39013c7-3319-4849-9a51-6d1fb9bf27b9 has been Released for >168h0m0s (storageClass=ceph-rbd-fast, capacity=5Gi, reclaimPolicy=Retain). The PVC was deleted; this volume may still be billing on the underlying cloud disk. |
+| 366 | `PersistentVolume` | PersistentVolume pvc-a7b80367-4b4b-4748-b061-3981be43d9b9 has been Released for >168h0m0s (storageClass=ceph-rbd-fastpool, capacity=10Gi, reclaimPolicy=Retain). The PVC was deleted; this volume may still be billing on the underlying cloud disk. |
+| 367 | `PersistentVolume` | PersistentVolume pvc-aa8b33c1-c86a-435d-98f2-189d9ef3575d has been Released for >168h0m0s (storageClass=cephfs-with-secrets, capacity=5Gi, reclaimPolicy=Retain). The PVC was deleted; this volume may still be billing on the underlying cloud disk. |
+| 368 | `PersistentVolume` | PersistentVolume pvc-b06edc17-9ee4-4fe5-84f4-d9725f28567b has been Released for >168h0m0s (storageClass=ceph-rbd-fastpool, capacity=10Gi, reclaimPolicy=Retain). The PVC was deleted; this volume may still be billing on the underlying cloud disk. |
+| 369 | `PersistentVolume` | PersistentVolume pvc-b0c91809-eaf4-4264-af61-da5ad60617cf has been Released for >168h0m0s (storageClass=cephfs-with-secrets, capacity=5Gi, reclaimPolicy=Retain). The PVC was deleted; this volume may still be billing on the underlying cloud disk. |
+| 370 | `PersistentVolume` | PersistentVolume pvc-b389016f-0531-4bba-862f-b3a48535a533 has been Released for >168h0m0s (storageClass=ceph-rbd-fastpool, capacity=10Gi, reclaimPolicy=Retain). The PVC was deleted; this volume may still be billing on the underlying cloud disk. |
+| 371 | `PersistentVolume` | PersistentVolume pvc-b57f3a04-48f9-4af9-835f-1f53aea4569a has been Released for >168h0m0s (storageClass=cephfs-with-secrets, capacity=5Gi, reclaimPolicy=Retain). The PVC was deleted; this volume may still be billing on the underlying cloud disk. |
+| 372 | `PersistentVolume` | PersistentVolume pvc-b89f7469-3b24-4bb0-a3b9-ca4b566eb4b1 has been Released for >168h0m0s (storageClass=cephfs-with-secrets, capacity=5Gi, reclaimPolicy=Retain). The PVC was deleted; this volume may still be billing on the underlying cloud disk. |
+| 373 | `PersistentVolume` | PersistentVolume pvc-ba795d7e-4d98-4ff0-ba59-7da0e9232026 has been Released for >168h0m0s (storageClass=cephfs-with-secrets, capacity=5Gi, reclaimPolicy=Retain). The PVC was deleted; this volume may still be billing on the underlying cloud disk. |
+| 374 | `PersistentVolume` | PersistentVolume pvc-bbc74e9d-8e5d-4b16-baad-872cc2e8c20e has been Released for >168h0m0s (storageClass=cephfs-with-secrets, capacity=5Gi, reclaimPolicy=Retain). The PVC was deleted; this volume may still be billing on the underlying cloud disk. |
+| 375 | `PersistentVolume` | PersistentVolume pvc-bc6fba65-fbcf-45a5-a358-a94b46562185 has been Released for >168h0m0s (storageClass=cephfs-with-secrets, capacity=5Gi, reclaimPolicy=Retain). The PVC was deleted; this volume may still be billing on the underlying cloud disk. |
+| 376 | `PersistentVolume` | PersistentVolume pvc-bccce83e-7b10-4505-95fc-a272e8f82e14 has been Released for >168h0m0s (storageClass=cephfs-with-secrets, capacity=5Gi, reclaimPolicy=Retain). The PVC was deleted; this volume may still be billing on the underlying cloud disk. |
+| 377 | `PersistentVolume` | PersistentVolume pvc-bce755be-8912-4657-88c0-7daa7c213919 has been Released for >168h0m0s (storageClass=ceph-rbd-fastpool, capacity=10Gi, reclaimPolicy=Retain). The PVC was deleted; this volume may still be billing on the underlying cloud disk. |
+| 378 | `PersistentVolume` | PersistentVolume pvc-bf80c4e3-3966-4ded-a817-fd2ba4d4a680 has been Released for >168h0m0s (storageClass=ceph-rbd-fast, capacity=10Gi, reclaimPolicy=Retain). The PVC was deleted; this volume may still be billing on the underlying cloud disk. |
+| 379 | `PersistentVolume` | PersistentVolume pvc-c15caa9f-ee0b-4e9f-b7c6-d241dc6fcdd6 has been Released for >168h0m0s (storageClass=cephfs-with-secrets, capacity=5Gi, reclaimPolicy=Retain). The PVC was deleted; this volume may still be billing on the underlying cloud disk. |
+| 380 | `PersistentVolume` | PersistentVolume pvc-c6607b79-4f71-442f-b855-9e3c11f1087b has been Released for >168h0m0s (storageClass=ceph-rbd-fast, capacity=10Gi, reclaimPolicy=Retain). The PVC was deleted; this volume may still be billing on the underlying cloud disk. |
+| 381 | `PersistentVolume` | PersistentVolume pvc-ca2dcff5-5317-4d72-860f-4aede21f1344 has been Released for >168h0m0s (storageClass=cephfs-with-secrets, capacity=5Gi, reclaimPolicy=Retain). The PVC was deleted; this volume may still be billing on the underlying cloud disk. |
+| 382 | `PersistentVolume` | PersistentVolume pvc-cbcd1db1-4a55-4ef9-90b0-3b64abf4f18a has been Released for >168h0m0s (storageClass=cephfs-with-secrets, capacity=5Gi, reclaimPolicy=Retain). The PVC was deleted; this volume may still be billing on the underlying cloud disk. |
+| 383 | `PersistentVolume` | PersistentVolume pvc-d248f80a-dffc-4854-8d43-fa7d1eff8167 has been Released for >168h0m0s (storageClass=ceph-rbd-fastpool, capacity=10Gi, reclaimPolicy=Retain). The PVC was deleted; this volume may still be billing on the underlying cloud disk. |
+| 384 | `PersistentVolume` | PersistentVolume pvc-d302eabd-9dbc-4a89-93df-369e06032170 has been Released for >168h0m0s (storageClass=cephfs-with-secrets, capacity=5Gi, reclaimPolicy=Retain). The PVC was deleted; this volume may still be billing on the underlying cloud disk. |
+| 385 | `PersistentVolume` | PersistentVolume pvc-d39e4db4-90ac-4ab4-856f-e60508171c1d has been Released for >168h0m0s (storageClass=cephfs-with-secrets, capacity=5Gi, reclaimPolicy=Retain). The PVC was deleted; this volume may still be billing on the underlying cloud disk. |
+| 386 | `PersistentVolume` | PersistentVolume pvc-d465981e-9739-4acf-975a-a1a7acb8f742 has been Released for >168h0m0s (storageClass=cephfs-with-secrets, capacity=5Gi, reclaimPolicy=Retain). The PVC was deleted; this volume may still be billing on the underlying cloud disk. |
+| 387 | `PersistentVolume` | PersistentVolume pvc-d46f2a28-6a1c-48d4-b578-2b28bc0162cd has been Released for >168h0m0s (storageClass=ceph-rbd-fast, capacity=1Gi, reclaimPolicy=Retain). The PVC was deleted; this volume may still be billing on the underlying cloud disk. |
+| 388 | `PersistentVolume` | PersistentVolume pvc-d5fca2f4-dc8f-4d61-979b-02c2e6d7a7ea has been Released for >168h0m0s (storageClass=cephfs-with-secrets, capacity=5Gi, reclaimPolicy=Retain). The PVC was deleted; this volume may still be billing on the underlying cloud disk. |
+| 389 | `PersistentVolume` | PersistentVolume pvc-d801ca4f-631e-4cff-9e41-f9cffa7d9be5 has been Released for >168h0m0s (storageClass=ceph-rbd-fastpool, capacity=1Gi, reclaimPolicy=Retain). The PVC was deleted; this volume may still be billing on the underlying cloud disk. |
+| 390 | `PersistentVolume` | PersistentVolume pvc-d8293ebe-b3d8-4153-9814-02bfffe98125 has been Released for >168h0m0s (storageClass=cephfs-with-secrets, capacity=5Gi, reclaimPolicy=Retain). The PVC was deleted; this volume may still be billing on the underlying cloud disk. |
+| 391 | `PersistentVolume` | PersistentVolume pvc-da4a9760-f169-4830-92aa-f6c532cfa03b has been Released for >168h0m0s (storageClass=ceph-rbd-fast, capacity=50Gi, reclaimPolicy=Retain). The PVC was deleted; this volume may still be billing on the underlying cloud disk. |
+| 392 | `PersistentVolume` | PersistentVolume pvc-dab769ee-2041-4472-a016-6848afa54378 has been Released for >168h0m0s (storageClass=cephfs-with-secrets, capacity=5Gi, reclaimPolicy=Retain). The PVC was deleted; this volume may still be billing on the underlying cloud disk. |
+| 393 | `PersistentVolume` | PersistentVolume pvc-dbc81945-1961-4ecf-b864-45bcd802520c has been Released for >168h0m0s (storageClass=ceph-rbd-fastpool, capacity=1Gi, reclaimPolicy=Retain). The PVC was deleted; this volume may still be billing on the underlying cloud disk. |
+| 394 | `PersistentVolume` | PersistentVolume pvc-dc7665a4-cc64-4b5c-9072-02e462a5ba28 has been Released for >168h0m0s (storageClass=cephfs-with-secrets, capacity=5Gi, reclaimPolicy=Retain). The PVC was deleted; this volume may still be billing on the underlying cloud disk. |
+| 395 | `PersistentVolume` | PersistentVolume pvc-e03210c3-4d24-4d3f-9173-e8089991a40b has been Released for >168h0m0s (storageClass=ceph-rbd-fast, capacity=10Gi, reclaimPolicy=Retain). The PVC was deleted; this volume may still be billing on the underlying cloud disk. |
+| 396 | `PersistentVolume` | PersistentVolume pvc-e247d20a-f333-4175-81d9-1e5d14d343ec has been Released for >168h0m0s (storageClass=cephfs-with-secrets, capacity=5Gi, reclaimPolicy=Retain). The PVC was deleted; this volume may still be billing on the underlying cloud disk. |
+| 397 | `PersistentVolume` | PersistentVolume pvc-e25f2257-2a22-4278-b8a6-5fd7312a6d6a has been Released for >168h0m0s (storageClass=ceph-rbd-fastpool, capacity=10Gi, reclaimPolicy=Retain). The PVC was deleted; this volume may still be billing on the underlying cloud disk. |
+| 398 | `PersistentVolume` | PersistentVolume pvc-eb440c0f-7978-4061-80b4-d0777d82e297 has been Released for >168h0m0s (storageClass=cephfs-with-secrets, capacity=1Gi, reclaimPolicy=Retain). The PVC was deleted; this volume may still be billing on the underlying cloud disk. |
+| 399 | `PersistentVolume` | PersistentVolume pvc-f0b9d6d1-746d-4318-adcc-f02f102ca0b2 has been Released for >168h0m0s (storageClass=ceph-rbd-fast, capacity=50Gi, reclaimPolicy=Retain). The PVC was deleted; this volume may still be billing on the underlying cloud disk. |
+| 400 | `PersistentVolume` | PersistentVolume pvc-f0e81950-ee48-4456-ab41-a3488e83d393 has been Released for >168h0m0s (storageClass=ceph-rbd-fastpool, capacity=10Gi, reclaimPolicy=Retain). The PVC was deleted; this volume may still be billing on the underlying cloud disk. |
+| 401 | `PersistentVolume` | PersistentVolume pvc-f30b78c1-c061-4892-a6b7-db174f8078e4 has been Released for >168h0m0s (storageClass=cephfs-with-secrets, capacity=5Gi, reclaimPolicy=Retain). The PVC was deleted; this volume may still be billing on the underlying cloud disk. |
+| 402 | `PersistentVolume` | PersistentVolume pvc-f331729f-b5ec-4cf6-8f4a-961dda4c8c47 has been Released for >168h0m0s (storageClass=cephfs-with-secrets, capacity=5Gi, reclaimPolicy=Retain). The PVC was deleted; this volume may still be billing on the underlying cloud disk. |
+| 403 | `PersistentVolume` | PersistentVolume pvc-f4d63bf8-6329-459c-b367-02b0d5ec07d2 has been Released for >168h0m0s (storageClass=ceph-rbd-fastpool, capacity=10Gi, reclaimPolicy=Retain). The PVC was deleted; this volume may still be billing on the underlying cloud disk. |
+| 404 | `PersistentVolume` | PersistentVolume pvc-f9d0efc8-926d-4a36-9838-40295637bff3 has been Released for >168h0m0s (storageClass=ceph-rbd-fastpool, capacity=10Gi, reclaimPolicy=Retain). The PVC was deleted; this volume may still be billing on the underlying cloud disk. |
+| 405 | `PersistentVolume` | PersistentVolume pvc-fbeb8788-aa7d-4e61-a8d0-8e14ecdcaa82 has been Released for >168h0m0s (storageClass=cephfs-with-secrets, capacity=50Gi, reclaimPolicy=Retain). The PVC was deleted; this volume may still be billing on the underlying cloud disk. |
+| 406 | `PersistentVolume` | PersistentVolume pvc-fd365837-3c90-4db9-a5ce-7f1ff6aaa296 has been Released for >168h0m0s (storageClass=ceph-rbd-fast, capacity=10Gi, reclaimPolicy=Retain). The PVC was deleted; this volume may still be billing on the underlying cloud disk. |
+| 407 | `PersistentVolume` | PersistentVolume pvc-fdb9be2d-2b4d-49c7-b30b-d30f0a2a0a12 has been Released for >168h0m0s (storageClass=ceph-rbd-fastpool, capacity=1Gi, reclaimPolicy=Retain). The PVC was deleted; this volume may still be billing on the underlying cloud disk. |
+| 408 | `PersistentVolume` | PersistentVolume pvc-fdf3fc77-93df-4895-9b0e-0342f0f1002c has been Released for >168h0m0s (storageClass=ceph-rbd-fastpool, capacity=10Gi, reclaimPolicy=Retain). The PVC was deleted; this volume may still be billing on the underlying cloud disk. |
+| 409 | `PersistentVolume` | PersistentVolume pvc-ffdba165-7c16-4708-83ee-27e8cf8b80ce has been Released for >168h0m0s (storageClass=ceph-rbd-fastpool, capacity=10Gi, reclaimPolicy=Retain). The PVC was deleted; this volume may still be billing on the underlying cloud disk. |
+| 410 | `CronJob` | CronJob pg/pg-password-fix-onetime is `spec.suspend=true` — paused by an operator. If maintenance is over, unpause:
+
+  kubectl -n pg patch cronjob pg-password-fix-onetime --type=merge -p '{"spec":{"suspend":false}}' |
+| 411 | `CronJob` | CronJob pg/pg-password-manager is `spec.suspend=true` — paused by an operator. If maintenance is over, unpause:
+
+  kubectl -n pg patch cronjob pg-password-manager --type=merge -p '{"spec":{"suspend":false}}' |
+| 412 | `CronJob` | CronJob storethesoup/wp-verify-weekly has not had a successful run in 122h0m0s. The schedule is `0 4 * * 0`. Check the most recent failed Job:
+
+  kubectl -n storethesoup get jobs -l job-name --sort-by=.metadata.creationTimestamp \| tail -5
+  kubectl -n storethesoup logs job/<latest> --tail=200 |
+| 413 | `Pod` | Pod event on Pod/7b498b2d/db891dea — matched pattern ProbeFailed: Readiness probe failed: Get "http://img-1d7dffab:tag/healthz": dial tcp img-1d7dffab:tag: connect: connection refused |
+| 414 | `Pod` | Pod event on Pod/7b498b2d/d3073e7a — matched pattern ProbeFailed: Readiness probe failed: Get "http://img-419541f5:tag/healthz": dial tcp img-419541f5:tag: connect: connection refused |
+| 415 | `Pod` | Pod event on Pod/1450a2aa/54e8bf4f — matched pattern ProbeFailed: Readiness probe failed: calico/node is not ready: felix is not ready: readiness probe reporting 503  |
+| 416 | `Pod` | Pod event on Pod/931ed000/8411e46c — matched pattern ImagePullBackOff: Error: ImagePullBackOff |
+| 417 | `Pod` | Pod event on Pod/d6bed788/19241456 — matched pattern ProbeFailed: Liveness probe failed: [38;5;6mzookeeper [38;5;img-1f88a86f:tag:51.46 [0m[38;5;1mERROR[0m ==> Zookeeper healthcheck failed.  |
+| 418 | `Pod` | Pod event on Pod/b143e54c/639cf9a8 — matched pattern ProbeFailed: Startup probe failed: dial tcp img-b2455773:tag: connect: connection refused |
+| 419 | `Pod` | Pod event on Pod/b143e54c/769c8255 — matched pattern ProbeFailed: Startup probe failed: dial tcp img-237c319e:tag: connect: connection refused |
+| 420 | `Pod` | Pod event on Pod/02bbe537/c13646af — matched pattern ProbeFailed: Startup probe failed: timeout: failed to connect service ":50051" within 1s  |
+| 421 | `Pod` | Pod event on Pod/ade8f28f/cfe048c8 — matched pattern ProbeFailed: Liveness probe failed: command timed out: "env -i sh -c \noutp=\"$(ceph --admin-daemon /run/ceph/ceph-mon.b.asok mon_status 2>&1)\"\nrc=$?\nif [ $rc -ne 0 ]; then\n\techo \"ceph daemon health check failed with the follow… |
+| 422 | `Pod` | Pod event on Pod/ade8f28f/5c6dfcd0 — matched pattern ProbeFailed: Liveness probe failed: command timed out: "env -i sh -c \noutp=\"$(ceph --admin-daemon /run/ceph/ceph-mon.e.asok mon_status 2>&1)\"\nrc=$?\nif [ $rc -ne 0 ]; then\n\techo \"ceph daemon health check failed with the follow… |
+| 423 | `Namespace` | Namespace agents runs pods on a calico cluster (NetPol enforced) but has zero NetworkPolicies. Proposed: default-deny ingress + allow-from same namespace |
+| 424 | `Namespace` | Namespace auth-proxy runs pods on a calico cluster (NetPol enforced) but has zero NetworkPolicies. Proposed: default-deny ingress + allow-from same namespace |
+| 425 | `Namespace` | Namespace bionic-platform runs pods on a calico cluster (NetPol enforced) but has zero NetworkPolicies. Proposed: default-deny ingress + allow-from same namespace + allow-from kong (Ingress controllers routing into this ns) |
+| 426 | `Namespace` | Namespace calico-system runs pods on a calico cluster (NetPol enforced) but has zero NetworkPolicies. Proposed: default-deny ingress + allow-from same namespace |
+| 427 | `Namespace` | Namespace cert-manager runs pods on a calico cluster (NetPol enforced) but has zero NetworkPolicies. Proposed: default-deny ingress + allow-from same namespace |
+| 428 | `Namespace` | Namespace cha-demo runs pods on a calico cluster (NetPol enforced) but has zero NetworkPolicies. Proposed: default-deny ingress + allow-from same namespace |
+| 429 | `Namespace` | Namespace cha-website runs pods on a calico cluster (NetPol enforced) but has zero NetworkPolicies. Proposed: default-deny ingress + allow-from same namespace + allow-from kong (Ingress controllers routing into this ns) |
+| 430 | `Namespace` | Namespace cluster-health-autopilot runs pods on a calico cluster (NetPol enforced) but has zero NetworkPolicies. Proposed: default-deny ingress + allow-from same namespace + allow-from kong (Ingress controllers routing into this ns) |
+| 431 | `Namespace` | Namespace code runs pods on a calico cluster (NetPol enforced) but has zero NetworkPolicies. Proposed: default-deny ingress + allow-from same namespace |
+| 432 | `Namespace` | Namespace comfyui runs pods on a calico cluster (NetPol enforced) but has zero NetworkPolicies. Proposed: default-deny ingress + allow-from same namespace + allow-from kong (Ingress controllers routing into this ns) |
+| 433 | `Namespace` | Namespace default runs pods on a calico cluster (NetPol enforced) but has zero NetworkPolicies. Proposed: default-deny ingress + allow-from same namespace |
+| 434 | `Namespace` | Namespace etcd runs pods on a calico cluster (NetPol enforced) but has zero NetworkPolicies. Proposed: default-deny ingress + allow-from same namespace |
+| 435 | `Namespace` | Namespace gharkaam runs pods on a calico cluster (NetPol enforced) but has zero NetworkPolicies. Proposed: default-deny ingress + allow-from same namespace + allow-from kong (Ingress controllers routing into this ns) |
+| 436 | `Namespace` | Namespace gpu-monitor runs pods on a calico cluster (NetPol enforced) but has zero NetworkPolicies. Proposed: default-deny ingress + allow-from same namespace + allow-from kong (Ingress controllers routing into this ns) |
+| 437 | `Namespace` | Namespace guruji runs pods on a calico cluster (NetPol enforced) but has zero NetworkPolicies. Proposed: default-deny ingress + allow-from same namespace |
+| 438 | `Namespace` | Namespace jarvis runs pods on a calico cluster (NetPol enforced) but has zero NetworkPolicies. Proposed: default-deny ingress + allow-from same namespace + allow-from kong (Ingress controllers routing into this ns) |
+| 439 | `Namespace` | Namespace kasten-io runs pods on a calico cluster (NetPol enforced) but has zero NetworkPolicies. Proposed: default-deny ingress + allow-from same namespace |
+| 440 | `Namespace` | Namespace kb-system runs pods on a calico cluster (NetPol enforced) but has zero NetworkPolicies. Proposed: default-deny ingress + allow-from same namespace |
+| 441 | `Namespace` | Namespace keda runs pods on a calico cluster (NetPol enforced) but has zero NetworkPolicies. Proposed: default-deny ingress + allow-from same namespace |
+| 442 | `Namespace` | Namespace keycloak runs pods on a calico cluster (NetPol enforced) but has zero NetworkPolicies. Proposed: default-deny ingress + allow-from same namespace + allow-from kong (Ingress controllers routing into this ns) |
+| 443 | `Namespace` | Namespace kong runs pods on a calico cluster (NetPol enforced) but has zero NetworkPolicies. Proposed: default-deny ingress + allow-from same namespace |
+| 444 | `Namespace` | Namespace langfuse runs pods on a calico cluster (NetPol enforced) but has zero NetworkPolicies. Proposed: default-deny ingress + allow-from same namespace + allow-from kong (Ingress controllers routing into this ns) |
+| 445 | `Namespace` | Namespace letta runs pods on a calico cluster (NetPol enforced) but has zero NetworkPolicies. Proposed: default-deny ingress + allow-from same namespace + allow-from kong (Ingress controllers routing into this ns) |
+| 446 | `Namespace` | Namespace live-avatar runs pods on a calico cluster (NetPol enforced) but has zero NetworkPolicies. Proposed: default-deny ingress + allow-from same namespace |
+| 447 | `Namespace` | Namespace livekit runs pods on a calico cluster (NetPol enforced) but has zero NetworkPolicies. Proposed: default-deny ingress + allow-from same namespace + allow-from kong (Ingress controllers routing into this ns) |
+| 448 | `Namespace` | Namespace livekit-agents runs pods on a calico cluster (NetPol enforced) but has zero NetworkPolicies. Proposed: default-deny ingress + allow-from same namespace + allow-from kong (Ingress controllers routing into this ns) |
+| 449 | `Namespace` | Namespace local-path-storage runs pods on a calico cluster (NetPol enforced) but has zero NetworkPolicies. Proposed: default-deny ingress + allow-from same namespace |
+| 450 | `Namespace` | Namespace mail runs pods on a calico cluster (NetPol enforced) but has zero NetworkPolicies. Proposed: default-deny ingress + allow-from same namespace + allow-from kong (Ingress controllers routing into this ns) |
+| 451 | `Namespace` | Namespace mcp runs pods on a calico cluster (NetPol enforced) but has zero NetworkPolicies. Proposed: default-deny ingress + allow-from same namespace + allow-from kong (Ingress controllers routing into this ns) |
+| 452 | `Namespace` | Namespace mcp-gateway runs pods on a calico cluster (NetPol enforced) but has zero NetworkPolicies. Proposed: default-deny ingress + allow-from same namespace + allow-from kong (Ingress controllers routing into this ns) |
+| 453 | `Namespace` | Namespace media-services runs pods on a calico cluster (NetPol enforced) but has zero NetworkPolicies. Proposed: default-deny ingress + allow-from same namespace + allow-from kong (Ingress controllers routing into this ns) |
+| 454 | `Namespace` | Namespace meilisearch runs pods on a calico cluster (NetPol enforced) but has zero NetworkPolicies. Proposed: default-deny ingress + allow-from same namespace |
+| 455 | `Namespace` | Namespace metallb-system runs pods on a calico cluster (NetPol enforced) but has zero NetworkPolicies. Proposed: default-deny ingress + allow-from same namespace |
+| 456 | `Namespace` | Namespace minio runs pods on a calico cluster (NetPol enforced) but has zero NetworkPolicies. Proposed: default-deny ingress + allow-from same namespace + allow-from kong (Ingress controllers routing into this ns) |
+| 457 | `Namespace` | Namespace minio-operator runs pods on a calico cluster (NetPol enforced) but has zero NetworkPolicies. Proposed: default-deny ingress + allow-from same namespace |
+| 458 | `Namespace` | Namespace miroshark runs pods on a calico cluster (NetPol enforced) but has zero NetworkPolicies. Proposed: default-deny ingress + allow-from same namespace + allow-from kong (Ingress controllers routing into this ns) |
+| 459 | `Namespace` | Namespace neo4j runs pods on a calico cluster (NetPol enforced) but has zero NetworkPolicies. Proposed: default-deny ingress + allow-from same namespace |
+| 460 | `Namespace` | Namespace nextcloud runs pods on a calico cluster (NetPol enforced) but has zero NetworkPolicies. Proposed: default-deny ingress + allow-from same namespace + allow-from kong (Ingress controllers routing into this ns) |
+| 461 | `Namespace` | Namespace nfs-provisioner runs pods on a calico cluster (NetPol enforced) but has zero NetworkPolicies. Proposed: default-deny ingress + allow-from same namespace |
+| 462 | `Namespace` | Namespace observability runs pods on a calico cluster (NetPol enforced) but has zero NetworkPolicies. Proposed: default-deny ingress + allow-from same namespace |
+| 463 | `Namespace` | Namespace openproject runs pods on a calico cluster (NetPol enforced) but has zero NetworkPolicies. Proposed: default-deny ingress + allow-from same namespace + allow-from kong (Ingress controllers routing into this ns) |
+| 464 | `Namespace` | Namespace pg runs pods on a calico cluster (NetPol enforced) but has zero NetworkPolicies. Proposed: default-deny ingress + allow-from same namespace + allow-from kong (Ingress controllers routing into this ns) |
+| 465 | `Namespace` | Namespace radar runs pods on a calico cluster (NetPol enforced) but has zero NetworkPolicies. Proposed: default-deny ingress + allow-from same namespace |
+| 466 | `Namespace` | Namespace redis runs pods on a calico cluster (NetPol enforced) but has zero NetworkPolicies. Proposed: default-deny ingress + allow-from same namespace |
+| 467 | `Namespace` | Namespace repomind runs pods on a calico cluster (NetPol enforced) but has zero NetworkPolicies. Proposed: default-deny ingress + allow-from same namespace + allow-from kong (Ingress controllers routing into this ns) |
+| 468 | `Namespace` | Namespace search-infrastructure runs pods on a calico cluster (NetPol enforced) but has zero NetworkPolicies. Proposed: default-deny ingress + allow-from same namespace |
+| 469 | `Namespace` | Namespace socialx runs pods on a calico cluster (NetPol enforced) but has zero NetworkPolicies. Proposed: default-deny ingress + allow-from same namespace + allow-from kong (Ingress controllers routing into this ns) |
+| 470 | `Namespace` | Namespace srenix-website runs pods on a calico cluster (NetPol enforced) but has zero NetworkPolicies. Proposed: default-deny ingress + allow-from same namespace + allow-from kong (Ingress controllers routing into this ns) |
+| 471 | `Namespace` | Namespace storethesoup runs pods on a calico cluster (NetPol enforced) but has zero NetworkPolicies. Proposed: default-deny ingress + allow-from same namespace + allow-from kong (Ingress controllers routing into this ns) |
+| 472 | `Namespace` | Namespace tigera-operator runs pods on a calico cluster (NetPol enforced) but has zero NetworkPolicies. Proposed: default-deny ingress + allow-from same namespace |
+| 473 | `Namespace` | Namespace tutor runs pods on a calico cluster (NetPol enforced) but has zero NetworkPolicies. Proposed: default-deny ingress + allow-from same namespace + allow-from kong (Ingress controllers routing into this ns) |
+| 474 | `Namespace` | Namespace vc-livekit runs pods on a calico cluster (NetPol enforced) but has zero NetworkPolicies. Proposed: default-deny ingress + allow-from same namespace + allow-from kong (Ingress controllers routing into this ns) |
+| 475 | `Namespace` | Namespace vc-tools runs pods on a calico cluster (NetPol enforced) but has zero NetworkPolicies. Proposed: default-deny ingress + allow-from same namespace + allow-from kong (Ingress controllers routing into this ns) |
+| 476 | `Namespace` | Namespace voice-studio runs pods on a calico cluster (NetPol enforced) but has zero NetworkPolicies. Proposed: default-deny ingress + allow-from same namespace + allow-from kong (Ingress controllers routing into this ns) |
+| 477 | `Namespace` | Namespace wabuilder runs pods on a calico cluster (NetPol enforced) but has zero NetworkPolicies. Proposed: default-deny ingress + allow-from same namespace + allow-from kong (Ingress controllers routing into this ns) |
+| 478 | `Namespace` | Namespace web runs pods on a calico cluster (NetPol enforced) but has zero NetworkPolicies. Proposed: default-deny ingress + allow-from same namespace + allow-from kong (Ingress controllers routing into this ns) |
+| 479 | `DNSChainDrift` | Ingress `d10f5d3d/562517e3` for host *host-f1ba8d59* references Service `d10f5d3d/96a5c41b` which has `spec.type=ExternalName`. ExternalName Services proxy to an external DNS name, not in-cluster pods; the Ingress may not behave as expected. |
+| 480 | `DNSChainDrift` | Ingress `42233297/40b33b89` for host *host-df442be8* references Service `42233297/d98b1c8a` which has `spec.type=ExternalName`. ExternalName Services proxy to an external DNS name, not in-cluster pods; the Ingress may not behave as expected. |
+| 481 | `DNSChainDrift` | Ingress `25bf6a1d/6750a43a` for host *host-3b05cb67* references Service `25bf6a1d/93bf22ed` which has `spec.type=ExternalName`. ExternalName Services proxy to an external DNS name, not in-cluster pods; the Ingress may not behave as expected. |
+| 482 | `DNSChainDrift` | Ingress `10182ab8/aea3a068` for host *host-32225d86* references Service `10182ab8/92f744a6` which has `spec.type=ExternalName`. ExternalName Services proxy to an external DNS name, not in-cluster pods; the Ingress may not behave as expected. |
+| 483 | `DNSChainDrift` | Ingress `10f9fce6/26a1f8bb` for host *host-d63bb08e* references Service `10f9fce6/2ec52f7a` which has `spec.type=ExternalName`. ExternalName Services proxy to an external DNS name, not in-cluster pods; the Ingress may not behave as expected. |
+| 484 | `DNSChainDrift` | Ingress `47c88e9e/975df461` for host *host-4e3d9acc* references Service `47c88e9e/4d0fcefe` which has `spec.type=ExternalName`. ExternalName Services proxy to an external DNS name, not in-cluster pods; the Ingress may not behave as expected. |
+| 485 | `DNSChainDrift` | Ingress `606299b2/7f3605e0` for host *host-ca5821c0* references Service `606299b2/8a17086a` which has `spec.type=ExternalName`. ExternalName Services proxy to an external DNS name, not in-cluster pods; the Ingress may not behave as expected. |
+| 486 | `DNSChainDrift` | Ingress `038740ef/18bb7265` for host *host-bda455e8* references Service `038740ef/c8918531` which has `spec.type=ExternalName`. ExternalName Services proxy to an external DNS name, not in-cluster pods; the Ingress may not behave as expected. |
+| 487 | `DNSChainDrift` | Ingress `0ec4366c/67b36f81` for host *host-a214c828* references Service `0ec4366c/07241358` which has `spec.type=ExternalName`. ExternalName Services proxy to an external DNS name, not in-cluster pods; the Ingress may not behave as expected. |
+| 488 | `DNSChainDrift` | Ingress `3d69f4a0/3d69f4a0` for host *host-238e6042* references Service `3d69f4a0/a2909668` which has `spec.type=ExternalName`. ExternalName Services proxy to an external DNS name, not in-cluster pods; the Ingress may not behave as expected. |
+| 489 | `DNSChainDrift` | Cloudflare credentials not configured; external DNS hop not checked for 39 host(s). Set `CHA_CLOUDFLARE_API_TOKEN` (and optionally `CHA_CLOUDFLARE_ZONE_ID`) to enable the full DNS-chain analysis including the Cloudflare layer. |
 
 </details>
 
