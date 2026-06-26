@@ -1,5 +1,33 @@
 apiVersion: v1
 entries:
+  agentic-sre:
+  - annotations:
+      category: Infrastructure
+      licenses: Apache-2.0
+    apiVersion: v2
+    appVersion: 0.1.0-alpha.1
+    created: "2026-06-26T23:44:36.860107649Z"
+    description: 'Self-healing operational layer for Kubernetes clusters: detect →
+      fix → re-verify → report, on a schedule, without dashboards or pagers. '
+    digest: 3d157aba1ea45571b07a1d55e5e8342fddd185f2223b361cee228a8eed00e47d
+    home: https://github.com/srenix-ai/agentic-sre
+    keywords:
+    - kubernetes
+    - operations
+    - sre
+    - self-healing
+    - monitoring
+    kubeVersion: '>=1.27.0-0'
+    maintainers:
+    - email: security@srenix.ai
+      name: salilkadam
+    name: agentic-sre
+    sources:
+    - https://github.com/srenix-ai/agentic-sre
+    type: application
+    urls:
+    - https://github.com/SRENIX-AI/agentic-sre/releases/download/agentic-sre-0.1.0-alpha.1/agentic-sre-0.1.0-alpha.1.tgz
+    version: 0.1.0-alpha.1
   cluster-health-autopilot:
   - annotations:
       category: Infrastructure
@@ -1891,4 +1919,4 @@ entries:
     urls:
     - https://github.com/Bionic-AI-Solutions/cluster-health-autopilot/releases/download/cluster-health-autopilot-0.1.0-alpha.1/cluster-health-autopilot-0.1.0-alpha.1.tgz
     version: 0.1.0-alpha.1
-generated: "2026-06-18T01:59:45.73333043Z"
+generated: "2026-06-26T23:44:36.860196049Z"
