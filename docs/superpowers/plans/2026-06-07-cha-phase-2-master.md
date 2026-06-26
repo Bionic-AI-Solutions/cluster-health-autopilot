@@ -1,8 +1,8 @@
-# CHA Phase 2 — Master Plan
+# Srenix Phase 2 — Master Plan
 
 **Status:** DRAFT awaiting approval — written 2026-06-07 immediately after Phase 1 close.
 
-**Phase 1 closed with:** all 5 deliverables LIVE on cluster (1.A cha-com→Slack bridge, 1.B placeholder substitution, 1.C Forge rate-limiter + dedup, 1.D operator-managed OpenProject ticketing, 1.E per-cycle delta view). Operator + watcher on `cluster-health-autopilot:1.20.1`; aiwatch on `cha-com:1.14.0`. OpenProject ticketing creating real work-packages (verified 2026-06-07 with ids 1715+).
+**Phase 1 closed with:** all 5 deliverables LIVE on cluster (1.A srenix-enterprise→Slack bridge, 1.B placeholder substitution, 1.C Forge rate-limiter + dedup, 1.D operator-managed OpenProject ticketing, 1.E per-cycle delta view). Operator + watcher on `agentic-sre:1.20.1`; aiwatch on `srenix-enterprise:1.14.0`. OpenProject ticketing creating real work-packages (verified 2026-06-07 with ids 1715+).
 
 **Phase 2 scope (user-confirmed 2026-06-07):** Tier A + B + C from the Phase-1-close adversarial-review proposal. Skipping Tier D housekeeping (rolled into the deliverables instead).
 
@@ -10,7 +10,7 @@
 
 ## Why these, and why this order
 
-Phase 2 closes the **test → learn → next-cycle-detect** loop that Phase 1 deliberately stopped short of. The audit pattern that surfaced 4 real bugs in Phase 1 (placeholder gaps, chart/CRD shape mismatch, missing register test, **DriftReport.spec.remediation dropped since the field existed**) generalizes to a product feature: when CHA applies a fix, the outcome (worked? reverted? humans complained?) should bend its future behavior. Today nothing learns from outcomes; every cycle is fresh-faced.
+Phase 2 closes the **test → learn → next-cycle-detect** loop that Phase 1 deliberately stopped short of. The audit pattern that surfaced 4 real bugs in Phase 1 (placeholder gaps, chart/CRD shape mismatch, missing register test, **DriftReport.spec.remediation dropped since the field existed**) generalizes to a product feature: when Srenix applies a fix, the outcome (worked? reverted? humans complained?) should bend its future behavior. Today nothing learns from outcomes; every cycle is fresh-faced.
 
 **Sequence-locked dependencies:**
 - 2.A (RAG memory write path) is the foundation. 2.B + 2.C cannot land without it.
@@ -46,7 +46,7 @@ Estimated wall-clock: **6-8 weeks for full Tier A+B+C** at ~1-2 weeks per delive
 - `pkg/ai.OutcomeRecorder` — interface defined, no implementation invokes it from the watcher
 - `ai/memory/rag_qdrant.go` — has scroll/list/get/upsert; needs an `Outcome` entry type added next to `KindWorkload`
 - `ai/approval/server.go` — Approve and Deny handlers should call OutcomeRecorder.Record
-- `cmd/cha-com/watch_cmd.go::tick()` — after autonomy.Consider auto-applies, should record an outcome for each applied action
+- `cmd/srenix-enterprise/watch_cmd.go::tick()` — after autonomy.Consider auto-applies, should record an outcome for each applied action
 
 **Anti-goals.**
 - Not a generic event bus. Outcome record is single-shape: `{applied_at, action_kind, target, diag_subject, decision, outcome (succeeded|reverted|denied), reverted_at|nil, denied_by|nil}`.
@@ -56,7 +56,7 @@ Estimated wall-clock: **6-8 weeks for full Tier A+B+C** at ~1-2 weeks per delive
 - Outcome write path works end-to-end (Slack click → approval-server → record → Qdrant search returns it).
 - Bare proposer side: ONE proposer (DigestPin) reads memory and surfaces "we tried this before" rationale in the proposal message. Other proposers updated in 2.D's wave.
 
-**TDD plan target:** ~12 sub-tasks. New file: `ai/memory/outcome.go`. Modified: `ai/approval/server.go`, `cmd/cha-com/watch_cmd.go`, `ai/proposer/digest_pin.go`.
+**TDD plan target:** ~12 sub-tasks. New file: `ai/memory/outcome.go`. Modified: `ai/approval/server.go`, `cmd/srenix-enterprise/watch_cmd.go`, `ai/proposer/digest_pin.go`.
 
 ---
 
@@ -68,8 +68,8 @@ Inverse: each post also gets a **"Silence this class via click"** button → cre
 
 **Files of interest.**
 - `ai/approval/server.go` — new routes `/approve-class`, `/deny-class`, `/silence-class`
-- `cmd/cha-com/ai_slack_digest.go` — add 3rd button per item
-- `internal/report/routing.go` — add the new button to the OSS watcher's Slack render too (parity with cha-com)
+- `cmd/srenix-enterprise/ai_slack_digest.go` — add 3rd button per item
+- `internal/report/routing.go` — add the new button to the OSS watcher's Slack render too (parity with srenix-enterprise)
 - `pkg/silence/lister.go` — already filters by subject; extend to filter by `(source, message-pattern)` for class-scoped silences
 - `pkg/ai/policy.go` — NEW. Stores class policies in RAG. `PolicyMatches(diag) bool` queried by autonomy engine.
 
@@ -111,12 +111,12 @@ Inverse: each post also gets a **"Silence this class via click"** button → cre
 
 ### 2.D — LLM-driven proposer for arbitrary findings
 
-**The promise.** Current proposers are class-specific (NetworkPolicy / DigestPin / VaultRunbook). A general LLM proposer reads any Diagnostic + RAG memory + workload context, calls cha-com's LLM, returns an action (PR / kubectl-patch / silence) or declines.
+**The promise.** Current proposers are class-specific (NetworkPolicy / DigestPin / VaultRunbook). A general LLM proposer reads any Diagnostic + RAG memory + workload context, calls srenix-enterprise's LLM, returns an action (PR / kubectl-patch / silence) or declines.
 
 **Files of interest.**
 - `ai/proposer/llm.go` — NEW. Implements pkg/ai.FixProposer
 - `ai/prompts/llm_proposer.md` — NEW. System prompt + few-shot examples
-- `cmd/cha-com/watch_cmd.go` — register the LLM proposer last in the proposer chain so deterministic proposers (faster, cheaper) win first
+- `cmd/srenix-enterprise/watch_cmd.go` — register the LLM proposer last in the proposer chain so deterministic proposers (faster, cheaper) win first
 
 **Anti-goals.**
 - Doesn't replace existing proposers. They run first; LLM is fallback for findings the deterministic proposers skip.
@@ -159,11 +159,11 @@ Inverse: each post also gets a **"Silence this class via click"** button → cre
 
 ### 2.F — HA aiwatch
 
-**The promise.** aiwatch becomes leader-elected (mirroring the OSS watcher). Single Deployment, replicas=2+. Lease in cluster-health-autopilot namespace. Standby pod reads but never writes.
+**The promise.** aiwatch becomes leader-elected (mirroring the OSS watcher). Single Deployment, replicas=2+. Lease in agentic-sre namespace. Standby pod reads but never writes.
 
 **Files of interest.**
-- `cmd/cha-com/watch_cmd.go` — wrap the tick loop in a leader-election gate (same `client-go/tools/leaderelection` as OSS watcher)
-- `charts/cluster-health-autopilot/templates/aiwatch-deployment.yaml` — replicas: 2 default
+- `cmd/srenix-enterprise/watch_cmd.go` — wrap the tick loop in a leader-election gate (same `client-go/tools/leaderelection` as OSS watcher)
+- `charts/agentic-sre/templates/aiwatch-deployment.yaml` — replicas: 2 default
 - `internal/operator/builders.go::BuildAIWatch` — same
 
 **Anti-goals.**
@@ -182,13 +182,13 @@ Inverse: each post also gets a **"Silence this class via click"** button → cre
 ### 2.G — Grafana dashboards
 
 **The promise.** Two dashboards published as a Helm sub-chart:
-- **CHA Operations** — driftreports total by source/severity, cycle latency, slack-post failures, ticketing upsert lag
-- **CHA AI Tier** — proposals by ActionKind, autonomy auto-applied vs awaiting-approval vs declined rate, mean confidence, RAG outcome distribution
+- **Srenix Operations** — driftreports total by source/severity, cycle latency, slack-post failures, ticketing upsert lag
+- **Srenix AI Tier** — proposals by ActionKind, autonomy auto-applied vs awaiting-approval vs declined rate, mean confidence, RAG outcome distribution
 
 **Files of interest.**
-- `charts/cluster-health-autopilot/dashboards/` — NEW. Grafana JSON files
+- `charts/agentic-sre/dashboards/` — NEW. Grafana JSON files
 - `internal/metrics/` — NEW. Prometheus metrics exported by watcher + aiwatch (gauges + histograms)
-- `cmd/cha/main.go` + `cmd/cha-com/watch_cmd.go` — start a `:9090/metrics` HTTP listener
+- `cmd/srenix/main.go` + `cmd/srenix-enterprise/watch_cmd.go` — start a `:9090/metrics` HTTP listener
 
 **Anti-goals.**
 - No Grafana operator. Plain ConfigMaps + the standard `grafana_dashboard=1` label.
@@ -197,7 +197,7 @@ Inverse: each post also gets a **"Silence this class via click"** button → cre
 **Deliverable boundary.**
 - Metrics exported and scraped (verify via `kubectl port-forward` to :9090/metrics)
 - Both dashboards render in Grafana with non-empty panels
-- Documented `helm install cha --set dashboards.enabled=true`
+- Documented `helm install srenix --set dashboards.enabled=true`
 
 **TDD plan target:** ~8 sub-tasks (mostly metrics wiring; dashboard JSON is hand-authored).
 
@@ -212,7 +212,7 @@ Inverse: each post also gets a **"Silence this class via click"** button → cre
 - `ai/forge/cosign.go` — NEW. Wraps the `cosign verify` invocation
 
 **Anti-goals.**
-- No CHA-side signing of anything. CHA only emits the proof-of-attestation for the digest it observed; the originating image's signer is the one with the keys.
+- No Srenix-side signing of anything. Srenix only emits the proof-of-attestation for the digest it observed; the originating image's signer is the one with the keys.
 - Optional. Off by default; opt-in via `--digest-pin-cosign-footer=true`.
 
 **Deliverable boundary.**
@@ -241,7 +241,7 @@ Two refinements based on Phase 1 lessons:
 
 ## Acceptance — Phase 2 complete
 
-- [ ] CHA auto-improves: a proposer that gets reverted twice in a row degrades its confidence and stops auto-applying that class (2.A + 2.C)
+- [ ] Srenix auto-improves: a proposer that gets reverted twice in a row degrades its confidence and stops auto-applying that class (2.A + 2.C)
 - [ ] Operators silence classes via Slack click (2.B); the muted-count surfaces on next post
 - [ ] LLM proposer handles at least 2 finding classes deterministic proposers don't (2.D)
 - [ ] 3-5 new analyzers live (2.E)
@@ -269,6 +269,6 @@ Same shape as Phase 1's rollback section:
 ## Out of scope (Phase 3+)
 
 - Cross-cluster RAG federation (still on the deferred list)
-- Auto-merge of CHA PRs (requires policy + branch protection coordination)
+- Auto-merge of Srenix PRs (requires policy + branch protection coordination)
 - Web UI (Slack-only remains the contract)
 - The remaining 10 analyzers (incremental, no Phase boundary)

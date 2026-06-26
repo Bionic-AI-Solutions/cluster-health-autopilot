@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Manual fix: Failing ExternalSecret (ESO Ready=False)
-# CHA reports this but cannot fix it — Vault data must be correct first
+# Srenix reports this but cannot fix it — Vault data must be correct first
 #
 # Usage: ./fix-failing-externalsecret.sh <namespace> <eso-name> [vault-path] [property] [value]
 # Example: ./fix-failing-externalsecret.sh demo-app database-credentials \
@@ -58,7 +58,7 @@ for i in $(seq 1 12); do
   if [[ "$STATUS" == "True" ]]; then
     echo ""
     echo "==> ExternalSecret is now Ready ✓"
-    echo "    CHA watcher will post ✅ Resolved to Slack on next cycle."
+    echo "    Srenix watcher will post ✅ Resolved to Slack on next cycle."
     exit 0
   fi
 done

@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package feeder_test
@@ -12,9 +12,9 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/feeder"
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/rag"
-	pkgsnapshot "github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/snapshot"
+	"github.com/srenix-ai/agentic-sre/pkg/feeder"
+	"github.com/srenix-ai/agentic-sre/pkg/rag"
+	pkgsnapshot "github.com/srenix-ai/agentic-sre/pkg/snapshot"
 )
 
 // memSource is a minimal in-memory snapshot.Source for feeder tests.
@@ -47,7 +47,7 @@ func (m *memSource) Get(_ context.Context, gvr schema.GroupVersionResource, ns, 
 func (m *memSource) Mode() pkgsnapshot.Mode { return pkgsnapshot.ModeLive }
 
 // captureWriter records every Upsert in-order. Mirrors the contract
-// of cha-com's rag_qdrant.go (idempotent upsert, never errors except
+// of srenix-enterprise's rag_qdrant.go (idempotent upsert, never errors except
 // on degenerate input) so the feeder doesn't see any backend-specific
 // behaviour.
 type captureWriter struct {
@@ -179,11 +179,11 @@ func TestWorkloadFeeder_NilGuards(t *testing.T) {
 
 func TestWorkloadFeeder_HappyPath_DeploymentWithDigestPin(t *testing.T) {
 	src := &memSource{byResource: map[string][]unstructured.Unstructured{
-		"deployments": {makeDeployment("production", "cha-com", 2, []map[string]any{
-			{"name": "cha-com", "image": "docker4zerocool/cha-com:1.10.0"},
+		"deployments": {makeDeployment("production", "srenix-enterprise", 2, []map[string]any{
+			{"name": "srenix-enterprise", "image": "docker4zerocool/srenix-enterprise:1.10.0"},
 		})},
-		"pods": {makeDeploymentPod("production", "cha-com", "6d5f9c9b8d", []map[string]any{
-			{"name": "cha-com", "imageID": "docker.io/docker4zerocool/cha-com@sha256:abc123def456"},
+		"pods": {makeDeploymentPod("production", "srenix-enterprise", "6d5f9c9b8d", []map[string]any{
+			{"name": "srenix-enterprise", "imageID": "docker.io/docker4zerocool/srenix-enterprise@sha256:abc123def456"},
 		})},
 	}}
 	w := &captureWriter{}
@@ -203,8 +203,8 @@ func TestWorkloadFeeder_HappyPath_DeploymentWithDigestPin(t *testing.T) {
 	if e.Kind != rag.KindWorkload {
 		t.Errorf("kind: got %v want workload", e.Kind)
 	}
-	if e.Key != "production/cha-com" {
-		t.Errorf("key: got %q want production/cha-com", e.Key)
+	if e.Key != "production/srenix-enterprise" {
+		t.Errorf("key: got %q want production/srenix-enterprise", e.Key)
 	}
 	if e.ClusterID != "bionic-cluster" {
 		t.Errorf("clusterID: got %q want bionic-cluster", e.ClusterID)
@@ -220,10 +220,10 @@ func TestWorkloadFeeder_HappyPath_DeploymentWithDigestPin(t *testing.T) {
 		t.Fatalf("features.containers: shape %T len %d", e.Features["containers"], len(containers))
 	}
 	c := containers[0].(map[string]any)
-	if c["name"] != "cha-com" {
+	if c["name"] != "srenix-enterprise" {
 		t.Errorf("container.name: got %v", c["name"])
 	}
-	if c["image"] != "docker4zerocool/cha-com:1.10.0" {
+	if c["image"] != "docker4zerocool/srenix-enterprise:1.10.0" {
 		t.Errorf("container.image: got %v", c["image"])
 	}
 	if c["image_digest"] != "sha256:abc123def456" {
@@ -314,16 +314,16 @@ func TestWorkloadFeeder_SkipsSystemNamespaces(t *testing.T) {
 }
 
 func TestWorkloadFeeder_HelmAnnotations_PopulateOwnerFields(t *testing.T) {
-	d := makeDeployment("production", "cha-com", 2, []map[string]any{
-		{"name": "cha-com", "image": "docker4zerocool/cha-com:1.10.0"},
+	d := makeDeployment("production", "srenix-enterprise", 2, []map[string]any{
+		{"name": "srenix-enterprise", "image": "docker4zerocool/srenix-enterprise:1.10.0"},
 	})
 	d.SetAnnotations(map[string]string{
-		"meta.helm.sh/release-name":      "cha",
-		"meta.helm.sh/release-namespace": "cluster-health-autopilot",
+		"meta.helm.sh/release-name":      "srenix",
+		"meta.helm.sh/release-namespace": "agentic-sre",
 	})
 	d.SetLabels(map[string]string{
-		"helm.sh/chart":          "cluster-health-autopilot-1.16.0",
-		"app.kubernetes.io/name": "cluster-health-autopilot",
+		"helm.sh/chart":          "agentic-sre-1.16.0",
+		"app.kubernetes.io/name": "agentic-sre",
 	})
 	src := &memSource{byResource: map[string][]unstructured.Unstructured{
 		"deployments": {d},
@@ -339,13 +339,13 @@ func TestWorkloadFeeder_HelmAnnotations_PopulateOwnerFields(t *testing.T) {
 	if feats["owner_kind"] != "Helm" {
 		t.Errorf("owner_kind: got %v want Helm", feats["owner_kind"])
 	}
-	if feats["owner_release"] != "cha" {
-		t.Errorf("owner_release: got %v want cha", feats["owner_release"])
+	if feats["owner_release"] != "srenix" {
+		t.Errorf("owner_release: got %v want srenix", feats["owner_release"])
 	}
-	if feats["owner_release_namespace"] != "cluster-health-autopilot" {
+	if feats["owner_release_namespace"] != "agentic-sre" {
 		t.Errorf("owner_release_namespace: got %v", feats["owner_release_namespace"])
 	}
-	if feats["owner_chart"] != "cluster-health-autopilot" {
+	if feats["owner_chart"] != "agentic-sre" {
 		t.Errorf("owner_chart: should strip trailing version; got %v", feats["owner_chart"])
 	}
 }

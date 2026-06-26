@@ -1,13 +1,13 @@
-# ClusterHealthAutopilot CR — Bionic production cluster.
+# AgenticSRE CR — Bionic production cluster.
 #
 # This CR replicates the current Helm-managed config (chart 1.9.0) so
-# the operator takes over lifecycle management of all CHA workloads.
+# the operator takes over lifecycle management of all Srenix workloads.
 #
 # MIGRATION PROCEDURE:
-# 1. helm upgrade cha charts/cluster-health-autopilot/ -n cluster-health-autopilot
+# 1. helm upgrade srenix charts/agentic-sre/ -n agentic-sre
 #       --reuse-values --set operator.enabled=true (enables operator Deployment)
 # 2. kubectl apply -f examples/cluster-migration/bionic-cr.yaml
-# 3. Watch: kubectl get clusterhealthautopilot bionic -n cluster-health-autopilot -w
+# 3. Watch: kubectl get agenticsre bionic -n agentic-sre -w
 # 4. Once Ready=True, verify all pods running (bionic-watcher, bionic-aiwatch,
 #    bionic-rag, bionic-approval-server).
 # 5. Cutover: helm upgrade ... --set watcher.enabled=false
@@ -20,17 +20,17 @@
 # - spec.approval.ingress.tls is handled by cert-manager annotation on the chart;
 #   the operator-managed Ingress will need the annotation added post-apply
 #   (see spec.approval.ingress.annotations below)
-# - Slack webhook secrets (cha-slack-*) are chart-managed and remain so;
+# - Slack webhook secrets (srenix-slack-*) are chart-managed and remain so;
 #   the watcher args pick them up via alertingArgs() from spec.alerting.
-apiVersion: cha.bionicaisolutions.com/v1alpha1
-kind: ClusterHealthAutopilot
+apiVersion: srenix.ai/v1alpha1
+kind: AgenticSRE
 metadata:
   name: bionic
-  namespace: cluster-health-autopilot
+  namespace: agentic-sre
 spec:
   # OSS binary image — includes k3s probe suite + operator port (v1.9.0).
   image:
-    repository: docker4zerocool/cluster-health-autopilot
+    repository: docker4zerocool/agentic-sre
     tag: "1.10.0"
     pullPolicy: IfNotPresent
 
@@ -63,13 +63,13 @@ spec:
     # --slack-alerts-webhook-secret=<name>:<key> to the watcher binary.
     slack:
       alerts:
-        secretName: cha-slack-ceph-alerts
+        secretName: srenix-slack-ceph-alerts
       critical:
-        secretName: cha-slack-ceph-critical
+        secretName: srenix-slack-ceph-critical
       healthInfo:
-        secretName: cha-slack-healthinfo
+        secretName: srenix-slack-healthinfo
 
-  # AI — CHA-com paid tier T3 (full LLM-fixer-matcher + Vault runbook +
+  # AI — Srenix Enterprise paid tier T3 (full LLM-fixer-matcher + Vault runbook +
   # confidence-gated auto-apply + RAG memory).
   ai:
     enabled: true
@@ -80,25 +80,25 @@ spec:
     llmFixerMatcher: true
     auditLog: "-"
     allowSaas: false
-    approvalServerUrl: https://cha-approve.baisoln.com
+    approvalServerUrl: https://srenix-approve.baisoln.com
     apiKey:
-      secretName: cha-ai-llm-key
+      secretName: srenix-ai-llm-key
       secretKey: API_KEY
       envName: AI_API_KEY
       header: X-API-Key
     t3:
       vaultAllowedPrefixes:
-        - secret/data/cha-recovery/
+        - secret/data/srenix-recovery/
     memory:
       enabled: true
       embeddings:
         endpoint: https://mcp.baisoln.com/gpu-ai/v1
         model: qwen3-embedding-0.6b
       topK: 5
-      # storeUrl defaults to http://bionic-rag.cluster-health-autopilot.svc:6333
+      # storeUrl defaults to http://bionic-rag.agentic-sre.svc:6333
       # which the operator creates via spec.ai.memory.enabled=true (Qdrant SS+Svc).
     image:
-      repository: docker4zerocool/cha-com
+      repository: docker4zerocool/srenix-enterprise
       tag: "1.9.3"
       pullPolicy: IfNotPresent
 
@@ -106,24 +106,24 @@ spec:
   approval:
     enabled: true
     replicas: 2
-    auditNamespace: cluster-health-autopilot
+    auditNamespace: agentic-sre
     store:
       backend: configmap
-      replayConfigMap: cha-approval-replay
-      runbookConfigMap: cha-approval-runbooks
+      replayConfigMap: srenix-approval-replay
+      runbookConfigMap: srenix-approval-runbooks
     signingKey:
-      secretName: cha-approval-signing-key
+      secretName: srenix-approval-signing-key
     ingress:
       enabled: true
-      host: cha-approve.baisoln.com
+      host: srenix-approve.baisoln.com
       ingressClassName: ""   # cluster default (Traefik on k3s)
       annotations:
         # cert-manager provisions the TLS cert automatically.
         cert-manager.io/cluster-issuer: letsencrypt-prod
       tls:
         enabled: true
-        secretName: cha-approval-server-tls
+        secretName: srenix-approval-server-tls
     image:
-      repository: docker4zerocool/cha-com
+      repository: docker4zerocool/srenix-enterprise
       tag: "1.9.3"
       pullPolicy: IfNotPresent

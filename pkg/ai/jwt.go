@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package ai
@@ -32,15 +32,15 @@ import (
 // TokenClaims is the JWT payload for an approval token.
 type TokenClaims struct {
 	// Standard claims.
-	Issuer    string `json:"iss"`           // "cha-com/approval-server"
-	Audience  string `json:"aud"`           // "cha-com/executor"
+	Issuer    string `json:"iss"`           // "srenix-enterprise/approval-server"
+	Audience  string `json:"aud"`           // "srenix-enterprise/executor"
 	Subject   string `json:"sub"`           // ActionID or RunbookID
 	JTI       string `json:"jti"`           // unique id (== Subject)
 	IssuedAt  int64  `json:"iat"`           // unix seconds
 	ExpiresAt int64  `json:"exp"`           // unix seconds
 	NotBefore int64  `json:"nbf,omitempty"` // unix seconds (T3 only)
 
-	// CHA-specific claims.
+	// Srenix-specific claims.
 	Tier         Tier      `json:"tier"`
 	ActionKind   string    `json:"action_kind,omitempty"`
 	Target       ObjectRef `json:"target,omitempty"`
@@ -116,7 +116,7 @@ var b64 = base64.RawURLEncoding
 // GenerateSigningKey produces a fresh Ed25519 keypair. The approval-server
 // generates one at install time and stores the private half in a
 // Kubernetes Secret; the public half is also stored and is consulted by
-// any cha-com pod that needs to verify locally (e.g. for diagnostic
+// any srenix-enterprise pod that needs to verify locally (e.g. for diagnostic
 // purposes).
 func GenerateSigningKey() (ed25519.PublicKey, ed25519.PrivateKey, error) {
 	return ed25519.GenerateKey(rand.Reader)

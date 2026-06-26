@@ -3,22 +3,22 @@
 > **STATUS: 🚧 PARTIAL — RAG substrate + READ/outcome layer SHIPPED; full learned-knowledge replay is the open moat.**
 > _(P4.1 honest-header pass, 2026-06-11)_
 >
-> Shipped substrate (OSS + CHA-com): the `pkg/rag` store with typed entry kinds including `KindWorkload` and `KindFindingOutcome` (`pkg/rag/types.go`); the workload feeder upserting per-workload entries each cycle (`internal/feeder` → promoted to `pkg/feeder`, PR #152/#158); CHA-com **Phase 2.A — RAG memory READ + revert detection + per-cycle observability (v1.15.0)** per the consolidated roadmap; and the Approve/Deny/Silence outcome signal captured as `finding_outcome` entries. v1.10.5 (PR #132) removed the hardcoded cluster-specific defaults this doc motivates.
+> Shipped substrate (OSS + Srenix Enterprise): the `pkg/rag` store with typed entry kinds including `KindWorkload` and `KindFindingOutcome` (`pkg/rag/types.go`); the workload feeder upserting per-workload entries each cycle (`internal/feeder` → promoted to `pkg/feeder`, PR #152/#158); Srenix Enterprise **Phase 2.A — RAG memory READ + revert detection + per-cycle observability (v1.15.0)** per the consolidated roadmap; and the Approve/Deny/Silence outcome signal captured as `finding_outcome` entries. v1.10.5 (PR #132) removed the hardcoded cluster-specific defaults this doc motivates.
 >
-> **DELTA — still open:** the doc's core promise — **learned per-cluster knowledge replayed each cycle into the probe/analyzer pipeline and revised continuously from SRE-action signals** (the "moat") — is only partially realized. The store + outcome capture exist; full closed-loop replay (outcomes re-grounding future proposals) is the genuinely-open strategic work tracked under `cha-ai-remediation-direction` / Phase P6 and the Q3 forward plan. Treat the prose below as the target architecture, not as fully-delivered behavior.
+> **DELTA — still open:** the doc's core promise — **learned per-cluster knowledge replayed each cycle into the probe/analyzer pipeline and revised continuously from SRE-action signals** (the "moat") — is only partially realized. The store + outcome capture exist; full closed-loop replay (outcomes re-grounding future proposals) is the genuinely-open strategic work tracked under `srenix-ai-remediation-direction` / Phase P6 and the Q3 forward plan. Treat the prose below as the target architecture, not as fully-delivered behavior.
 >
 > Body below is the original design, preserved for context.
 
 ---
 
 **Status:** Design draft
-**Tier:** Paid (CHA-com / AI tier, gated on `spec.ai.enabled`)
+**Tier:** Paid (Srenix Enterprise / AI tier, gated on `spec.ai.enabled`)
 **Author:** opened 2026-06-01
-**Companions:** [2026-05-investigator-agent.md](2026-05-investigator-agent.md), [`cha-operator-phase-1c-design`](../../) memory, `cha-ai-remediation-direction` memory
+**Companions:** [2026-05-investigator-agent.md](2026-05-investigator-agent.md), [`srenix-operator-phase-1c-design`](../../) memory, `srenix-ai-remediation-direction` memory
 
 ## TL;DR
 
-CHA OSS today auto-discovers Ingress hosts and per-Deployment health, but
+Srenix OSS today auto-discovers Ingress hosts and per-Deployment health, but
 cluster-specific knowledge ("which apex domains matter," "which workloads are
 critical," "what's normal restart churn here") is either **hardcoded** (v1.10.5
 removed all hardcoded defaults from OSS code) or **hand-curated** in CR spec.
@@ -29,7 +29,7 @@ the probe/analyzer pipeline, and revised continuously from SRE-action signals
 (Approve / Deny / Silence outcomes).**
 
 This layer is the moat — it can't be reproduced by reading the OSS code, only
-by running CHA in your cluster long enough to learn.
+by running Srenix in your cluster long enough to learn.
 
 ## Why we need it
 
@@ -43,7 +43,7 @@ Three concrete problems v1.10.5 made visible:
 
 2. **"Critical" vs "noise" is per-cluster** — `Pod restart count > 50` is a
    problem in a stateless web tier but normal in cnpg-system. Static
-   thresholds in OSS code can't model this. SREs already correct CHA every
+   thresholds in OSS code can't model this. SREs already correct Srenix every
    day by clicking Silence on noisy classes (HPA-ScalingDisabled on KEDA
    scale-to-zero, ExternalName services in oauth2-proxy patterns). Those
    clicks are signal — we throw them away.
@@ -85,7 +85,7 @@ learned from label hints, traffic, owner-references, and finding history.
 Replayed as `ServiceTarget`s — with `criticality` driving severity.
 
 `kind=finding_outcome`: every Approve / Deny / Silence click recorded keyed on
-`(cluster_id, finding_class, subject_pattern)`. The next time CHA's analyzer
+`(cluster_id, finding_class, subject_pattern)`. The next time Srenix's analyzer
 emits a matching finding it bypasses the noise → SRE-rejected classes
 auto-suppress; SRE-approved fix templates rank higher.
 
@@ -121,7 +121,7 @@ DiscoverIngressTargets()
 OSS behaviour is **literally unchanged** because OSS doesn't talk to Qdrant.
 The AI tier adds a `LearntEndpointTargets`/`LearntServiceTargets` source
 behind a `pkg/rag.Reader` interface implemented only by `bionic-aiwatch` in
-CHA-com. OSS gets a no-op reader.
+Srenix Enterprise. OSS gets a no-op reader.
 
 ## Write path — how RAG gets populated
 
@@ -143,7 +143,7 @@ Three feeders, each contained to its own goroutine in `bionic-aiwatch`:
      into `kind=baseline`.
 
 3. **Outcome feeder** (real-time, from the approval-server):
-   - Every Approve / Deny click on a cha-com #17 signed URL writes a
+   - Every Approve / Deny click on a srenix-enterprise #17 signed URL writes a
      `kind=finding_outcome` row with `action ∈ {approved, denied}` and the
      JWT subject claim as the actor. Silence-CR creation events from the
      watch loop write `action=silenced`.
@@ -200,7 +200,7 @@ The proposed gates before this is callable production:
 | 2d-α | `kind=apex_domain` + discovery feeder only. Replay into `LearntEndpointTargets`. Operator override + decay. | OLM-on-kind smoke + bundle parity on the new CR fields. Live cluster: backfill from CF zones + verify learned hostnames appear as probe targets. |
 | 2d-β | `kind=workload` + `kind=baseline`. Replay into `LearntServiceTargets` with `criticality` driving severity. | Per-namespace baseline data >= 7 days before any severity remapping takes effect. |
 | 2d-γ | `kind=finding_outcome` + outcome feeder + the auto-silence proposer. Wired into `renderAIBlocks` Approve/Deny pair. | Adversarial review for false-positive auto-silence; AI-proposer dry-run on a corpus of past findings before going live. |
-| 2d-δ | UI surface (CHA-com web) showing the learned model per cluster, with operator controls to demote / unlearn rows. | Auth wired through Keycloak realm `bionic`; per-cluster RBAC. |
+| 2d-δ | UI surface (Srenix Enterprise web) showing the learned model per cluster, with operator controls to demote / unlearn rows. | Auth wired through Keycloak realm `bionic`; per-cluster RBAC. |
 
 Each phase is its own PR and chart bump. 2d-α can ship as v1.11.0.
 
@@ -208,10 +208,10 @@ Each phase is its own PR and chart bump. 2d-α can ship as v1.11.0.
 
 1. Where does Qdrant live for OSS users who turn on AI later? Today
    `bionic-rag` is a StatefulSet the operator provisions. Adopting a managed
-   Qdrant Cloud is on the table for cha-com.
+   Qdrant Cloud is on the table for srenix-enterprise.
 2. How do we backfill a freshly-installed paid cluster? Discovery + 7-day
    observation gate. UI shows "still learning" with an explicit days-remaining
    indicator.
-3. Multi-cluster (CHA-com cohort installs): do per-cluster RAGs ever share?
+3. Multi-cluster (Srenix Enterprise cohort installs): do per-cluster RAGs ever share?
    No, by design — sharing makes one customer's noise classes affect another's.
    Federation could be a Phase 2e topic.

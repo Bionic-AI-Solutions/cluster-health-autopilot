@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package operator
@@ -15,7 +15,7 @@ import (
 // (<fullname>-dashboard), distinct from the watcher SA. This is the
 // dashboard analog of TestChartWatcherBindings_UseServiceAccountHelper:
 // the dashboard ClusterRoleBinding must bind the dashboard SA, NOT the
-// watcher SA (cha.serviceAccountName) and NOT a bare cha.fullname — the
+// watcher SA (srenix.serviceAccountName) and NOT a bare srenix.fullname — the
 // silence-binding bug (a binding pointing at a non-existent SA so the
 // grant silently never lands) must not recur in a copy-paste.
 //
@@ -24,9 +24,9 @@ import (
 // grant any mutate verb or touch Secrets — the dashboard is read-only by
 // construction, and an accidental mutate verb here would be a privilege
 // escalation no other gate catches (the chart↔operator RBAC parity test
-// excludes the cha.bionicaisolutions.com group).
+// excludes the srenix.ai group).
 func TestChartDashboardBinding_BindsDashboardSA(t *testing.T) {
-	path := filepath.Join("..", "..", "charts", "cluster-health-autopilot", "templates", "dashboard-rbac.yaml")
+	path := filepath.Join("..", "..", "charts", "agentic-sre", "templates", "dashboard-rbac.yaml")
 	b, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("read dashboard-rbac.yaml: %v", err)
@@ -34,7 +34,7 @@ func TestChartDashboardBinding_BindsDashboardSA(t *testing.T) {
 	src := string(b)
 
 	// 1. Subject SA must be <fullname>-dashboard. The watcher guard
-	//    requires cha.serviceAccountName; the dashboard is the opposite
+	//    requires srenix.serviceAccountName; the dashboard is the opposite
 	//    case — its OWN SA, so it must NOT route through that helper.
 	idx := strings.Index(src, "kind: ServiceAccount")
 	if idx < 0 {
@@ -46,13 +46,13 @@ func TestChartDashboardBinding_BindsDashboardSA(t *testing.T) {
 		t.Fatalf("dashboard-rbac.yaml: could not parse the subject SA-name line — update this guard")
 	}
 	subj := strings.TrimSpace(saLine[1])
-	if !strings.Contains(subj, `include "cha.fullname" .`) || !strings.Contains(subj, "-dashboard") {
-		t.Errorf("dashboard binding subject is %q, want the dashboard SA `{{ include \"cha.fullname\" . }}-dashboard`. "+
+	if !strings.Contains(subj, `include "srenix.fullname" .`) || !strings.Contains(subj, "-dashboard") {
+		t.Errorf("dashboard binding subject is %q, want the dashboard SA `{{ include \"srenix.fullname\" . }}-dashboard`. "+
 			"The dashboard runs under its own SA; binding the wrong SA either silently drops the grant "+
 			"(the silence-binding bug class) or over-grants the watcher SA.", subj)
 	}
-	if strings.Contains(subj, `include "cha.serviceAccountName"`) {
-		t.Errorf("dashboard binding subject uses cha.serviceAccountName (the WATCHER SA); the dashboard must bind its OWN <fullname>-dashboard SA.")
+	if strings.Contains(subj, `include "srenix.serviceAccountName"`) {
+		t.Errorf("dashboard binding subject uses srenix.serviceAccountName (the WATCHER SA); the dashboard must bind its OWN <fullname>-dashboard SA.")
 	}
 
 	// 2. Read-only RBAC contract: only get/list/watch verbs; no mutate

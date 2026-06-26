@@ -1,14 +1,14 @@
-# Phase 2.G — Grafana Dashboards for CHA-com
+# Phase 2.G — Grafana Dashboards for Srenix Enterprise
 
 **Status:** active sub-plan; execution deferred to a focused observability session.
 
-**Parent:** [2026-06-07-cha-phase-2-master.md](2026-06-07-cha-phase-2-master.md)
+**Parent:** [2026-06-07-srenix-phase-2-master.md](2026-06-07-srenix-phase-2-master.md)
 
 ---
 
 ## Goal
 
-Operators currently observe CHA-com behavior via:
+Operators currently observe Srenix Enterprise behavior via:
 - Watcher stdout (the cycle log lines: `[cycle=N]`, `outcomes:`, `policies:`, `llm-proposer:`)
 - K8s Events in the install namespace (the audit sink)
 
@@ -27,16 +27,16 @@ Per signal, the watch loop already emits, add a `prometheus.Counter` or `Gauge`:
 
 | Metric | Type | Labels | Source |
 |---|---|---|---|
-| `cha_cycle_total` | counter | — | tick header |
-| `cha_diagnostic_total` | counter | source, severity | per fresh diag |
-| `cha_outcome_total` | counter | verdict, delivery | outcomes line |
-| `cha_outcome_revert_total` | counter | source | revert observer |
-| `cha_policy_active` | gauge | — | policy counter |
-| `cha_policy_muted_total` | counter | — | policy counter |
-| `cha_llm_proposer_total` | counter | outcome | llm-proposer line (outcome=succeeded/refused/invalid/errored/rejected) |
-| `cha_autonomy_decision_total` | counter | result | autonomy.Consider (result=applied/declined/skipped/error) |
-| `cha_breaker_open` | gauge | — | circuit breaker |
-| `cha_confidence_histogram` | histogram | source, action_kind | DecideAutonomyWithInputs |
+| `srenix_cycle_total` | counter | — | tick header |
+| `srenix_diagnostic_total` | counter | source, severity | per fresh diag |
+| `srenix_outcome_total` | counter | verdict, delivery | outcomes line |
+| `srenix_outcome_revert_total` | counter | source | revert observer |
+| `srenix_policy_active` | gauge | — | policy counter |
+| `srenix_policy_muted_total` | counter | — | policy counter |
+| `srenix_llm_proposer_total` | counter | outcome | llm-proposer line (outcome=succeeded/refused/invalid/errored/rejected) |
+| `srenix_autonomy_decision_total` | counter | result | autonomy.Consider (result=applied/declined/skipped/error) |
+| `srenix_breaker_open` | gauge | — | circuit breaker |
+| `srenix_confidence_histogram` | histogram | source, action_kind | DecideAutonomyWithInputs |
 
 ### 2.G.2 — /metrics endpoint on watcher + approval-server
 
@@ -45,7 +45,7 @@ Per signal, the watch loop already emits, add a `prometheus.Counter` or `Gauge`:
 
 ### 2.G.3 — Grafana dashboard JSON
 
-One dashboard `cha-com-overview.json` with rows:
+One dashboard `srenix-enterprise-overview.json` with rows:
 - **Throughput** — cycle rate, diagnostic rate, outcome rate
 - **Autonomy** — auto-apply success vs decline; confidence distribution
 - **LLM Proposer** — attempts vs success; refuse-rate trend
@@ -56,9 +56,9 @@ One dashboard `cha-com-overview.json` with rows:
 ### 2.G.4 — Alertmanager rules
 
 `PrometheusRule` CR shipping a small set of canary alerts:
-- `chaWatcherStuck` — `cha_cycle_total` not increasing for 5m
-- `chaBreakerOpen` — `cha_breaker_open == 1` for 10m
-- `chaAutonomyRejectionSpike` — sustained `cha_llm_proposer_total{outcome="rejected"} / total > 0.5` for 30m
+- `chaWatcherStuck` — `srenix_cycle_total` not increasing for 5m
+- `chaBreakerOpen` — `srenix_breaker_open == 1` for 10m
+- `chaAutonomyRejectionSpike` — sustained `srenix_llm_proposer_total{outcome="rejected"} / total > 0.5` for 30m
 
 ### 2.G.5 — Local verify + screenshots
 

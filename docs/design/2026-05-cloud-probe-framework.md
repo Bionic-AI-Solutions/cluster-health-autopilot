@@ -5,9 +5,9 @@
 >
 > The full multi-cloud surface — **30 probes (10 each AWS / GCP / Azure)** with all three Live SDK wrappers wired to execute against real clouds — shipped bundled in **OSS v1.8.0** (CHANGELOG [1.8.0] 2026-05-28: "a complete 30-probe multi-cloud surface (10 each AWS/GCP/Azure) with all three Live SDK wrappers"). GCP/Azure slices landed incrementally (Sprint 1–3 PRs) then collapsed into the v1.8.0 release. Live SDK wrappers (`internal/cloud/{aws,gcp,azure}/live.go`) compile against the real SDKs but are NOT integration-tested against live cloud accounts (credential-gated) — documented as a verification boundary in the CHANGELOG.
 >
-> **DELTA — M3 (Cloud-aware AI tier, CHA-com) was DROPPED SILENTLY and is NOT shipped.** §6 M3 below (T0 cloud-context enricher, T1 cloud-aware fix proposer, T2 cloud+K8s planner) has **no CHANGELOG entry and no code** as of 2026-06-11 (verified: no `cloud-aware`/`Cloud M3` references outside this design doc). The shipped AI tiers (T0–T3, CHA-com v1.1.0–v1.4.0) carry K8s context only, not cloud-resource context. → **Follow-up: Cloud M3 (cloud-aware AI tier)** is genuinely open; tracked in the consolidated roadmap Q3 2026 forward plan. M4 (cloud mutations) remains a separate future design as stated.
+> **DELTA — M3 (Cloud-aware AI tier, Srenix Enterprise) was DROPPED SILENTLY and is NOT shipped.** §6 M3 below (T0 cloud-context enricher, T1 cloud-aware fix proposer, T2 cloud+K8s planner) has **no CHANGELOG entry and no code** as of 2026-06-11 (verified: no `cloud-aware`/`Cloud M3` references outside this design doc). The shipped AI tiers (T0–T3, Srenix Enterprise v1.1.0–v1.4.0) carry K8s context only, not cloud-resource context. → **Follow-up: Cloud M3 (cloud-aware AI tier)** is genuinely open; tracked in the consolidated roadmap Q3 2026 forward plan. M4 (cloud mutations) remains a separate future design as stated.
 >
-> **DELTA — as-shipped chart surface (O6/O7, 2026-06-12):** the §3.7/§3.8 sketches below over-promise. `--cloud-rate-limit-per-min` / `cloud.rateLimitPerMin` were never implemented (rate protection is the `cloud.cadence` interval) and the dead chart value was removed. Auth modes `assumeRole` / `staticCredentials` were never implemented — workload identity (IRSA / GCP WI / AAD WI) is the only shipped auth path; the dead `auth.mode` / `assumeRoleArn` / `credentialsSecret` keys were removed (assume-role support would be a net-new feature, to be reintroduced deliberately). The per-probe `cloud.<provider>.probes.*` toggles ARE wired as of O6 (`CHA_CLOUD_PROBE_<PROVIDER>_<NAME>=off` env gates). GCP subnet IP utilization shipped capacity-only — GCP exposes no cheap used-IP count (the allocation-ratio insight is behind Network Analyzer / the Recommender API); see `internal/cloud/gcp/live.go`.
+> **DELTA — as-shipped chart surface (O6/O7, 2026-06-12):** the §3.7/§3.8 sketches below over-promise. `--cloud-rate-limit-per-min` / `cloud.rateLimitPerMin` were never implemented (rate protection is the `cloud.cadence` interval) and the dead chart value was removed. Auth modes `assumeRole` / `staticCredentials` were never implemented — workload identity (IRSA / GCP WI / AAD WI) is the only shipped auth path; the dead `auth.mode` / `assumeRoleArn` / `credentialsSecret` keys were removed (assume-role support would be a net-new feature, to be reintroduced deliberately). The per-probe `cloud.<provider>.probes.*` toggles ARE wired as of O6 (`SRENIX_CLOUD_PROBE_<PROVIDER>_<NAME>=off` env gates). GCP subnet IP utilization shipped capacity-only — GCP exposes no cheap used-IP count (the allocation-ratio insight is behind Network Analyzer / the Recommender API); see `internal/cloud/gcp/live.go`.
 >
 > Body below is the original design, preserved for context.
 
@@ -16,23 +16,23 @@
 **Status:** Draft
 **Author:** skadam
 **Date:** 2026-05-23
-**Target releases:** OSS v1.8 (M1 framework + AWS), OSS v1.9 (M2 GCP + Azure), CHA-com (M3 cloud-aware AI)
+**Target releases:** OSS v1.8 (M1 framework + AWS), OSS v1.9 (M2 GCP + Azure), Srenix Enterprise (M3 cloud-aware AI)
 
 ## 1. Summary
 
-Extend CHA from "K8s-resource health autopilot" to "K8s + cloud-resource health autopilot" — without giving up its in-cluster-operator posture, its air-gap deployability for the K8s portion, or its detect → fix → re-verify default loop.
+Extend Srenix from "K8s-resource health autopilot" to "K8s + cloud-resource health autopilot" — without giving up its in-cluster-operator posture, its air-gap deployability for the K8s portion, or its detect → fix → re-verify default loop.
 
-Real customer outages routinely cross the K8s API boundary: RDS storage filling, an IAM role drift breaking IRSA, an ALB target group going empty, a managed certificate failing renewal, a Cloud SQL instance flipping to FAILED. Today CHA's value story ends at the K8s API server. This design adds cloud-resource visibility as a peer to the existing K8s probe set, with the same probe → analyzer → fix → ticket loop the rest of CHA already provides.
+Real customer outages routinely cross the K8s API boundary: RDS storage filling, an IAM role drift breaking IRSA, an ALB target group going empty, a managed certificate failing renewal, a Cloud SQL instance flipping to FAILED. Today Srenix's value story ends at the K8s API server. This design adds cloud-resource visibility as a peer to the existing K8s probe set, with the same probe → analyzer → fix → ticket loop the rest of Srenix already provides.
 
-Per the competitive-baseline roadmap (`CHA-com/docs/competitive/roadmap.md`), this is **H2 priority**: every commercial competitor has cloud-resource visibility; CHA has none. AWS first (3 weeks), k3s polish in parallel (1 week), then GCP + Azure in parallel (4 weeks). All shipped in OSS — matches the precedent that core sinks (Slack/Alertmanager/DriftReport) and core probes ship in OSS; paid value lives in AI tiers + enterprise integrations.
+Per the competitive-baseline roadmap (`Srenix Enterprise/docs/competitive/roadmap.md`), this is **H2 priority**: every commercial competitor has cloud-resource visibility; Srenix has none. AWS first (3 weeks), k3s polish in parallel (1 week), then GCP + Azure in parallel (4 weeks). All shipped in OSS — matches the precedent that core sinks (Slack/Alertmanager/DriftReport) and core probes ship in OSS; paid value lives in AI tiers + enterprise integrations.
 
 ## 2. Goals & non-goals
 
 ### Goals
-- Detect drift in cloud resources (RDS, EBS, IAM, ALB, ACM, etc.) the same way CHA detects drift in K8s resources
+- Detect drift in cloud resources (RDS, EBS, IAM, ALB, ACM, etc.) the same way Srenix detects drift in K8s resources
 - Persist findings on the same DriftReport CRD operators already learned (`subject="aws-rds/prod/db-1/storage-full"` looks like K8s subjects)
 - Route findings to the same sinks (Slack, Alertmanager, ticketing) with zero new sink code
-- Snapshot/offline mode preserved: `cha snapshot capture --include-cloud` so audit/compliance flows keep working
+- Snapshot/offline mode preserved: `srenix snapshot capture --include-cloud` so audit/compliance flows keep working
 - Per-probe enable/disable so air-gapped or single-cloud deployments don't pay for unused clouds
 - Auth via the cloud-native K8s-integrated patterns (IRSA, GCP Workload Identity, Azure AAD Workload Identity) — no long-lived secrets in the cluster
 
@@ -91,7 +91,7 @@ const (
 )
 ```
 
-Sub-clients are minimal — narrow surfaces over the official SDKs, scoped to read operations CHA actually needs. Example:
+Sub-clients are minimal — narrow surfaces over the official SDKs, scoped to read operations Srenix actually needs. Example:
 
 ```go
 // pkg/cloud/aws/client.go
@@ -133,8 +133,8 @@ package cloudprobe
 
 import (
     "context"
-    "github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/cloud"
-    "github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/probe"
+    "github.com/srenix-ai/agentic-sre/pkg/cloud"
+    "github.com/srenix-ai/agentic-sre/pkg/probe"
 )
 
 // Probe is the cloud-resource counterpart to pkg/probe.Probe. It returns
@@ -162,11 +162,11 @@ Auth is **lazy-evaluated** per provider: if `cloud.aws.enabled=false`, the AWS S
 
 ### 3.5 Snapshot/offline mode
 
-Cloud state is more time-sensitive than K8s state (RDS storage fills smoothly; a Pod either exists or it doesn't). To preserve `cha diagnose --snapshot` semantics:
+Cloud state is more time-sensitive than K8s state (RDS storage fills smoothly; a Pod either exists or it doesn't). To preserve `srenix diagnose --snapshot` semantics:
 
-- `cha snapshot capture` does NOT capture cloud state by default
-- `cha snapshot capture --include-cloud` captures cloud-resource state as additional JSON files (`cloud/aws/rds.json`, `cloud/gcp/cloudsql.json`, etc.)
-- `cha diagnose --snapshot <dir>` only runs cloud probes if cloud state is present
+- `srenix snapshot capture` does NOT capture cloud state by default
+- `srenix snapshot capture --include-cloud` captures cloud-resource state as additional JSON files (`cloud/aws/rds.json`, `cloud/gcp/cloudsql.json`, etc.)
+- `srenix diagnose --snapshot <dir>` only runs cloud probes if cloud state is present
 - All cloud probe outputs are stamped with `capturedAt` so operators see "this is point-in-time as of …" in DriftReport messages
 
 This keeps the zero-trust offline diagnose flow intact.
@@ -192,17 +192,17 @@ func RegisterCloudOSS(reg *registry.Registry) {
 }
 ```
 
-The watcher iterates cloud probes the same way it iterates K8s probes. Per-cycle overhead is bounded by cloud-API rate limits (CHA respects per-provider rate limit defaults; configurable via Helm).
+The watcher iterates cloud probes the same way it iterates K8s probes. Per-cycle overhead is bounded by cloud-API rate limits (Srenix respects per-provider rate limit defaults; configurable via Helm).
 
 ### 3.7 CLI
 
 | Subcommand | New behavior |
 |---|---|
-| `cha diagnose --live` | Runs K8s + cloud probes if any cloud sub-client is configured |
-| `cha diagnose --include-cloud` | Explicit form (forces cloud probes on; errors if none configured) |
-| `cha diagnose --exclude-cloud` | Skip cloud probes this run (debugging / cost control) |
-| `cha snapshot capture --include-cloud` | Capture cloud-resource state alongside K8s snapshot |
-| `cha watch` | Cloud probes run on the existing `resyncPeriod` cadence (default 10m) — not on K8s event triggers (cloud-resource events don't flow through K8s watch) |
+| `srenix diagnose --live` | Runs K8s + cloud probes if any cloud sub-client is configured |
+| `srenix diagnose --include-cloud` | Explicit form (forces cloud probes on; errors if none configured) |
+| `srenix diagnose --exclude-cloud` | Skip cloud probes this run (debugging / cost control) |
+| `srenix snapshot capture --include-cloud` | Capture cloud-resource state alongside K8s snapshot |
+| `srenix watch` | Cloud probes run on the existing `resyncPeriod` cadence (default 10m) — not on K8s event triggers (cloud-resource events don't flow through K8s watch) |
 | New `--cloud-rate-limit-per-min` flag | Per-provider rate limit (default 60); guards against API quota burn |
 
 ### 3.8 Helm chart surface
@@ -263,7 +263,7 @@ The schema mirrors the existing `ticketing` block pattern (master switch, per-pr
 
 ### 3.9 RBAC additions
 
-CHA's K8s ServiceAccount needs a projected token volume for workload-identity auth on each cloud. The Helm chart auto-injects when `cloud.<provider>.enabled=true && cloud.<provider>.auth.mode in {irsa, workloadIdentity}`:
+Srenix's K8s ServiceAccount needs a projected token volume for workload-identity auth on each cloud. The Helm chart auto-injects when `cloud.<provider>.enabled=true && cloud.<provider>.auth.mode in {irsa, workloadIdentity}`:
 
 - AWS IRSA: ServiceAccount annotation `eks.amazonaws.com/role-arn`
 - GCP Workload Identity: ServiceAccount annotation `iam.gke.io/gcp-service-account`
@@ -308,7 +308,7 @@ Each is a single Go file under `internal/cloud/aws/`, ~150-300 lines, single SDK
 
 ## 5. k3s support (parallel work, separate from cloud)
 
-k3s is conformant K8s — most CHA code already works. The actual gaps:
+k3s is conformant K8s — most Srenix code already works. The actual gaps:
 
 | Check | Action |
 |---|---|
@@ -335,7 +335,7 @@ Effort: ~1 week. Parallelizable with the cloud framework work because zero code 
 - E2E test against LocalStack (AWS API emulator) in CI
 - Live test against the GPU cluster's actual AWS account (if any) — otherwise sandbox account
 
-**Acceptance:** in a cluster with AWS configured, intentionally fill an RDS instance's storage to 85% → CHA opens a DriftReport + an OpenProject ticket within one resync cycle.
+**Acceptance:** in a cluster with AWS configured, intentionally fill an RDS instance's storage to 85% → Srenix opens a DriftReport + an OpenProject ticket within one resync cycle.
 
 ### M1b — k3s polish (OSS v1.8, parallel)
 
@@ -343,7 +343,7 @@ Effort: ~1 week. Parallelizable with the cloud framework work because zero code 
 - Local-path-provisioner PVC test fixture + fix if needed
 - k3d-based CI smoke test
 - `examples/k3s-edge/` with values.yaml + README
-- Update CHA README to list k3s as supported
+- Update Srenix README to list k3s as supported
 
 **Acceptance:** `helm install` on a fresh k3d cluster passes the existing smoke test + k3s-specific edge cases.
 
@@ -358,7 +358,7 @@ Parallel work streams; each follows the M1 framework template:
 
 **Acceptance:** parity with M1 on AWS — each cloud has 10 probes, each shippable independently.
 
-### M3 — Cloud-aware AI tier integration (CHA-com)
+### M3 — Cloud-aware AI tier integration (Srenix Enterprise)
 
 - T0 Enricher: cloud-resource context in enrichment prompts ("this DriftReport is about RDS db-1; the instance is `db.r5.large`, region us-east-1, in VPC vpc-abc; the last failover was 14 days ago")
 - T1 FixProposer: propose K8s-side fixes that work around cloud drift (e.g., add a Pod toleration when an EKS node group is unhealthy)
@@ -372,8 +372,8 @@ Adding the ability to mutate cloud resources (resize EBS, rotate IAM key, etc.) 
 
 ## 7. Open decisions (need your call)
 
-1. **Snapshot capture default.** Should `cha snapshot capture` include cloud state by default once any cloud is configured? Pro: lower friction. Con: snapshot files get big and time-sensitive. *Recommendation:* opt-in via `--include-cloud`.
-2. **Multi-account scope.** v1 = single account/project/subscription per cloud. Multi-account federation (e.g., one CHA instance probing 5 AWS accounts via cross-account roles) is a real ask. Defer to v2 or design it in now? *Recommendation:* defer; v1 ships first, federation is a one-week add later.
+1. **Snapshot capture default.** Should `srenix snapshot capture` include cloud state by default once any cloud is configured? Pro: lower friction. Con: snapshot files get big and time-sensitive. *Recommendation:* opt-in via `--include-cloud`.
+2. **Multi-account scope.** v1 = single account/project/subscription per cloud. Multi-account federation (e.g., one Srenix instance probing 5 AWS accounts via cross-account roles) is a real ask. Defer to v2 or design it in now? *Recommendation:* defer; v1 ships first, federation is a one-week add later.
 3. **Rate-limit posture.** Default rate limit 60 req/min/provider — is that the right shape, or should we use AWS-style adaptive throttling? *Recommendation:* fixed cap for v1; adaptive later if customers hit it.
 4. **OSS vs paid line for AWS probes.** All 10 in OSS, or hold IAM + ALB-target-health for paid (the two with the most direct compliance value)? *Recommendation:* all 10 in OSS — matches the precedent that core sinks are OSS; AI enrichment is what makes the paid tier worth paying for.
 

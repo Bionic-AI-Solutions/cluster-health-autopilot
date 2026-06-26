@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package operator
@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	chav1alpha1 "github.com/Bionic-AI-Solutions/cluster-health-autopilot/api/v1alpha1"
+	chav1alpha1 "github.com/srenix-ai/agentic-sre/api/v1alpha1"
 	appsv1 "k8s.io/api/apps/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -21,7 +21,7 @@ import (
 
 // aiCR returns the canonical happy-path CR with AI enabled and the
 // minimum required fields populated.
-func aiCR() *chav1alpha1.ClusterHealthAutopilot {
+func aiCR() *chav1alpha1.AgenticSRE {
 	cr := fullCR()
 	cr.Spec.AI = &chav1alpha1.AISpec{
 		Enabled:  true,
@@ -66,20 +66,20 @@ func TestBuildAIWatchDeployment_BasicShape(t *testing.T) {
 		t.Errorf("SA=%q want bionic-sa (aiwatch shares the reader SA)",
 			d.Spec.Template.Spec.ServiceAccountName)
 	}
-	if d.Labels["cha.bionicaisolutions.com/role"] != "aiwatch" {
-		t.Errorf("role label=%q want aiwatch", d.Labels["cha.bionicaisolutions.com/role"])
+	if d.Labels["srenix.ai/role"] != "aiwatch" {
+		t.Errorf("role label=%q want aiwatch", d.Labels["srenix.ai/role"])
 	}
 }
 
 func TestBuildAIWatchDeployment_ImageDefaultsToChaCom_WithVPrefix(t *testing.T) {
-	// Chart convention: cha-com images carry a leading "v" alongside
+	// Chart convention: srenix-enterprise images carry a leading "v" alongside
 	// the OSS image's bare semver (chart appVersion 1.8.0 →
-	// cha-com:v1.8.0). The operator mirrors this.
+	// srenix-enterprise:v1.8.0). The operator mirrors this.
 	cr := aiCR()
 	cr.Spec.Image.Tag = "1.9.4"
 	d := BuildAIWatchDeployment(cr)
 	got := d.Spec.Template.Spec.Containers[0].Image
-	want := "docker4zerocool/cha-com:v1.9.4"
+	want := "docker4zerocool/srenix-enterprise:v1.9.4"
 	if got != want {
 		t.Errorf("aiwatch image=%q want %q", got, want)
 	}
@@ -88,11 +88,11 @@ func TestBuildAIWatchDeployment_ImageDefaultsToChaCom_WithVPrefix(t *testing.T) 
 func TestBuildAIWatchDeployment_ImageOverrideWins(t *testing.T) {
 	cr := aiCR()
 	cr.Spec.AI.Image = &chav1alpha1.ImageSpec{
-		Repository: "myco/cha-com",
+		Repository: "myco/srenix-enterprise",
 		Tag:        "custom",
 	}
 	d := BuildAIWatchDeployment(cr)
-	if got := d.Spec.Template.Spec.Containers[0].Image; got != "myco/cha-com:custom" {
+	if got := d.Spec.Template.Spec.Containers[0].Image; got != "myco/srenix-enterprise:custom" {
 		t.Errorf("explicit ai.image not honored; got %q", got)
 	}
 }
@@ -127,14 +127,14 @@ func TestBuildAIWatchDeployment_AllOptionalFlagsHonored(t *testing.T) {
 	cr.Spec.AI.AllowSaaS = true
 	cr.Spec.AI.LLMFixerMatcher = true
 	cr.Spec.AI.AuditLog = "-"
-	cr.Spec.AI.ApprovalServerURL = "https://approval.cha-system.svc"
+	cr.Spec.AI.ApprovalServerURL = "https://approval.srenix-system.svc"
 	cr.Spec.AI.APIKey = &chav1alpha1.AIAPIKeySpec{
 		SecretName: "ai-key",
 		EnvName:    "OPENAI_API_KEY",
 		Header:     "X-API-Key",
 	}
 	cr.Spec.AI.T3 = &chav1alpha1.AIT3Spec{
-		VaultAllowedPrefixes: []string{"secret/cha/", "secret/shared/"},
+		VaultAllowedPrefixes: []string{"secret/srenix/", "secret/shared/"},
 	}
 
 	d := BuildAIWatchDeployment(cr)
@@ -145,10 +145,10 @@ func TestBuildAIWatchDeployment_AllOptionalFlagsHonored(t *testing.T) {
 	mustContain(t, args, "--ai-allow-saas")
 	mustContain(t, args, "--ai-llm-fixer-matcher")
 	mustContain(t, args, "--ai-audit-log=-")
-	mustContain(t, args, "--approval-server-url=https://approval.cha-system.svc")
+	mustContain(t, args, "--approval-server-url=https://approval.srenix-system.svc")
 	mustContain(t, args, "--ai-api-key-env=OPENAI_API_KEY")
 	mustContain(t, args, "--ai-api-key-header=X-API-Key")
-	mustContain(t, args, "--t3-vault-allowed-prefix=secret/cha/")
+	mustContain(t, args, "--t3-vault-allowed-prefix=secret/srenix/")
 	mustContain(t, args, "--t3-vault-allowed-prefix=secret/shared/")
 }
 
@@ -169,7 +169,7 @@ func TestBuildAIWatchDeployment_MemoryFlags(t *testing.T) {
 	// (deferred); operator-managed installs that want memory MUST
 	// either install Qdrant via the chart in the same namespace or
 	// set spec.ai.memory.storeUrl explicitly.
-	mustContain(t, args, "--memory-store-url=http://bionic-rag.cha-system.svc:6333")
+	mustContain(t, args, "--memory-store-url=http://bionic-rag.srenix-system.svc:6333")
 	mustContain(t, args, "--memory-embeddings-endpoint=https://embeddings.svc/v1")
 	mustContain(t, args, "--memory-embeddings-model=qwen3-embedding-0.6b")
 	mustContain(t, args, "--memory-topk=5")
@@ -236,7 +236,7 @@ func TestBuildAIWatchDeployment_PullSecretsAIOverride(t *testing.T) {
 	cr := aiCR()
 	cr.Spec.Image.PullSecrets = []string{"oss-pull"}
 	cr.Spec.AI.Image = &chav1alpha1.ImageSpec{
-		Repository:  "myco/cha-com",
+		Repository:  "myco/srenix-enterprise",
 		Tag:         "1.0",
 		PullSecrets: []string{"chacom-pull"},
 	}
@@ -249,9 +249,9 @@ func TestBuildAIWatchDeployment_PullSecretsAIOverride(t *testing.T) {
 
 func TestBuildAIWatchDeployment_ApprovalEnabled_MountsSigningKey(t *testing.T) {
 	// When spec.approval.enabled=true, the aiwatch Deployment must mount
-	// the Ed25519 signing key and set CHA_SIGNING_KEY_PATH. Without this
-	// the cha-com binary exits at startup with
-	// "--approval-server-url set but CHA_SIGNING_KEY_PATH is empty".
+	// the Ed25519 signing key and set SRENIX_SIGNING_KEY_PATH. Without this
+	// the srenix-enterprise binary exits at startup with
+	// "--approval-server-url set but SRENIX_SIGNING_KEY_PATH is empty".
 	cr := aiCR()
 	cr.Spec.Approval = &chav1alpha1.ApprovalSpec{Enabled: true}
 	d := BuildAIWatchDeployment(cr)
@@ -262,17 +262,17 @@ func TestBuildAIWatchDeployment_ApprovalEnabled_MountsSigningKey(t *testing.T) {
 
 	var foundEnv, foundMount bool
 	for _, e := range c.Env {
-		if e.Name == "CHA_SIGNING_KEY_PATH" && e.Value == "/etc/cha/keys/signing.key" {
+		if e.Name == "SRENIX_SIGNING_KEY_PATH" && e.Value == "/etc/srenix/keys/signing.key" {
 			foundEnv = true
 		}
 	}
 	for _, m := range c.VolumeMounts {
-		if m.Name == "signing-key" && m.MountPath == "/etc/cha/keys" {
+		if m.Name == "signing-key" && m.MountPath == "/etc/srenix/keys" {
 			foundMount = true
 		}
 	}
 	if !foundEnv {
-		t.Error("CHA_SIGNING_KEY_PATH env not set on aiwatch when approval.enabled=true")
+		t.Error("SRENIX_SIGNING_KEY_PATH env not set on aiwatch when approval.enabled=true")
 	}
 	if !foundMount {
 		t.Error("signing-key VolumeMount missing on aiwatch when approval.enabled=true")
@@ -293,8 +293,8 @@ func TestBuildAIWatchDeployment_ApprovalDisabled_NoSigningKey(t *testing.T) {
 	d := BuildAIWatchDeployment(cr)
 	c := d.Spec.Template.Spec.Containers[0]
 	for _, e := range c.Env {
-		if e.Name == "CHA_SIGNING_KEY_PATH" {
-			t.Error("CHA_SIGNING_KEY_PATH should not be set when approval.enabled=false")
+		if e.Name == "SRENIX_SIGNING_KEY_PATH" {
+			t.Error("SRENIX_SIGNING_KEY_PATH should not be set when approval.enabled=false")
 		}
 	}
 	if len(d.Spec.Template.Spec.Volumes) != 0 {
@@ -321,7 +321,7 @@ func TestReconcile_AIEnabled_CreatesAIWatchDeployment(t *testing.T) {
 
 	var dep appsv1.Deployment
 	if err := c.Get(context.Background(),
-		types.NamespacedName{Namespace: "cha-system", Name: "bionic-aiwatch"},
+		types.NamespacedName{Namespace: "srenix-system", Name: "bionic-aiwatch"},
 		&dep); err != nil {
 		t.Fatalf("aiwatch Deployment not created: %v", err)
 	}
@@ -339,7 +339,7 @@ func TestReconcile_AIDisabled_DoesNotCreateAIWatch(t *testing.T) {
 
 	var dep appsv1.Deployment
 	err := c.Get(context.Background(),
-		types.NamespacedName{Namespace: "cha-system", Name: "bionic-aiwatch"},
+		types.NamespacedName{Namespace: "srenix-system", Name: "bionic-aiwatch"},
 		&dep)
 	if !apierrors.IsNotFound(err) {
 		t.Errorf("expected NotFound for AI-off; got err=%v dep=%+v", err, dep)
@@ -353,9 +353,9 @@ func TestReconcile_AIDisabledAfterCreate_DeletesAIWatch(t *testing.T) {
 	reconcileOnce(t, r, cr)
 
 	// Flip AI off and reconcile again.
-	var stored chav1alpha1.ClusterHealthAutopilot
+	var stored chav1alpha1.AgenticSRE
 	_ = c.Get(context.Background(),
-		types.NamespacedName{Namespace: "cha-system", Name: "bionic"},
+		types.NamespacedName{Namespace: "srenix-system", Name: "bionic"},
 		&stored)
 	stored.Spec.AI.Enabled = false
 	stored.Generation = 2
@@ -366,7 +366,7 @@ func TestReconcile_AIDisabledAfterCreate_DeletesAIWatch(t *testing.T) {
 
 	var dep appsv1.Deployment
 	err := c.Get(context.Background(),
-		types.NamespacedName{Namespace: "cha-system", Name: "bionic-aiwatch"},
+		types.NamespacedName{Namespace: "srenix-system", Name: "bionic-aiwatch"},
 		&dep)
 	if !apierrors.IsNotFound(err) {
 		t.Errorf("aiwatch Deployment not deleted after AI disable; got err=%v", err)
@@ -436,7 +436,7 @@ func TestReconcile_AIWatchAvailable_FlipsConditionTrueAndReady(t *testing.T) {
 	// Simulate the aiwatch going Ready.
 	var dep appsv1.Deployment
 	if err := c.Get(context.Background(),
-		types.NamespacedName{Namespace: "cha-system", Name: "bionic-aiwatch"},
+		types.NamespacedName{Namespace: "srenix-system", Name: "bionic-aiwatch"},
 		&dep); err != nil {
 		t.Fatalf("get aiwatch dep: %v", err)
 	}
@@ -450,7 +450,7 @@ func TestReconcile_AIWatchAvailable_FlipsConditionTrueAndReady(t *testing.T) {
 	// it's defensive against future fixes).
 	var w appsv1.Deployment
 	_ = c.Get(context.Background(),
-		types.NamespacedName{Namespace: "cha-system", Name: "bionic-watcher"},
+		types.NamespacedName{Namespace: "srenix-system", Name: "bionic-watcher"},
 		&w)
 	w.Status.AvailableReplicas = 1
 	_ = c.Status().Update(context.Background(), &w)
@@ -483,14 +483,14 @@ func TestReconcile_AIEnabled_AIWatchMissing_ReadyFalse(t *testing.T) {
 
 // --- helpers ---
 
-func readReadyCondition(t *testing.T, c client.Client, cr *chav1alpha1.ClusterHealthAutopilot) *metav1.Condition {
+func readReadyCondition(t *testing.T, c client.Client, cr *chav1alpha1.AgenticSRE) *metav1.Condition {
 	t.Helper()
 	return readCondition(t, c, cr, chav1alpha1.ConditionReady)
 }
 
-func readCondition(t *testing.T, c client.Client, cr *chav1alpha1.ClusterHealthAutopilot, ctype string) *metav1.Condition {
+func readCondition(t *testing.T, c client.Client, cr *chav1alpha1.AgenticSRE, ctype string) *metav1.Condition {
 	t.Helper()
-	var got chav1alpha1.ClusterHealthAutopilot
+	var got chav1alpha1.AgenticSRE
 	if err := c.Get(context.Background(),
 		types.NamespacedName{Namespace: cr.Namespace, Name: cr.Name},
 		&got); err != nil {
@@ -505,15 +505,15 @@ func readCondition(t *testing.T, c client.Client, cr *chav1alpha1.ClusterHealthA
 }
 
 // v1.18.0 — extraArgs escape hatch: arbitrary flag list appended
-// AFTER the typed args so the operator can pass cha-com flags it
+// AFTER the typed args so the operator can pass srenix-enterprise flags it
 // doesn't yet model (e.g. --cloudflare-feeder, --digest-pin-*).
 func TestBuildAIWatchDeployment_ExtraArgs_AppendedAfterTypedArgs(t *testing.T) {
 	cr := aiCR()
 	cr.Spec.AI.ExtraArgs = []string{
 		"--cloudflare-feeder=true",
-		"--rag-store-url=http://bionic-rag.cluster-health-autopilot.svc:6333",
+		"--rag-store-url=http://bionic-rag.agentic-sre.svc:6333",
 		"--digest-pin-proposer=true",
-		"--digest-pin-repo-map=docker4zerocool/voice-studio-frontend=Bionic-AI-Solutions/voice-studio-frontend:main",
+		"--digest-pin-repo-map=docker4zerocool/voice-studio-frontend=Srenix/voice-studio-frontend:main",
 	}
 	d := BuildAIWatchDeployment(cr)
 	args := d.Spec.Template.Spec.Containers[0].Args
@@ -545,7 +545,7 @@ func TestBuildAIWatchDeployment_ExtraEnv_SecretRefAppended(t *testing.T) {
 		{
 			Name: "GITHUB_PAT",
 			ValueFrom: &chav1alpha1.AIExtraEnvSource{
-				SecretKeyRef: &chav1alpha1.AIExtraEnvSecretKeyRef{Name: "cha-github-pat", Key: "PAT"},
+				SecretKeyRef: &chav1alpha1.AIExtraEnvSecretKeyRef{Name: "srenix-github-pat", Key: "PAT"},
 			},
 		},
 		{
@@ -563,7 +563,7 @@ func TestBuildAIWatchDeployment_ExtraEnv_SecretRefAppended(t *testing.T) {
 			foundPAT = true
 			if e.ValueFrom == nil || e.ValueFrom.SecretKeyRef == nil {
 				t.Errorf("GITHUB_PAT: want SecretKeyRef; got %+v", e)
-			} else if e.ValueFrom.SecretKeyRef.Name != "cha-github-pat" || e.ValueFrom.SecretKeyRef.Key != "PAT" {
+			} else if e.ValueFrom.SecretKeyRef.Name != "srenix-github-pat" || e.ValueFrom.SecretKeyRef.Key != "PAT" {
 				t.Errorf("GITHUB_PAT ref: got name=%q key=%q", e.ValueFrom.SecretKeyRef.Name, e.ValueFrom.SecretKeyRef.Key)
 			}
 		case "LITERAL_VAR":
@@ -668,7 +668,7 @@ func TestBuildAIWatchDeployment_NoAttestation_NoMountOrArg(t *testing.T) {
 func TestBuildAIWatchDeployment_Attestation_AddsMountAndArgs(t *testing.T) {
 	cr := aiCR()
 	cr.Spec.AI.DigestPinAttestation = &chav1alpha1.DigestPinAttestationSpec{
-		SecretName: "cha-digest-pin-attestation-key",
+		SecretName: "srenix-digest-pin-attestation-key",
 	}
 	d := BuildAIWatchDeployment(cr)
 	if d == nil {
@@ -676,8 +676,8 @@ func TestBuildAIWatchDeployment_Attestation_AddsMountAndArgs(t *testing.T) {
 	}
 	args := strings.Join(d.Spec.Template.Spec.Containers[0].Args, " ")
 	for _, w := range []string{
-		"--digest-pin-attestation-key=/etc/cha/attestation/attestation.key",
-		"--digest-pin-attestation-kid=cha-digest-pin",
+		"--digest-pin-attestation-key=/etc/srenix/attestation/attestation.key",
+		"--digest-pin-attestation-kid=srenix-digest-pin",
 	} {
 		if !strings.Contains(args, w) {
 			t.Errorf("missing arg %q; have: %s", w, args)
@@ -688,7 +688,7 @@ func TestBuildAIWatchDeployment_Attestation_AddsMountAndArgs(t *testing.T) {
 	for _, v := range d.Spec.Template.Spec.Volumes {
 		if v.Name == "attestation-key" {
 			foundVol = true
-			if v.Secret == nil || v.Secret.SecretName != "cha-digest-pin-attestation-key" {
+			if v.Secret == nil || v.Secret.SecretName != "srenix-digest-pin-attestation-key" {
 				t.Errorf("attestation-key Volume: wrong Secret ref: %+v", v.Secret)
 			}
 		}
@@ -701,8 +701,8 @@ func TestBuildAIWatchDeployment_Attestation_AddsMountAndArgs(t *testing.T) {
 	for _, m := range d.Spec.Template.Spec.Containers[0].VolumeMounts {
 		if m.Name == "attestation-key" {
 			foundMount = true
-			if m.MountPath != "/etc/cha/attestation" {
-				t.Errorf("attestation-key mount path: got %q want /etc/cha/attestation", m.MountPath)
+			if m.MountPath != "/etc/srenix/attestation" {
+				t.Errorf("attestation-key mount path: got %q want /etc/srenix/attestation", m.MountPath)
 			}
 		}
 	}
@@ -720,7 +720,7 @@ func TestBuildAIWatchDeployment_Attestation_CustomKeyAndKid(t *testing.T) {
 	}
 	d := BuildAIWatchDeployment(cr)
 	args := strings.Join(d.Spec.Template.Spec.Containers[0].Args, " ")
-	if !strings.Contains(args, "--digest-pin-attestation-key=/etc/cha/attestation/my-key.pem") {
+	if !strings.Contains(args, "--digest-pin-attestation-key=/etc/srenix/attestation/my-key.pem") {
 		t.Errorf("custom key not honored; have: %s", args)
 	}
 	if !strings.Contains(args, "--digest-pin-attestation-kid=rotated-2026-06") {
@@ -825,7 +825,7 @@ func TestBuildAIWatchMetricsService_HeadlessWithMetricsPort(t *testing.T) {
 		t.Errorf("port: got %d want 9090", svc.Spec.Ports[0].Port)
 	}
 	// Selector should match aiwatch pods, NOT the Service's own labels.
-	if svc.Spec.Selector["cha.bionicaisolutions.com/role"] != "aiwatch" {
+	if svc.Spec.Selector["srenix.ai/role"] != "aiwatch" {
 		t.Errorf("selector should target aiwatch pods; got %+v", svc.Spec.Selector)
 	}
 }

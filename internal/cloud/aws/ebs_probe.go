@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package aws
@@ -8,8 +8,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/cloud"
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/probe"
+	"github.com/srenix-ai/agentic-sre/pkg/cloud"
+	"github.com/srenix-ai/agentic-sre/pkg/probe"
 )
 
 // EBSVolumes flags EBS volumes that are:

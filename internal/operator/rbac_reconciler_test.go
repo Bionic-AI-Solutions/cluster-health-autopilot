@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package operator
@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	chav1alpha1 "github.com/Bionic-AI-Solutions/cluster-health-autopilot/api/v1alpha1"
+	chav1alpha1 "github.com/srenix-ai/agentic-sre/api/v1alpha1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -67,7 +67,7 @@ func TestReconcile_AddsFinalizerOnFirstPass(t *testing.T) {
 	r, c := newReconciler(t, cr)
 	reconcileOnce(t, r, cr)
 
-	var updated chav1alpha1.ClusterHealthAutopilot
+	var updated chav1alpha1.AgenticSRE
 	if err := c.Get(context.Background(), types.NamespacedName{Name: cr.Name, Namespace: cr.Namespace}, &updated); err != nil {
 		t.Fatalf("get CR: %v", err)
 	}
@@ -86,7 +86,7 @@ func TestReconcile_OnDelete_RemovesBindingAndFinalizer(t *testing.T) {
 
 	// Soft-delete the CR. The fake client honors DeletionTimestamp +
 	// preserves Finalizers, so the next reconcile takes the delete path.
-	var live chav1alpha1.ClusterHealthAutopilot
+	var live chav1alpha1.AgenticSRE
 	if err := c.Get(context.Background(), types.NamespacedName{Name: cr.Name, Namespace: cr.Namespace}, &live); err != nil {
 		t.Fatalf("get CR: %v", err)
 	}
@@ -116,7 +116,7 @@ func TestReconcile_OnDelete_RemovesBindingAndFinalizer(t *testing.T) {
 func TestReconcile_FinalizerSkipsBindingNotLabeledByUs(t *testing.T) {
 	// Defense in depth: a manually-created ClusterRoleBinding that
 	// happens to share the same name (e.g. `kubectl create
-	// clusterrolebinding cha-operator-watcher-<ns>-<name>`) must NOT be
+	// clusterrolebinding srenix-operator-watcher-<ns>-<name>`) must NOT be
 	// garbage-collected by the operator's finalizer.
 	cr := fullCR()
 	external := &rbacv1.ClusterRoleBinding{
@@ -148,7 +148,7 @@ func TestReconcile_ReaderRBACReadyCondition_True(t *testing.T) {
 	reconcileOnce(t, r, cr)
 	reconcileOnce(t, r, cr)
 
-	var updated chav1alpha1.ClusterHealthAutopilot
+	var updated chav1alpha1.AgenticSRE
 	_ = c.Get(context.Background(), types.NamespacedName{Name: cr.Name, Namespace: cr.Namespace}, &updated)
 	cond := findCondition(updated.Status.Conditions, chav1alpha1.ConditionReaderRBACReady)
 	if cond == nil {
@@ -197,11 +197,11 @@ func TestBuildReaderClusterRole_DriftReportsWriteVerbs(t *testing.T) {
 		verbs           []string
 	}
 	cases := []want{
-		{"cha.bionicaisolutions.com", "driftreports",
+		{"srenix.ai", "driftreports",
 			[]string{"get", "list", "watch", "create", "update", "patch", "delete"}},
-		{"cha.bionicaisolutions.com", "resolutionrecords",
+		{"srenix.ai", "resolutionrecords",
 			[]string{"get", "list", "watch", "create", "update", "patch", "delete"}},
-		{"cha.bionicaisolutions.com", "silences",
+		{"srenix.ai", "silences",
 			[]string{"get", "list", "watch"}}, // spec read-only; SREs own it (status writes go via silences/status)
 	}
 	for _, c := range cases {
@@ -244,7 +244,7 @@ func TestBuildReaderClusterRole_StatusSubresourceVerbs(t *testing.T) {
 		var matched *rbacv1.PolicyRule
 		for i := range role.Rules {
 			r := &role.Rules[i]
-			if containsString(r.APIGroups, "cha.bionicaisolutions.com") &&
+			if containsString(r.APIGroups, "srenix.ai") &&
 				containsString(r.Resources, sub) {
 				matched = r
 				break

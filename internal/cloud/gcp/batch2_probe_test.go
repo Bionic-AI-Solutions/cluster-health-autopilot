@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package gcp
@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	pkggcp "github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/cloud/gcp"
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/probe"
+	pkggcp "github.com/srenix-ai/agentic-sre/pkg/cloud/gcp"
+	"github.com/srenix-ai/agentic-sre/pkg/probe"
 )
 
 // --- GKEControlPlane ---
@@ -102,13 +102,53 @@ func TestGKENodePools_RunningWithError_Critical(t *testing.T) {
 // --- IAMServiceAccounts ---
 
 func TestIAMSA_HealthySilent(t *testing.T) {
+	// Workload Identity SA: OAuth2Bound=true, no user-managed keys — the
+	// ideal posture. Must produce no findings.
 	got := IAMServiceAccounts{}.Run(context.Background(), &fakeSource{
 		gcp: &fakeGCP{project: "p", serviceAccounts: []pkggcp.ServiceAccount{
-			{Email: "wi@p.iam", Disabled: false, KeyCount: 0},
+			{Email: "wi@p.iam", Disabled: false, KeyCount: 0, OAuth2Bound: true},
 		}},
 	})
 	if got.Component.Status != "HEALTHY" {
 		t.Errorf("status=%s want HEALTHY", got.Component.Status)
+	}
+}
+
+func TestIAMSA_KeylessNoBinding_Silent(t *testing.T) {
+	// Keyless, enabled SA with NO detected Workload Identity binding
+	// (OAuth2Bound=false). This is the case that previously false-
+	// positived: it includes both correctly-configured keyless WI SAs
+	// whose IAM policy we couldn't read, and SAs awaiting binding. The
+	// probe must stay silent — never page on the absence of a binding.
+	got := IAMServiceAccounts{}.Run(context.Background(), &fakeSource{
+		gcp: &fakeGCP{project: "p", serviceAccounts: []pkggcp.ServiceAccount{
+			{Email: "keyless@p.iam", Disabled: false, KeyCount: 0, OAuth2Bound: false},
+		}},
+	})
+	if len(got.Findings) != 0 {
+		t.Errorf("keyless SA with no detected WI binding must not be flagged; got: %+v", got.Findings)
+	}
+	if got.Component.Status != "HEALTHY" {
+		t.Errorf("status=%s want HEALTHY", got.Component.Status)
+	}
+}
+
+func TestIAMSA_MixedConfig_Warning(t *testing.T) {
+	// WI binding detected (OAuth2Bound=true) AND user-managed key(s)
+	// present: a genuine mixed-mode finding (positive signal).
+	got := IAMServiceAccounts{}.Run(context.Background(), &fakeSource{
+		gcp: &fakeGCP{project: "p", serviceAccounts: []pkggcp.ServiceAccount{
+			{Email: "mixed@p.iam", Disabled: false, KeyCount: 1, OAuth2Bound: true},
+		}},
+	})
+	if got.Component.Status != "DEGRADED" {
+		t.Errorf("status=%s want DEGRADED (mixed config)", got.Component.Status)
+	}
+	if len(got.Findings) != 1 || got.Findings[0].Severity != probe.SeverityWarning {
+		t.Fatalf("expected 1 warning; got: %+v", got.Findings)
+	}
+	if !strings.Contains(got.Findings[0].Message, "mixed configuration") {
+		t.Errorf("message lacks 'mixed configuration': %s", got.Findings[0].Message)
 	}
 }
 

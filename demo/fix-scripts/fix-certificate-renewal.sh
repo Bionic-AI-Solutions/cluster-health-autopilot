@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Manual fix: Certificate not renewing (cert-manager)
-# CHA auto-fixes: Deletes stuck CertificateRequests/Orders (allows retry)
-# This script handles Issuer-level problems CHA cannot fix automatically
+# Srenix auto-fixes: Deletes stuck CertificateRequests/Orders (allows retry)
+# This script handles Issuer-level problems Srenix cannot fix automatically
 #
 # Usage: ./fix-certificate-renewal.sh <namespace> <certificate-name>
 # Example: ./fix-certificate-renewal.sh livekit livekit-api-cert
@@ -41,7 +41,7 @@ if [[ -n "$FAILED_CRS" ]]; then
   done
   echo "    ✓ cert-manager will immediately recreate and retry issuance"
 else
-  echo "    No failed CertificateRequests found (CHA may have already cleaned them up)"
+  echo "    No failed CertificateRequests found (Srenix may have already cleaned them up)"
 fi
 
 echo ""

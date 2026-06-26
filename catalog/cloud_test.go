@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package catalog
@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	gcpprobes "github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/cloud/gcp"
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/registry"
+	gcpprobes "github.com/srenix-ai/agentic-sre/internal/cloud/gcp"
+	"github.com/srenix-ai/agentic-sre/pkg/registry"
 )
 
 // cloudProbeNames returns the Name() set RegisterCloudOSS registers for
@@ -26,39 +26,39 @@ func cloudProbeNames(t *testing.T, aws, gcp, azure bool) map[string]bool {
 
 // cloudProbeToggles maps each per-cloud-probe opt-out env var to the
 // probe Name()s it gates. The chart's cloud.<provider>.probes.* values
-// render these envs (cha.cloudProbeToggleEnv); the env names are the
+// render these envs (srenix.cloudProbeToggleEnv); the env names are the
 // public contract. EKS / GKE / AKS each gate BOTH the control-plane and
 // node-pool probes — same asset, one values key.
 var cloudProbeToggles = map[string][]string{
-	"CHA_CLOUD_PROBE_AWS_RDS": {"aws-rds"},
-	"CHA_CLOUD_PROBE_AWS_EBS": {"aws-ebs"},
-	"CHA_CLOUD_PROBE_AWS_EKS": {"aws-eks-control-plane", "aws-eks-nodegroups"},
-	"CHA_CLOUD_PROBE_AWS_IAM": {"aws-iam-roles"},
-	"CHA_CLOUD_PROBE_AWS_ALB": {"aws-alb-target-health"},
-	"CHA_CLOUD_PROBE_AWS_ACM": {"aws-acm-cert-expiry"},
-	"CHA_CLOUD_PROBE_AWS_KMS": {"aws-kms-keys"},
-	"CHA_CLOUD_PROBE_AWS_S3":  {"aws-s3-bucket-public-access"},
-	"CHA_CLOUD_PROBE_AWS_VPC": {"aws-vpc-subnets"},
+	"SRENIX_CLOUD_PROBE_AWS_RDS": {"aws-rds"},
+	"SRENIX_CLOUD_PROBE_AWS_EBS": {"aws-ebs"},
+	"SRENIX_CLOUD_PROBE_AWS_EKS": {"aws-eks-control-plane", "aws-eks-nodegroups"},
+	"SRENIX_CLOUD_PROBE_AWS_IAM": {"aws-iam-roles"},
+	"SRENIX_CLOUD_PROBE_AWS_ALB": {"aws-alb-target-health"},
+	"SRENIX_CLOUD_PROBE_AWS_ACM": {"aws-acm-cert-expiry"},
+	"SRENIX_CLOUD_PROBE_AWS_KMS": {"aws-kms-keys"},
+	"SRENIX_CLOUD_PROBE_AWS_S3":  {"aws-s3-bucket-public-access"},
+	"SRENIX_CLOUD_PROBE_AWS_VPC": {"aws-vpc-subnets"},
 
-	"CHA_CLOUD_PROBE_GCP_CLOUDSQL": {"gcp-cloudsql"},
-	"CHA_CLOUD_PROBE_GCP_DISKS":    {"gcp-persistent-disks"},
-	"CHA_CLOUD_PROBE_GCP_GKE":      {"gcp-gke-control-plane", "gcp-gke-nodepools"},
-	"CHA_CLOUD_PROBE_GCP_IAM":      {"gcp-iam-serviceaccounts"},
-	"CHA_CLOUD_PROBE_GCP_SUBNETS":  {"gcp-subnets"},
-	"CHA_CLOUD_PROBE_GCP_LB":       {"gcp-lb-backends"},
-	"CHA_CLOUD_PROBE_GCP_CERTS":    {"gcp-managed-certs"},
-	"CHA_CLOUD_PROBE_GCP_GCS":      {"gcp-gcs-public-access"},
-	"CHA_CLOUD_PROBE_GCP_KMS":      {"gcp-kms"},
+	"SRENIX_CLOUD_PROBE_GCP_CLOUDSQL": {"gcp-cloudsql"},
+	"SRENIX_CLOUD_PROBE_GCP_DISKS":    {"gcp-persistent-disks"},
+	"SRENIX_CLOUD_PROBE_GCP_GKE":      {"gcp-gke-control-plane", "gcp-gke-nodepools"},
+	"SRENIX_CLOUD_PROBE_GCP_IAM":      {"gcp-iam-serviceaccounts"},
+	"SRENIX_CLOUD_PROBE_GCP_SUBNETS":  {"gcp-subnets"},
+	"SRENIX_CLOUD_PROBE_GCP_LB":       {"gcp-lb-backends"},
+	"SRENIX_CLOUD_PROBE_GCP_CERTS":    {"gcp-managed-certs"},
+	"SRENIX_CLOUD_PROBE_GCP_GCS":      {"gcp-gcs-public-access"},
+	"SRENIX_CLOUD_PROBE_GCP_KMS":      {"gcp-kms"},
 
-	"CHA_CLOUD_PROBE_AZURE_SQL":        {"azure-sql"},
-	"CHA_CLOUD_PROBE_AZURE_DISKS":      {"azure-disks"},
-	"CHA_CLOUD_PROBE_AZURE_AKS":        {"azure-aks-control-plane", "azure-aks-nodepools"},
-	"CHA_CLOUD_PROBE_AZURE_IDENTITIES": {"azure-managed-identities"},
-	"CHA_CLOUD_PROBE_AZURE_SUBNETS":    {"azure-subnets"},
-	"CHA_CLOUD_PROBE_AZURE_APPGW":      {"azure-appgw-backends"},
-	"CHA_CLOUD_PROBE_AZURE_CERTS":      {"azure-certs"},
-	"CHA_CLOUD_PROBE_AZURE_STORAGE":    {"azure-storage-public-access"},
-	"CHA_CLOUD_PROBE_AZURE_KEYVAULTS":  {"azure-keyvaults"},
+	"SRENIX_CLOUD_PROBE_AZURE_SQL":        {"azure-sql"},
+	"SRENIX_CLOUD_PROBE_AZURE_DISKS":      {"azure-disks"},
+	"SRENIX_CLOUD_PROBE_AZURE_AKS":        {"azure-aks-control-plane", "azure-aks-nodepools"},
+	"SRENIX_CLOUD_PROBE_AZURE_IDENTITIES": {"azure-managed-identities"},
+	"SRENIX_CLOUD_PROBE_AZURE_SUBNETS":    {"azure-subnets"},
+	"SRENIX_CLOUD_PROBE_AZURE_APPGW":      {"azure-appgw-backends"},
+	"SRENIX_CLOUD_PROBE_AZURE_CERTS":      {"azure-certs"},
+	"SRENIX_CLOUD_PROBE_AZURE_STORAGE":    {"azure-storage-public-access"},
+	"SRENIX_CLOUD_PROBE_AZURE_KEYVAULTS":  {"azure-keyvaults"},
 }
 
 func TestCloudProbes_AllRegisteredByDefault(t *testing.T) {
@@ -124,26 +124,26 @@ func registeredGCPSubnets(t *testing.T) gcpprobes.Subnets {
 }
 
 // TestCloudProbes_GCPSubnetsSmallPrefixEnv pins the env→probe wiring:
-// CHA_CLOUD_PROBE_GCP_SUBNETS_SMALL_PREFIX must reach
+// SRENIX_CLOUD_PROBE_GCP_SUBNETS_SMALL_PREFIX must reach
 // gcpprobes.Subnets.SmallPrefixThreshold (the chart renders the env
 // from cloud.gcp.subnetsSmallPrefixThreshold).
 func TestCloudProbes_GCPSubnetsSmallPrefixEnv(t *testing.T) {
-	t.Setenv("CHA_CLOUD_PROBE_GCP_SUBNETS_SMALL_PREFIX", "28")
+	t.Setenv("SRENIX_CLOUD_PROBE_GCP_SUBNETS_SMALL_PREFIX", "28")
 	if got := registeredGCPSubnets(t).SmallPrefixThreshold; got != 28 {
-		t.Errorf("SmallPrefixThreshold = %d, want 28 (from CHA_CLOUD_PROBE_GCP_SUBNETS_SMALL_PREFIX)", got)
+		t.Errorf("SmallPrefixThreshold = %d, want 28 (from SRENIX_CLOUD_PROBE_GCP_SUBNETS_SMALL_PREFIX)", got)
 	}
 }
 
 func TestCloudProbes_GCPSubnetsSmallPrefixEnv_UnsetOrInvalid(t *testing.T) {
 	// Unset → 0 (probe's compiled-in /26 default).
-	t.Setenv("CHA_CLOUD_PROBE_GCP_SUBNETS_SMALL_PREFIX", "")
+	t.Setenv("SRENIX_CLOUD_PROBE_GCP_SUBNETS_SMALL_PREFIX", "")
 	if got := registeredGCPSubnets(t).SmallPrefixThreshold; got != 0 {
 		t.Errorf("unset env: SmallPrefixThreshold = %d, want 0 (probe default)", got)
 	}
 	// Garbage and non-positive values must fall back to the default,
 	// never poison the probe.
 	for _, bad := range []string{"not-a-number", "-3", "0"} {
-		t.Setenv("CHA_CLOUD_PROBE_GCP_SUBNETS_SMALL_PREFIX", bad)
+		t.Setenv("SRENIX_CLOUD_PROBE_GCP_SUBNETS_SMALL_PREFIX", bad)
 		if got := registeredGCPSubnets(t).SmallPrefixThreshold; got != 0 {
 			t.Errorf("env=%q: SmallPrefixThreshold = %d, want 0 (probe default)", bad, got)
 		}
@@ -151,9 +151,9 @@ func TestCloudProbes_GCPSubnetsSmallPrefixEnv_UnsetOrInvalid(t *testing.T) {
 }
 
 func TestCloudProbes_NonOffValueKeepsRegistration(t *testing.T) {
-	t.Setenv("CHA_CLOUD_PROBE_AWS_RDS", "false") // only "off" disables — mirrors CHA_PROBE_*
+	t.Setenv("SRENIX_CLOUD_PROBE_AWS_RDS", "false") // only "off" disables — mirrors SRENIX_PROBE_*
 	names := cloudProbeNames(t, true, false, false)
 	if !names["aws-rds"] {
-		t.Errorf("CHA_CLOUD_PROBE_AWS_RDS=false (non-off) must keep aws-rds registered")
+		t.Errorf("SRENIX_CLOUD_PROBE_AWS_RDS=false (non-off) must keep aws-rds registered")
 	}
 }

@@ -1,0 +1,106 @@
+{{- if and ((.Values.approval).enabled) ((.Values.gatekeeper).install) }}
+# gatekeeper-constraint.yaml
+#
+# Defense-in-depth admission policy. Even after a signed approval token
+# is verified by the approval-server, this Gatekeeper ConstraintTemplate
+# independently rejects any mutation against a protected namespace if
+# the request originates from a Srenix ServiceAccount.
+#
+# Why a third gate (after LLM-validator + approver):
+#   - LLM could be wrong about a target's namespace
+#   - Approver could miss a typo
+#   - Audit trail without enforcement is just history
+# Gatekeeper makes "protected NS is never touched" a cluster invariant
+# even when the prior gates would have allowed it.
+#
+# Requires: OPA Gatekeeper installed in the cluster.
+#   helm install gatekeeper gatekeeper/gatekeeper --create-namespace -n gatekeeper-system
+---
+apiVersion: templates.gatekeeper.sh/v1
+kind: ConstraintTemplate
+metadata:
+  name: chaprotectedns
+  labels:
+    {{- include "srenix.labels" . | nindent 4 }}
+spec:
+  crd:
+    spec:
+      names:
+        kind: CHAProtectedNS
+      validation:
+        openAPIV3Schema:
+          type: object
+          properties:
+            protectedNamespaces:
+              type: array
+              items:
+                type: string
+            allowedUsernames:
+              type: array
+              items:
+                type: string
+  targets:
+    - target: admission.k8s.gatekeeper.sh
+      rego: |
+        package srenix.protectedns
+
+        violation[{"msg": msg}] {
+          # Only enforce against requests from srenix service accounts.
+          input.review.userInfo.username == username
+          startswith(username, "system:serviceaccount:")
+          some allowed_idx
+          input.parameters.allowedUsernames[allowed_idx] == username
+
+          # Reject any DELETE or PATCH against a protected namespace.
+          input.review.namespace == ns
+          some np_idx
+          input.parameters.protectedNamespaces[np_idx] == ns
+
+          op := input.review.operation
+          op != "CREATE"
+
+          msg := sprintf("Srenix approval-server cannot %s resources in protected namespace %q (rejected by chaprotectedns Gatekeeper policy)", [op, ns])
+        }
+
+        username := input.review.userInfo.username
+        ns := input.review.namespace
+---
+apiVersion: constraints.gatekeeper.sh/v1beta1
+kind: CHAProtectedNS
+metadata:
+  name: srenix-protected-namespaces
+  labels:
+    {{- include "srenix.labels" . | nindent 4 }}
+spec:
+  match:
+    kinds:
+      - apiGroups: [""]
+        kinds: ["Pod"]
+      - apiGroups: ["batch"]
+        kinds: ["Job"]
+      - apiGroups: ["apps"]
+        kinds: ["Deployment"]
+      - apiGroups: ["cert-manager.io"]
+        kinds: ["CertificateRequest"]
+      - apiGroups: ["acme.cert-manager.io"]
+        kinds: ["Order"]
+  parameters:
+    protectedNamespaces:
+      {{- /* protectedNamespaces.extra is appended so the admission
+             layer enforces the SAME widened boundary the binary's
+             fixer guard + AI validator read from
+             SRENIX_PROTECTED_NAMESPACES_EXTRA. Append-only: the
+             gatekeeper list keeps its compiled-floor mirror.
+             Each entry is trimmed so " prod-payments" in values
+             matches across all layers (binary + gatekeeper). */}}
+      {{- $extras := list }}
+      {{- range (default list (.Values.protectedNamespaces).extra) }}
+      {{- $extras = append $extras (trim .) }}
+      {{- end }}
+      {{- range uniq (concat .Values.gatekeeper.constraints.protectedNamespaces $extras) }}
+      - {{ . | quote }}
+      {{- end }}
+    allowedUsernames:
+      - system:serviceaccount:{{ .Release.Namespace }}:{{ include "srenix.fullname" . }}-approval-server
+      - system:serviceaccount:{{ .Release.Namespace }}:{{ include "srenix.serviceAccountName" . }}
+{{- end }}

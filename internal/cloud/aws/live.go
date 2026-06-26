@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package aws
@@ -28,13 +28,13 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	smithy "github.com/aws/smithy-go"
 
-	pkgaws "github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/cloud/aws"
+	pkgaws "github.com/srenix-ai/agentic-sre/pkg/cloud/aws"
 )
 
 // LiveClient wraps aws-sdk-go-v2 with one service client per resource
-// type CHA probes. Auth flows through aws-sdk-go-v2's default
+// type Srenix probes. Auth flows through aws-sdk-go-v2's default
 // credential chain: env vars → shared config → IRSA (Web Identity
-// Token) → EC2/ECS instance metadata. For the in-cluster CHA
+// Token) → EC2/ECS instance metadata. For the in-cluster Srenix
 // Deployment, IRSA is the default; the Helm chart annotates the
 // ServiceAccount with the role-arn the operator configures.
 type LiveClient struct {
@@ -102,12 +102,14 @@ func (c *LiveClient) DescribeDBInstances(ctx context.Context) ([]pkgaws.DBInstan
 
 func mapDBInstance(db rdstypes.DBInstance) pkgaws.DBInstance {
 	out := pkgaws.DBInstance{
-		Identifier:         awssdk.ToString(db.DBInstanceIdentifier),
-		Engine:             awssdk.ToString(db.Engine),
-		Status:             awssdk.ToString(db.DBInstanceStatus),
-		AllocatedStorageGB: awssdk.ToInt32(db.AllocatedStorage),
-		MultiAZ:            awssdk.ToBool(db.MultiAZ),
-		ARN:                awssdk.ToString(db.DBInstanceArn),
+		Identifier:            awssdk.ToString(db.DBInstanceIdentifier),
+		Engine:                awssdk.ToString(db.Engine),
+		Status:                awssdk.ToString(db.DBInstanceStatus),
+		AllocatedStorageGB:    awssdk.ToInt32(db.AllocatedStorage),
+		MultiAZ:               awssdk.ToBool(db.MultiAZ),
+		ARN:                   awssdk.ToString(db.DBInstanceArn),
+		BackupRetentionPeriod: int(awssdk.ToInt32(db.BackupRetentionPeriod)),
+		ReadReplicaSourceDBInstanceIdentifier: awssdk.ToString(db.ReadReplicaSourceDBInstanceIdentifier),
 	}
 	if db.Endpoint != nil {
 		out.Endpoint = fmt.Sprintf("%s:%d", awssdk.ToString(db.Endpoint.Address), awssdk.ToInt32(db.Endpoint.Port))
@@ -301,7 +303,7 @@ func (c *LiveClient) DescribeALBTargetGroupsWithHealth(ctx context.Context) ([]p
 	}
 	// One DescribeLoadBalancers per probe cycle (NOT per target group)
 	// builds the ARN → DNS-name map that feeds LoadBalancerDNS — the
-	// CHA-com "(lb: ...)" RCA join key. Best-effort: a failure leaves
+	// Srenix Enterprise "(lb: ...)" RCA join key. Best-effort: a failure leaves
 	// the map empty (message enrichment is never worth failing the
 	// probe over) and the probe omits the suffix.
 	dnsByARN := c.describeLoadBalancerDNS(ctx)
@@ -495,6 +497,58 @@ func (c *LiveClient) ListS3BucketPAB(ctx context.Context) ([]pkgaws.S3BucketPAB,
 			entry.IgnorePublicAcls = awssdk.ToBool(cfg.IgnorePublicAcls)
 			entry.BlockPublicPolicy = awssdk.ToBool(cfg.BlockPublicPolicy)
 			entry.RestrictPublicBuckets = awssdk.ToBool(cfg.RestrictPublicBuckets)
+		}
+		out = append(out, entry)
+	}
+	return out, nil
+}
+
+// --- EKS Addons --------------------------------------------------------
+
+// ListEKSAddons satisfies pkg/cloud/aws.Client.
+func (c *LiveClient) ListEKSAddons(ctx context.Context, clusterName string) ([]pkgaws.EKSAddon, error) {
+	var addonNames []string
+	var nextToken *string
+	for {
+		resp, err := c.eks.ListAddons(ctx, &eks.ListAddonsInput{
+			ClusterName: awssdk.String(clusterName),
+			NextToken:   nextToken,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("eks.ListAddons: %w", err)
+		}
+		addonNames = append(addonNames, resp.Addons...)
+		if resp.NextToken == nil || awssdk.ToString(resp.NextToken) == "" {
+			break
+		}
+		nextToken = resp.NextToken
+	}
+
+	out := make([]pkgaws.EKSAddon, 0, len(addonNames))
+	for _, name := range addonNames {
+		da, err := c.eks.DescribeAddon(ctx, &eks.DescribeAddonInput{
+			ClusterName: awssdk.String(clusterName),
+			AddonName:   awssdk.String(name),
+		})
+		if err != nil {
+			return nil, fmt.Errorf("eks.DescribeAddon %s: %w", name, err)
+		}
+		if da.Addon == nil {
+			continue
+		}
+		entry := pkgaws.EKSAddon{
+			ClusterName:  clusterName,
+			AddonName:    awssdk.ToString(da.Addon.AddonName),
+			Status:       string(da.Addon.Status),
+			AddonVersion: awssdk.ToString(da.Addon.AddonVersion),
+			ARN:          awssdk.ToString(da.Addon.AddonArn),
+		}
+		// Fetch the latest available version for this addon (informational).
+		ver, verr := c.eks.DescribeAddonVersions(ctx, &eks.DescribeAddonVersionsInput{
+			AddonName: awssdk.String(name),
+		})
+		if verr == nil && len(ver.Addons) > 0 && len(ver.Addons[0].AddonVersions) > 0 {
+			entry.MarketplaceVersion = awssdk.ToString(ver.Addons[0].AddonVersions[0].AddonVersion)
 		}
 		out = append(out, entry)
 	}

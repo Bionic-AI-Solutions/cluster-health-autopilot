@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package gcp
@@ -67,12 +67,13 @@ type GKECluster struct {
 // values: PROVISIONING, RUNNING, RUNNING_WITH_ERROR, RECONCILING,
 // STOPPING, ERROR.
 type GKENodePool struct {
-	Name        string `json:"name"`
-	ClusterName string `json:"clusterName"`
-	Status      string `json:"status"`
-	NodeCount   int64  `json:"nodeCount,omitempty"`
-	Version     string `json:"version,omitempty"` // node k8s version
-	Autoscaling bool   `json:"autoscaling,omitempty"`
+	Name           string `json:"name"`
+	ClusterName    string `json:"clusterName"`
+	Status         string `json:"status"`
+	NodeCount      int64  `json:"nodeCount,omitempty"`
+	Version        string `json:"version,omitempty"`        // node k8s version
+	ClusterVersion string `json:"clusterVersion,omitempty"` // control-plane version for drift comparison
+	Autoscaling    bool   `json:"autoscaling,omitempty"`
 }
 
 // ServiceAccount is the narrow projection of an IAM service account.
@@ -128,7 +129,7 @@ type BackendService struct {
 	// backend service directly). Optional: empty when unmapped
 	// (including snapshot files captured before this field existed) —
 	// the probe then falls back to the backend-service name for the
-	// "(lb: ...)" message join key CHA-com's RCA matchers parse.
+	// "(lb: ...)" message join key Srenix Enterprise's RCA matchers parse.
 	ForwardingRule string `json:"forwardingRule,omitempty"`
 }
 

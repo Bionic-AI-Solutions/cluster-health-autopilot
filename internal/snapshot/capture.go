@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package snapshot
@@ -21,7 +21,7 @@ import (
 //
 // Order is stable so file layouts in tarballs are reproducible.
 // Note on GVRSecret: we list Secrets so the proactive L5 analyzer can see
-// which keys exist on each Secret, but `cha snapshot capture` deliberately
+// which keys exist on each Secret, but `srenix snapshot capture` deliberately
 // does NOT include them — capturing Secret values to disk would be a
 // privacy regression (any auditor reading the snapshot tarball would see
 // every secret in the cluster). Live mode reads Secrets directly and
@@ -127,7 +127,7 @@ func Capture(ctx context.Context, src Source, outDir string) (*CaptureSummary, e
 // CaptureTarGZ is Capture + tar.gz: writes the files into a temp dir, then
 // gzips the directory into outPath. The temp dir is removed on success.
 func CaptureTarGZ(ctx context.Context, src Source, outPath string) (*CaptureSummary, error) {
-	tmp, err := os.MkdirTemp("", "cha-capture-*")
+	tmp, err := os.MkdirTemp("", "srenix-capture-*")
 	if err != nil {
 		return nil, err
 	}

@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package operator
@@ -9,7 +9,7 @@ import (
 	"encoding/base64"
 	"fmt"
 
-	chav1alpha1 "github.com/Bionic-AI-Solutions/cluster-health-autopilot/api/v1alpha1"
+	chav1alpha1 "github.com/srenix-ai/agentic-sre/api/v1alpha1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
@@ -22,7 +22,7 @@ import (
 //
 // The approval-server is the HTTPS endpoint the SRE clicks
 // approve/deny on for AI-proposed remediations. It runs as a
-// subcommand of the same cha-com binary the aiwatch uses.
+// subcommand of the same srenix-enterprise binary the aiwatch uses.
 //
 // Resources reconciled (when spec.approval.enabled=true):
 //   - core/v1 ServiceAccount         <cr>-approval-server
@@ -31,9 +31,9 @@ import (
 //   - core/v1 Secret                 spec.approval.signingKey.secretName
 //                                    (Ed25519 keypair, operator-generated)
 //   - rbac.authorization.k8s.io/v1 ClusterRole
-//                                    cha-operator-approval-fixer (shared)
+//                                    srenix-operator-approval-fixer (shared)
 //   - rbac.authorization.k8s.io/v1 ClusterRoleBinding
-//                                    cha-operator-approval-fixer-<ns>-<name>
+//                                    srenix-operator-approval-fixer-<ns>-<name>
 //                                    (per-CR; cleaned up by finalizer)
 //   - rbac.authorization.k8s.io/v1 Role + RoleBinding (3 pairs)
 //                                    - signing-key Secret read (resourceNames-scoped)
@@ -54,36 +54,36 @@ const (
 	// certificaterequests + patch deployments). Shared across all CRs
 	// in the cluster; never deleted by the operator (other CRs may
 	// still bind to it).
-	ApprovalFixerClusterRoleName = "cha-operator-approval-fixer"
+	ApprovalFixerClusterRoleName = "srenix-operator-approval-fixer"
 
 	// DefaultApprovalSigningKeySecretName matches the chart's
 	// `approval.signingKey.secretName` default. The aiwatch (Phase 2)
 	// already mounts the chart's Secret at this name when running
 	// alongside a chart install; using the same default lets an
 	// operator-managed install drop into an existing cluster.
-	DefaultApprovalSigningKeySecretName = "cha-approval-signing-key"
+	DefaultApprovalSigningKeySecretName = "srenix-approval-signing-key"
 
 	// DefaultApprovalReplayConfigMap matches the chart's
 	// `approval.store.replayConfigMap` default.
-	DefaultApprovalReplayConfigMap = "cha-approval-replay"
+	DefaultApprovalReplayConfigMap = "srenix-approval-replay"
 
 	// DefaultApprovalRunbookConfigMap matches the chart's
 	// `approval.store.runbookConfigMap` default.
-	DefaultApprovalRunbookConfigMap = "cha-approval-runbooks"
+	DefaultApprovalRunbookConfigMap = "srenix-approval-runbooks"
 
 	approvalServerHTTPPort = int32(8443)
-	approvalImageDefault   = defaultAIImageRepo // same docker4zerocool/cha-com binary
+	approvalImageDefault   = defaultAIImageRepo // same docker4zerocool/srenix-enterprise binary
 )
 
 // ApprovalEnabled is the nil-guarded check.
-func ApprovalEnabled(cr *chav1alpha1.ClusterHealthAutopilot) bool {
+func ApprovalEnabled(cr *chav1alpha1.AgenticSRE) bool {
 	return cr.Spec.Approval != nil && cr.Spec.Approval.Enabled
 }
 
 // ApprovalSigningKeySecretName returns the name of the Secret holding
 // the Ed25519 signing keypair. Honors `spec.approval.signingKey.secretName`
 // when set; otherwise the chart-convention default.
-func ApprovalSigningKeySecretName(cr *chav1alpha1.ClusterHealthAutopilot) string {
+func ApprovalSigningKeySecretName(cr *chav1alpha1.AgenticSRE) string {
 	if cr.Spec.Approval != nil &&
 		cr.Spec.Approval.SigningKey != nil &&
 		cr.Spec.Approval.SigningKey.SecretName != "" {
@@ -94,20 +94,20 @@ func ApprovalSigningKeySecretName(cr *chav1alpha1.ClusterHealthAutopilot) string
 
 // ApprovalServerName is the shared name for the SA + Deployment +
 // Service. Matches the chart's `<release>-approval-server`.
-func ApprovalServerName(cr *chav1alpha1.ClusterHealthAutopilot) string {
+func ApprovalServerName(cr *chav1alpha1.AgenticSRE) string {
 	return cr.Name + "-approval-server"
 }
 
 // ApprovalFixerClusterRoleBindingName is the per-CR fixer binding name.
 // `<ns>-<name>` shape keeps it globally unique and trivially derivable
 // for the finalizer.
-func ApprovalFixerClusterRoleBindingName(cr *chav1alpha1.ClusterHealthAutopilot) string {
+func ApprovalFixerClusterRoleBindingName(cr *chav1alpha1.AgenticSRE) string {
 	return ApprovalFixerClusterRoleName + "-" + cr.Namespace + "-" + cr.Name
 }
 
 // ApprovalAuditNamespace returns the namespace the approval-server
 // emits audit events into. Defaults to the CR's own namespace.
-func ApprovalAuditNamespace(cr *chav1alpha1.ClusterHealthAutopilot) string {
+func ApprovalAuditNamespace(cr *chav1alpha1.AgenticSRE) string {
 	if cr.Spec.Approval != nil && cr.Spec.Approval.AuditNamespace != "" {
 		return cr.Spec.Approval.AuditNamespace
 	}
@@ -117,7 +117,7 @@ func ApprovalAuditNamespace(cr *chav1alpha1.ClusterHealthAutopilot) string {
 // approvalReplicas defaults to 1 unless explicitly set higher AND the
 // ConfigMap store backend is in use (the in-memory store can't dedupe
 // replay across replicas — going > 1 in that mode would race).
-func approvalReplicas(cr *chav1alpha1.ClusterHealthAutopilot) int32 {
+func approvalReplicas(cr *chav1alpha1.AgenticSRE) int32 {
 	if cr.Spec.Approval == nil || cr.Spec.Approval.Replicas == 0 {
 		return 1
 	}
@@ -126,7 +126,7 @@ func approvalReplicas(cr *chav1alpha1.ClusterHealthAutopilot) int32 {
 
 // approvalStoreBackend returns the resolved store backend value or
 // "inmemory" by default.
-func approvalStoreBackend(cr *chav1alpha1.ClusterHealthAutopilot) string {
+func approvalStoreBackend(cr *chav1alpha1.AgenticSRE) string {
 	if cr.Spec.Approval != nil &&
 		cr.Spec.Approval.Store != nil &&
 		cr.Spec.Approval.Store.Backend != "" {
@@ -137,7 +137,7 @@ func approvalStoreBackend(cr *chav1alpha1.ClusterHealthAutopilot) string {
 
 // approvalStoreConfigMap pair returns the resolved replay + runbook
 // ConfigMap names.
-func approvalStoreConfigMaps(cr *chav1alpha1.ClusterHealthAutopilot) (replay, runbook string) {
+func approvalStoreConfigMaps(cr *chav1alpha1.AgenticSRE) (replay, runbook string) {
 	replay = DefaultApprovalReplayConfigMap
 	runbook = DefaultApprovalRunbookConfigMap
 	if cr.Spec.Approval != nil && cr.Spec.Approval.Store != nil {
@@ -151,9 +151,9 @@ func approvalStoreConfigMaps(cr *chav1alpha1.ClusterHealthAutopilot) (replay, ru
 	return replay, runbook
 }
 
-// approvalImageRef mirrors aiImageRef — same default repo (cha-com),
+// approvalImageRef mirrors aiImageRef — same default repo (srenix-enterprise),
 // same `v<OSS-tag>` convention.
-func approvalImageRef(cr *chav1alpha1.ClusterHealthAutopilot) string {
+func approvalImageRef(cr *chav1alpha1.AgenticSRE) string {
 	repo := approvalImageDefault
 	tag := "v" + cr.Spec.Image.Tag
 	if ap := cr.Spec.Approval; ap != nil && ap.Image != nil {
@@ -168,7 +168,7 @@ func approvalImageRef(cr *chav1alpha1.ClusterHealthAutopilot) string {
 }
 
 // approvalPullPolicy mirrors aiPullPolicy.
-func approvalPullPolicy(cr *chav1alpha1.ClusterHealthAutopilot) corev1.PullPolicy {
+func approvalPullPolicy(cr *chav1alpha1.AgenticSRE) corev1.PullPolicy {
 	if ap := cr.Spec.Approval; ap != nil && ap.Image != nil {
 		if ap.Image.PullPolicy != "" {
 			return corev1.PullPolicy(ap.Image.PullPolicy)
@@ -183,7 +183,7 @@ func approvalPullPolicy(cr *chav1alpha1.ClusterHealthAutopilot) corev1.PullPolic
 
 // approvalPullSecrets honors spec.approval.image.pullSecrets first,
 // then the OSS image's pullSecrets.
-func approvalPullSecrets(cr *chav1alpha1.ClusterHealthAutopilot) []string {
+func approvalPullSecrets(cr *chav1alpha1.AgenticSRE) []string {
 	if ap := cr.Spec.Approval; ap != nil && ap.Image != nil && len(ap.Image.PullSecrets) > 0 {
 		return ap.Image.PullSecrets
 	}
@@ -195,7 +195,7 @@ func approvalPullSecrets(cr *chav1alpha1.ClusterHealthAutopilot) []string {
 // approval-server gets its own narrow set of bindings (fixer
 // ClusterRoleBinding + 3 namespaced Roles), while the watcher SA gets
 // the reader role.
-func BuildApprovalServerServiceAccount(cr *chav1alpha1.ClusterHealthAutopilot) *corev1.ServiceAccount {
+func BuildApprovalServerServiceAccount(cr *chav1alpha1.AgenticSRE) *corev1.ServiceAccount {
 	if !ApprovalEnabled(cr) {
 		return nil
 	}
@@ -213,7 +213,7 @@ func BuildApprovalServerServiceAccount(cr *chav1alpha1.ClusterHealthAutopilot) *
 // the approval-server pods. Port 8443/http (the binary terminates TLS
 // itself when configured; the Ingress fronts plain HTTP for kind
 // installs).
-func BuildApprovalServerService(cr *chav1alpha1.ClusterHealthAutopilot) *corev1.Service {
+func BuildApprovalServerService(cr *chav1alpha1.AgenticSRE) *corev1.Service {
 	if !ApprovalEnabled(cr) {
 		return nil
 	}
@@ -242,13 +242,13 @@ func BuildApprovalServerService(cr *chav1alpha1.ClusterHealthAutopilot) *corev1.
 
 // BuildApprovalServerDeployment returns the approval-server Deployment.
 // Mirrors the chart's `templates/approval-server-deployment.yaml`:
-//   - `approval-server` subcommand of cha-com.
+//   - `approval-server` subcommand of srenix-enterprise.
 //   - --signing-key-path mount.
 //   - --store-* flags only when Store.Backend != "inmemory" (chart
 //     only emits them when the backend is set, so match that).
 //   - Strategy = Recreate for inmemory store (replay state would
 //     split-brain across replicas), RollingUpdate for ConfigMap.
-func BuildApprovalServerDeployment(cr *chav1alpha1.ClusterHealthAutopilot) *appsv1.Deployment {
+func BuildApprovalServerDeployment(cr *chav1alpha1.AgenticSRE) *appsv1.Deployment {
 	if !ApprovalEnabled(cr) {
 		return nil
 	}
@@ -270,7 +270,7 @@ func BuildApprovalServerDeployment(cr *chav1alpha1.ClusterHealthAutopilot) *apps
 	args := []string{
 		"approval-server",
 		"--listen=:8443",
-		"--signing-key-path=/etc/cha/keys/signing.key",
+		"--signing-key-path=/etc/srenix/keys/signing.key",
 		"--audit-namespace=" + ApprovalAuditNamespace(cr),
 	}
 	if backend != "inmemory" {
@@ -315,12 +315,12 @@ func BuildApprovalServerDeployment(cr *chav1alpha1.ClusterHealthAutopilot) *apps
 								},
 							},
 							Env: []corev1.EnvVar{
-								{Name: "CHA_SIGNING_KEY_PATH", Value: "/etc/cha/keys/signing.key"},
+								{Name: "SRENIX_SIGNING_KEY_PATH", Value: "/etc/srenix/keys/signing.key"},
 							},
 							VolumeMounts: []corev1.VolumeMount{
 								{
 									Name:      "signing-key",
-									MountPath: "/etc/cha/keys",
+									MountPath: "/etc/srenix/keys",
 									ReadOnly:  true,
 								},
 							},
@@ -390,8 +390,8 @@ func BuildApprovalFixerClusterRole() *rbacv1.ClusterRole {
 		ObjectMeta: metav1.ObjectMeta{
 			Name: ApprovalFixerClusterRoleName,
 			Labels: map[string]string{
-				"app.kubernetes.io/managed-by": "cha-operator",
-				"app.kubernetes.io/name":       "cluster-health-autopilot",
+				"app.kubernetes.io/managed-by": "srenix-operator",
+				"app.kubernetes.io/name":       "agentic-sre",
 				"app.kubernetes.io/component":  "approval-fixer",
 			},
 		},
@@ -409,13 +409,13 @@ func BuildApprovalFixerClusterRole() *rbacv1.ClusterRole {
 // BuildApprovalFixerClusterRoleBinding ties the approval-server SA to
 // the shared fixer ClusterRole. Per-CR — cleaned up by the operator's
 // finalizer.
-func BuildApprovalFixerClusterRoleBinding(cr *chav1alpha1.ClusterHealthAutopilot) *rbacv1.ClusterRoleBinding {
+func BuildApprovalFixerClusterRoleBinding(cr *chav1alpha1.AgenticSRE) *rbacv1.ClusterRoleBinding {
 	return &rbacv1.ClusterRoleBinding{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: ApprovalFixerClusterRoleBindingName(cr),
 			Labels: map[string]string{
-				"app.kubernetes.io/managed-by": "cha-operator",
-				"app.kubernetes.io/name":       "cluster-health-autopilot",
+				"app.kubernetes.io/managed-by": "srenix-operator",
+				"app.kubernetes.io/name":       "agentic-sre",
 				"app.kubernetes.io/component":  "approval-fixer",
 				ManagedByCRLabel:               cr.Name,
 				ManagedByCRNamespaceLabel:      cr.Namespace,
@@ -440,7 +440,7 @@ func BuildApprovalFixerClusterRoleBinding(cr *chav1alpha1.ClusterHealthAutopilot
 // allowing the approval-server to read its own signing key (and ONLY
 // that one Secret — resourceNames-scoped). The watcher SA explicitly
 // does NOT get this access.
-func BuildApprovalSigningReaderRole(cr *chav1alpha1.ClusterHealthAutopilot) *rbacv1.Role {
+func BuildApprovalSigningReaderRole(cr *chav1alpha1.AgenticSRE) *rbacv1.Role {
 	if !ApprovalEnabled(cr) {
 		return nil
 	}
@@ -463,7 +463,7 @@ func BuildApprovalSigningReaderRole(cr *chav1alpha1.ClusterHealthAutopilot) *rba
 
 // BuildApprovalSigningReaderRoleBinding ties the SA to the signing
 // reader Role.
-func BuildApprovalSigningReaderRoleBinding(cr *chav1alpha1.ClusterHealthAutopilot) *rbacv1.RoleBinding {
+func BuildApprovalSigningReaderRoleBinding(cr *chav1alpha1.AgenticSRE) *rbacv1.RoleBinding {
 	if !ApprovalEnabled(cr) {
 		return nil
 	}
@@ -489,7 +489,7 @@ func BuildApprovalSigningReaderRoleBinding(cr *chav1alpha1.ClusterHealthAutopilo
 }
 
 // BuildApprovalEventsRole grants events emission for audit trail.
-func BuildApprovalEventsRole(cr *chav1alpha1.ClusterHealthAutopilot) *rbacv1.Role {
+func BuildApprovalEventsRole(cr *chav1alpha1.AgenticSRE) *rbacv1.Role {
 	if !ApprovalEnabled(cr) {
 		return nil
 	}
@@ -506,7 +506,7 @@ func BuildApprovalEventsRole(cr *chav1alpha1.ClusterHealthAutopilot) *rbacv1.Rol
 }
 
 // BuildApprovalEventsRoleBinding ties the SA to the events Role.
-func BuildApprovalEventsRoleBinding(cr *chav1alpha1.ClusterHealthAutopilot) *rbacv1.RoleBinding {
+func BuildApprovalEventsRoleBinding(cr *chav1alpha1.AgenticSRE) *rbacv1.RoleBinding {
 	if !ApprovalEnabled(cr) {
 		return nil
 	}
@@ -539,7 +539,7 @@ func BuildApprovalEventsRoleBinding(cr *chav1alpha1.ClusterHealthAutopilot) *rba
 // create cannot be resourceName-scoped, so this is namespace-local +
 // unrestricted-by-name (mirrors the events Role's minimum-namespaced
 // posture). Mirrors charts/.../templates/approval-server-rbac.yaml.
-func BuildApprovalSilenceWriterRole(cr *chav1alpha1.ClusterHealthAutopilot) *rbacv1.Role {
+func BuildApprovalSilenceWriterRole(cr *chav1alpha1.AgenticSRE) *rbacv1.Role {
 	if !ApprovalEnabled(cr) {
 		return nil
 	}
@@ -551,7 +551,7 @@ func BuildApprovalSilenceWriterRole(cr *chav1alpha1.ClusterHealthAutopilot) *rba
 		},
 		Rules: []rbacv1.PolicyRule{
 			{
-				APIGroups: []string{"cha.bionicaisolutions.com"},
+				APIGroups: []string{"srenix.ai"},
 				Resources: []string{"silences"},
 				Verbs:     []string{"create", "get", "list"},
 			},
@@ -561,7 +561,7 @@ func BuildApprovalSilenceWriterRole(cr *chav1alpha1.ClusterHealthAutopilot) *rba
 
 // BuildApprovalSilenceWriterRoleBinding ties the SA to the silence
 // writer Role.
-func BuildApprovalSilenceWriterRoleBinding(cr *chav1alpha1.ClusterHealthAutopilot) *rbacv1.RoleBinding {
+func BuildApprovalSilenceWriterRoleBinding(cr *chav1alpha1.AgenticSRE) *rbacv1.RoleBinding {
 	if !ApprovalEnabled(cr) {
 		return nil
 	}
@@ -589,7 +589,7 @@ func BuildApprovalSilenceWriterRoleBinding(cr *chav1alpha1.ClusterHealthAutopilo
 // BuildApprovalStoresRole grants RW on the replay + runbook ConfigMaps
 // when Store.Backend == "configmap". Returns nil for the inmemory
 // store (minimum-privilege posture — no extra ConfigMap access).
-func BuildApprovalStoresRole(cr *chav1alpha1.ClusterHealthAutopilot) *rbacv1.Role {
+func BuildApprovalStoresRole(cr *chav1alpha1.AgenticSRE) *rbacv1.Role {
 	if !ApprovalEnabled(cr) || approvalStoreBackend(cr) != "configmap" {
 		return nil
 	}
@@ -623,7 +623,7 @@ func BuildApprovalStoresRole(cr *chav1alpha1.ClusterHealthAutopilot) *rbacv1.Rol
 
 // BuildApprovalStoresRoleBinding ties the SA to the stores Role.
 // Returns nil for the inmemory store.
-func BuildApprovalStoresRoleBinding(cr *chav1alpha1.ClusterHealthAutopilot) *rbacv1.RoleBinding {
+func BuildApprovalStoresRoleBinding(cr *chav1alpha1.AgenticSRE) *rbacv1.RoleBinding {
 	if !ApprovalEnabled(cr) || approvalStoreBackend(cr) != "configmap" {
 		return nil
 	}
@@ -655,9 +655,9 @@ func BuildApprovalStoresRoleBinding(cr *chav1alpha1.ClusterHealthAutopilot) *rba
 // GenerateSigningKeySecret returns a Secret carrying a fresh Ed25519
 // keypair (`signing.key` private + `signing.pub` public). The
 // encoding MUST be **raw base64 without PEM wrapping** — this matches
-// the format the cha-com `approval-server` and `aiwatch` binaries
+// the format the srenix-enterprise `approval-server` and `aiwatch` binaries
 // expect when they load the key from
-// /etc/cha/keys/signing.{key,pub}. PEM wrapping causes them to fail
+// /etc/srenix/keys/signing.{key,pub}. PEM wrapping causes them to fail
 // at startup with "signing key not valid base64".
 //
 // The operator calls this when the named Secret doesn't yet exist;
@@ -668,7 +668,7 @@ func BuildApprovalStoresRoleBinding(cr *chav1alpha1.ClusterHealthAutopilot) *rba
 // The crypto/ed25519 stdlib generates a 64-byte private key (the
 // first 32 bytes are the seed) and a 32-byte public key; both are
 // base64-StdEncoding-encoded into the Secret bytes.
-func GenerateSigningKeySecret(cr *chav1alpha1.ClusterHealthAutopilot) (*corev1.Secret, error) {
+func GenerateSigningKeySecret(cr *chav1alpha1.AgenticSRE) (*corev1.Secret, error) {
 	pub, priv, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
 		return nil, fmt.Errorf("ed25519 keygen: %w", err)
@@ -695,7 +695,7 @@ func int32Ptr(i int32) *int32 { return &i }
 // ApprovalNetworkPolicyEnabled reports whether
 // spec.approval.networkPolicy.enabled is true. Both `spec.approval` and
 // `spec.approval.networkPolicy` must be non-nil first.
-func ApprovalNetworkPolicyEnabled(cr *chav1alpha1.ClusterHealthAutopilot) bool {
+func ApprovalNetworkPolicyEnabled(cr *chav1alpha1.AgenticSRE) bool {
 	return ApprovalEnabled(cr) &&
 		cr.Spec.Approval.NetworkPolicy != nil &&
 		cr.Spec.Approval.NetworkPolicy.Enabled
@@ -726,7 +726,7 @@ func ApprovalNetworkPolicyEnabled(cr *chav1alpha1.ClusterHealthAutopilot) bool {
 //
 // The reconciler validates GatewayNamespaceSelector is non-empty before
 // calling this (fail-closed); the builder assumes a non-empty selector.
-func BuildApprovalServerNetworkPolicy(cr *chav1alpha1.ClusterHealthAutopilot) *networkingv1.NetworkPolicy {
+func BuildApprovalServerNetworkPolicy(cr *chav1alpha1.AgenticSRE) *networkingv1.NetworkPolicy {
 	if !ApprovalNetworkPolicyEnabled(cr) {
 		return nil
 	}
@@ -768,7 +768,7 @@ func BuildApprovalServerNetworkPolicy(cr *chav1alpha1.ClusterHealthAutopilot) *n
 // ApprovalIngressEnabled reports whether spec.approval.ingress.enabled
 // is true. Both `spec.approval` and `spec.approval.ingress` must be
 // non-nil first.
-func ApprovalIngressEnabled(cr *chav1alpha1.ClusterHealthAutopilot) bool {
+func ApprovalIngressEnabled(cr *chav1alpha1.AgenticSRE) bool {
 	return ApprovalEnabled(cr) &&
 		cr.Spec.Approval.Ingress != nil &&
 		cr.Spec.Approval.Ingress.Enabled
@@ -788,7 +788,7 @@ func ApprovalIngressEnabled(cr *chav1alpha1.ClusterHealthAutopilot) bool {
 //
 // The Host field is required at the reconciler door (validated there);
 // the builder assumes a non-empty value.
-func BuildApprovalServerIngress(cr *chav1alpha1.ClusterHealthAutopilot) *networkingv1.Ingress {
+func BuildApprovalServerIngress(cr *chav1alpha1.AgenticSRE) *networkingv1.Ingress {
 	if !ApprovalIngressEnabled(cr) {
 		return nil
 	}
@@ -814,7 +814,7 @@ func BuildApprovalServerIngress(cr *chav1alpha1.ClusterHealthAutopilot) *network
 						},
 						{
 							// /deny shares the same symmetric one-shot
-							// token with /approve (cha-com #17). SRE
+							// token with /approve (srenix-enterprise #17). SRE
 							// clicking Deny records a denial outcome
 							// (which the RAG memory loop learns from)
 							// and burns the JTI so the matching

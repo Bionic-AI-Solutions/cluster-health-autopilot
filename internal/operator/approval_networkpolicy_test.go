@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package operator
@@ -7,7 +7,7 @@ import (
 	"context"
 	"testing"
 
-	chav1alpha1 "github.com/Bionic-AI-Solutions/cluster-health-autopilot/api/v1alpha1"
+	chav1alpha1 "github.com/srenix-ai/agentic-sre/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -23,7 +23,7 @@ import (
 
 // approvalNetpolCR returns a CR with approval + networkPolicy enabled
 // and a gateway namespace selector set (required when enabled).
-func approvalNetpolCR() *chav1alpha1.ClusterHealthAutopilot {
+func approvalNetpolCR() *chav1alpha1.AgenticSRE {
 	cr := approvalCR()
 	cr.Spec.Approval.NetworkPolicy = &chav1alpha1.ApprovalNetworkPolicySpec{
 		Enabled: true,
@@ -123,7 +123,7 @@ func TestReconcile_ApprovalNetworkPolicy_Created(t *testing.T) {
 
 	var np networkingv1.NetworkPolicy
 	if err := c.Get(context.Background(),
-		types.NamespacedName{Namespace: "cha-system", Name: "bionic-approval-server"},
+		types.NamespacedName{Namespace: "srenix-system", Name: "bionic-approval-server"},
 		&np); err != nil {
 		t.Fatalf("approval NetworkPolicy not created: %v", err)
 	}
@@ -147,7 +147,7 @@ func TestReconcile_ApprovalNetworkPolicy_DisabledNotCreated(t *testing.T) {
 
 	var np networkingv1.NetworkPolicy
 	err := c.Get(context.Background(),
-		types.NamespacedName{Namespace: "cha-system", Name: "bionic-approval-server"},
+		types.NamespacedName{Namespace: "srenix-system", Name: "bionic-approval-server"},
 		&np)
 	if !apierrors.IsNotFound(err) {
 		t.Errorf("NetworkPolicy should not exist; got err=%v", err)
@@ -173,9 +173,9 @@ func TestReconcile_ApprovalNetworkPolicy_DisabledAfterCreate_Deleted(t *testing.
 	reconcileOnce(t, r, cr)
 
 	// Flip netpol off.
-	var stored chav1alpha1.ClusterHealthAutopilot
+	var stored chav1alpha1.AgenticSRE
 	_ = c.Get(context.Background(),
-		types.NamespacedName{Namespace: "cha-system", Name: "bionic"}, &stored)
+		types.NamespacedName{Namespace: "srenix-system", Name: "bionic"}, &stored)
 	stored.Spec.Approval.NetworkPolicy.Enabled = false
 	stored.Generation = 2
 	if err := c.Update(context.Background(), &stored); err != nil {
@@ -185,7 +185,7 @@ func TestReconcile_ApprovalNetworkPolicy_DisabledAfterCreate_Deleted(t *testing.
 
 	var np networkingv1.NetworkPolicy
 	err := c.Get(context.Background(),
-		types.NamespacedName{Namespace: "cha-system", Name: "bionic-approval-server"},
+		types.NamespacedName{Namespace: "srenix-system", Name: "bionic-approval-server"},
 		&np)
 	if !apierrors.IsNotFound(err) {
 		t.Errorf("NetworkPolicy not deleted after disable; got err=%v", err)

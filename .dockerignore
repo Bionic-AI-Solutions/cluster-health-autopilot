@@ -1,0 +1,11 @@
+.git
+/cha
+/cha-operator
+/srenix
+/srenix-operator
+/viewer
+coverage.out
+*.out
+runs/
+demo/
+testdata/

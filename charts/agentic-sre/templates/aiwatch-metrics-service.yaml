@@ -1,0 +1,55 @@
+{{- if and (.Values.ai).enabled (.Values.ai.metrics).addr }}
+# Phase 2.G — Prometheus scrape target for the aiwatch /metrics endpoint.
+#
+# Headless service over the aiwatch pods; the chart-managed
+# Prometheus instance scrapes /metrics on Port `metrics`. We omit a
+# ClusterIP (None) because the metric data is read-only and per-pod
+# uniqueness (the leader emits srenix_cycle_total{leader=true} while
+# followers stay quiet) matters for the time series — Prometheus's
+# pod-discovery uses the headless service to find every endpoint.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "srenix.fullname" . }}-aiwatch-metrics
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "srenix.labels" . | nindent 4 }}
+    srenix.ai/role: aiwatch-metrics
+spec:
+  clusterIP: None
+  selector:
+    {{- include "srenix.selectorLabels" . | nindent 4 }}
+    srenix.ai/role: aiwatch
+  ports:
+    - name: metrics
+      port: {{ (.Values.ai.metrics).port | default 9090 }}
+      targetPort: metrics
+      protocol: TCP
+{{- if and ((.Values.ai.metrics).serviceMonitor).enabled }}
+---
+# ServiceMonitor for prometheus-operator. Only renders when:
+#   - ai.metrics.addr is non-empty (the /metrics endpoint exists)
+#   - ai.metrics.serviceMonitor.enabled is true (operator is present)
+#
+# Soft-fail by design: if prometheus-operator is not installed on
+# the cluster, this manifest applies cleanly but does nothing
+# (the CRD is just missing).
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "srenix.fullname" . }}-aiwatch
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "srenix.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "srenix.selectorLabels" . | nindent 6 }}
+      srenix.ai/role: aiwatch-metrics
+  endpoints:
+    - port: metrics
+      path: /metrics
+      interval: {{ ((.Values.ai.metrics).serviceMonitor).interval | default "30s" }}
+      scrapeTimeout: {{ ((.Values.ai.metrics).serviceMonitor).scrapeTimeout | default "10s" }}
+{{- end }}
+{{- end }}

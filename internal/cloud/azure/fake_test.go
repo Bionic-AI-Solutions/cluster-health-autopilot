@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package azure
@@ -6,10 +6,10 @@ package azure
 import (
 	"context"
 
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/cloud"
-	pkgaws "github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/cloud/aws"
-	pkgazure "github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/cloud/azure"
-	pkggcp "github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/cloud/gcp"
+	"github.com/srenix-ai/agentic-sre/pkg/cloud"
+	pkgaws "github.com/srenix-ai/agentic-sre/pkg/cloud/aws"
+	pkgazure "github.com/srenix-ai/agentic-sre/pkg/cloud/azure"
+	pkggcp "github.com/srenix-ai/agentic-sre/pkg/cloud/gcp"
 )
 
 type fakeAzure struct {
@@ -45,6 +45,10 @@ type fakeAzure struct {
 
 	vaults    []pkgazure.KeyVault
 	vaultsErr error
+
+	kvKeys      []pkgazure.KeyVaultKey
+	kvSecrets   []pkgazure.KeyVaultSecret
+	kvItemsErr  error
 }
 
 func (f *fakeAzure) SubscriptionID() string { return f.subscription }
@@ -88,6 +92,10 @@ func (f *fakeAzure) ListStorageAccounts(_ context.Context) ([]pkgazure.StorageAc
 
 func (f *fakeAzure) ListKeyVaults(_ context.Context) ([]pkgazure.KeyVault, error) {
 	return f.vaults, f.vaultsErr
+}
+
+func (f *fakeAzure) ListKeyVaultItems(_ context.Context, _ string) ([]pkgazure.KeyVaultKey, []pkgazure.KeyVaultSecret, error) {
+	return f.kvKeys, f.kvSecrets, f.kvItemsErr
 }
 
 type fakeSource struct {

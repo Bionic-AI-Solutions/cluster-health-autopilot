@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# CHA Demo — v3 (AI SRE)
+# Srenix Demo — v3 (AI SRE)
 #
-# Builds on the OSS engine demo (run-demo-v2.sh) to show CHA-com's
+# Builds on the OSS engine demo (run-demo-v2.sh) to show Srenix Enterprise's
 # AI SRE layer end-to-end on a live cluster:
 #
 #   OSS engine (already installed) → drift detection → T0 narration →
@@ -12,11 +12,11 @@
 # narration; press ENTER to advance.
 #
 # Prerequisites:
-#   - CHA OSS engine deployed (Helm release "cha" in namespace
-#     "cluster-health-autopilot"). v2 demo can bring you here from
+#   - Srenix OSS engine deployed (Helm release "srenix" in namespace
+#     "agentic-sre"). v2 demo can bring you here from
 #     scratch; v3 assumes you're already there.
-#   - CHA-com binary buildable from $REPO_DIR_COM/cmd/cha-com (or pre-built
-#     and on $PATH as `cha-com`).
+#   - Srenix Enterprise binary buildable from $REPO_DIR_COM/cmd/srenix-enterprise (or pre-built
+#     and on $PATH as `srenix-enterprise`).
 #   - AI_API_KEY env var available (or AI_API_KEY_SECRET=<ns>/<name>:<key>
 #     pointing at a K8s secret the user can read).
 #   - LLM endpoint reachable: AI_ENDPOINT (default
@@ -32,9 +32,9 @@ set -euo pipefail
 KUBECTL="kubectl${KUBE_CONTEXT:+ --context ${KUBE_CONTEXT}}"
 DEMO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR_OSS="$(dirname "${DEMO_DIR}")"
-REPO_DIR_COM="${REPO_DIR_COM:-$(cd "${REPO_DIR_OSS}/.." && pwd)/CHA-com}"
-CHA_NS="${CHA_NS:-cluster-health-autopilot}"
-TEST_NS="${TEST_NS:-cha-demo-v3}"
+REPO_DIR_COM="${REPO_DIR_COM:-$(cd "${REPO_DIR_OSS}/.." && pwd)/Srenix Enterprise}"
+SRENIX_NS="${SRENIX_NS:-agentic-sre}"
+TEST_NS="${TEST_NS:-srenix-demo-v3}"
 
 AI_ENDPOINT="${AI_ENDPOINT:-https://mcp.baisoln.com/gpu-ai/v1}"
 AI_MODEL="${AI_MODEL:-qwen3.6-35b-a3b-fp8}"
@@ -85,17 +85,17 @@ resolve_api_key() {
   info "API key resolved (length: ${#AI_API_KEY} chars) — never echoed."
 }
 
-# ─── helper: run cha-com locally pointed at the cluster ───────────────────────
-cha_com() {
-  if command -v cha-com >/dev/null 2>&1; then
-    cha-com "$@"
+# ─── helper: run srenix-enterprise locally pointed at the cluster ───────────────────────
+srenix_com() {
+  if command -v srenix-enterprise >/dev/null 2>&1; then
+    srenix-enterprise "$@"
   else
-    (cd "${REPO_DIR_COM}" && go run ./cmd/cha-com/ "$@")
+    (cd "${REPO_DIR_COM}" && go run ./cmd/srenix-enterprise/ "$@")
   fi
 }
 
 # ═══════════════════════════════════════════════════════════════════════════════
-header "CHA Demo v3 — Pre-flight"
+header "Srenix Demo v3 — Pre-flight"
 # ═══════════════════════════════════════════════════════════════════════════════
 
 section "1/4 — Cluster"
@@ -104,14 +104,14 @@ $KUBECTL cluster-info 2>/dev/null | head -2
 echo ""
 $KUBECTL get nodes --no-headers 2>/dev/null | awk '{printf "  %-40s %s\n", $1, $2}'
 
-section "2/4 — CHA OSS engine (must already be deployed)"
-if ! $KUBECTL -n "${CHA_NS}" get deploy -l "app.kubernetes.io/name=cluster-health-autopilot" --no-headers 2>/dev/null | grep -q .; then
-  fail "CHA OSS engine not found in namespace ${CHA_NS}. Run demo/run-demo-v2.sh first to set up, or 'helm install'."
+section "2/4 — Srenix OSS engine (must already be deployed)"
+if ! $KUBECTL -n "${SRENIX_NS}" get deploy -l "app.kubernetes.io/name=agentic-sre" --no-headers 2>/dev/null | grep -q .; then
+  fail "Srenix OSS engine not found in namespace ${SRENIX_NS}. Run demo/run-demo-v2.sh first to set up, or 'helm install'."
   exit 1
 fi
-$KUBECTL -n "${CHA_NS}" get deploy -l "app.kubernetes.io/name=cluster-health-autopilot" --no-headers 2>/dev/null | \
+$KUBECTL -n "${SRENIX_NS}" get deploy -l "app.kubernetes.io/name=agentic-sre" --no-headers 2>/dev/null | \
   awk '{printf "  %-50s ready=%s\n", $1, $2}'
-$KUBECTL -n "${CHA_NS}" get lease cha-watcher -o jsonpath='{"  Watcher lease holder: "}{.spec.holderIdentity}{"\n  Lease renewed:        "}{.spec.renewTime}{"\n"}' 2>/dev/null || true
+$KUBECTL -n "${SRENIX_NS}" get lease srenix-watcher -o jsonpath='{"  Watcher lease holder: "}{.spec.holderIdentity}{"\n  Lease renewed:        "}{.spec.renewTime}{"\n"}' 2>/dev/null || true
 
 section "3/4 — AI endpoint"
 echo -e "  Endpoint: ${BOLD}${AI_ENDPOINT}${NC}"
@@ -119,13 +119,13 @@ echo -e "  Model:    ${BOLD}${AI_MODEL}${NC}"
 echo -e "  Header:   ${BOLD}${AI_HEADER}${NC}"
 resolve_api_key
 
-section "4/4 — CHA-com binary"
-if command -v cha-com >/dev/null 2>&1; then
-  info "Using installed cha-com: $(command -v cha-com)"
-  cha-com version 2>/dev/null || true
+section "4/4 — Srenix Enterprise binary"
+if command -v srenix-enterprise >/dev/null 2>&1; then
+  info "Using installed srenix-enterprise: $(command -v srenix-enterprise)"
+  srenix-enterprise version 2>/dev/null || true
 else
-  info "Will compile cha-com from ${REPO_DIR_COM} on first use (go run)"
-  [[ -d "${REPO_DIR_COM}/cmd/cha-com" ]] || { fail "REPO_DIR_COM not set or wrong: ${REPO_DIR_COM}"; exit 1; }
+  info "Will compile srenix-enterprise from ${REPO_DIR_COM} on first use (go run)"
+  [[ -d "${REPO_DIR_COM}/cmd/srenix-enterprise" ]] || { fail "REPO_DIR_COM not set or wrong: ${REPO_DIR_COM}"; exit 1; }
 fi
 
 pause "Pre-flight done. We'll show the AI SRE flow end-to-end. Ready?"
@@ -147,7 +147,7 @@ cat <<EOF
       StuckCertificateRequests, opt-in TLSSecretMismatch)
     • lease-based leader election (active right now — see above)
 
-  That's the trustable runtime. CHA-com sits on top and adds an
+  That's the trustable runtime. Srenix Enterprise sits on top and adds an
   LLM Investigator agent + four AI SRE tiers (T0 → T3). Same policy
   bounds, signed actions, hash-chained audit.
 
@@ -172,13 +172,13 @@ cat <<EOF
 EOF
 
 $KUBECTL create namespace "${TEST_NS}" --dry-run=client -o yaml | $KUBECTL apply -f -
-info "Creating cha-test-imagepull pod (will go ImagePullBackOff)"
+info "Creating srenix-test-imagepull pod (will go ImagePullBackOff)"
 cat <<YAML | $KUBECTL -n "${TEST_NS}" apply -f -
 apiVersion: v1
 kind: Pod
 metadata:
-  name: cha-test-imagepull
-  labels: { demo: cha-v3 }
+  name: srenix-test-imagepull
+  labels: { demo: srenix-v3 }
 spec:
   restartPolicy: Never
   containers:
@@ -189,7 +189,7 @@ YAML
 section "Waiting for the OSS watcher to emit a DriftReport (max 90s)..."
 DRIFT_REPORT=""
 for _ in $(seq 1 18); do
-  DRIFT_REPORT=$($KUBECTL get driftreports -A --no-headers 2>/dev/null | grep "cha-test-imagepull" | head -1 | awk '{print $2}')
+  DRIFT_REPORT=$($KUBECTL get driftreports -A --no-headers 2>/dev/null | grep "srenix-test-imagepull" | head -1 | awk '{print $2}')
   [[ -n "${DRIFT_REPORT}" ]] && break
   sleep 5
 done
@@ -197,10 +197,10 @@ if [[ -z "${DRIFT_REPORT}" ]]; then
   warn "DriftReport didn't appear within 90s. Continuing anyway."
 else
   info "DriftReport CR: ${DRIFT_REPORT}"
-  $KUBECTL get driftreport "${DRIFT_REPORT}" -n "${CHA_NS}" -o jsonpath='{"  Severity:    "}{.spec.severity}{"\n  Source:      "}{.spec.source}{"\n  Subject:     "}{.spec.subject}{"\n  Message:     "}{.spec.message}{"\n"}' 2>/dev/null
+  $KUBECTL get driftreport "${DRIFT_REPORT}" -n "${SRENIX_NS}" -o jsonpath='{"  Severity:    "}{.spec.severity}{"\n  Source:      "}{.spec.source}{"\n  Subject:     "}{.spec.subject}{"\n  Message:     "}{.spec.message}{"\n"}' 2>/dev/null
 fi
 
-pause "OSS engine has seen the drift. Now CHA-com adds the AI."
+pause "OSS engine has seen the drift. Now Srenix Enterprise adds the AI."
 
 # ═══════════════════════════════════════════════════════════════════════════════
 header "Section 3 — T0 narration (Qwen 3.6 35B)"
@@ -218,13 +218,13 @@ cat <<EOF
 
 EOF
 
-section "Running: cha-com diagnose --ai-tier=t0"
-cha_com diagnose \
+section "Running: srenix-enterprise diagnose --ai-tier=t0"
+srenix_com diagnose \
   --ai-tier=t0 \
   --ai-endpoint="${AI_ENDPOINT}" \
   --ai-model="${AI_MODEL}" \
   --ai-api-key-header="${AI_HEADER}" 2>&1 | \
-  grep -A2 -B1 -E "cha-test-imagepull|🤖|🟢|⚠️|🔴" | head -40
+  grep -A2 -B1 -E "srenix-test-imagepull|🤖|🟢|⚠️|🔴" | head -40
 
 pause "T0 narration above. Notice the 🤖 lines — that's the LLM."
 
@@ -257,8 +257,8 @@ cat <<YAML | $KUBECTL -n "${TEST_NS}" apply -f - >/dev/null
 apiVersion: v1
 kind: Pod
 metadata:
-  name: cha-test-failed
-  labels: { demo: cha-v3 }
+  name: srenix-test-failed
+  labels: { demo: srenix-v3 }
 spec:
   restartPolicy: Never
   containers:
@@ -267,13 +267,13 @@ YAML
 
 # Wait for Failed phase.
 for _ in $(seq 1 10); do
-  phase=$($KUBECTL -n "${TEST_NS}" get pod cha-test-failed -o jsonpath='{.status.phase}' 2>/dev/null || true)
+  phase=$($KUBECTL -n "${TEST_NS}" get pod srenix-test-failed -o jsonpath='{.status.phase}' 2>/dev/null || true)
   [[ "${phase}" == "Failed" ]] && break
   sleep 2
 done
 
 section "Running T1 propose against a synthetic StaleErrorPods diagnostic"
-cat <<'GO' > /tmp/cha-demo-v3-t1.go
+cat <<'GO' > /tmp/srenix-demo-v3-t1.go
 package main
 
 import (
@@ -283,10 +283,10 @@ import (
 	"os"
 	"time"
 
-	chacomai "github.com/Bionic-AI-Solutions/CHA-com/ai"
-	"github.com/Bionic-AI-Solutions/CHA-com/ai/client"
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/ai"
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/diagnose"
+	chacomai "github.com/srenix-ai/agentic-sre-enterprise/ai"
+	"github.com/srenix-ai/agentic-sre-enterprise/ai/client"
+	"github.com/srenix-ai/agentic-sre/pkg/ai"
+	"github.com/srenix-ai/agentic-sre/pkg/diagnose"
 )
 
 func main() {
@@ -298,9 +298,9 @@ func main() {
 	})
 	if err != nil { fmt.Println("ERR:", err); os.Exit(1) }
 	d := diagnose.Diagnostic{
-		Source: "StaleErrorPods", Subject: "Pod/" + os.Getenv("TEST_NS") + "/cha-test-failed",
+		Source: "StaleErrorPods", Subject: "Pod/" + os.Getenv("TEST_NS") + "/srenix-test-failed",
 		Severity: "warning",
-		Message:  "Pod " + os.Getenv("TEST_NS") + "/cha-test-failed is in Failed phase (stale error pod, exited 5m ago).",
+		Message:  "Pod " + os.Getenv("TEST_NS") + "/srenix-test-failed is in Failed phase (stale error pod, exited 5m ago).",
 		Remediation: "Delete the pod; the controller will recreate if needed.",
 	}
 	fp, _ := chacomai.NewFixProposer(chacomai.FixProposerConfig{Client: llm, Audit: ai.NoOpAuditSink{}})
@@ -313,14 +313,14 @@ func main() {
 GO
 
 # We need to run this in a directory that can resolve both modules.
-# CHA-com module already pulls cluster-health-autopilot via go.mod.
+# Srenix Enterprise module already pulls agentic-sre via go.mod.
 mkdir -p "${REPO_DIR_COM}/cmd/.demo-v3-t1"
-cp /tmp/cha-demo-v3-t1.go "${REPO_DIR_COM}/cmd/.demo-v3-t1/main.go"
+cp /tmp/srenix-demo-v3-t1.go "${REPO_DIR_COM}/cmd/.demo-v3-t1/main.go"
 
 export AI_HEADER AI_ENDPOINT AI_MODEL TEST_NS
 (cd "${REPO_DIR_COM}" && go run ./cmd/.demo-v3-t1/) 2>&1
 
-rm -rf "${REPO_DIR_COM}/cmd/.demo-v3-t1" /tmp/cha-demo-v3-t1.go
+rm -rf "${REPO_DIR_COM}/cmd/.demo-v3-t1" /tmp/srenix-demo-v3-t1.go
 
 cat <<EOF
 
@@ -346,7 +346,7 @@ header "Section 5 — T3 vault break-glass runbook (dual-approval)"
 
 cat <<EOF
 
-  T3 is for "we lost a vault key" scenarios. CHA-com never executes
+  T3 is for "we lost a vault key" scenarios. Srenix Enterprise never executes
   Vault writes itself — the agent proposes a runbook the operator
   runs manually after dual approval (two distinct approvers separated
   by ≥30 minutes).
@@ -364,7 +364,7 @@ cat <<EOF
 EOF
 
 section "Running T3 ProposeRunbook"
-cat <<'GO' > /tmp/cha-demo-v3-t3.go
+cat <<'GO' > /tmp/srenix-demo-v3-t3.go
 package main
 
 import (
@@ -374,10 +374,10 @@ import (
 	"os"
 	"time"
 
-	chacomai "github.com/Bionic-AI-Solutions/CHA-com/ai"
-	"github.com/Bionic-AI-Solutions/CHA-com/ai/client"
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/ai"
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/diagnose"
+	chacomai "github.com/srenix-ai/agentic-sre-enterprise/ai"
+	"github.com/srenix-ai/agentic-sre-enterprise/ai/client"
+	"github.com/srenix-ai/agentic-sre/pkg/ai"
+	"github.com/srenix-ai/agentic-sre/pkg/diagnose"
 )
 
 func main() {
@@ -413,12 +413,12 @@ func main() {
 GO
 
 mkdir -p "${REPO_DIR_COM}/cmd/.demo-v3-t3"
-cp /tmp/cha-demo-v3-t3.go "${REPO_DIR_COM}/cmd/.demo-v3-t3/main.go"
+cp /tmp/srenix-demo-v3-t3.go "${REPO_DIR_COM}/cmd/.demo-v3-t3/main.go"
 
 export AI_HEADER AI_ENDPOINT AI_MODEL
 (cd "${REPO_DIR_COM}" && go run ./cmd/.demo-v3-t3/) 2>&1
 
-rm -rf "${REPO_DIR_COM}/cmd/.demo-v3-t3" /tmp/cha-demo-v3-t3.go
+rm -rf "${REPO_DIR_COM}/cmd/.demo-v3-t3" /tmp/srenix-demo-v3-t3.go
 
 cat <<EOF
 
@@ -431,7 +431,7 @@ cat <<EOF
       separate JWTs for the two approvers, with NotBefore set to
       enforce MinT3Delay
 
-  Even with both approvals, CHA-com never writes Vault itself. The
+  Even with both approvals, Srenix Enterprise never writes Vault itself. The
   operator runs the command template by hand. That's deliberate — Vault
   writes are the last asset class we want LLM autonomy on.
 
@@ -457,8 +457,8 @@ cat <<EOF
 
 EOF
 
-section "Running: cha-com watch --max-cycles=2 --ai-audit-log=- (JSONL on stdout)"
-cha_com watch \
+section "Running: srenix-enterprise watch --max-cycles=2 --ai-audit-log=- (JSONL on stdout)"
+srenix_com watch \
   --interval=3s --max-cycles=2 \
   --ai-tier=t0 \
   --ai-endpoint="${AI_ENDPOINT}" \
@@ -495,7 +495,7 @@ cat <<EOF
           ActionID is signed into a Slack URL; one click executes.
 
     [T3]  For Vault break-glass, two distinct operators must approve,
-          separated by ≥30 minutes. CHA-com never writes Vault — the
+          separated by ≥30 minutes. Srenix Enterprise never writes Vault — the
           operator runs the proposed runbook by hand.
 
     [Audit] Every step emits a hash-chained event. The whole loop is
@@ -503,7 +503,7 @@ cat <<EOF
 
   This is the AI SRE story: policy-bounded autonomy with an in-cluster
   agent and a bring-your-own-LLM endpoint. Everyone else observes;
-  CHA actually mutates.
+  Srenix actually mutates.
 
 EOF
 

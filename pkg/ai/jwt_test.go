@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package ai
@@ -15,8 +15,8 @@ func makeClaims(t *testing.T, exp time.Duration) TokenClaims {
 	t.Helper()
 	now := time.Now()
 	return TokenClaims{
-		Issuer:      "cha-com/approval-server",
-		Audience:    "cha-com/executor",
+		Issuer:      "srenix-enterprise/approval-server",
+		Audience:    "srenix-enterprise/executor",
 		Subject:     "act-test-1",
 		JTI:         "act-test-1",
 		IssuedAt:    now.Unix(),

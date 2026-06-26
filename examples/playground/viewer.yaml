@@ -1,10 +1,10 @@
 # viewer.yaml — the live findings viewer (Deployment + Service + Ingress).
 #
 # We ship the tiny OSS read-only viewer (examples/playground/viewer) rather than
-# the CHA-com dashboard image, so the whole playground is self-contained OSS and
+# the Srenix Enterprise dashboard image, so the whole playground is self-contained OSS and
 # anyone can `kind`-run it without a private image. The viewer lists the
 # cluster-scoped DriftReport CRs and renders them as an auto-refreshing page.
-# It runs under the cha-playground-viewer SA (driftreports read-only).
+# It runs under the srenix-playground-viewer SA (driftreports read-only).
 #
 # Image: build + push it as documented in README.md, then set viewer.image here.
 # A pinned digest/tag in your registry is recommended for the hosted playground.
@@ -12,22 +12,22 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: cha-playground-viewer
-  namespace: cha-playground
+  name: srenix-playground-viewer
+  namespace: srenix-playground
   labels:
-    cha.bionicaisolutions.com/role: playground-viewer
+    srenix.ai/role: playground-viewer
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: cha-playground-viewer
+      app: srenix-playground-viewer
   template:
     metadata:
       labels:
-        app: cha-playground-viewer
-        cha.bionicaisolutions.com/role: playground-viewer
+        app: srenix-playground-viewer
+        srenix.ai/role: playground-viewer
     spec:
-      serviceAccountName: cha-playground-viewer
+      serviceAccountName: srenix-playground-viewer
       # Keep the viewer off GPU nodes.
       affinity:
         nodeAffinity:
@@ -47,7 +47,7 @@ spec:
       containers:
         - name: viewer
           # REPLACE with your registry tag (see README.md "Build the viewer").
-          image: docker4zerocool/cha-playground-viewer:dev
+          image: docker4zerocool/srenix-playground-viewer:dev
           imagePullPolicy: IfNotPresent
           env:
             - name: LISTEN
@@ -75,13 +75,13 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: cha-playground-viewer
-  namespace: cha-playground
+  name: srenix-playground-viewer
+  namespace: srenix-playground
   labels:
-    cha.bionicaisolutions.com/role: playground-viewer
+    srenix.ai/role: playground-viewer
 spec:
   selector:
-    app: cha-playground-viewer
+    app: srenix-playground-viewer
   ports:
     - name: http
       port: 80
@@ -98,8 +98,8 @@ spec:
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: cha-playground-viewer
-  namespace: cha-playground
+  name: srenix-playground-viewer
+  namespace: srenix-playground
   annotations:
     cert-manager.io/cluster-issuer: letsencrypt-prod
     konghq.com/preserve-host: "true"
@@ -118,6 +118,6 @@ spec:
             pathType: Prefix
             backend:
               service:
-                name: cha-playground-viewer
+                name: srenix-playground-viewer
                 port:
                   name: http

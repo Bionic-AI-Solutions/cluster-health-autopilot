@@ -1,8 +1,8 @@
-# Cluster Health Autopilot — Full Setup Guide
+# Agentic SRE — Full Setup Guide
 
 Self-healing operational layer for Kubernetes: **detect → fix → re-verify → report**, on a
 schedule, without dashboards or pagers. This guide covers every step to install and operate
-CHA on a **brand-new cluster** — from first prerequisites to live Alertmanager routing.
+Srenix on a **brand-new cluster** — from first prerequisites to live Alertmanager routing.
 
 ---
 
@@ -28,7 +28,7 @@ CHA on a **brand-new cluster** — from first prerequisites to live Alertmanager
 
 ## 1. Prerequisites
 
-### Hard requirements (must exist before installing CHA)
+### Hard requirements (must exist before installing Srenix)
 
 | Requirement | Minimum version | Notes |
 |---|---|---|
@@ -43,19 +43,19 @@ CHA on a **brand-new cluster** — from first prerequisites to live Alertmanager
 |---|---|
 | Slack alerts | Three pre-existing Kubernetes Secrets (one per channel) — create manually or via ESO |
 | Alertmanager routing | A running Alertmanager instance reachable from inside the cluster (e.g. `kube-prometheus-stack`) |
-| Vault probe | HashiCorp Vault KV-v2 + a Vault role bound to the CHA ServiceAccount via kubernetes-auth |
+| Vault probe | HashiCorp Vault KV-v2 + a Vault role bound to the Srenix ServiceAccount via kubernetes-auth |
 | ESO analyzers | External Secrets Operator installed in the cluster |
 | Auto-remediation | `remediation.enabled: true` in Helm values (opt-in) |
 | Daily run-log publishing | Self-hosted GitHub Actions runner + GitHub PAT in Vault |
 
-### What CHA does NOT require
+### What Srenix does NOT require
 
-- Prometheus / Grafana — CHA is self-contained; it reads the Kubernetes API directly
+- Prometheus / Grafana — Srenix is self-contained; it reads the Kubernetes API directly
 - MinIO / object storage — required only for the optional run-log publishing pipeline
 - Persistent storage — the watcher Deployment is stateless; DriftReport history lives in etcd as CRs
-- Elevated privileges — CHA runs as a read-only ServiceAccount; the remediator role is narrowly scoped
+- Elevated privileges — Srenix runs as a read-only ServiceAccount; the remediator role is narrowly scoped
 
-> **For zero-trust offline mode (section 3) you need none of the above.** Just the `cha` binary
+> **For zero-trust offline mode (section 3) you need none of the above.** Just the `srenix` binary
 > and a `kubectl get -o json` snapshot.
 
 ---
@@ -66,15 +66,15 @@ CHA on a **brand-new cluster** — from first prerequisites to live Alertmanager
 
 ```sh
 # Linux amd64
-curl -sSL https://github.com/Bionic-AI-Solutions/cluster-health-autopilot/releases/latest/download/cluster-health-autopilot_Linux_x86_64.tar.gz \
-  | tar xz && sudo mv cha /usr/local/bin/
+curl -sSL https://github.com/srenix-ai/agentic-sre/releases/latest/download/agentic-sre_Linux_x86_64.tar.gz \
+  | tar xz && sudo mv srenix /usr/local/bin/
 
 # macOS arm64
-curl -sSL https://github.com/Bionic-AI-Solutions/cluster-health-autopilot/releases/latest/download/cluster-health-autopilot_Darwin_arm64.tar.gz \
-  | tar xz && sudo mv cha /usr/local/bin/
+curl -sSL https://github.com/srenix-ai/agentic-sre/releases/latest/download/agentic-sre_Darwin_arm64.tar.gz \
+  | tar xz && sudo mv srenix /usr/local/bin/
 
 # Verify
-cha version
+srenix version
 ```
 
 Pre-built binaries for: `linux/amd64`, `linux/arm64`, `darwin/amd64`, `darwin/arm64`.
@@ -88,20 +88,20 @@ sha256sum -c checksums.txt --ignore-missing
 ### Build from source
 
 ```sh
-git clone https://github.com/Bionic-AI-Solutions/cluster-health-autopilot.git
-cd cluster-health-autopilot
-go build -o cha ./cmd/cha   # requires Go 1.22+
+git clone https://github.com/srenix-ai/agentic-sre.git
+cd agentic-sre
+go build -o srenix ./cmd/srenix   # requires Go 1.22+
 ```
 
 ### Container image
 
 ```sh
-docker pull docker4zerocool/cluster-health-autopilot:latest
+docker pull docker4zerocool/agentic-sre:latest
 # Pin to a specific version:
-docker pull docker4zerocool/cluster-health-autopilot:v1.5.2
+docker pull docker4zerocool/agentic-sre:v1.5.2
 ```
 
-> **Image registry**: `docker4zerocool/cluster-health-autopilot` on Docker Hub.
+> **Image registry**: `docker4zerocool/agentic-sre` on Docker Hub.
 > The chart's default `image.repository` already points here.
 
 ---
@@ -115,7 +115,7 @@ analyze it from any machine.
 
 ```sh
 # From a machine with kubectl + cluster access:
-cha snapshot capture --tar my-cluster.tgz
+srenix snapshot capture --tar my-cluster.tgz
 ```
 
 Runs `kubectl get -o json` for each supported GVR (pods, events, deployments, replicasets,
@@ -130,15 +130,15 @@ cephclusters.ceph.rook.io, ingresses, secrets — read-only, never writes). Outp
 
 ```sh
 # From any machine — no cluster access, no credentials:
-cha diagnose --snapshot my-cluster.tgz
+srenix diagnose --snapshot my-cluster.tgz
 # or from the sample fixture:
-cha diagnose --snapshot examples/sample-cluster
+srenix diagnose --snapshot examples/sample-cluster
 ```
 
 ### Step 3 — JSON output for automation
 
 ```sh
-cha diagnose --snapshot my-cluster.tgz --format json | jq '.diagnostics'
+srenix diagnose --snapshot my-cluster.tgz --format json | jq '.diagnostics'
 ```
 
 ---
@@ -148,30 +148,30 @@ cha diagnose --snapshot my-cluster.tgz --format json | jq '.diagnostics'
 ### Step 1 — add the Helm repository
 
 ```sh
-helm repo add cha https://bionic-ai-solutions.github.io/cluster-health-autopilot
+helm repo add srenix https://srenix-ai.github.io/agentic-sre
 helm repo update
 ```
 
 ### Step 2 — create the namespace
 
 ```sh
-kubectl create namespace cluster-health-autopilot
+kubectl create namespace agentic-sre
 ```
 
 ### Step 3 — create Slack secrets (if using Slack; see section 6)
 
 ```sh
 # Three channels — create whichever you need:
-kubectl create secret generic cha-slack-ceph-alerts \
-  --namespace cluster-health-autopilot \
+kubectl create secret generic srenix-slack-ceph-alerts \
+  --namespace agentic-sre \
   --from-literal=WEBHOOK_URL=https://hooks.slack.com/services/T.../B.../...
 
-kubectl create secret generic cha-slack-ceph-critical \
-  --namespace cluster-health-autopilot \
+kubectl create secret generic srenix-slack-ceph-critical \
+  --namespace agentic-sre \
   --from-literal=WEBHOOK_URL=https://hooks.slack.com/services/T.../B.../...
 
-kubectl create secret generic cha-slack-healthinfo \
-  --namespace cluster-health-autopilot \
+kubectl create secret generic srenix-slack-healthinfo \
+  --namespace agentic-sre \
   --from-literal=WEBHOOK_URL=https://hooks.slack.com/services/T.../B.../...
 ```
 
@@ -181,7 +181,7 @@ If your cluster does not have public Docker Hub access configured globally:
 
 ```sh
 kubectl create secret docker-registry dockerhub-pull-secret \
-  --namespace cluster-health-autopilot \
+  --namespace agentic-sre \
   --docker-username=<user> \
   --docker-password=<token>
 ```
@@ -199,16 +199,16 @@ image:
 Minimal install (diagnose CronJob only, no Slack):
 
 ```sh
-helm install cha cha/cluster-health-autopilot \
-  --namespace cluster-health-autopilot \
+helm install srenix srenix/agentic-sre \
+  --namespace agentic-sre \
   --set image.tag=v1.5.2
 ```
 
 With Alertmanager as hub (recommended):
 
 ```sh
-helm install cha cha/cluster-health-autopilot \
-  --namespace cluster-health-autopilot \
+helm install srenix srenix/agentic-sre \
+  --namespace agentic-sre \
   --set image.tag=v1.5.2 \
   --set alertmanager.enabled=true \
   --set alertmanager.url=http://alertmanager.pg.svc.cluster.local:9093 \
@@ -220,8 +220,8 @@ helm install cha cha/cluster-health-autopilot \
 Full install with Alertmanager + three-channel Slack + watcher:
 
 ```sh
-helm install cha cha/cluster-health-autopilot \
-  --namespace cluster-health-autopilot \
+helm install srenix srenix/agentic-sre \
+  --namespace agentic-sre \
   --set image.tag=v1.5.2 \
   --set alertmanager.enabled=true \
   --set alertmanager.url=http://alertmanager.pg.svc.cluster.local:9093 \
@@ -229,17 +229,17 @@ helm install cha cha/cluster-health-autopilot \
   --set watcher.enabled=true \
   --set watcher.remedy.enabled=true \
   --set slack.alerts.enabled=true \
-  --set slack.alerts.secretName=cha-slack-ceph-alerts \
+  --set slack.alerts.secretName=srenix-slack-ceph-alerts \
   --set slack.critical.enabled=true \
-  --set slack.critical.secretName=cha-slack-ceph-critical \
+  --set slack.critical.secretName=srenix-slack-ceph-critical \
   --set slack.healthinfo.enabled=true \
-  --set slack.healthinfo.secretName=cha-slack-healthinfo
+  --set slack.healthinfo.secretName=srenix-slack-healthinfo
 ```
 
 Or use a `values.yaml` file (recommended for production):
 
 ```yaml
-# cha-values.yaml
+# srenix-values.yaml
 image:
   tag: v1.5.2
 
@@ -257,18 +257,19 @@ watcher:
     dryRun: false
   slack:
     postOnResolved: true
-    repeatInterval: 4h
+    repeatInterval: 6h
+    criticalRepeatInterval: "2h"   # Criticals stay loud (0 = fall back to repeatInterval)
 
 slack:
   alerts:
     enabled: true
-    secretName: cha-slack-ceph-alerts
+    secretName: srenix-slack-ceph-alerts
   critical:
     enabled: true
-    secretName: cha-slack-ceph-critical
+    secretName: srenix-slack-ceph-critical
   healthinfo:
     enabled: true
-    secretName: cha-slack-healthinfo
+    secretName: srenix-slack-healthinfo
 
 diagnose:
   schedule: "0 9 * * *"
@@ -279,48 +280,48 @@ driftReport:
 ```
 
 ```sh
-helm install cha cha/cluster-health-autopilot \
-  --namespace cluster-health-autopilot \
-  -f cha-values.yaml
+helm install srenix srenix/agentic-sre \
+  --namespace agentic-sre \
+  -f srenix-values.yaml
 ```
 
 ### What the chart creates
 
-- `ServiceAccount/cha-cluster-health-autopilot`
-- `ClusterRole/cha-cluster-health-autopilot-reader` — read-only on pods, nodes, pvcs, events,
+- `ServiceAccount/srenix-agentic-sre`
+- `ClusterRole/srenix-agentic-sre-reader` — read-only on pods, nodes, pvcs, events,
   namespaces, deployments, replicasets, statefulsets, daemonsets, jobs, cronjobs, externalsecrets,
   secretstores, clustersecretstores, secrets, clusters (CNPG), cephclusters, certificates,
   certificaterequests, orders (ACME), driftreports, ingresses, services, endpoints
-- `ClusterRole/cha-cluster-health-autopilot-remediator` — narrow write: delete pods/jobs,
+- `ClusterRole/srenix-agentic-sre-remediator` — narrow write: delete pods/jobs,
   patch deployment annotations, delete cert-manager CertificateRequests and Orders. When
   `fixers.tlsSecretMismatch.enabled=true`, the chart additionally grants
   `networking.k8s.io/ingresses [patch]` on this role; otherwise the verb is omitted
-- `ClusterRole/cha-cluster-health-autopilot-driftreport-writer` — create/patch/delete DriftReports
-- `CronJob/cha-cluster-health-autopilot-diagnose` — daily `cha diagnose --live` (default: `0 9 * * *`)
-- `CronJob/cha-cluster-health-autopilot-remediate` — opt-in auto-fixers (off by default)
-- `Deployment/cha-cluster-health-autopilot-watcher` — real-time event-driven engine (if enabled)
+- `ClusterRole/srenix-agentic-sre-driftreport-writer` — create/patch/delete DriftReports
+- `CronJob/srenix-agentic-sre-diagnose` — daily `srenix diagnose --live` (default: `0 9 * * *`)
+- `CronJob/srenix-agentic-sre-remediate` — opt-in auto-fixers (off by default)
+- `Deployment/srenix-agentic-sre-watcher` — real-time event-driven engine (if enabled)
 
 ### Verify install
 
 ```sh
-kubectl -n cluster-health-autopilot get all
-kubectl -n cluster-health-autopilot get cronjobs
+kubectl -n agentic-sre get all
+kubectl -n agentic-sre get cronjobs
 
 # Trigger an immediate diagnose run:
-kubectl -n cluster-health-autopilot create job \
-  --from=cronjob/cha-cluster-health-autopilot-diagnose cha-test-$(date +%s)
+kubectl -n agentic-sre create job \
+  --from=cronjob/srenix-agentic-sre-diagnose srenix-test-$(date +%s)
 
 # Stream logs:
-kubectl -n cluster-health-autopilot logs \
-  -l job-name=cha-test-<timestamp> --follow
+kubectl -n agentic-sre logs \
+  -l job-name=srenix-test-<timestamp> --follow
 ```
 
 ---
 
 ## 5. Alertmanager integration
 
-Alertmanager is the **recommended hub** for CHA's issue routing. Rather than posting directly
-to Slack, CHA posts all active issues to Alertmanager as alerts on every watcher cycle.
+Alertmanager is the **recommended hub** for Srenix's issue routing. Rather than posting directly
+to Slack, Srenix posts all active issues to Alertmanager as alerts on every watcher cycle.
 Alertmanager handles: deduplication, grouping, silencing, repeat intervals, and fan-out to
 all configured receivers (Slack, PagerDuty, Teams, email, webhook, …).
 
@@ -328,10 +329,10 @@ all configured receivers (Slack, PagerDuty, Teams, email, webhook, …).
 
 | Concern | Direct Slack | Alertmanager |
 |---|---|---|
-| Dedup | CHA does its own seen-map | Alertmanager does it cluster-wide |
+| Dedup | Srenix does its own seen-map | Alertmanager does it cluster-wide |
 | Silencing | Not supported | Full silence UI |
 | Multi-receiver | Manual per-channel code | Config-file routes |
-| Repeat interval | Hardcoded in CHA | Configurable per route |
+| Repeat interval | Hardcoded in Srenix | Configurable per route |
 | History | Slack history only | Alertmanager history + silence log |
 
 ### Prerequisites
@@ -341,7 +342,7 @@ A running Alertmanager instance reachable from inside the cluster. The most comm
 
 ```sh
 # Verify Alertmanager is reachable from within the cluster:
-kubectl -n cluster-health-autopilot run am-test --image=curlimages/curl --rm -it \
+kubectl -n agentic-sre run am-test --image=curlimages/curl --rm -it \
   --restart=Never -- curl -s http://alertmanager.pg.svc.cluster.local:9093/api/v2/status | jq '.versionInfo'
 ```
 
@@ -356,12 +357,12 @@ alertmanager:
 
 ### How it works
 
-CHA posts to `/api/v2/alerts` on every watcher cycle. Each active diagnostic becomes an
+Srenix posts to `/api/v2/alerts` on every watcher cycle. Each active diagnostic becomes an
 alert with:
 
 ```yaml
 labels:
-  alertname: cha_issue           # or cha_fixer_acted when CHA fixed something
+  alertname: srenix_issue           # or srenix_fixer_acted when Srenix fixed something
   severity: critical|warning|info
   subject: "pod/mynamespace/mypod"   # truncated to 256 chars
   source: "SecretKeyMissing"         # probe/analyzer source
@@ -371,28 +372,28 @@ annotations:
   remediation: "suggested action"
 ```
 
-Alerts auto-expire after `2 × resyncPeriod + 1 min` (default TTL ≈ 21 min). When CHA resolves
+Alerts auto-expire after `2 × resyncPeriod + 1 min` (default TTL ≈ 21 min). When Srenix resolves
 an issue, the alert disappears at the next cycle — no explicit resolve needed.
 
-### Configure Alertmanager routes for CHA
+### Configure Alertmanager routes for Srenix
 
-Add CHA-specific routes at the **top** of your Alertmanager config's `route.routes` list so
+Add Srenix-specific routes at the **top** of your Alertmanager config's `route.routes` list so
 they take priority over generic severity routes:
 
 ```yaml
 route:
   routes:
-    # CHA auto-fixed an issue → #ceph-alerts (informational)
+    # Srenix auto-fixed an issue → #ceph-alerts (informational)
     - match:
-        alertname: cha_fixer_acted
+        alertname: srenix_fixer_acted
       receiver: 'slack-ceph-alerts'
       group_wait: 10s
       repeat_interval: 1h
       continue: false
 
-    # All other CHA issues → #ceph-critical (needs human attention)
+    # All other Srenix issues → #ceph-critical (needs human attention)
     - match_re:
-        alertname: "cha_.*"
+        alertname: "srenix_.*"
       receiver: 'slack-ceph-critical'
       group_wait: 30s
       repeat_interval: 4h
@@ -409,7 +410,7 @@ receivers:
     slack_configs:
       - api_url_file: /etc/alertmanager/secrets/slack-ceph-alerts/webhook_url
         channel: '#ceph-alerts'
-        title: 'CHA Auto-Fixed | {{ .CommonLabels.cluster }}'
+        title: 'Srenix Auto-Fixed | {{ .CommonLabels.cluster }}'
         text: |
           {{ range .Alerts }}
           *{{ .Labels.subject }}* — {{ .Annotations.message }}
@@ -419,7 +420,7 @@ receivers:
     slack_configs:
       - api_url_file: /etc/alertmanager/secrets/slack-ceph-critical/webhook_url
         channel: '#ceph-critical'
-        title: '🔴 CHA Issues | {{ .CommonLabels.cluster }}'
+        title: '🔴 Srenix Issues | {{ .CommonLabels.cluster }}'
         text: |
           {{ range .Alerts }}
           *[{{ .Labels.severity | toUpper }}]* {{ .Labels.subject }}
@@ -455,12 +456,12 @@ kubectl -n <alertmanager-namespace> logs -l app.kubernetes.io/name=alertmanager 
 
 ## 6. Slack three-channel routing
 
-CHA routes Slack messages across three dedicated channels:
+Srenix routes Slack messages across three dedicated channels:
 
 | Channel | Content | When |
 |---|---|---|
-| `#ceph-alerts` | Issues CHA **acted on** (auto-fixed) | Event-driven (watcher cycle) |
-| `#ceph-critical` | Issues CHA **cannot fix** (needs human) | Event-driven (watcher cycle) |
+| `#ceph-alerts` | Issues Srenix **acted on** (auto-fixed) | Event-driven (watcher cycle) |
+| `#ceph-critical` | Issues Srenix **cannot fix** (needs human) | Event-driven (watcher cycle) |
 | `#healthinfo` | Full daily cluster health digest | Daily CronJob (default 09:00 UTC) |
 
 > **If you use Alertmanager** (section 5), `#ceph-alerts` and `#ceph-critical` are routed
@@ -471,25 +472,25 @@ CHA routes Slack messages across three dedicated channels:
 
 ```sh
 # Each secret holds a single key: WEBHOOK_URL
-kubectl create secret generic cha-slack-ceph-alerts \
-  --namespace cluster-health-autopilot \
+kubectl create secret generic srenix-slack-ceph-alerts \
+  --namespace agentic-sre \
   --from-literal=WEBHOOK_URL=https://hooks.slack.com/services/T.../B.../...
 
-kubectl create secret generic cha-slack-ceph-critical \
-  --namespace cluster-health-autopilot \
+kubectl create secret generic srenix-slack-ceph-critical \
+  --namespace agentic-sre \
   --from-literal=WEBHOOK_URL=https://hooks.slack.com/services/T.../B.../...
 
-kubectl create secret generic cha-slack-healthinfo \
-  --namespace cluster-health-autopilot \
+kubectl create secret generic srenix-slack-healthinfo \
+  --namespace agentic-sre \
   --from-literal=WEBHOOK_URL=https://hooks.slack.com/services/T.../B.../...
 ```
 
 ### Option B — ExternalSecret from Vault (recommended for production)
 
-Store webhook URLs in Vault at `secret/t6-apps/cha/config`:
+Store webhook URLs in Vault at `secret/t6-apps/srenix/config`:
 
 ```sh
-vault kv patch secret/t6-apps/cha/config \
+vault kv patch secret/t6-apps/srenix/config \
   slack_alerts_webhook_url="https://hooks.slack.com/services/..." \
   slack_critical_webhook_url="https://hooks.slack.com/services/..." \
   slack_healthinfo_webhook_url="https://hooks.slack.com/services/..."
@@ -501,25 +502,25 @@ Create ExternalSecrets:
 apiVersion: external-secrets.io/v1
 kind: ExternalSecret
 metadata:
-  name: cha-slack-ceph-alerts
-  namespace: cluster-health-autopilot
+  name: srenix-slack-ceph-alerts
+  namespace: agentic-sre
 spec:
   refreshInterval: 1h
   secretStoreRef:
     name: vault-backend
     kind: ClusterSecretStore
   target:
-    name: cha-slack-ceph-alerts
+    name: srenix-slack-ceph-alerts
     template:
       data:
         WEBHOOK_URL: "{{ .slack_alerts_webhook_url }}"
   data:
     - secretKey: slack_alerts_webhook_url
       remoteRef:
-        key: t6-apps/cha/config
+        key: t6-apps/srenix/config
         property: slack_alerts_webhook_url
 ---
-# Repeat for cha-slack-ceph-critical and cha-slack-healthinfo
+# Repeat for srenix-slack-ceph-critical and srenix-slack-healthinfo
 ```
 
 ### Enable in Helm values
@@ -528,15 +529,15 @@ spec:
 slack:
   alerts:
     enabled: true
-    secretName: cha-slack-ceph-alerts   # K8s secret name
+    secretName: srenix-slack-ceph-alerts   # K8s secret name
     secretKey: "WEBHOOK_URL"            # key within the secret
   critical:
     enabled: true
-    secretName: cha-slack-ceph-critical
+    secretName: srenix-slack-ceph-critical
     secretKey: "WEBHOOK_URL"
   healthinfo:
     enabled: true
-    secretName: cha-slack-healthinfo
+    secretName: srenix-slack-healthinfo
     secretKey: "WEBHOOK_URL"
 ```
 
@@ -571,12 +572,12 @@ controller's next refresh cycle, while the ExternalSecret is still reporting `Re
 ### Prerequisites
 
 - Vault KV-v2 mount (default: `secret`)
-- A Vault kubernetes-auth role bound to the `cha` ServiceAccount
+- A Vault kubernetes-auth role bound to the `srenix` ServiceAccount
 
 ### Step 1 — create the Vault policy
 
 ```hcl
-# cha-diagnose-read.hcl
+# srenix-diagnose-read.hcl
 # Scope to only the paths referenced by your ExternalSecrets.
 path "secret/data/team/*" {
   capabilities = ["read"]
@@ -587,16 +588,16 @@ path "secret/data/shared/*" {
 ```
 
 ```sh
-vault policy write cha-diagnose-read cha-diagnose-read.hcl
+vault policy write srenix-diagnose-read srenix-diagnose-read.hcl
 ```
 
 ### Step 2 — create the kubernetes-auth role
 
 ```sh
-vault write auth/kubernetes/role/cha-diagnose \
-  bound_service_account_names=cha-cluster-health-autopilot \
-  bound_service_account_namespaces=cluster-health-autopilot \
-  policies=cha-diagnose-read \
+vault write auth/kubernetes/role/srenix-diagnose \
+  bound_service_account_names=srenix-agentic-sre \
+  bound_service_account_namespaces=agentic-sre \
+  policies=srenix-diagnose-read \
   ttl=1h
 ```
 
@@ -609,19 +610,19 @@ vaultProbe:
   kvMount: "secret"
   auth:
     method: kubernetes
-    role: "cha-diagnose"
+    role: "srenix-diagnose"
 ```
 
 ### Step 4 — verify
 
 ```sh
-kubectl -n cluster-health-autopilot create job \
-  --from=cronjob/cha-cluster-health-autopilot-diagnose vault-test-$(date +%s)
-kubectl -n cluster-health-autopilot logs -l "job-name=vault-test-*" --follow
+kubectl -n agentic-sre create job \
+  --from=cronjob/srenix-agentic-sre-diagnose vault-test-$(date +%s)
+kubectl -n agentic-sre logs -l "job-name=vault-test-*" --follow
 # Look for "VaultPathMissing: X paths checked, Y missing"
 ```
 
-> **Security note:** CHA never reads Vault byte values — only key NAMES at each path.
+> **Security note:** Srenix never reads Vault byte values — only key NAMES at each path.
 > Scope the Vault policy to only the paths used by your ExternalSecrets.
 
 ---
@@ -645,19 +646,19 @@ spec.target.name=playground-agent-secrets pointing to Vault path
 
 ### ProactiveSecretKeyCheck near-miss hint
 
-When a `secretKeyRef` references a missing key, CHA checks whether a case/format variant
+When a `secretKeyRef` references a missing key, Srenix checks whether a case/format variant
 exists and appends: `Key GITHUB_TOKEN is a case/format variant — possible naming mismatch.`
 
 ### FailingExternalSecrets t6 path hint
 
-When an ESO reports `Ready: False`, CHA checks whether the Vault path follows the expected
+When an ESO reports `Ready: False`, Srenix checks whether the Vault path follows the expected
 hierarchy and suggests the canonical form if not.
 
 ---
 
 ## 9. DriftReport CRD (kubectl-queryable diagnostics)
 
-CHA creates and maintains `DriftReport` cluster-scoped CRs — one per active issue.
+Srenix creates and maintains `DriftReport` cluster-scoped CRs — one per active issue.
 
 ### CRD installation
 
@@ -665,7 +666,7 @@ The CRD is installed automatically by the Helm chart (with `resource-policy: kee
 `helm uninstall` does NOT remove it). To install manually:
 
 ```sh
-kubectl apply -f charts/cluster-health-autopilot/crds/driftreports.yaml
+kubectl apply -f charts/agentic-sre/crds/driftreports.yaml
 ```
 
 ### Query diagnostics
@@ -708,7 +709,7 @@ status:
 ### Cleanup after helm uninstall
 
 ```sh
-kubectl delete crd driftreports.cha.bionicaisolutions.com
+kubectl delete crd driftreports.srenix.ai
 # This also deletes all DriftReport CRs.
 ```
 
@@ -717,7 +718,7 @@ kubectl delete crd driftreports.cha.bionicaisolutions.com
 ## 10. Watcher mode
 
 Watcher mode deploys a long-running `Deployment` that holds open Kubernetes watches for all
-resource types CHA analyzes. When any resource changes, a short debounce fires, then the
+resource types Srenix analyzes. When any resource changes, a short debounce fires, then the
 full probe+analyzer stack runs — sub-15 seconds vs waiting for the next cron tick.
 
 **Slack deduplication**: each diagnostic is fingerprinted by subject + severity + message.
@@ -727,8 +728,8 @@ existing DriftReport CRs on pod startup to avoid a flood after a rolling update.
 ### Enable via Helm
 
 ```sh
-helm upgrade cha cha/cluster-health-autopilot \
-  --namespace cluster-health-autopilot \
+helm upgrade srenix srenix/agentic-sre \
+  --namespace agentic-sre \
   --reuse-values \
   --set watcher.enabled=true \
   --set watcher.remedy.enabled=true
@@ -742,8 +743,9 @@ watcher:
   debounce: 10s            # Wait after the last event before running diagnostics
   resyncPeriod: 10m        # Full re-diagnose regardless of events
   slack:
-    postOnResolved: true   # Post when a diagnostic resolves
-    repeatInterval: 4h     # Re-post still-active issues at this cadence (0 = never)
+    postOnResolved: true        # Post when a diagnostic resolves
+    repeatInterval: 6h          # Re-post still-active warning/info issues at this cadence (0 = never)
+    criticalRepeatInterval: "2h" # Re-post still-active criticals (default 2h; 0 = fall back to repeatInterval)
   remedy:
     enabled: false         # Run auto-fixers after each diagnose cycle
     dryRun: false          # Evaluate fixers without cluster mutation
@@ -760,7 +762,7 @@ watcher:
 
 ```sh
 # Alertmanager as hub (recommended):
-cha watch --live \
+srenix watch --live \
   --debounce=10s \
   --resync-period=10m \
   --alertmanager-url=http://alertmanager:9093 \
@@ -769,13 +771,14 @@ cha watch --live \
   --remedy
 
 # Direct Slack (fallback / simpler setups):
-cha watch --live \
+srenix watch --live \
   --debounce=10s \
   --resync-period=10m \
   --slack-alerts=$SLACK_ALERTS_URL \
   --slack-critical=$SLACK_CRITICAL_URL \
   --slack-post-on-resolved=true \
-  --slack-repeat-interval=4h \
+  --slack-repeat-interval=6h \
+  --slack-critical-repeat-interval=2h \
   --write-driftreports=true
 ```
 
@@ -789,11 +792,11 @@ cha watch --live \
 | `--resync-period` | `10m` | Periodic full re-diagnose interval |
 | `--alertmanager-url` | `$ALERTMANAGER_URL` | Alertmanager API URL (preferred hub) |
 | `--cluster-name` | `$CLUSTER_NAME` or `cluster` | Stamped as `cluster` label on AM alerts |
-| `--slack-alerts` | — | Slack webhook for `#ceph-alerts` (CHA-fixed issues) |
+| `--slack-alerts` | — | Slack webhook for `#ceph-alerts` (Srenix-fixed issues) |
 | `--slack-critical` | — | Slack webhook for `#ceph-critical` (unfixable issues) |
 | `--slack-post-on-resolved` | `true` | Post when a diagnostic resolves |
-| `--slack-repeat-interval` | `4h` | Re-post still-active warning/info diagnostics; `0` disables |
-| `--slack-critical-repeat-interval` | `0` (= use `--slack-repeat-interval`) | Per-severity override for **critical** diagnostics. Lets operators keep criticals loud (e.g. `4h`) while warnings calm down (e.g. `--slack-repeat-interval=24h`). New in v1.6.1. |
+| `--slack-repeat-interval` | `6h` | Re-post still-active warning/info diagnostics; `0` disables |
+| `--slack-critical-repeat-interval` | `2h` (= criticals stay loud; `0` falls back to `--slack-repeat-interval`) | Per-severity override for **critical** diagnostics. Defaults to `2h` so unresolved criticals keep re-posting while warnings calm down at `--slack-repeat-interval` (`6h`). New in v1.6.1. |
 | `--write-driftreports` | `true` | Upsert DriftReport CRs on every cycle |
 | `--remedy` | `false` | Run auto-fixers after each diagnose cycle |
 | `--dry-run` | `false` | With `--remedy`: evaluate without mutating |
@@ -808,7 +811,7 @@ Running both is safe and recommended:
 
 ## 11. Retiring old bash health CronJobs
 
-If you previously ran manual bash-based cluster health CronJobs (common pattern before CHA),
+If you previously ran manual bash-based cluster health CronJobs (common pattern before Srenix),
 clean them up to avoid duplicate `#healthinfo` posts:
 
 ```sh
@@ -822,8 +825,8 @@ kubectl -n gpu-monitor delete cronjob gpu-health-report gpu-docker-monitor 2>/de
 kubectl -n gpu-monitor delete configmap gpu-monitor-script gpu-docker-monitor-script 2>/dev/null || true
 kubectl -n gpu-monitor delete secret gpu-monitor-slack 2>/dev/null || true
 
-# Old single-webhook CHA secret (replaced by three-channel secrets)
-kubectl -n cluster-health-autopilot delete secret cha-slack-webhook 2>/dev/null || true
+# Old single-webhook Srenix secret (replaced by three-channel secrets)
+kubectl -n agentic-sre delete secret srenix-slack-webhook 2>/dev/null || true
 ```
 
 After retiring old CronJobs, verify no duplicate Slack messages arrive in `#healthinfo`
@@ -836,7 +839,7 @@ on the next daily cycle.
 ### A. Namespace and resources
 
 ```sh
-kubectl -n cluster-health-autopilot get all
+kubectl -n agentic-sre get all
 # Expected: watcher Deployment (1/1 Running), runner Deployment (if enabled),
 #           two CronJobs (diagnose + remediate)
 ```
@@ -844,29 +847,29 @@ kubectl -n cluster-health-autopilot get all
 ### B. Immediate diagnose run
 
 ```sh
-kubectl -n cluster-health-autopilot create job \
-  --from=cronjob/cha-cluster-health-autopilot-diagnose verify-$(date +%s)
+kubectl -n agentic-sre create job \
+  --from=cronjob/srenix-agentic-sre-diagnose verify-$(date +%s)
 
 # Wait for completion (usually <30s):
-kubectl -n cluster-health-autopilot get jobs --watch
+kubectl -n agentic-sre get jobs --watch
 
 # Stream logs:
-kubectl -n cluster-health-autopilot logs -l "job-name=verify-*" --follow
+kubectl -n agentic-sre logs -l "job-name=verify-*" --follow
 ```
 
 ### C. DriftReport CRD
 
 ```sh
-kubectl get crd driftreports.cha.bionicaisolutions.com
+kubectl get crd driftreports.srenix.ai
 kubectl get driftreports   # shows active issues; empty if cluster is healthy
 ```
 
 ### D. Watcher health
 
 ```sh
-kubectl get deployment -n cluster-health-autopilot | grep watcher
-kubectl logs -f deployment/cha-cluster-health-autopilot-watcher \
-  -n cluster-health-autopilot | head -20
+kubectl get deployment -n agentic-sre | grep watcher
+kubectl logs -f deployment/srenix-agentic-sre-watcher \
+  -n agentic-sre | head -20
 # Expected: "watcher: initial diagnose cycle" then "watcher: cycle complete N diagnostics"
 ```
 
@@ -875,17 +878,17 @@ kubectl logs -f deployment/cha-cluster-health-autopilot-watcher \
 ```sh
 # Check alerts are flowing:
 curl -s http://alertmanager.pg.svc.cluster.local:9093/api/v2/alerts | \
-  jq '[.[] | select(.labels.alertname | startswith("cha_"))] | length'
-# Should return the number of active CHA issues (>0 if any issues exist)
+  jq '[.[] | select(.labels.alertname | startswith("srenix_"))] | length'
+# Should return the number of active Srenix issues (>0 if any issues exist)
 ```
 
 Or from inside the cluster:
 
 ```sh
-kubectl -n cluster-health-autopilot run am-check --image=curlimages/curl --rm -it \
+kubectl -n agentic-sre run am-check --image=curlimages/curl --rm -it \
   --restart=Never -- \
   curl -s http://alertmanager.pg.svc.cluster.local:9093/api/v2/alerts | \
-  jq '[.[] | select(.labels.alertname | startswith("cha_"))] | length'
+  jq '[.[] | select(.labels.alertname | startswith("srenix_"))] | length'
 ```
 
 ### F. Slack
@@ -897,7 +900,7 @@ deduped message arrives within ~15 seconds.
 ### G. Zero-trust mode
 
 ```sh
-cha diagnose --snapshot examples/sample-cluster
+srenix diagnose --snapshot examples/sample-cluster
 # Expected: 9 diagnostics spanning secret drift, unprovisioned Secrets,
 #           key-name mismatches, image pull auth, and cert expiry.
 ```
@@ -906,36 +909,36 @@ cha diagnose --snapshot examples/sample-cluster
 
 ## 13. Troubleshooting
 
-### `cha diagnose --live` returns no results
+### `srenix diagnose --live` returns no results
 
 - Check kubeconfig: `kubectl get pods -A` should work first.
-- Check RBAC: `kubectl auth can-i list pods --as=system:serviceaccount:cluster-health-autopilot:cha-cluster-health-autopilot`
+- Check RBAC: `kubectl auth can-i list pods --as=system:serviceaccount:agentic-sre:srenix-agentic-sre`
 
 ### DriftReports not created
 
-- Ensure the CRD is installed: `kubectl get crd driftreports.cha.bionicaisolutions.com`
+- Ensure the CRD is installed: `kubectl get crd driftreports.srenix.ai`
 - Check logs for `driftreport reconcile partial failure`.
 - Confirm `--write-driftreports=true` (default) is not overridden.
 
 ### Watcher pod crash-loops with `watch requires --live`
 
-The Helm template always injects `--live`; this error means you ran `cha watch` manually
+The Helm template always injects `--live`; this error means you ran `srenix watch` manually
 without the flag. Add `--live`.
 
 ### Watcher Slack floods after pod restart
 
 This happens when DriftReport CRD is absent — the watcher cannot seed its seen-map.
-Install the CRD first: `kubectl apply -f charts/cluster-health-autopilot/crds/driftreports.yaml`
+Install the CRD first: `kubectl apply -f charts/agentic-sre/crds/driftreports.yaml`
 
 ### Watcher `watch … no matches for kind` log lines
 
 Normal for CRDs not installed in this cluster (e.g. CNPG absent on a plain cluster). The
 watcher exits that GVR goroutine silently and continues watching all others.
 
-### Alertmanager: CHA alerts not routing to Slack
+### Alertmanager: Srenix alerts not routing to Slack
 
 1. Verify alerts arrive: `curl -s http://alertmanager:9093/api/v2/alerts | jq '. | length'`
-2. Check Alertmanager routes are in the right order (CHA routes must be BEFORE generic severity routes)
+2. Check Alertmanager routes are in the right order (Srenix routes must be BEFORE generic severity routes)
 3. Check Alertmanager logs for `permission denied` on nflog/silences — this means `fsGroup` is not set (see §5)
 4. Verify Alertmanager receivers reference the correct Slack secret keys
 
@@ -947,12 +950,12 @@ watcher exits that GVR goroutine silently and continues watching all others.
 ### Vault authentication failures (403 in logs)
 
 - Check that the Vault role TTL ≥ the CronJob schedule (TTL=1h for daily is fine).
-- Verify `bound_service_account_names=cha-cluster-health-autopilot` (not just `cha`).
-- Check `bound_service_account_namespaces=cluster-health-autopilot`.
+- Verify `bound_service_account_names=srenix-agentic-sre` (not just `srenix`).
+- Check `bound_service_account_namespaces=agentic-sre`.
 
 ### Image pull failures
 
-- Verify the cluster can reach Docker Hub: `docker.io/docker4zerocool/cluster-health-autopilot`
+- Verify the cluster can reach Docker Hub: `docker.io/docker4zerocool/agentic-sre`
 - If using a private registry proxy, set `image.repository` to your internal mirror.
 - Ensure `imagePullSecrets` is set if Docker Hub rate limits apply.
 
@@ -961,8 +964,8 @@ watcher exits that GVR goroutine silently and continues watching all others.
 The `watch` verb was added to `clusterrole-reader` in v0.9.0. If upgrading from an earlier chart:
 
 ```sh
-helm upgrade cha cha/cluster-health-autopilot \
-  --namespace cluster-health-autopilot --reuse-values
+helm upgrade srenix srenix/agentic-sre \
+  --namespace agentic-sre --reuse-values
 ```
 
 ### `path contains traversal component` error in Vault logs
@@ -982,11 +985,11 @@ critical on the first cycle. See §15.2 for the rationale.
 ### Investigator block (🔬) missing from Slack/Alertmanager output
 
 The OSS rule-based Investigator is on by default. It is silently skipped if:
-- `CHA_INVESTIGATOR=off` is set on the watcher Deployment (intentional disable)
+- `SRENIX_INVESTIGATOR=off` is set on the watcher Deployment (intentional disable)
 - No Investigator rule matches the finding (no DNS/TLS/HTTP/secret/cert pattern)
 
 To force-enable for diagnosis, ensure the env var is not set to `off`, then `kubectl
-rollout restart deployment/cha-cluster-health-autopilot-watcher`. No RBAC change is
+rollout restart deployment/srenix-agentic-sre-watcher`. No RBAC change is
 required — the Investigator only uses verbs the reader role already grants.
 
 ### TLSSecretMismatch fixer refuses to patch a GitOps-managed Ingress
@@ -1003,7 +1006,7 @@ state in the GitOps source of truth instead.
 
 ## 14. TLSSecretMismatch fixer
 
-CHA v1.3.0 introduced the `TLSSecretMismatch` analyzer (always on in OSS) and a matching
+Srenix v1.3.0 introduced the `TLSSecretMismatch` analyzer (always on in OSS) and a matching
 opt-in fixer. The analyzer scans every Ingress with `spec.tls[].secretName` and verifies
 the referenced Secret exists in the same namespace, is type
 `kubernetes.io/tls`, and contains usable cert+key data. When the analyzer finds a
@@ -1013,14 +1016,14 @@ precise `kubectl patch` command to correct `spec.tls[].secretName`.
 The fixer is **disabled by default**. Enable it with:
 
 ```sh
-helm upgrade cha cha/cluster-health-autopilot \
-  --namespace cluster-health-autopilot --reuse-values \
+helm upgrade srenix srenix/agentic-sre \
+  --namespace agentic-sre --reuse-values \
   --set fixers.tlsSecretMismatch.enabled=true
 ```
 
 What this flag does, mechanically:
 
-1. Flips the env var `CHA_FIXER_TLS_SECRET_MISMATCH=true` on the watcher and remediate
+1. Flips the env var `SRENIX_FIXER_TLS_SECRET_MISMATCH=true` on the watcher and remediate
    pods, activating the fixer at runtime.
 2. Conditionally renders the `networking.k8s.io/ingresses [patch]` verb into the
    remediator ClusterRole. With the flag disabled, the verb is absent — even a
@@ -1032,7 +1035,7 @@ What this flag does, mechanically:
   `kube-public`, `kube-node-lease`, `rook-ceph`, `vault`, `external-secrets`, and
   `cnpg-system`; operators can APPEND namespaces via `protectedNamespaces.extra`
   (Helm) / `spec.protectedNamespacesExtra` (operator CR) /
-  `CHA_PROTECTED_NAMESPACES_EXTRA` (env, comma-separated). The floor itself can
+  `SRENIX_PROTECTED_NAMESPACES_EXTRA` (env, comma-separated). The floor itself can
   never be removed.
 - **GitOps-managed Ingresses are skipped** so the fixer never fights ArgoCD, Flux, or
   Helm. Detected via:
@@ -1046,12 +1049,12 @@ What this flag does, mechanically:
 ### Verify the fixer is loaded
 
 ```sh
-kubectl -n cluster-health-autopilot get deploy \
-  cha-cluster-health-autopilot-watcher -o jsonpath='{.spec.template.spec.containers[0].env}' \
-  | jq '.[] | select(.name=="CHA_FIXER_TLS_SECRET_MISMATCH")'
-# → {"name":"CHA_FIXER_TLS_SECRET_MISMATCH","value":"true"}
+kubectl -n agentic-sre get deploy \
+  srenix-agentic-sre-watcher -o jsonpath='{.spec.template.spec.containers[0].env}' \
+  | jq '.[] | select(.name=="SRENIX_FIXER_TLS_SECRET_MISMATCH")'
+# → {"name":"SRENIX_FIXER_TLS_SECRET_MISMATCH","value":"true"}
 
-kubectl get clusterrole cha-cluster-health-autopilot-remediator -o yaml \
+kubectl get clusterrole srenix-agentic-sre-remediator -o yaml \
   | grep -A2 '"ingresses"'
 # → verbs: ["patch"]   (only if the fixer is enabled)
 ```
@@ -1072,20 +1075,20 @@ a probe target with default settings (HTTP GET, 10 s timeout, 2xx/3xx accepted).
 
 - Protected namespaces are skipped.
 - Opt-out per-Ingress is supported via the annotation
-  `cha.bionicaisolutions.com/probe-disable: "true"` on the Ingress object. Useful for
+  `srenix.ai/probe-disable: "true"` on the Ingress object. Useful for
   Ingresses that intentionally return non-2xx (e.g. webhook receivers) or for hosts not
   reachable from inside the cluster.
 - The OSS `IngressCoverage` analyzer (which used to warn "this Ingress is not in the
   probe target list") was removed in v1.2 — the gap it warned about no longer exists.
 - Latent bug fix in the same release: the snapshot loader's kind map was missing
-  `Ingress`, so `cha diagnose --snapshot` had been silently dropping Ingresses on
+  `Ingress`, so `srenix diagnose --snapshot` had been silently dropping Ingresses on
   load. Snapshot mode now sees the same Ingress set as `--live`.
 
 Disable a noisy or intentionally-unreachable Ingress:
 
 ```sh
 kubectl annotate ingress <name> -n <ns> \
-  cha.bionicaisolutions.com/probe-disable="true"
+  srenix.ai/probe-disable="true"
 ```
 
 ### 15.2 Layer-1 flake suppression (v1.4)
@@ -1150,19 +1153,19 @@ ClusterRole.
 To disable:
 
 ```sh
-helm upgrade cha cha/cluster-health-autopilot \
-  --namespace cluster-health-autopilot --reuse-values \
-  --set 'env.CHA_INVESTIGATOR=off'
+helm upgrade srenix srenix/agentic-sre \
+  --namespace agentic-sre --reuse-values \
+  --set 'env.SRENIX_INVESTIGATOR=off'
 ```
 
 Or set the env var directly via `extraEnv` if your values schema uses that key. The
-binary checks `CHA_INVESTIGATOR=off` (case-sensitive) at startup; any other value, or
+binary checks `SRENIX_INVESTIGATOR=off` (case-sensitive) at startup; any other value, or
 unset, leaves the Investigator enabled.
 
-**LLM-backed Investigator (CHA-com).** The same `Investigator` interface is implemented
-by an LLM-backed engine in the commercial CHA-com binary; it consults the rule-based
+**LLM-backed Investigator (Srenix Enterprise).** The same `Investigator` interface is implemented
+by an LLM-backed engine in the commercial Srenix Enterprise binary; it consults the rule-based
 implementation first, falls back to the LLM only when the rules return no Summary, and
-respects the same `CHA_INVESTIGATOR=off` kill switch. Operators running CHA-com see
+respects the same `SRENIX_INVESTIGATOR=off` kill switch. Operators running Srenix Enterprise see
 richer free-form root-cause writeups for failure modes the rule-based version does not
 cover. Design and rollout details: see
 [`docs/design/2026-05-investigator-agent.md`](design/2026-05-investigator-agent.md).
@@ -1174,24 +1177,24 @@ Deployment (or CronJob, for diagnose/remediate). Set to `off`:
 
 | Env var | Disables |
 |---|---|
-| `CHA_PROBE_NODE_PRESSURE` | NodePressure probe |
-| `CHA_PROBE_DAEMONSETS` | System DaemonSets probe |
-| `CHA_PROBE_PENDING_PODS` | PendingPods probe |
-| `CHA_PROBE_CRASHLOOP` | Generic CrashLoopBackOff probe |
-| `CHA_PROBE_ETCD` | ETCD probe (use this for k3s / managed control plane) |
-| `CHA_PROBE_FAILED_MOUNTS` | FailedMounts probe |
+| `SRENIX_PROBE_NODE_PRESSURE` | NodePressure probe |
+| `SRENIX_PROBE_DAEMONSETS` | System DaemonSets probe |
+| `SRENIX_PROBE_PENDING_PODS` | PendingPods probe |
+| `SRENIX_PROBE_CRASHLOOP` | Generic CrashLoopBackOff probe |
+| `SRENIX_PROBE_ETCD` | ETCD probe (use this for k3s / managed control plane) |
+| `SRENIX_PROBE_FAILED_MOUNTS` | FailedMounts probe |
 
 The six base probes are also independently disablable (set to `off`; Helm:
 `probes.<name>.enabled: false`):
 
 | Env var | Disables | Helm value |
 |---|---|---|
-| `CHA_PROBE_CEPH` | Ceph Storage probe | `probes.ceph.enabled` |
-| `CHA_PROBE_NODES` | Cluster Nodes probe | `probes.nodes.enabled` |
-| `CHA_PROBE_POSTGRES` | PostgreSQL probe | `probes.postgres.enabled` |
-| `CHA_PROBE_PVCS` | Storage Claims (PVC) probe | `probes.pvcs.enabled` |
-| `CHA_PROBE_CRITICAL_WORKLOADS` | Critical Services (workload list) probe | `probes.criticalWorkloads.enabled` |
-| `CHA_PROBE_ENDPOINTS` | External Endpoints probe | `probes.endpoints.enabled` |
+| `SRENIX_PROBE_CEPH` | Ceph Storage probe | `probes.ceph.enabled` |
+| `SRENIX_PROBE_NODES` | Cluster Nodes probe | `probes.nodes.enabled` |
+| `SRENIX_PROBE_POSTGRES` | PostgreSQL probe | `probes.postgres.enabled` |
+| `SRENIX_PROBE_PVCS` | Storage Claims (PVC) probe | `probes.pvcs.enabled` |
+| `SRENIX_PROBE_CRITICAL_WORKLOADS` | Critical Services (workload list) probe | `probes.criticalWorkloads.enabled` |
+| `SRENIX_PROBE_ENDPOINTS` | External Endpoints probe | `probes.endpoints.enabled` |
 
 The seven core analyzers (secret-chain / cert / image-auth) default ON and
 are independently disablable the same way (set to `off`; Helm:
@@ -1199,13 +1202,13 @@ are independently disablable the same way (set to `off`; Helm:
 
 | Env var | Disables | Helm value |
 |---|---|---|
-| `CHA_ANALYZER_SECRET_KEY_MISSING` | SecretKeyMissing analyzer | `analyzers.secretKeyMissing.enabled` |
-| `CHA_ANALYZER_FAILING_EXTERNAL_SECRETS` | FailingExternalSecrets analyzer | `analyzers.failingExternalSecrets.enabled` |
-| `CHA_ANALYZER_PROACTIVE_SECRET_KEY_CHECK` | ProactiveSecretKeyCheck analyzer | `analyzers.proactiveSecretKeyCheck.enabled` |
-| `CHA_ANALYZER_UNPROVISIONED_SECRET` | UnprovisionedSecret analyzer | `analyzers.unprovisionedSecret.enabled` |
-| `CHA_ANALYZER_IMAGE_PULL_AUTH` | ImagePullAuth analyzer | `analyzers.imagePullAuth.enabled` |
-| `CHA_ANALYZER_CERT_EXPIRY` | CertExpiry analyzer | `analyzers.certExpiry.enabled` |
-| `CHA_ANALYZER_TLS_SECRET_MISMATCH` | TLSSecretMismatch analyzer (the opt-in auto-fixer is gated separately by `fixers.tlsSecretMismatch.enabled` / `CHA_FIXER_TLS_SECRET_MISMATCH`) | `analyzers.tlsSecretMismatch.enabled` |
+| `SRENIX_ANALYZER_SECRET_KEY_MISSING` | SecretKeyMissing analyzer | `analyzers.secretKeyMissing.enabled` |
+| `SRENIX_ANALYZER_FAILING_EXTERNAL_SECRETS` | FailingExternalSecrets analyzer | `analyzers.failingExternalSecrets.enabled` |
+| `SRENIX_ANALYZER_PROACTIVE_SECRET_KEY_CHECK` | ProactiveSecretKeyCheck analyzer | `analyzers.proactiveSecretKeyCheck.enabled` |
+| `SRENIX_ANALYZER_UNPROVISIONED_SECRET` | UnprovisionedSecret analyzer | `analyzers.unprovisionedSecret.enabled` |
+| `SRENIX_ANALYZER_IMAGE_PULL_AUTH` | ImagePullAuth analyzer | `analyzers.imagePullAuth.enabled` |
+| `SRENIX_ANALYZER_CERT_EXPIRY` | CertExpiry analyzer | `analyzers.certExpiry.enabled` |
+| `SRENIX_ANALYZER_TLS_SECRET_MISMATCH` | TLSSecretMismatch analyzer (the opt-in auto-fixer is gated separately by `fixers.tlsSecretMismatch.enabled` / `SRENIX_FIXER_TLS_SECRET_MISMATCH`) | `analyzers.tlsSecretMismatch.enabled` |
 
 The 30 cloud probes default ON when their provider is enabled
 (`cloud.<provider>.enabled`) and are independently disablable the same way
@@ -1215,50 +1218,50 @@ node-pool probes:
 
 | Env var | Disables | Helm value |
 |---|---|---|
-| `CHA_CLOUD_PROBE_AWS_RDS` | AWS RDS probe | `cloud.aws.probes.rds` |
-| `CHA_CLOUD_PROBE_AWS_EBS` | AWS EBS volumes probe | `cloud.aws.probes.ebs` |
-| `CHA_CLOUD_PROBE_AWS_EKS` | AWS EKS control-plane + node-group probes | `cloud.aws.probes.eks` |
-| `CHA_CLOUD_PROBE_AWS_IAM` | AWS IAM roles probe | `cloud.aws.probes.iam` |
-| `CHA_CLOUD_PROBE_AWS_ALB` | AWS ALB target-health probe | `cloud.aws.probes.alb` |
-| `CHA_CLOUD_PROBE_AWS_ACM` | AWS ACM cert-expiry probe | `cloud.aws.probes.acm` |
-| `CHA_CLOUD_PROBE_AWS_KMS` | AWS KMS keys probe | `cloud.aws.probes.kms` |
-| `CHA_CLOUD_PROBE_AWS_S3` | AWS S3 public-access probe | `cloud.aws.probes.s3` |
-| `CHA_CLOUD_PROBE_AWS_VPC` | AWS VPC subnets probe | `cloud.aws.probes.vpc` |
-| `CHA_CLOUD_PROBE_GCP_CLOUDSQL` | GCP Cloud SQL probe | `cloud.gcp.probes.cloudsql` |
-| `CHA_CLOUD_PROBE_GCP_DISKS` | GCP persistent disks probe | `cloud.gcp.probes.disks` |
-| `CHA_CLOUD_PROBE_GCP_GKE` | GCP GKE control-plane + node-pool probes | `cloud.gcp.probes.gke` |
-| `CHA_CLOUD_PROBE_GCP_IAM` | GCP IAM service-accounts probe | `cloud.gcp.probes.iam` |
-| `CHA_CLOUD_PROBE_GCP_SUBNETS` | GCP subnets probe | `cloud.gcp.probes.subnets` |
-| `CHA_CLOUD_PROBE_GCP_LB` | GCP LB backends probe | `cloud.gcp.probes.lb` |
-| `CHA_CLOUD_PROBE_GCP_CERTS` | GCP managed-certificates probe | `cloud.gcp.probes.certs` |
-| `CHA_CLOUD_PROBE_GCP_GCS` | GCP GCS public-access probe | `cloud.gcp.probes.gcs` |
-| `CHA_CLOUD_PROBE_GCP_KMS` | GCP KMS probe | `cloud.gcp.probes.kms` |
-| `CHA_CLOUD_PROBE_AZURE_SQL` | Azure SQL databases probe | `cloud.azure.probes.sql` |
-| `CHA_CLOUD_PROBE_AZURE_DISKS` | Azure disks probe | `cloud.azure.probes.disks` |
-| `CHA_CLOUD_PROBE_AZURE_AKS` | Azure AKS control-plane + node-pool probes | `cloud.azure.probes.aks` |
-| `CHA_CLOUD_PROBE_AZURE_IDENTITIES` | Azure managed-identities probe | `cloud.azure.probes.identities` |
-| `CHA_CLOUD_PROBE_AZURE_SUBNETS` | Azure subnets probe | `cloud.azure.probes.subnets` |
-| `CHA_CLOUD_PROBE_AZURE_APPGW` | Azure App Gateway backends probe | `cloud.azure.probes.appgw` |
-| `CHA_CLOUD_PROBE_AZURE_CERTS` | Azure certificates probe | `cloud.azure.probes.certs` |
-| `CHA_CLOUD_PROBE_AZURE_STORAGE` | Azure storage public-access probe | `cloud.azure.probes.storage` |
-| `CHA_CLOUD_PROBE_AZURE_KEYVAULTS` | Azure Key Vaults probe | `cloud.azure.probes.keyvaults` |
+| `SRENIX_CLOUD_PROBE_AWS_RDS` | AWS RDS probe | `cloud.aws.probes.rds` |
+| `SRENIX_CLOUD_PROBE_AWS_EBS` | AWS EBS volumes probe | `cloud.aws.probes.ebs` |
+| `SRENIX_CLOUD_PROBE_AWS_EKS` | AWS EKS control-plane + node-group probes | `cloud.aws.probes.eks` |
+| `SRENIX_CLOUD_PROBE_AWS_IAM` | AWS IAM roles probe | `cloud.aws.probes.iam` |
+| `SRENIX_CLOUD_PROBE_AWS_ALB` | AWS ALB target-health probe | `cloud.aws.probes.alb` |
+| `SRENIX_CLOUD_PROBE_AWS_ACM` | AWS ACM cert-expiry probe | `cloud.aws.probes.acm` |
+| `SRENIX_CLOUD_PROBE_AWS_KMS` | AWS KMS keys probe | `cloud.aws.probes.kms` |
+| `SRENIX_CLOUD_PROBE_AWS_S3` | AWS S3 public-access probe | `cloud.aws.probes.s3` |
+| `SRENIX_CLOUD_PROBE_AWS_VPC` | AWS VPC subnets probe | `cloud.aws.probes.vpc` |
+| `SRENIX_CLOUD_PROBE_GCP_CLOUDSQL` | GCP Cloud SQL probe | `cloud.gcp.probes.cloudsql` |
+| `SRENIX_CLOUD_PROBE_GCP_DISKS` | GCP persistent disks probe | `cloud.gcp.probes.disks` |
+| `SRENIX_CLOUD_PROBE_GCP_GKE` | GCP GKE control-plane + node-pool probes | `cloud.gcp.probes.gke` |
+| `SRENIX_CLOUD_PROBE_GCP_IAM` | GCP IAM service-accounts probe | `cloud.gcp.probes.iam` |
+| `SRENIX_CLOUD_PROBE_GCP_SUBNETS` | GCP subnets probe | `cloud.gcp.probes.subnets` |
+| `SRENIX_CLOUD_PROBE_GCP_LB` | GCP LB backends probe | `cloud.gcp.probes.lb` |
+| `SRENIX_CLOUD_PROBE_GCP_CERTS` | GCP managed-certificates probe | `cloud.gcp.probes.certs` |
+| `SRENIX_CLOUD_PROBE_GCP_GCS` | GCP GCS public-access probe | `cloud.gcp.probes.gcs` |
+| `SRENIX_CLOUD_PROBE_GCP_KMS` | GCP KMS probe | `cloud.gcp.probes.kms` |
+| `SRENIX_CLOUD_PROBE_AZURE_SQL` | Azure SQL databases probe | `cloud.azure.probes.sql` |
+| `SRENIX_CLOUD_PROBE_AZURE_DISKS` | Azure disks probe | `cloud.azure.probes.disks` |
+| `SRENIX_CLOUD_PROBE_AZURE_AKS` | Azure AKS control-plane + node-pool probes | `cloud.azure.probes.aks` |
+| `SRENIX_CLOUD_PROBE_AZURE_IDENTITIES` | Azure managed-identities probe | `cloud.azure.probes.identities` |
+| `SRENIX_CLOUD_PROBE_AZURE_SUBNETS` | Azure subnets probe | `cloud.azure.probes.subnets` |
+| `SRENIX_CLOUD_PROBE_AZURE_APPGW` | Azure App Gateway backends probe | `cloud.azure.probes.appgw` |
+| `SRENIX_CLOUD_PROBE_AZURE_CERTS` | Azure certificates probe | `cloud.azure.probes.certs` |
+| `SRENIX_CLOUD_PROBE_AZURE_STORAGE` | Azure storage public-access probe | `cloud.azure.probes.storage` |
+| `SRENIX_CLOUD_PROBE_AZURE_KEYVAULTS` | Azure Key Vaults probe | `cloud.azure.probes.keyvaults` |
 
-Tuning knob (not a disable toggle): `CHA_CLOUD_PROBE_GCP_SUBNETS_SMALL_PREFIX` sets the capacity-only GCP subnets probe's small-prefix threshold (an unmeasured subnet with a primary CIDR smaller than `/<threshold>` is flagged). Rendered from `cloud.gcp.subnetsSmallPrefixThreshold`; 0 / unset = the compiled-in `/26` default.
+Tuning knob (not a disable toggle): `SRENIX_CLOUD_PROBE_GCP_SUBNETS_SMALL_PREFIX` sets the capacity-only GCP subnets probe's small-prefix threshold (an unmeasured subnet with a primary CIDR smaller than `/<threshold>` is flagged). Rendered from `cloud.gcp.subnetsSmallPrefixThreshold`; 0 / unset = the compiled-in `/26` default.
 
 Critical-workloads list configuration (Sprint 2.6):
 
 | Env var | Effect |
 |---|---|
-| `CHA_CRITICAL_SERVICES` | Semicolon-separated `ns/selector\|Display` pairs; appended to compiled-in defaults |
-| `CHA_CRITICAL_SERVICES_REPLACE=true` | Replace defaults entirely (clusters with no Bionic services) |
-| Annotation `cha.bionicaisolutions.com/probe-critical: "true"` | On any Deployment / StatefulSet, opts it into the Services probe |
-| Annotation `cha.bionicaisolutions.com/probe-display: "..."` | Friendly display name for the annotated workload |
+| `SRENIX_CRITICAL_SERVICES` | Semicolon-separated `ns/selector\|Display` pairs; appended to compiled-in defaults |
+| `SRENIX_CRITICAL_SERVICES_REPLACE=true` | Replace defaults entirely (clusters with no Bionic services) |
+| Annotation `srenix.ai/probe-critical: "true"` | On any Deployment / StatefulSet, opts it into the Services probe |
+| Annotation `srenix.ai/probe-display: "..."` | Friendly display name for the annotated workload |
 
 Leader election (Sprint 4.3):
 
 | Env var | Effect |
 |---|---|
-| `CHA_LEADER_ELECTION=off` | Disable lease acquisition (single-pod dev / non-K8s) |
+| `SRENIX_LEADER_ELECTION=off` | Disable lease acquisition (single-pod dev / non-K8s) |
 | `MY_POD_NAMESPACE` | Lease namespace (downward-API; chart sets automatically) |
 | `MY_POD_NAME` | Lease holder identity (downward-API; chart sets automatically) |
 
@@ -1273,10 +1276,10 @@ field on the next watcher cycle.
 
 ## 16. AWS cloud-probe setup (opt-in)
 
-CHA ships 10 AWS probes (RDS, EBS, EKS, IAM, ALB, ACM, KMS, S3, VPC) that
+Srenix ships 10 AWS probes (RDS, EBS, EKS, IAM, ALB, ACM, KMS, S3, VPC) that
 authenticate via [IRSA](https://docs.aws.amazon.com/eks/latest/userguide/iam-roles-for-service-accounts.html)
 — the watcher ServiceAccount assumes a per-cluster IAM role. No long-lived
-AWS credentials in CHA.
+AWS credentials in Srenix.
 
 ### Step 1 — Create the IAM policy
 
@@ -1378,7 +1381,7 @@ verbs are requested.
 
 ### Step 2 — IRSA trust policy
 
-Bind the role to the cha ServiceAccount via the cluster's OIDC provider:
+Bind the role to the srenix ServiceAccount via the cluster's OIDC provider:
 
 ```json
 {
@@ -1392,7 +1395,7 @@ Bind the role to the cha ServiceAccount via the cluster's OIDC provider:
       "Action": "sts:AssumeRoleWithWebIdentity",
       "Condition": {
         "StringEquals": {
-          "<OIDC_PROVIDER_HOST>:sub": "system:serviceaccount:cluster-health-autopilot:cha-cluster-health-autopilot-sa",
+          "<OIDC_PROVIDER_HOST>:sub": "system:serviceaccount:agentic-sre:srenix-agentic-sre-sa",
           "<OIDC_PROVIDER_HOST>:aud": "sts.amazonaws.com"
         }
       }
@@ -1408,15 +1411,15 @@ cloud:
   aws:
     enabled: true
     region: us-east-1
-    roleArn: arn:aws:iam::123456789012:role/cha-cloud-readonly  # IRSA role
+    roleArn: arn:aws:iam::123456789012:role/srenix-cloud-readonly  # IRSA role
 serviceAccount:
   annotations:
-    eks.amazonaws.com/role-arn: arn:aws:iam::123456789012:role/cha-cloud-readonly
+    eks.amazonaws.com/role-arn: arn:aws:iam::123456789012:role/srenix-cloud-readonly
 ```
 
 ```sh
-helm upgrade cha cha/cluster-health-autopilot \
-  --namespace cluster-health-autopilot \
+helm upgrade srenix srenix/agentic-sre \
+  --namespace agentic-sre \
   --reset-then-reuse-values \
   -f aws-values.yaml
 ```
@@ -1430,7 +1433,7 @@ finding rather than crashing the diagnose cycle.
 
 ### Non-AWS clusters
 
-CHA on GKE, AKS, bare-metal, k3s, etc. — leave `cloud.aws.enabled: false`
+Srenix on GKE, AKS, bare-metal, k3s, etc. — leave `cloud.aws.enabled: false`
 (the chart's default). The cloud-probe layer is a complete no-op when no
 provider is enabled. **GCP and Azure equivalents are scoped for M2 (v1.7+);
 setting `--cloud-gcp-enabled` or `--cloud-azure-enabled` today errors at
@@ -1452,8 +1455,8 @@ prior release; chart-default blocks fall back to nil and the
 templates panic. Use `--reset-then-reuse-values` (Helm 3.14+) instead:
 
 ```sh
-helm upgrade cha cha/cluster-health-autopilot \
-  --namespace cluster-health-autopilot \
+helm upgrade srenix srenix/agentic-sre \
+  --namespace agentic-sre \
   --reset-then-reuse-values \
   --set image.tag=v1.6.0
 ```
@@ -1462,7 +1465,7 @@ helm upgrade cha cha/cluster-health-autopilot \
 
 If you push the same mutable tag (e.g. `latest`, `v1.6.0`) twice with
 different image content, the kubelet's `IfNotPresent` cache will use
-the stale digest. The v1.6.0 chart adds a `cha.pullPolicy` helper that
+the stale digest. The v1.6.0 chart adds a `srenix.pullPolicy` helper that
 detects mutable tags (`latest`, `*-latest`, `main`, `dev`) and forces
 `imagePullPolicy: Always`. Semver-style tags continue to use
 `IfNotPresent`. In production, prefer pinning the chart to an
@@ -1473,9 +1476,9 @@ immutable tag or a digest reference.
 After the upgrade, verify the new probes are firing:
 
 ```sh
-kubectl exec -n cluster-health-autopilot \
-  deploy/cha-cluster-health-autopilot-watcher \
-  -- /usr/local/bin/cha diagnose --live --format text
+kubectl exec -n agentic-sre \
+  deploy/srenix-agentic-sre-watcher \
+  -- /usr/local/bin/srenix diagnose --live --format text
 ```
 
 Twelve probes should appear (Ceph / Postgres / Critical Services /
@@ -1485,7 +1488,7 @@ Mounts**).
 
 The watcher pod will log lease acquisition on startup:
 ```
-watcher: acquired lease cluster-health-autopilot/cha-watcher as "<pod-name>"
+watcher: acquired lease agentic-sre/srenix-watcher as "<pod-name>"
 ```
 
 ---
@@ -1495,9 +1498,9 @@ watcher: acquired lease cluster-health-autopilot/cha-watcher as "<pod-name>"
 ```yaml
 image:
   # Docker Hub is the canonical publish target. GHCR mirror at
-  # ghcr.io/bionic-ai-solutions/cluster-health-autopilot is published by
+  # ghcr.io/srenix-ai/agentic-sre is published by
   # GoReleaser on every release for operators who prefer it.
-  repository: docker4zerocool/cluster-health-autopilot
+  repository: docker4zerocool/agentic-sre
   tag: ""           # defaults to Chart.appVersion (e.g. v1.6.0)
   pullPolicy: ""    # auto: Always for mutable tags, IfNotPresent for semver
   pullSecrets: []   # [{name: dockerhub-pull-secret}]
@@ -1521,14 +1524,14 @@ remediation:
 watcher:
   leaderElection:
     enabled: true
-    leaseName: cha-watcher
+    leaseName: srenix-watcher
     leaseDuration: 30s
     renewDeadline: 20s
     retryPeriod: 5s
 
 fixers:
   # Opt-in OSS fixer added in v1.3. When true:
-  #   - sets CHA_FIXER_TLS_SECRET_MISMATCH=true on watcher + remediate pods
+  #   - sets SRENIX_FIXER_TLS_SECRET_MISMATCH=true on watcher + remediate pods
   #   - adds `networking.k8s.io/ingresses [patch]` to the remediator ClusterRole
   # Skips protected namespaces and GitOps-managed Ingresses (ArgoCD/Flux/Helm/
   # managed-by label). The analyzer always emits the diagnostic regardless.
@@ -1539,7 +1542,7 @@ fixers:
 # kube-public, kube-node-lease, rook-ceph, vault, external-secrets,
 # cnpg-system — is NEVER touched by any fixer or AI-proposed action and
 # cannot be shrunk. `extra` APPENDS namespaces to that floor: rendered as
-# CHA_PROTECTED_NAMESPACES_EXTRA on the watcher, diagnose, remediate, and
+# SRENIX_PROTECTED_NAMESPACES_EXTRA on the watcher, diagnose, remediate, and
 # aiwatch containers so the fixer guard AND the AI-action validator extend
 # the same boundary. Operator-managed installs use the equivalent CR field
 # `spec.protectedNamespacesExtra`. Append-only: garbage or duplicate
@@ -1572,7 +1575,8 @@ watcher:
   resyncPeriod: 10m
   slack:
     postOnResolved: true
-    repeatInterval: 4h
+    repeatInterval: 6h
+    criticalRepeatInterval: "2h"
   remedy:
     enabled: false
     dryRun: false
@@ -1592,11 +1596,11 @@ driftReport:
   enabled: true
 
 # Layer-2 Investigator (v1.5). On by default in OSS (rule-based).
-# Set CHA_INVESTIGATOR=off to disable cluster-wide. No new RBAC required.
-# The CHA-com binary swaps in the LLM-backed implementation behind the
+# Set SRENIX_INVESTIGATOR=off to disable cluster-wide. No new RBAC required.
+# The Srenix Enterprise binary swaps in the LLM-backed implementation behind the
 # same interface and respects the same kill switch.
 env:
-  CHA_INVESTIGATOR: ""   # "" = on (default), "off" = disabled
+  SRENIX_INVESTIGATOR: ""   # "" = on (default), "off" = disabled
 
 rbac:
   create: true
@@ -1620,11 +1624,11 @@ securityContext:
 
 ---
 
-## 17. CHA-com paid binary — install on top of OSS
+## 17. Srenix Enterprise paid binary — install on top of OSS
 
 The OSS chart templates an **approval-server** Deployment under
-`approval.enabled=true`. That Deployment runs the paid CHA-com binary
-(`cha-com approval-server`), which provides the AI-tier approval
+`approval.enabled=true`. That Deployment runs the paid Srenix Enterprise binary
+(`srenix-enterprise approval-server`), which provides the AI-tier approval
 webhook + Ed25519 signing flow. The OSS engine continues to handle
 probes / analyzers / fixers; the paid binary is a *sidecar* that
 augments alerts with AI features.
@@ -1633,15 +1637,15 @@ augments alerts with AI features.
 
 ```sh
 # Run once, persists into a K8s Secret the chart references.
-kubectl create namespace cluster-health-autopilot --dry-run=client -o yaml | kubectl apply -f -
-kubectl run cha-com-keygen \
-  --namespace cluster-health-autopilot \
-  --image=docker4zerocool/cha-com:v1.0.0 \
+kubectl create namespace agentic-sre --dry-run=client -o yaml | kubectl apply -f -
+kubectl run srenix-enterprise-keygen \
+  --namespace agentic-sre \
+  --image=docker4zerocool/srenix-enterprise:v1.0.0 \
   --restart=Never \
-  --command -- /usr/local/bin/cha-com gen-signing-key \
-    --secret-namespace=cluster-health-autopilot \
-    --secret-name=cha-com-signing-key
-kubectl delete pod cha-com-keygen -n cluster-health-autopilot
+  --command -- /usr/local/bin/srenix-enterprise gen-signing-key \
+    --secret-namespace=agentic-sre \
+    --secret-name=srenix-enterprise-signing-key
+kubectl delete pod srenix-enterprise-keygen -n agentic-sre
 ```
 
 ### Step 2 — Enable approval-server in Helm values
@@ -1650,28 +1654,28 @@ kubectl delete pod cha-com-keygen -n cluster-health-autopilot
 approval:
   enabled: true
   image:
-    repository: docker4zerocool/cha-com
+    repository: docker4zerocool/srenix-enterprise
     tag: v1.0.0
   signingKey:
-    secretName: cha-com-signing-key
-  baseURL: https://cha-approve.example.com   # external URL operators see
+    secretName: srenix-enterprise-signing-key
+  baseURL: https://srenix-approve.example.com   # external URL operators see
 ai:
   enabled: true
   tier: t0      # t0 / t1 / t2 / t3 / off
   endpoint: https://gpu-ai.example.com/v1   # OpenAI-compatible
   model: qwen3.6-35b-a3b-fp8                # in-cluster vLLM recommended
   apiKey:
-    secretName: cha-com-llm-key
+    secretName: srenix-enterprise-llm-key
     secretKey:  api-key
 ```
 
 ### Step 3 — Helm upgrade
 
 ```sh
-helm upgrade cha cha/cluster-health-autopilot \
-  --namespace cluster-health-autopilot \
+helm upgrade srenix srenix/agentic-sre \
+  --namespace agentic-sre \
   --reset-then-reuse-values \
-  -f cha-com-values.yaml
+  -f srenix-enterprise-values.yaml
 ```
 
 The watcher pod starts emitting AI-enriched DriftReports; the
@@ -1679,15 +1683,15 @@ approval-server pod handles signed click-to-fix URLs.
 
 ### What's shipped today vs roadmap
 
-CHA-com v1.0.0 ships:
+Srenix Enterprise v1.0.0 ships:
 
 - **Approval-server with Ed25519 signing + JTI replay protection** (real)
 - **`gen-signing-key`** utility (real)
 - **Paid catalog plumbing** — `PaidBoundaryAnalyzer` boundary-check today;
   real paid analyzers ship in G2 increments
-- **AI tier code** in `ai/` package (enricher, fix-proposer, planner, vault-runbook, audit hash-chain) — used by the approval-server; the `cha-com diagnose/watch` subcommands that drive T0–T4 enrichment in-process are G3 work, not yet wired into the binary's CLI surface
+- **AI tier code** in `ai/` package (enricher, fix-proposer, planner, vault-runbook, audit hash-chain) — used by the approval-server; the `srenix-enterprise diagnose/watch` subcommands that drive T0–T4 enrichment in-process are G3 work, not yet wired into the binary's CLI surface
 
-See [`docs/design/2026-05-cha-com-publishing-gap.md`](design/2026-05-cha-com-publishing-gap.md) for the
+See [`docs/design/2026-05-srenix-enterprise-publishing-gap.md`](design/2026-05-srenix-enterprise-publishing-gap.md) for the
 G1/G2/G3 work breakdown.
 
 ---
@@ -1698,9 +1702,9 @@ OSS GoReleaser publishes to both Docker Hub and GHCR on every release.
 The first push to GHCR creates the package as **private** by default. To
 make it pullable by non-org-members:
 
-1. Open https://github.com/orgs/Bionic-AI-Solutions/packages/container/cluster-health-autopilot/settings
+1. Open https://github.com/orgs/Srenix/packages/container/agentic-sre/settings
 2. Under "Danger Zone" → "Change package visibility" → **Public**
-3. Repeat for `cha-com` package once the first CHA-com release publishes
+3. Repeat for `srenix-enterprise` package once the first Srenix Enterprise release publishes
 
 This is a one-time step per package — subsequent releases inherit the
 visibility setting. Docker Hub images are public-by-default and don't
@@ -1708,10 +1712,10 @@ need this step.
 
 ---
 
-## 14. AI tier setup (CHA-com only)
+## 14. AI tier setup (Srenix Enterprise only)
 
 AI tiers (T0 narration through T3 break-glass Vault runbook) ship in
-the **commercial CHA-com binary**. The OSS `cha` binary remains AI-free
+the **commercial Srenix Enterprise binary**. The OSS `srenix` binary remains AI-free
 regardless of these settings. See [AI_USAGE.md](AI_USAGE.md) for the
 positioning rationale and [AI_TIERS.md](AI_TIERS.md) for the tier
 capability specification.
@@ -1725,31 +1729,31 @@ In addition to the base prerequisites (§1):
 | **T0** | LLM endpoint reachable from inside the cluster (in-cluster vLLM/Ollama, or operator-approved SaaS with `--ai-allow-saas`) |
 | **T1** | T0 + Ingress with HTTPS + OIDC-aware reverse proxy (oauth2-proxy or Kong key-auth + jwt) sitting in front of the approval-server |
 | **T2** | T1 + SREs trained on multi-step approval workflow |
-| **T3** | T2 + RBAC group `cha.io/approver` with ≥2 distinct members + Vault path allowlist defined |
+| **T3** | T2 + RBAC group `srenix.io/approver` with ≥2 distinct members + Vault path allowlist defined |
 | **All** | Optional but recommended: OPA Gatekeeper installed for defense-in-depth admission |
 
 ### 14.2 Container image
 
 ```sh
-docker pull docker4zerocool/cha-com:v1.0.0
+docker pull docker4zerocool/srenix-enterprise:v1.0.0
 ```
 
 ### 14.3 T0 install (narration only) — start here
 
 ```sh
 # Optional: API key Secret (skip if your LLM endpoint has no auth)
-kubectl create secret generic cha-ai-llm-key \
-  --namespace cluster-health-autopilot \
+kubectl create secret generic srenix-ai-llm-key \
+  --namespace agentic-sre \
   --from-literal=API_KEY=<your-key>
 
-helm upgrade cha cha/cluster-health-autopilot \
-  --namespace cluster-health-autopilot --reuse-values \
-  --set image.repository=docker4zerocool/cha-com \
+helm upgrade srenix srenix/agentic-sre \
+  --namespace agentic-sre --reuse-values \
+  --set image.repository=docker4zerocool/srenix-enterprise \
   --set image.tag=v1.0.0 \
   --set ai.enabled=true \
   --set ai.tier=t0 \
   --set ai.endpoint=http://your-llm-endpoint:8000/v1 \
-  --set ai.apiKey.secretName=cha-ai-llm-key
+  --set ai.apiKey.secretName=srenix-ai-llm-key
 ```
 
 Verify Slack/AM messages now include `🤖 _<narrative>_` blocks under
@@ -1758,19 +1762,19 @@ each diagnostic. Kubernetes Events: look for `AIEnrichmentApplied`.
 ### 14.4 T1 install (one-click fixes)
 
 ```sh
-helm upgrade cha cha/cluster-health-autopilot \
-  --namespace cluster-health-autopilot --reuse-values \
+helm upgrade srenix srenix/agentic-sre \
+  --namespace agentic-sre --reuse-values \
   --set ai.tier=t1 \
   --set approval.enabled=true \
-  --set approval.image.repository=docker4zerocool/cha-com \
+  --set approval.image.repository=docker4zerocool/srenix-enterprise \
   --set approval.image.tag=v1.0.0 \
   --set approval.ingress.enabled=true \
-  --set approval.ingress.host=cha-approve.your-domain.com \
+  --set approval.ingress.host=srenix-approve.your-domain.com \
   --set approval.ingress.ingressClassName=kong
 ```
 
-The chart's pre-install hook runs `cha-com gen-signing-key` to create
-the `cha-approval-signing-key` Secret (Ed25519 keypair, signing-key
+The chart's pre-install hook runs `srenix-enterprise gen-signing-key` to create
+the `srenix-approval-signing-key` Secret (Ed25519 keypair, signing-key
 mounted to approval-server only — watcher SA cannot read it).
 
 Configure your Ingress controller to require OIDC for `/approve` paths
@@ -1780,17 +1784,17 @@ Optional defense-in-depth — install OPA Gatekeeper:
 
 ```sh
 helm install gatekeeper gatekeeper/gatekeeper -n gatekeeper-system --create-namespace
-helm upgrade cha cha/cluster-health-autopilot --reuse-values --set gatekeeper.install=true
+helm upgrade srenix srenix/agentic-sre --reuse-values --set gatekeeper.install=true
 ```
 
 ### 14.5 T2 / T3 install
 
 ```sh
 # T2 — multi-step plans (per-step approval state machine)
-helm upgrade cha cha/cluster-health-autopilot --reuse-values --set ai.tier=t2
+helm upgrade srenix srenix/agentic-sre --reuse-values --set ai.tier=t2
 
 # T3 — Vault recovery runbooks (dual-approval, 30-min audit window)
-helm upgrade cha cha/cluster-health-autopilot --reuse-values \
+helm upgrade srenix srenix/agentic-sre --reuse-values \
   --set ai.tier=t3 \
   --set 'ai.t3.allowedPathPrefixes={secret/t6-apps/,secret/shared/}'
 ```
@@ -1799,7 +1803,7 @@ helm upgrade cha cha/cluster-health-autopilot --reuse-values \
 
 ```sh
 # Inject a stale Error pod
-kubectl create job crash-demo --from=cronjob/cha-cluster-health-autopilot-diagnose -n default 2>/dev/null
+kubectl create job crash-demo --from=cronjob/srenix-agentic-sre-diagnose -n default 2>/dev/null
 # (or use the demo job from DEMO_GUIDE Part 9)
 
 # Within ~15s: Slack #ceph-critical shows an Apply Fix button.
@@ -1816,10 +1820,10 @@ Negative tests:
 
 ```sh
 # Downshift to T0 — keeps narration, disables Apply Fix buttons
-helm upgrade cha cha/cluster-health-autopilot --reuse-values --set ai.tier=t0
+helm upgrade srenix srenix/agentic-sre --reuse-values --set ai.tier=t0
 
 # Full disable — returns the cluster to OSS behavior
-helm upgrade cha cha/cluster-health-autopilot --reuse-values --set ai.enabled=false
+helm upgrade srenix srenix/agentic-sre --reuse-values --set ai.enabled=false
 ```
 
 In-flight T2 plans and T3 runbooks remain valid until their TTL
@@ -1836,7 +1840,7 @@ expires; downshift never strands pending approvals.
   confident.
 - **Approver out of office (T3)**: T3 runbooks expire after 60 min
   awaiting second approval. A new runbook is generated on the next
-  cycle. Update the `cha.io/approver` group membership to include
+  cycle. Update the `srenix.io/approver` group membership to include
   more approvers.
 - **Rate limit hit**: `ai.rate_limited` Events expose `retry_after_ms`.
   Raise `ai.rateLimit.actionsPerHour` if sustained limits indicate
@@ -1846,11 +1850,11 @@ expires; downshift never strands pending approvals.
 
 ```sh
 # Recent AI events (Kubernetes Events sink, default)
-kubectl -n cluster-health-autopilot get events --sort-by=lastTimestamp | grep -E "AI(Enrichment|Proposal|Approval|Action|Runbook)"
+kubectl -n agentic-sre get events --sort-by=lastTimestamp | grep -E "AI(Enrichment|Proposal|Approval|Action|Runbook)"
 
 # Filter by tier via annotation
-kubectl -n cluster-health-autopilot get events -o json | \
-  jq '.items[] | select(.metadata.annotations."cha.bionicaisolutions.com/audit-tier" == "t1")'
+kubectl -n agentic-sre get events -o json | \
+  jq '.items[] | select(.metadata.annotations."srenix.ai/audit-tier" == "t1")'
 ```
 
 For production retention (Kubernetes Events GC at 1h), configure a

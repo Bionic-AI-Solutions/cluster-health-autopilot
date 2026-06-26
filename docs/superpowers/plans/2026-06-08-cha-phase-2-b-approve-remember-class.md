@@ -2,9 +2,9 @@
 
 **Status:** active — starts 2026-06-08 once 2.A merges + v1.15.0 lands on the cluster.
 
-**Parent:** [2026-06-07-cha-phase-2-master.md](2026-06-07-cha-phase-2-master.md)
+**Parent:** [2026-06-07-srenix-phase-2-master.md](2026-06-07-srenix-phase-2-master.md)
 
-**Branch:** `phase2b/approve-remember-class` (CHA-com), with a paired OSS branch when slack rendering needs operator-server endpoints (TBD per task 2.B.4).
+**Branch:** `phase2b/approve-remember-class` (Srenix Enterprise), with a paired OSS branch when slack rendering needs operator-server endpoints (TBD per task 2.B.4).
 
 ---
 
@@ -37,7 +37,7 @@ The 2.A foundation makes per-class policy queryable. Without policy reads, auton
 - [ ] Implement `Matches(diag, kind) bool`
 - [ ] Run, pass
 
-### 2.B.2 — `PolicyStore` over RAG (CHA-com)
+### 2.B.2 — `PolicyStore` over RAG (Srenix Enterprise)
 - [ ] `ai/policy/store.go`: `Store.Put(ctx, PolicyEntry) error` + `Store.Active(ctx, source, kind) ([]PolicyEntry, error)`
 - [ ] Backs onto QdrantRAG with `Kind = "policy"` (new constant in OSS rag/types.go)
 - [ ] Failing tests: round-trip Put → Active; expired entries filtered out; nil-store-no-op
@@ -49,7 +49,7 @@ The 2.A foundation makes per-class policy queryable. Without policy reads, auton
 - [ ] Failing test in `pkg/ai/autonomy_test.go`: fake store returns a matching policy → DecideAutonomy returns AutoApply=true; no-match → unchanged behavior
 - [ ] Implement, pass
 
-### 2.B.4 — `/approve-class` + `/deny-class` + `/silence-class` routes on approval-server (CHA-com)
+### 2.B.4 — `/approve-class` + `/deny-class` + `/silence-class` routes on approval-server (Srenix Enterprise)
 - [ ] `ai/approval/server.go`: add 3 handlers
 - [ ] Each verifies the JWT (same as `/approve`), then:
   - `/approve-class`: write PolicyEntry{ExpiresAt: now+7d, ClickedBy: hdrUser}, then execute the action like `/approve`
@@ -58,8 +58,8 @@ The 2.A foundation makes per-class policy queryable. Without policy reads, auton
 - [ ] Failing tests: 1 per route
 - [ ] Implement, pass
 
-### 2.B.5 — Slack render: 4-button row (CHA-com)
-- [ ] `cmd/cha-com/ai_slack_digest.go`: extend `renderApproveDenyURLs` (or equivalent) to emit 4 markdown links
+### 2.B.5 — Slack render: 4-button row (Srenix Enterprise)
+- [ ] `cmd/srenix-enterprise/ai_slack_digest.go`: extend `renderApproveDenyURLs` (or equivalent) to emit 4 markdown links
 - [ ] Each link's URL is a separately-minted signed JWT scoped to the operation
 - [ ] Failing test: rendered output contains all 4 click-targets
 - [ ] Implement, pass
@@ -82,7 +82,7 @@ The 2.A foundation makes per-class policy queryable. Without policy reads, auton
 
 ### 2.B.9 — Class-scoped Silence CR support in OSS
 - [ ] `pkg/silence/lister.go`: extend to match on `(source, messageRegex)` not just exact subject
-- [ ] CRD `cha.bionicaisolutions.com/Silence` v1alpha1 gains optional `spec.matcher.source` + `spec.matcher.messagePattern`
+- [ ] CRD `srenix.ai/Silence` v1alpha1 gains optional `spec.matcher.source` + `spec.matcher.messagePattern`
 - [ ] Operator + Helm CRD update
 - [ ] Failing test, implement, pass
 
@@ -92,13 +92,13 @@ The 2.A foundation makes per-class policy queryable. Without policy reads, auton
 - [ ] Build-tag `integration`
 
 ### 2.B.11 — Local build + cluster verify
-- [ ] Build cha-com + ship dev tag
+- [ ] Build srenix-enterprise + ship dev tag
 - [ ] Click "Approve+remember class" on a real Slack message
 - [ ] Verify next cycle's matching findings auto-apply silently
 - [ ] Verify `policies: …` log line shows `active=1`
 
 ### 2.B.12 — Open PR + release
-- [ ] CHA-com PR; CI green; merge; tag `v1.16.0`; goreleaser; cluster roll
+- [ ] Srenix Enterprise PR; CI green; merge; tag `v1.16.0`; goreleaser; cluster roll
 - [ ] Pair with OSS PR (Silence CRD extension + Slack render parity); tag OSS `v1.21.0`
 
 ---
@@ -109,7 +109,7 @@ The 2.A foundation makes per-class policy queryable. Without policy reads, auton
 - Within the next ~24h, matching findings in the same `(source, action_kind, message-pattern)` class auto-apply silently (no Slack post for that class)
 - Operator clicks "🔕 Silence class (24h)" → class-scoped Silence CR appears + matching findings drop out of Slack for 24h
 - New per-cycle log line: `policies: cycle=N active=A muted=M` matches reality
-- Field-travels integration test green (`go test -tags=integration ./cmd/cha-com/...`)
+- Field-travels integration test green (`go test -tags=integration ./cmd/srenix-enterprise/...`)
 
 ## Risk + mitigation
 

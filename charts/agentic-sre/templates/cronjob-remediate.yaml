@@ -1,0 +1,65 @@
+{{- if .Values.remediation.enabled }}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "srenix.fullname" . }}-remediate
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "srenix.labels" . | nindent 4 }}
+    srenix.ai/role: remediate
+spec:
+  schedule: {{ .Values.remediation.schedule | quote }}
+  concurrencyPolicy: {{ .Values.remediation.concurrencyPolicy }}
+  successfulJobsHistoryLimit: {{ .Values.remediation.successfulJobsHistoryLimit }}
+  failedJobsHistoryLimit: {{ .Values.remediation.failedJobsHistoryLimit }}
+  jobTemplate:
+    spec:
+      backoffLimit: {{ .Values.remediation.backoffLimit }}
+      activeDeadlineSeconds: {{ .Values.remediation.activeDeadlineSeconds }}
+      template:
+        metadata:
+          labels:
+            {{- include "srenix.selectorLabels" . | nindent 12 }}
+            srenix.ai/role: remediate
+        spec:
+          serviceAccountName: {{ include "srenix.serviceAccountName" . }}
+          restartPolicy: OnFailure
+          {{- with .Values.image.pullSecrets }}
+          imagePullSecrets:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.priorityClassName }}
+          priorityClassName: {{ . }}
+          {{- end }}
+          {{- with .Values.nodeSelector }}
+          nodeSelector:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.tolerations }}
+          tolerations:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.affinity }}
+          affinity:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          securityContext:
+            {{- toYaml .Values.podSecurityContext | nindent 12 }}
+          containers:
+            - name: srenix
+              image: {{ include "srenix.image" . }}
+              imagePullPolicy: {{ include "srenix.pullPolicy" . }}
+              args:
+                - remediate
+                - --live
+                {{- if .Values.remediation.dryRun }}
+                - --dry-run
+                {{- end }}
+              env:
+                {{- include "srenix.optionalFixerEnv" . | nindent 16 }}
+                {{- include "srenix.protectedNamespacesEnv" . | nindent 16 }}
+              resources:
+                {{- toYaml .Values.resources | nindent 16 }}
+              securityContext:
+                {{- toYaml .Values.securityContext | nindent 16 }}
+{{- end }}

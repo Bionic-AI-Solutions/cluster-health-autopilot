@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package diagnose
@@ -10,8 +10,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/snapshot"
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/vault"
+	"github.com/srenix-ai/agentic-sre/internal/snapshot"
+	"github.com/srenix-ai/agentic-sre/internal/vault"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 
@@ -205,7 +205,7 @@ func renderTransportErrors(errs map[string][]string) []Diagnostic {
 				Message: fmt.Sprintf(
 					"VaultPathMissing analyzer could not query Vault: %d paths failed with `%s`. "+
 						"Sample paths: %s%s. "+
-						"Check Vault address, network reachability, and the cha ServiceAccount's Vault role binding.",
+						"Check Vault address, network reachability, and the srenix ServiceAccount's Vault role binding.",
 					len(paths),
 					truncate(errStr, 200),
 					strings.Join(samplePaths, ", "),
@@ -225,7 +225,7 @@ func renderTransportErrors(errs map[string][]string) []Diagnostic {
 				Subject: "vault-error/" + p,
 				Message: fmt.Sprintf(
 					"VaultPathMissing analyzer could not query path `%s`: %s. "+
-						"Check Vault address, network reachability, and the cha ServiceAccount's Vault role binding.",
+						"Check Vault address, network reachability, and the srenix ServiceAccount's Vault role binding.",
 					p, truncate(errStr, 200),
 				),
 			})
@@ -412,7 +412,7 @@ func hasVaultProvider(store unstructured.Unstructured) bool {
 // loaded at all (ESO CRDs absent / RBAC denied), we degrade gracefully
 // to v0.2 behavior and return true — preserving false-negative-free
 // detection at the cost of false-positive noise on mixed-provider clusters
-// where the operator hasn't given cha access to the SecretStore CRDs.
+// where the operator hasn't given srenix access to the SecretStore CRDs.
 func isVaultBackedESO(eso unstructured.Unstructured, set *vaultStoreSet) bool {
 	if !set.hasAnyStore {
 		return true

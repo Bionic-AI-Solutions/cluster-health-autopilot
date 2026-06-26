@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package ai
@@ -22,7 +22,7 @@ import (
 //
 //	<approval-base-url>/silence?token=<compact-jws>
 //
-// When an operator clicks the link, the CHA-com approval-server's
+// When an operator clicks the link, the Srenix Enterprise approval-server's
 // `/silence` handler:
 //
 //  1. VerifySilenceToken(pub, token) — rejects tampered / wrong-key /
@@ -75,8 +75,8 @@ const (
 // Every field is covered by the signature.
 type SilenceTokenClaims struct {
 	// Standard claims.
-	Issuer    string `json:"iss"` // "cha/approval-server"
-	Audience  string `json:"aud"` // "cha/silence"
+	Issuer    string `json:"iss"` // "srenix/approval-server"
+	Audience  string `json:"aud"` // "srenix/silence"
 	JTI       string `json:"jti"` // unique id (one link == one mint)
 	IssuedAt  int64  `json:"iat"` // unix seconds
 	ExpiresAt int64  `json:"exp"` // unix seconds — bounds link clickability

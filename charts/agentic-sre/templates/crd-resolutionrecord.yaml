@@ -1,0 +1,131 @@
+{{- if (.Values.resolutionRecord).enabled }}
+# ResolutionRecord CRD — append-only outcome log for remediations.
+#
+# One CR per applied+verified (or rejected/reverted) fix, written by both
+# the OSS deterministic fixers and the commercial AI proposers. It is the
+# durable system-of-record the RAG memory layer embeds + retrieves so Srenix
+# can answer "how was a finding like this resolved before, and did it
+# work?" (see Srenix Enterprise docs/design/2026-05-ai-remediation-rag-plan.md).
+#
+#   kubectl get resolutionrecords -l srenix.ai/verified=cleared
+#
+# Append-only: never upserted. Retention is handled out-of-band (the RAG
+# index is rebuildable from these CRs).
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: resolutionrecords.srenix.ai
+  labels:
+    {{- include "srenix.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/resource-policy": keep
+spec:
+  group: srenix.ai
+  scope: Cluster
+  names:
+    kind: ResolutionRecord
+    plural: resolutionrecords
+    singular: resolutionrecord
+    shortNames:
+      - rr
+      - resolution
+    categories:
+      - srenix
+      - cluster-health
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          required: ["spec"]
+          properties:
+            spec:
+              type: object
+              required: ["fingerprint", "verified"]
+              properties:
+                fingerprint:
+                  type: string
+                  description: Stable hash of the originating finding (join key to DriftReport).
+                  maxLength: 64
+                cluster:
+                  type: string
+                  maxLength: 253
+                namespace:
+                  type: string
+                  maxLength: 253
+                source:
+                  type: string
+                  description: Analyzer/probe that produced the finding.
+                  maxLength: 64
+                subjectKind:
+                  type: string
+                  maxLength: 64
+                diagnosticDigest:
+                  type: string
+                  description: Redacted one-line summary of what was wrong — the text the RAG layer embeds.
+                  maxLength: 2048
+                proposal:
+                  type: object
+                  properties:
+                    actionKind:
+                      type: string
+                      maxLength: 64
+                    target:
+                      type: string
+                      maxLength: 512
+                    rationale:
+                      type: string
+                      maxLength: 1024
+                    rollback:
+                      type: string
+                      maxLength: 1024
+                delivery:
+                  type: string
+                  description: How the remediation reached execution.
+                  enum: ["approved-by-human", "auto-applied", "deterministic", "rejected"]
+                applied:
+                  type: boolean
+                verified:
+                  type: string
+                  description: Post-apply verification result. RAG prefers 'cleared' fixes and down-ranks 'still-present'.
+                  enum: ["cleared", "still-present", "not-verifiable"]
+                humanEdits:
+                  type: string
+                  description: Diff vs the original proposal, if a human edited it before approving.
+                  maxLength: 2048
+                recordedAt:
+                  type: string
+                  format: date-time
+            status:
+              type: object
+              x-kubernetes-preserve-unknown-fields: true
+              properties:
+                embeddedAt:
+                  type: string
+                  format: date-time
+                  description: When the RAG layer embedded + upserted this record into the vector store.
+                vectorId:
+                  type: string
+                  description: ID of the embedded copy in the vector store (Qdrant point id).
+                  maxLength: 128
+      additionalPrinterColumns:
+        - name: Verified
+          type: string
+          jsonPath: .spec.verified
+        - name: Action
+          type: string
+          jsonPath: .spec.proposal.actionKind
+        - name: Delivery
+          type: string
+          jsonPath: .spec.delivery
+        - name: Source
+          type: string
+          jsonPath: .spec.source
+        - name: Recorded
+          type: date
+          jsonPath: .spec.recordedAt
+      subresources:
+        status: {}
+{{- end }}

@@ -1,8 +1,8 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 // Package diagnose defines the Analyzer interface and Diagnostic type that
-// form the exported API surface for the CHA pattern registry.
+// form the exported API surface for the Srenix pattern registry.
 //
 // External pattern catalogs (paid tier, community plugins) implement Analyzer
 // and register their implementations via pkg/registry. The only constraint:
@@ -12,7 +12,7 @@ package diagnose
 import (
 	"context"
 
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/snapshot"
+	"github.com/srenix-ai/agentic-sre/pkg/snapshot"
 )
 
 // Diagnostic is a single human-readable hint with no auto-applicable action.
@@ -40,7 +40,7 @@ type Diagnostic struct {
 	// apply.
 	Source string `json:"source,omitempty"`
 
-	// AI-tier fields — all optional, all populated only by CHA-com.
+	// AI-tier fields — all optional, all populated only by Srenix Enterprise.
 	// OSS users never see these set.
 
 	// Enrichment is the LLM-generated narrative addendum (T0+).
@@ -66,7 +66,7 @@ type Diagnostic struct {
 	// ProposedPolicyYAML is a ready-to-apply Kubernetes manifest the
 	// proposer wants to install (NetworkPolicy, RoleBinding, etc.).
 	// Populated by OSS analyzers (e.g. the v1.12.0 NetworkPolicy
-	// proposer) when they generate a deterministic fix. cha-com aiwatch
+	// proposer) when they generate a deterministic fix. srenix-enterprise aiwatch
 	// wraps this into an ApprovalProposal CR; the approval-server's
 	// /approve endpoint reads it and applies it. OSS doesn't render
 	// Approve/Deny buttons on its own — only the AI tier does that.

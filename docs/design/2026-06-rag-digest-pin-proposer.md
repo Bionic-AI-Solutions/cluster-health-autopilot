@@ -1,22 +1,22 @@
 # Phase 2d-γ — RAG-Driven Image Digest-Pin Proposer
 
-> **STATUS: ✅ SHIPPED — OSS foundations + CHA-com proposer both landed.**
+> **STATUS: ✅ SHIPPED — OSS foundations + Srenix Enterprise proposer both landed.**
 > _(P4.1 honest-header pass, 2026-06-11)_
 >
-> OSS-side foundations shipped across v1.14.0–v1.21.1: the workload feeder writing `kind=workload` with `image_digest` (PR #152); the `pkg/releasesrc` source-of-truth detectors — Helm `values.yaml` image-tag detector (PR #153, Phase 2d-γ-3 slice 1) + inline-image raw-YAML detector (v1.18.2, PR #159) + Helm-probe fallthrough fix (PR #162); `ActionProposePullRequest` ActionKind (PR #154); trust-class severity for digest-pin findings (v1.14.0, PR #144); per-workload dedup + operator-managed `owner_chart` synthesis (v1.25.0, PR #184); and digest-pin attestation chart/operator wiring (v1.21.1, PR #175). The CHA-com `DigestPinProposer` + approval-server executor consume these. **Caveat:** the auto-merge gate (`digestPinAutoMergeGate`) is fully implemented + tested but per the consolidated roadmap was **not yet CONSTRUCTED at runtime** ("Outstanding work item #1, Phase 3.B production wiring, ~1h, cha-com:1.19.0") — confirm before claiming auto-merge live.
+> OSS-side foundations shipped across v1.14.0–v1.21.1: the workload feeder writing `kind=workload` with `image_digest` (PR #152); the `pkg/releasesrc` source-of-truth detectors — Helm `values.yaml` image-tag detector (PR #153, Phase 2d-γ-3 slice 1) + inline-image raw-YAML detector (v1.18.2, PR #159) + Helm-probe fallthrough fix (PR #162); `ActionProposePullRequest` ActionKind (PR #154); trust-class severity for digest-pin findings (v1.14.0, PR #144); per-workload dedup + operator-managed `owner_chart` synthesis (v1.25.0, PR #184); and digest-pin attestation chart/operator wiring (v1.21.1, PR #175). The Srenix Enterprise `DigestPinProposer` + approval-server executor consume these. **Caveat:** the auto-merge gate (`digestPinAutoMergeGate`) is fully implemented + tested but per the consolidated roadmap was **not yet CONSTRUCTED at runtime** ("Outstanding work item #1, Phase 3.B production wiring, ~1h, srenix-enterprise:1.19.0") — confirm before claiming auto-merge live.
 >
 > No material design-vs-shipped scope-shrink; the one open thread is the auto-merge runtime wiring noted above. Body below is the original design, preserved for context.
 
 ---
 
 **Status:** Design draft
-**Tier:** Paid (CHA-com / AI tier, gated on `spec.ai.enabled`)
+**Tier:** Paid (Srenix Enterprise / AI tier, gated on `spec.ai.enabled`)
 **Author:** opened 2026-06-01
 **Parent:** [2026-06-rag-cluster-knowledge.md](2026-06-rag-cluster-knowledge.md)
 
 ## Why
 
-The CHA Pod analyzer flags every container running with a mutable `:tag` reference instead of an immutable `@sha256:` digest. Real-world hit: 143 pods on the dev cluster, spread across:
+The Srenix Pod analyzer flags every container running with a mutable `:tag` reference instead of an immutable `@sha256:` digest. Real-world hit: 143 pods on the dev cluster, spread across:
 
   - **28 in-house** (`docker4zerocool/*` — built by the team)
   - **115 upstream** (quay.io oauth2-proxy, gcr.io GCP images, ghcr.io kasten, docker.io postgres/redis/etc.)
@@ -26,7 +26,7 @@ The remediation isn't uniform:
   - **In-house images**: pinning needs to happen in the **release pipeline**, not retroactively on the cluster. `kubectl patch deploy` with `@sha256:` works once, but the next `helm upgrade --set image.tag=X` reverts it. The pin must live in the Helm chart, Kustomize overlay, or Argo CD app spec — whatever the team's source of truth is.
   - **Upstream images**: pinning is a paranoia call. `postgres:17` from docker.io is signed and immutable-by-convention; pinning to `@sha256:abc` adds operational toil (every upstream patch release requires digest update). Most orgs accept the upstream-tag contract.
 
-The CHA analyzer **doesn't distinguish** between these two cases today, which is why the 143-finding number reads as "supply-chain noise" instead of actionable work.
+The Srenix analyzer **doesn't distinguish** between these two cases today, which is why the 143-finding number reads as "supply-chain noise" instead of actionable work.
 
 ## What this proposer does
 
@@ -83,12 +83,12 @@ Extends `kind=workload`:
   Kind: "workload",
   Key:  "<namespace>/<deployment>",
   Features: {
-    "image":          "docker4zerocool/cluster-health-autopilot:1.11.0",
+    "image":          "docker4zerocool/agentic-sre:1.11.0",
     "image_digest":   "sha256:abc123...",       // resolved at observation time
     "release_source": {
       "type": "helm",                            // helm | kustomize | argocd | flux
-      "repo": "github.com/Bionic-AI-Solutions/cluster-health-autopilot",
-      "path": "charts/cluster-health-autopilot/values.yaml",
+      "repo": "github.com/srenix-ai/agentic-sre",
+      "path": "charts/agentic-sre/values.yaml",
       "image_field": "image.tag",
     },
     "trust_class": "in-house",
@@ -118,7 +118,7 @@ spec:
       gitForges:
         - type: github
           token:
-            secretName: cha-github-token
+            secretName: srenix-github-token
             key: token
 ```
 

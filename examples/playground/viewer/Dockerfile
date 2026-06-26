@@ -1,6 +1,6 @@
 # Dockerfile — playground-viewer (read-only DriftReport live view).
 # Built from the repo root so it shares the project's go.mod / go.sum:
-#   docker build -f examples/playground/viewer/Dockerfile -t cha-playground-viewer:dev .
+#   docker build -f examples/playground/viewer/Dockerfile -t srenix-playground-viewer:dev .
 FROM golang:1.26 AS build
 WORKDIR /src
 COPY go.mod go.sum ./

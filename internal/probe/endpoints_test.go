@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package probe
@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/snapshot"
+	"github.com/srenix-ai/agentic-sre/internal/snapshot"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )
@@ -184,7 +184,7 @@ func TestReadL7Annotations_NoAnnotation_Nil(t *testing.T) {
 
 func TestReadL7Annotations_PathOnly(t *testing.T) {
 	got := readL7Annotations(map[string]string{
-		"cha.bionicaisolutions.com/probe-l7-path": "/healthz",
+		"srenix.ai/probe-l7-path": "/healthz",
 	})
 	if got == nil || got.Path != "/healthz" || got.ExpectBody != "" || got.ExpectStatus != 0 {
 		t.Errorf("path-only L7 spec misparsed: %+v", got)
@@ -193,9 +193,9 @@ func TestReadL7Annotations_PathOnly(t *testing.T) {
 
 func TestReadL7Annotations_FullAnnotation(t *testing.T) {
 	got := readL7Annotations(map[string]string{
-		"cha.bionicaisolutions.com/probe-l7-path":   "healthz", // missing leading /
-		"cha.bionicaisolutions.com/probe-l7-expect": `"status":"ok"`,
-		"cha.bionicaisolutions.com/probe-l7-status": "200",
+		"srenix.ai/probe-l7-path":   "healthz", // missing leading /
+		"srenix.ai/probe-l7-expect": `"status":"ok"`,
+		"srenix.ai/probe-l7-status": "200",
 	})
 	if got == nil {
 		t.Fatal("expected non-nil L7 spec")

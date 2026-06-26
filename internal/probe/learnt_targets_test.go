@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package probe
@@ -10,7 +10,7 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/rag"
+	"github.com/srenix-ai/agentic-sre/pkg/rag"
 )
 
 // fakeRAGReader is a deterministic Reader for testing the learnt-targets

@@ -1,9 +1,9 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
-// Package ai defines the interface surface that AI-enhanced CHA tiers
+// Package ai defines the interface surface that AI-enhanced Srenix tiers
 // plug into. The OSS engine ships these interfaces and no implementations —
-// the paid CHA-com binary supplies the LLM-backed Enricher, FixProposer,
+// the paid Srenix Enterprise binary supplies the LLM-backed Enricher, FixProposer,
 // Approver, Signer, and Verifier.
 //
 // SAFETY MODEL — every type in this package is designed so that AI output
@@ -39,7 +39,7 @@ const (
 	// Step-by-step approval required.
 	TierT2 Tier = "t2"
 	// TierT3 enables Vault recovery runbook proposals. Dual-approval
-	// required. CHA itself never writes to Vault in T3; runbooks are
+	// required. Srenix itself never writes to Vault in T3; runbooks are
 	// executed manually by approvers.
 	TierT3 Tier = "t3"
 )
@@ -74,6 +74,27 @@ const (
 	ActionDeleteCertRequest ActionKind = "DeleteCertRequest"
 	ActionDeleteACMEOrder   ActionKind = "DeleteACMEOrder"
 
+	// ActionPatchProbe applies a STRATEGIC-merge patch that tunes ONLY
+	// the safe scalar fields of a container's liveness/readiness/startup
+	// probe (timeoutSeconds, periodSeconds, failureThreshold,
+	// successThreshold, initialDelaySeconds). It is the concrete fix the
+	// AI tier proposes when it diagnoses a probe misconfiguration (e.g. a
+	// 1s startup-probe timeout that kills a slow-booting StatefulSet) —
+	// instead of the useless "delete the pod", it proposes the actual
+	// config change and routes it through the same Approve/Deny flow.
+	//
+	// Target.Kind selects the workload: Deployment, StatefulSet, or
+	// DaemonSet. PatchPayload carries the strategic-merge JSON, keyed by
+	// container name so it touches exactly one container's probe. The
+	// validator (Srenix Enterprise ai/approval) enforces a closed allow-list of
+	// probe-tuning paths + numeric bounds; the LLM cannot smuggle any
+	// other field through this verb.
+	//
+	// Only used for NON-GitOps-managed workloads — a live patch on a
+	// GitOps-reconciled resource would drift and revert, so for those the
+	// proposer emits ActionProposePullRequest instead (see IsGitOpsManaged).
+	ActionPatchProbe ActionKind = "PatchProbe"
+
 	// ActionApplyManifest is v1.15.0 (Phase 2d-δ). It accepts a
 	// pre-rendered Kubernetes manifest in `ManifestYAML` and applies
 	// it via `kubectl apply -f -`. The safe-apply validator enforces
@@ -92,7 +113,7 @@ const (
 	// the cluster is only changed when the PR is merged + the next
 	// normal deploy runs.
 	//
-	// Approve semantics (cha-com executor):
+	// Approve semantics (srenix-enterprise executor):
 	//   - default: post an "SRE approved" comment on the PR; SRE
 	//     completes the merge by hand
 	//   - opt-in (per-CR): auto-merge the PR via the forge API
@@ -113,7 +134,8 @@ func (ak ActionKind) IsValid() bool {
 	switch ak {
 	case ActionDeletePod, ActionDeleteJob, ActionPatchDeployment,
 		ActionDeleteCertRequest, ActionDeleteACMEOrder,
-		ActionApplyManifest, ActionProposePullRequest:
+		ActionApplyManifest, ActionProposePullRequest,
+		ActionPatchProbe:
 		return true
 	}
 	return false
@@ -188,12 +210,13 @@ type AIProposedAction struct {
 	// Target is the Kubernetes object the action operates on.
 	Target ObjectRef `json:"target"`
 
-	// PatchPayload is set only when ActionKind == ActionPatchDeployment.
-	// It is the strategic-merge-patch JSON the executor will apply.
-	// The validator enforces a closed schema on the patch shape so the
-	// LLM cannot smuggle arbitrary patches (e.g. it can patch the
-	// kubectl.kubernetes.io/restartedAt annotation but not the image
-	// or env vars).
+	// PatchPayload is set when ActionKind is a patch verb —
+	// ActionPatchDeployment (rollout-restart annotation only) or
+	// ActionPatchProbe (probe-tuning scalars only). It is the
+	// strategic-merge-patch JSON the executor will apply. The validator
+	// enforces a closed schema per verb so the LLM cannot smuggle
+	// arbitrary patches (e.g. it can patch the restartedAt annotation or
+	// a probe timeout, but not the image or env vars).
 	PatchPayload []byte `json:"patch_payload,omitempty"`
 
 	// ManifestYAML is set only when ActionKind == ActionApplyManifest
@@ -302,7 +325,7 @@ type DualApproval struct {
 const MinT3Delay = 30 * time.Minute
 
 // VaultRunbook is the T3 output: a step-by-step recovery procedure for
-// a Vault key/path issue. CHA-com NEVER executes Vault writes itself;
+// a Vault key/path issue. Srenix Enterprise NEVER executes Vault writes itself;
 // the operator runs the runbook by hand after dual approval.
 type VaultRunbook struct {
 	// RunbookID uniquely identifies the runbook. Used as the JWT `jti`

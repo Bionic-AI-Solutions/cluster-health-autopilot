@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package report
@@ -74,7 +74,7 @@ func TestReconcile_NormalizesNonEnumSeverity(t *testing.T) {
 		if sev != "warning" {
 			t.Errorf("spec.severity = %q, want %q", sev, "warning")
 		}
-		lbl := m.created[0].GetLabels()["cha.bionicaisolutions.com/severity"]
+		lbl := m.created[0].GetLabels()["srenix.ai/severity"]
 		if lbl != "warning" {
 			t.Errorf("severity label = %q, want %q", lbl, "warning")
 		}

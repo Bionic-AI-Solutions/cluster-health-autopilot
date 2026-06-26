@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package vault
@@ -15,7 +15,7 @@ import (
 
 // KubernetesAuthConfig configures `vault login -method=kubernetes`.
 type KubernetesAuthConfig struct {
-	// Role is the Vault role bound to the cha ServiceAccount.
+	// Role is the Vault role bound to the srenix ServiceAccount.
 	Role string
 	// MountPath is the kubernetes auth method's mount path. Default "kubernetes".
 	MountPath string

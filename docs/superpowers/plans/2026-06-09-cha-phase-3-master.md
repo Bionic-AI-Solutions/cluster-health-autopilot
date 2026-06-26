@@ -2,13 +2,13 @@
 
 **Status:** strawman draft; awaiting scope confirmation before execution.
 
-**Parent (Phase 2 master plan):** [2026-06-07-cha-phase-2-master.md](2026-06-07-cha-phase-2-master.md)
+**Parent (Phase 2 master plan):** [2026-06-07-srenix-phase-2-master.md](2026-06-07-srenix-phase-2-master.md)
 
 ---
 
 ## Goal
 
-Phase 2 closed the test→learn loop *within one cluster*. Operators see CHA learn from outcomes, propose fixes that match past resolutions, and silently auto-apply trusted class policies. The promise still half-delivered:
+Phase 2 closed the test→learn loop *within one cluster*. Operators see Srenix learn from outcomes, propose fixes that match past resolutions, and silently auto-apply trusted class policies. The promise still half-delivered:
 
 - **Learning stays single-cluster.** A fix that worked on cluster A is invisible to cluster B; each install builds its own memory from scratch. For the fintech/healthtech ICP (running 3-15 clusters), this means N-redundant learning curves instead of one.
 - **High-confidence fixes still need a human click.** Even when (class-policy matches) AND (attestation verifies) AND (confidence >0.9), DigestPin opens a PR that waits for an SRE merge. The promised "incidents resolved without paging a human" goal is one merge away.
@@ -25,7 +25,7 @@ Phase 3 closes those three gaps.
 
 ## Sub-deliverables
 
-### 3.A — Cross-cluster RAG read federation (CHA-com paid tier)
+### 3.A — Cross-cluster RAG read federation (Srenix Enterprise paid tier)
 
 A single Qdrant tenant per customer holds outcomes from every cluster the customer runs. By default, each cluster reads ONLY its own outcomes (per-cluster `ClusterID` partition — already in `pkg/rag.Entry.ClusterID`). Operators flip a per-class opt-in to widen the read scope.
 
@@ -40,7 +40,7 @@ When ALL of:
 - Attestation signature verifies (Phase 2.H) against the embedded public key
 - Class success-rate confidence (Phase 2.C Wilson lower bound) ≥ 0.95
 - Circuit breaker is closed
-- Target repo has CHA bot listed in branch protection allowlist
+- Target repo has Srenix bot listed in branch protection allowlist
 
 …the DigestPin PR auto-merges via GitHub's merge API. No SRE click required.
 
@@ -48,7 +48,7 @@ When ALL of:
 
 ### 3.C — Investigator-level RAG grounding
 
-The investigator (the cha-com module that explains WHY a finding fired) currently re-investigates from scratch every cycle. Phase 3.C grounds its prompt in past investigation outcomes: "we investigated this finding 14 times in the last 30 days; the conclusion was always X." For repeat findings, the investigator's wall-clock + token cost drops ~90% and the conclusion gets sharper.
+The investigator (the srenix-enterprise module that explains WHY a finding fired) currently re-investigates from scratch every cycle. Phase 3.C grounds its prompt in past investigation outcomes: "we investigated this finding 14 times in the last 30 days; the conclusion was always X." For repeat findings, the investigator's wall-clock + token cost drops ~90% and the conclusion gets sharper.
 
 Uses Phase 2.A's existing `RecentOutcomesByTarget` — no new memory surface needed.
 
@@ -68,7 +68,7 @@ So a pure CR-driven install (ArgoCD/Flux/kubectl apply) gets the full Phase 2 su
 
 ### 3.F — Compliance audit-bundle exporter
 
-`cha audit-bundle --since 30d --output bundle.tar.gz` produces a SOC2-friendly evidence pack:
+`srenix audit-bundle --since 30d --output bundle.tar.gz` produces a SOC2-friendly evidence pack:
 - Every approval click + the JWT it signed
 - Every auto-apply (autonomy decision + verifier result)
 - Every digest-pin attestation + the PR URL it landed on

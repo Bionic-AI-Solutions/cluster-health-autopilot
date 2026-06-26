@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package azure
@@ -9,7 +9,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork/v6"
 )
 
-// appGatewayFrontendHostname feeds the CHA-com "(lb: ...)" join key —
+// appGatewayFrontendHostname feeds the Srenix Enterprise "(lb: ...)" join key —
 // the AppGW's public hostname out of the already-fetched listener
 // config (no extra API call).
 

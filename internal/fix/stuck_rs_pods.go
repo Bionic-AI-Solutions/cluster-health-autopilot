@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package fix
@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/snapshot"
+	"github.com/srenix-ai/agentic-sre/internal/snapshot"
 	"k8s.io/apimachinery/pkg/types"
 )
 
@@ -103,7 +103,7 @@ func (StuckRSPods) Run(ctx context.Context, src snapshot.Source, m snapshot.Muta
 		}
 		// Refuse to roll-restart a GitOps-managed Deployment — the controller
 		// would revert the restart annotation on its next reconcile, locking
-		// CHA and the GitOps controller into a fight loop. The fix belongs in
+		// Srenix and the GitOps controller into a fight loop. The fix belongs in
 		// the source repo. Dedup against deployKey so we don't emit the same
 		// skip for every sibling stuck pod.
 		if reason := GitOpsReason(*dep); reason != "" {
@@ -122,7 +122,7 @@ func (StuckRSPods) Run(ctx context.Context, src snapshot.Source, m snapshot.Muta
 			if _, dup := restarted[deployKey]; !dup {
 				r.Skipped = append(r.Skipped, SkipReason{
 					Object: "Deployment/" + deployKey,
-					Reason: "rollout paused (spec.paused=true) — unpause before CHA may restart",
+					Reason: "rollout paused (spec.paused=true) — unpause before Srenix may restart",
 				})
 				restarted[deployKey] = struct{}{}
 			}

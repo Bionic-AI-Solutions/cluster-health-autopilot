@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 // default_off_test.go (P3.3a) — default-off discipline gate.
@@ -15,13 +15,13 @@
 //
 // # HOW IT WORKS
 //
-// The test scans the catalog sources (catalog.go + cloud.go) for every CHA_*
+// The test scans the catalog sources (catalog.go + cloud.go) for every SRENIX_*
 // env toggle that GATES a
 // probe / analyzer / fixer / investigator registration, derives its default
 // polarity from the comparison operator:
 //
-//	os.Getenv("CHA_X") != "off"   → default-ON  ("on")   registered unless opted out
-//	os.Getenv("CHA_X") == "true"  → default-OFF ("off")  registered only when enabled
+//	os.Getenv("SRENIX_X") != "off"   → default-ON  ("on")   registered unless opted out
+//	os.Getenv("SRENIX_X") == "true"  → default-OFF ("off")  registered only when enabled
 //
 // and compares the derived map against testdata/toggle_defaults.golden. When a
 // NET-NEW toggle is added, or an existing toggle's polarity FLIPS, the test
@@ -50,7 +50,7 @@ import (
 
 // catalogPaths are the catalog source files scanned for registration-
 // gating toggles: catalog.go (K8s probes / analyzers / fixers /
-// investigator) and cloud.go (the per-cloud-probe CHA_CLOUD_PROBE_*
+// investigator) and cloud.go (the per-cloud-probe SRENIX_CLOUD_PROBE_*
 // gates added in O6).
 var catalogPaths = []string{"../../catalog/catalog.go", "../../catalog/cloud.go"}
 
@@ -59,25 +59,25 @@ const toggleGoldenPath = "testdata/toggle_defaults.golden"
 // Matches a registration-gating toggle and captures the key + the comparison
 // operator/value, e.g.:
 //
-//	if os.Getenv("CHA_PROBE_ETCD") != "off" {
-//	if os.Getenv("CHA_FIXER_TLS_SECRET_MISMATCH") == "true" {
+//	if os.Getenv("SRENIX_PROBE_ETCD") != "off" {
+//	if os.Getenv("SRENIX_FIXER_TLS_SECRET_MISMATCH") == "true" {
 //
-// Toggles read for config behavior (CHA_CRITICAL_SERVICES_REPLACE,
-// CHA_K3S_SINGLE_NODE_OK) do NOT gate a registration with this shape and are
+// Toggles read for config behavior (SRENIX_CRITICAL_SERVICES_REPLACE,
+// SRENIX_K3S_SINGLE_NODE_OK) do NOT gate a registration with this shape and are
 // intentionally out of scope — they are documented config strings in the
 // toggle_drift_test.go allowlist, not trigger registrations.
 var registrationToggleRe = regexp.MustCompile(
-	`os\.Getenv\("(CHA_[A-Z0-9_]+)"\)\s*(!=|==)\s*"(off|true)"`,
+	`os\.Getenv\("(SRENIX_[A-Z0-9_]+)"\)\s*(!=|==)\s*"(off|true)"`,
 )
 
-// nonRegistrationToggles are CHA_* keys read in catalog.go with a
+// nonRegistrationToggles are SRENIX_* keys read in catalog.go with a
 // boolean-comparison shape but that modify CONFIG BEHAVIOR rather than gate a
 // trigger registration. They are out of scope for the default-off discipline
 // (they register nothing) and so are excluded from both the derived map and
 // the golden. Each carries a reason. These mirror the free-form config entries
 // in toggle_drift_test.go's allowlist.
 var nonRegistrationToggles = map[string]string{
-	"CHA_CRITICAL_SERVICES_REPLACE": "replace-vs-merge flag for the CHA_CRITICAL_SERVICES target list — config, not a registration gate",
+	"SRENIX_CRITICAL_SERVICES_REPLACE": "replace-vs-merge flag for the SRENIX_CRITICAL_SERVICES target list — config, not a registration gate",
 }
 
 // deriveToggleDefaults scans the catalog sources and returns key →
@@ -139,7 +139,7 @@ func loadToggleGolden(t *testing.T) map[string]string {
 		}
 		fields := strings.Fields(line)
 		if len(fields) != 2 || (fields[1] != "on" && fields[1] != "off") {
-			t.Fatalf("%s:%d malformed golden line %q (want `CHA_X on|off`)", toggleGoldenPath, ln, line)
+			t.Fatalf("%s:%d malformed golden line %q (want `SRENIX_X on|off`)", toggleGoldenPath, ln, line)
 		}
 		out[fields[0]] = fields[1]
 	}
@@ -155,7 +155,7 @@ func TestToggleDefaultsMatchGolden(t *testing.T) {
 	golden := loadToggleGolden(t)
 
 	const remedy = "\n\nDISCIPLINE: a NET-NEW probe/analyzer/fixer toggle should ship DEFAULT-OFF " +
-		"(`os.Getenv(\"CHA_X\") == \"true\"`), soak ~7 days, then flip to default-on next release. " +
+		"(`os.Getenv(\"SRENIX_X\") == \"true\"`), soak ~7 days, then flip to default-on next release. " +
 		"If you are adding a toggle: make it default-off unless a soak rationale is recorded, then update " +
 		toggleGoldenPath + ". If you intentionally flipped polarity: confirm the soak completed and update the golden."
 

@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package snapshot
@@ -36,7 +36,7 @@ type File struct {
 // LoadFile reads a snapshot from path, which may be:
 //   - a directory containing *.json captures
 //   - a single *.json file
-//   - a *.tar.gz / *.tgz archive produced by `cha snapshot capture --tar`
+//   - a *.tar.gz / *.tgz archive produced by `srenix snapshot capture --tar`
 //
 // It is tolerant of unknown kinds (silently skipped) and of mixing List /
 // single-object payloads in the same file or tree.

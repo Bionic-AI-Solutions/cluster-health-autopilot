@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package probe
@@ -61,13 +61,13 @@ const annotatedDeployments = `{
   "items": [
     {"apiVersion": "apps/v1", "kind": "Deployment",
      "metadata": {"name": "billing", "namespace": "prod",
-                  "annotations": {"cha.bionicaisolutions.com/probe-critical": "true"}},
+                  "annotations": {"srenix.ai/probe-critical": "true"}},
      "spec": {"selector": {"matchLabels": {"app": "billing"}}}},
     {"apiVersion": "apps/v1", "kind": "Deployment",
      "metadata": {"name": "infra", "namespace": "platform",
                   "annotations": {
-                    "cha.bionicaisolutions.com/probe-critical": "True",
-                    "cha.bionicaisolutions.com/probe-display": "Platform Infra"
+                    "srenix.ai/probe-critical": "True",
+                    "srenix.ai/probe-display": "Platform Infra"
                   }},
      "spec": {"selector": {"matchLabels": {"app.kubernetes.io/name": "infra"}}}},
     {"apiVersion": "apps/v1", "kind": "Deployment",
@@ -81,7 +81,7 @@ const annotatedStatefulSets = `{
   "items": [
     {"apiVersion": "apps/v1", "kind": "StatefulSet",
      "metadata": {"name": "kafka", "namespace": "data",
-                  "annotations": {"cha.bionicaisolutions.com/probe-critical": "true"}},
+                  "annotations": {"srenix.ai/probe-critical": "true"}},
      "spec": {"selector": {"matchLabels": {"app": "kafka", "role": "broker"}}}}
   ]
 }`

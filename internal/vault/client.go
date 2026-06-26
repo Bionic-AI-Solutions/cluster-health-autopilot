@@ -1,19 +1,19 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 // Package vault is a thin alias-layer over pkg/vault, kept so existing
-// OSS call-sites (internal/diagnose, cmd/cha) continue to import
+// OSS call-sites (internal/diagnose, cmd/srenix) continue to import
 // internal/vault without churn. New code should import pkg/vault
 // directly.
 //
 // The full Vault HTTP client implementation was promoted to pkg/vault
-// in v1.6.1 to unblock paid-tier Vault analyzers in CHA-com (Go's
+// in v1.6.1 to unblock paid-tier Vault analyzers in Srenix Enterprise (Go's
 // `internal` rule blocks external modules from importing this package).
-// See docs/design/2026-05-cha-com-publishing-gap.md G2.
+// See docs/design/2026-05-srenix-enterprise-publishing-gap.md G2.
 package vault
 
 import (
-	pkgvault "github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/vault"
+	pkgvault "github.com/srenix-ai/agentic-sre/pkg/vault"
 )
 
 // Client is re-exported from pkg/vault.

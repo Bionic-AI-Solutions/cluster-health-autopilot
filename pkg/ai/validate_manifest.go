@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package ai
@@ -13,7 +13,7 @@ import (
 )
 
 // Phase 2d-δ safe-apply validator. Sits between the OSS analyzer's
-// `Diagnostic.ProposedPolicyYAML` field and the cha-com bridge that
+// `Diagnostic.ProposedPolicyYAML` field and the srenix-enterprise bridge that
 // mints approval URLs. Refuses any YAML that doesn't match an allowed
 // Kind + per-Kind shape constraint set.
 //

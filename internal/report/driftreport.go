@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package report
@@ -16,10 +16,10 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/types"
 
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/diagnose"
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/fix"
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/probe"
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/snapshot"
+	"github.com/srenix-ai/agentic-sre/internal/diagnose"
+	"github.com/srenix-ai/agentic-sre/internal/fix"
+	"github.com/srenix-ai/agentic-sre/internal/probe"
+	"github.com/srenix-ai/agentic-sre/internal/snapshot"
 )
 
 // DriftReportEntry is the abstract input the writer consumes — assembled
@@ -98,6 +98,34 @@ func AssembleEntries(
 				Message:  a.Description + " — " + a.Object,
 			})
 		}
+		if len(fr.Skipped) > 0 {
+			// Emit one fixer-skipped DriftReport per fixer (not per skipped
+			// object) to keep the list bounded. The first 5 skips are named;
+			// the remainder is summarised as "+ N more".
+			const maxList = 5
+			listed := fr.Skipped
+			extra := 0
+			if len(listed) > maxList {
+				extra = len(listed) - maxList
+				listed = listed[:maxList]
+			}
+			parts := make([]string, len(listed))
+			for i, s := range listed {
+				parts[i] = s.Object + " (" + s.Reason + ")"
+			}
+			msg := fmt.Sprintf("Fixer %s evaluated %d candidate(s) but skipped: %s",
+				fr.Fixer, len(fr.Skipped), strings.Join(parts, "; "))
+			if extra > 0 {
+				msg += fmt.Sprintf(" … and %d more", extra)
+			}
+			out = append(out, DriftReportEntry{
+				Subject:  "FixerSkipped/" + fr.Fixer + "/summary",
+				Severity: "info",
+				Source:   fr.Fixer,
+				Category: "fixer-skipped",
+				Message:  msg,
+			})
+		}
 	}
 	return out
 }
@@ -135,7 +163,7 @@ func NormalizeSeverity(severity, source string) string {
 // Reconcile upserts one CR per entry and deletes CRs whose subject is not
 // in the current entry set.
 //
-// runID identifies this cha invocation; it gets stamped into status.runID
+// runID identifies this srenix invocation; it gets stamped into status.runID
 // so an operator can tell which cron tick last observed each report.
 //
 // keep: returns ALL existing CRs in the cluster. Any CR whose subject is
@@ -238,27 +266,31 @@ func Reconcile(
 		}
 
 		// Create.
+		spec := map[string]any{
+			"subject":       entry.Subject,
+			"severity":      entry.Severity,
+			"source":        entry.Source,
+			"category":      entry.Category,
+			"message":       truncateAt(entry.Message, 4096),
+			"remediation":   truncateAt(entry.Remediation, 1024),
+			"investigation": truncateAt(entry.Investigation, 1024),
+		}
+		if ref := resourceRefFromSubject(entry.Subject); ref != nil {
+			spec["resourceRef"] = ref
+		}
 		cr := unstructured.Unstructured{
 			Object: map[string]any{
-				"apiVersion": "cha.bionicaisolutions.com/v1alpha1",
+				"apiVersion": "srenix.ai/v1alpha1",
 				"kind":       "DriftReport",
 				"metadata": map[string]any{
 					"name": crName,
 					"labels": map[string]any{
-						"cha.bionicaisolutions.com/category": entry.Category,
-						"cha.bionicaisolutions.com/severity": entry.Severity,
-						"cha.bionicaisolutions.com/source":   sanitizeLabel(entry.Source),
+						"srenix.ai/category": entry.Category,
+						"srenix.ai/severity": entry.Severity,
+						"srenix.ai/source":   sanitizeLabel(entry.Source),
 					},
 				},
-				"spec": map[string]any{
-					"subject":       entry.Subject,
-					"severity":      entry.Severity,
-					"source":        entry.Source,
-					"category":      entry.Category,
-					"message":       truncateAt(entry.Message, 4096),
-					"remediation":   truncateAt(entry.Remediation, 1024),
-					"investigation": truncateAt(entry.Investigation, 1024),
-				},
+				"spec": spec,
 			},
 		}
 		if cErr := mut.Create(ctx, snapshot.GVRDriftReport, "", &cr); cErr != nil {
@@ -327,6 +359,37 @@ func truncateAt(s string, n int) string {
 		return s
 	}
 	return s[:n]
+}
+
+// resourceRefFromSubject parses a DriftReport subject into a resourceRef map.
+// Subject convention: "<Kind>/<namespace>/<name>[/...]" for namespace-scoped
+// resources and "<Kind>/cluster/<component>[/...]" for cluster-scoped or
+// synthetic subjects. Returns nil for synthetic categories (FixerAction,
+// Probe) that aren't directly backed by a single nameable K8s resource.
+func resourceRefFromSubject(subject string) map[string]any {
+	parts := strings.SplitN(subject, "/", 4)
+	if len(parts) < 2 {
+		return nil
+	}
+	kind := parts[0]
+	// Synthetic categories that don't map to a single addressable K8s object.
+	if kind == "FixerAction" || kind == "Probe" || kind == "Cloud" {
+		return nil
+	}
+	ref := map[string]any{"kind": kind}
+	if len(parts) >= 3 {
+		ns := parts[1]
+		name := parts[2]
+		// "cluster" is the placeholder used by cluster-scoped subjects —
+		// omit it so namespace stays unset for cluster-scoped resources.
+		if ns != "" && ns != "cluster" {
+			ref["namespace"] = ns
+		}
+		if name != "" {
+			ref["name"] = name
+		}
+	}
+	return ref
 }
 
 // Compile-time check that we use metav1.ObjectMeta-shaped naming.

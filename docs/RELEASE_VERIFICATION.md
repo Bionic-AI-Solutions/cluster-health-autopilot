@@ -1,6 +1,6 @@
 # Release Verification (SBOM + Cosign)
 
-Every tagged `cluster-health-autopilot` release (`vX.Y.Z`) ships with
+Every tagged `agentic-sre` release (`vX.Y.Z`) ships with
 supply-chain provenance you can verify yourself:
 
 - a **CycloneDX JSON SBOM** for each binary archive, attached to the GitHub
@@ -8,8 +8,8 @@ supply-chain provenance you can verify yourself:
 - a **keyless cosign signature** over the `checksums.txt` file (covers every
   binary archive + SBOM transitively), attached as `checksums.txt.sigstore.json`;
 - **keyless cosign signatures** over every container image and multi-arch
-  manifest (Docker Hub `docker4zerocool/cluster-health-autopilot` and GHCR
-  `ghcr.io/bionic-ai-solutions/cluster-health-autopilot`), stored as OCI
+  manifest (Docker Hub `docker4zerocool/agentic-sre` and GHCR
+  `ghcr.io/srenix-ai/agentic-sre`), stored as OCI
   signature objects in the registry and logged to the Rekor transparency log.
 
 All signing is **keyless** (Sigstore): there is no long-lived private key.
@@ -20,15 +20,15 @@ file. You need [cosign](https://github.com/sigstore/cosign) v2.0+ installed.
 The identity to verify against:
 
 - **certificate-identity-regexp**: the release workflow file, on the tag ref —
-  `https://github.com/Bionic-AI-Solutions/cluster-health-autopilot/.github/workflows/release.yml@refs/tags/v.*`
+  `https://github.com/srenix-ai/agentic-sre/.github/workflows/release.yml@refs/tags/v.*`
 - **certificate-oidc-issuer**: `https://token.actions.githubusercontent.com`
 
 > For convenience the snippets below export these as shell variables.
 
 ```bash
-IMAGE=ghcr.io/bionic-ai-solutions/cluster-health-autopilot
+IMAGE=ghcr.io/srenix-ai/agentic-sre
 VERSION=1.25.1   # the release you are verifying (image tag has no leading v)
-IDENTITY='https://github.com/Bionic-AI-Solutions/cluster-health-autopilot/.github/workflows/release.yml@refs/tags/v.*'
+IDENTITY='https://github.com/srenix-ai/agentic-sre/.github/workflows/release.yml@refs/tags/v.*'
 ISSUER='https://token.actions.githubusercontent.com'
 ```
 
@@ -43,7 +43,7 @@ cosign verify \
 
 This works against the multi-arch manifest tag and the per-arch tags
 (`:${VERSION}-amd64`, `:${VERSION}-arm64`). The same command works against the
-Docker Hub copy — swap `IMAGE=docker4zerocool/cluster-health-autopilot`.
+Docker Hub copy — swap `IMAGE=docker4zerocool/agentic-sre`.
 
 A successful run prints the verified certificate subject (the workflow
 identity), the OIDC issuer, and the Rekor transparency-log entry. Any
@@ -72,23 +72,23 @@ sha256sum --check --ignore-missing checksums.txt
 ## 3. Download and inspect the CycloneDX SBOM
 
 Each binary archive has a sibling `*.cyclonedx.json` SBOM on the Release page,
-e.g. `cluster-health-autopilot_linux_amd64.tar.gz.cyclonedx.json`.
+e.g. `agentic-sre_linux_amd64.tar.gz.cyclonedx.json`.
 
 ```bash
 # Confirm it is CycloneDX and list its components.
 jq '{bomFormat, specVersion, components: (.components | length)}' \
-  cluster-health-autopilot_linux_amd64.tar.gz.cyclonedx.json
+  agentic-sre_linux_amd64.tar.gz.cyclonedx.json
 
 # List component name@version pairs.
 jq -r '.components[] | "\(.name)@\(.version)"' \
-  cluster-health-autopilot_linux_amd64.tar.gz.cyclonedx.json
+  agentic-sre_linux_amd64.tar.gz.cyclonedx.json
 ```
 
 You can also extract the SBOM that cosign records as an attestation alongside
 the image (when present) and scan any SBOM with Grype:
 
 ```bash
-grype sbom:cluster-health-autopilot_linux_amd64.tar.gz.cyclonedx.json
+grype sbom:agentic-sre_linux_amd64.tar.gz.cyclonedx.json
 ```
 
 ## Notes

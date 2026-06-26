@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 // Package audit provides the audit-trail building blocks that ship in
@@ -26,12 +26,12 @@
 //
 // What stays paid: the richer SINKS the chain can wrap — the JSONL
 // chained-file sink with rotation, Loki, and OTLP/SIEM — ship in the
-// CHA-com binary and register via the registry without removing the
+// Srenix Enterprise binary and register via the registry without removing the
 // defaults.
 //
 // Adapter path: the chain primitive here operates directly on
-// ai.AuditEvent / ai.AuditSink (the same types CHA-com's sinks use), so
-// CHA-com adapts by importing this package and constructing its
+// ai.AuditEvent / ai.AuditSink (the same types Srenix Enterprise's sinks use), so
+// Srenix Enterprise adapts by importing this package and constructing its
 // file-backed chains via NewChainedSinkResuming(inner, resumeHash,
 // ChainOptions{...}) — its store reads the resume hash from the last
 // persisted entry's "entry_hash" Details field and calls WriteCheckpoint
@@ -49,11 +49,11 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/ai"
+	"github.com/srenix-ai/agentic-sre/pkg/ai"
 )
 
 // EventsSink writes audit events as Kubernetes Events in the
-// cluster-health-autopilot namespace. This is the default sink — it
+// agentic-sre namespace. This is the default sink — it
 // requires no additional infrastructure beyond an in-cluster
 // ServiceAccount with `events.create` permission.
 //
@@ -63,7 +63,7 @@ import (
 //   - Message = compact summary
 //   - InvolvedObject = the diagnostic's subject (best-effort parse)
 //   - Annotations carry full structured details under
-//     "cha.bionicaisolutions.com/audit-details"
+//     "srenix.ai/audit-details"
 //
 // Limitations:
 //   - kubectl get events is rate-limited by etcd; the sink coalesces
@@ -76,7 +76,7 @@ type EventsSink struct {
 }
 
 // NewEventsSink constructs an EventsSink that writes Events into ns.
-// Typical ns is the CHA install namespace.
+// Typical ns is the Srenix install namespace.
 func NewEventsSink(client kubernetes.Interface, namespace string) *EventsSink {
 	return &EventsSink{client: client, namespace: namespace}
 }
@@ -101,14 +101,14 @@ func (s *EventsSink) Write(ctx context.Context, e ai.AuditEvent) error {
 	now := metav1.NewTime(time.Now())
 	ev := &corev1.Event{
 		ObjectMeta: metav1.ObjectMeta{
-			GenerateName: "cha-ai-",
+			GenerateName: "srenix-ai-",
 			Namespace:    s.namespace,
 			Annotations: map[string]string{
-				"cha.bionicaisolutions.com/audit-type":           e.Type,
-				"cha.bionicaisolutions.com/audit-correlation-id": e.CorrelationID,
-				"cha.bionicaisolutions.com/audit-tier":           string(e.Tier),
-				"cha.bionicaisolutions.com/audit-actor":          e.Actor,
-				"cha.bionicaisolutions.com/audit-details":        string(details),
+				"srenix.ai/audit-type":           e.Type,
+				"srenix.ai/audit-correlation-id": e.CorrelationID,
+				"srenix.ai/audit-tier":           string(e.Tier),
+				"srenix.ai/audit-actor":          e.Actor,
+				"srenix.ai/audit-details":        string(details),
 			},
 		},
 		InvolvedObject: corev1.ObjectReference{
@@ -124,9 +124,9 @@ func (s *EventsSink) Write(ctx context.Context, e ai.AuditEvent) error {
 		LastTimestamp:  now,
 		Count:          1,
 		Source: corev1.EventSource{
-			Component: "cha-ai",
+			Component: "srenix-ai",
 		},
-		ReportingController: "cha.bionicaisolutions.com/ai",
+		ReportingController: "srenix.ai/ai",
 		ReportingInstance:   e.Actor,
 		EventTime:           metav1.NewMicroTime(now.Time),
 	}
@@ -210,11 +210,11 @@ func eventMessage(e ai.AuditEvent) string {
 // not in the standard "Kind/ns/name[/...]" shape.
 func parseInvolved(subject, defaultNS string) (kind, ns, name string) {
 	if subject == "" {
-		return "AuditScope", defaultNS, "cha"
+		return "AuditScope", defaultNS, "srenix"
 	}
 	parts := strings.SplitN(subject, "/", 4)
 	if len(parts) < 3 {
-		return "AuditScope", defaultNS, "cha"
+		return "AuditScope", defaultNS, "srenix"
 	}
 	return parts[0], parts[1], parts[2]
 }

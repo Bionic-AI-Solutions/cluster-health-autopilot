@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package probe
@@ -9,13 +9,13 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/snapshot"
+	"github.com/srenix-ai/agentic-sre/internal/snapshot"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 
 // CrashLoopBackOff catches pods stuck in CrashLoopBackOff anywhere in the
 // cluster, not just on the hardcoded critical-services list. The Services
-// probe only watches workloads CHA was told about; this probe catches the
+// probe only watches workloads Srenix was told about; this probe catches the
 // rest.
 //
 // Severity scaling:
@@ -132,9 +132,15 @@ func (c CrashLoopBackOff) Run(ctx context.Context, src snapshot.Source) Result {
 }
 
 // podMaxRestartCount scans the pod's containerStatuses (including init
-// containers) and returns the highest restart count and the waiting reason
-// of any container in that state. The found bool indicates whether any
-// container reported a waiting state with a reason at all.
+// containers) and returns the restart count and waiting reason from the
+// single container that has the highest restart count while currently in a
+// waiting state. This ensures the restart count and reason always describe
+// the SAME container — previously they could come from unrelated containers,
+// producing misleading messages like "50 restarts" for a CrashLoopBackOff
+// that actually had 1 restart on a different container.
+//
+// The found bool is true only when at least one container is currently
+// waiting with a non-empty reason.
 func podMaxRestartCount(pod unstructured.Unstructured) (int64, bool, string) {
 	statuses, _, _ := getSliceField(pod.Object, "status", "containerStatuses")
 	statuses = append(statuses, mustSlice(pod.Object, "status", "initContainerStatuses")...)
@@ -151,12 +157,17 @@ func podMaxRestartCount(pod unstructured.Unstructured) (int64, bool, string) {
 		}
 		state, _ := sm["state"].(map[string]any)
 		waiting, _ := state["waiting"].(map[string]any)
-		if r, _ := waiting["reason"].(string); r != "" {
+		r, _ := waiting["reason"].(string)
+		if r == "" {
+			// Container is not currently in a waiting state — skip.
+			// We only report restarts from containers that are actually waiting.
+			continue
+		}
+		rc := asInt64(sm["restartCount"])
+		if !found || rc > maxRestarts {
+			maxRestarts = rc
 			reason = r
 			found = true
-		}
-		if rc := asInt64(sm["restartCount"]); rc > maxRestarts {
-			maxRestarts = rc
 		}
 	}
 	return maxRestarts, found, reason

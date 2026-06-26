@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Copyright 2026 Cluster Health Autopilot contributors
+# Copyright 2026 Agentic SRE contributors
 # SPDX-License-Identifier: Apache-2.0
 #
 # changelog-lint.sh (P3.3b) — CHANGELOG hygiene gate.

@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package gcp
@@ -6,10 +6,10 @@ package gcp
 import (
 	"context"
 
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/cloud"
-	pkgaws "github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/cloud/aws"
-	pkgazure "github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/cloud/azure"
-	pkggcp "github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/cloud/gcp"
+	"github.com/srenix-ai/agentic-sre/pkg/cloud"
+	pkgaws "github.com/srenix-ai/agentic-sre/pkg/cloud/aws"
+	pkgazure "github.com/srenix-ai/agentic-sre/pkg/cloud/azure"
+	pkggcp "github.com/srenix-ai/agentic-sre/pkg/cloud/gcp"
 )
 
 // fakeGCP implements pkggcp.Client for unit tests. Tests inject the

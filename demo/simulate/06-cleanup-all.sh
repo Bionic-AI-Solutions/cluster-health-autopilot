@@ -33,5 +33,5 @@ $KUBECTL delete secret database-credentials sync-credentials demo-broken-secret 
 
 echo ""
 echo "==> Cleanup complete."
-echo "    CHA watcher will detect resolved issues on next cycle (~10s)"
+echo "    Srenix watcher will detect resolved issues on next cycle (~10s)"
 echo "    and post ✅ Resolved messages to Slack #aws-alerts."

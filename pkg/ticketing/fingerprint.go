@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package ticketing
@@ -22,5 +22,5 @@ func Fingerprint(subject, cluster string) string {
 	subject = strings.TrimSpace(strings.ToLower(subject))
 	cluster = strings.TrimSpace(strings.ToLower(cluster))
 	h := sha256.Sum256([]byte(cluster + "|" + subject))
-	return "cha-" + hex.EncodeToString(h[:8])
+	return "srenix-" + hex.EncodeToString(h[:8])
 }

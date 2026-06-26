@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package diagnose
@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	pkgsnapshot "github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/snapshot"
+	pkgsnapshot "github.com/srenix-ai/agentic-sre/pkg/snapshot"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )
@@ -110,7 +110,7 @@ func (f *fakeCFClient) ListDNSRecords(ctx context.Context, zoneID string) ([]DNS
 
 // makeIngress builds a networking.k8s.io/v1 Ingress with one rule pointing at svcName:svcPort.
 // Set svcName="" to omit the backend (default-backend only Ingress).
-// Set annotations["cha.bionicaisolutions.com/probe-disable"]="true" via annos param.
+// Set annotations["srenix.ai/probe-disable"]="true" via annos param.
 func makeIngress(ns, name, host, svcName string, svcPort int64, annos map[string]string) unstructured.Unstructured {
 	u := unstructured.Unstructured{}
 	u.SetAPIVersion("networking.k8s.io/v1")
@@ -492,7 +492,7 @@ func TestDNSChainDrift_OptOut(t *testing.T) {
 
 	src := newMemSourceDNS()
 	src.add(makeIngress("default", "opted-ing", host, "opted-svc", 80, map[string]string{
-		"cha.bionicaisolutions.com/probe-disable": "true",
+		"srenix.ai/probe-disable": "true",
 	}))
 	// Intentionally NOT adding a Service or Endpoints — if the opt-out is
 	// honoured the analyzer must not walk the K8s chain for this host.
@@ -592,7 +592,7 @@ func TestDNSChainDrift_DuplicateIngressHost(t *testing.T) {
 
 // makeIngressWithPath builds an Ingress with ONE custom (path, pathType) rule.
 // Lets the duplicate-host path-overlap test create the path-disjoint pattern
-// CHA must NOT flag as duplicate.
+// Srenix must NOT flag as duplicate.
 func makeIngressWithPath(ns, name, host, path, pathType, svcName string, svcPort int64) unstructured.Unstructured {
 	u := unstructured.Unstructured{}
 	u.SetAPIVersion("networking.k8s.io/v1")

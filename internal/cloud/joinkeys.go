@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package cloud
@@ -8,12 +8,12 @@ import (
 	"strings"
 )
 
-// CROSS-REPO CONTRACT — CHA-com's cross-resource RCA matchers
+// CROSS-REPO CONTRACT — Srenix Enterprise's cross-resource RCA matchers
 // (ai/cloudcontext, PR #65) join Kubernetes resources to cloud findings
 // by parsing these exact tokens out of the finding MESSAGE. The format
 // is frozen: single leading space, literal "(lb: " / "(domains: ",
 // comma-separated domains with NO spaces, closing paren. Changing it
-// breaks CHA-com's fixtures — see contract_test.go in this package.
+// breaks Srenix Enterprise's fixtures — see contract_test.go in this package.
 
 // JoinKeyLB returns the " (lb: <value>)" message suffix the LB probes
 // (aws-alb-target-health, gcp-lb-backends, azure-appgw-backends) append

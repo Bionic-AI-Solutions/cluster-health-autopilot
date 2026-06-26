@@ -1,4 +1,4 @@
-# namespace.yaml — the isolated cha-playground namespace + guardrails.
+# namespace.yaml — the isolated srenix-playground namespace + guardrails.
 #
 # Everything the hosted playground runs lives in ONE namespace so a visitor
 # watching synthetic drift can never disturb a real workload:
@@ -17,10 +17,10 @@
 apiVersion: v1
 kind: Namespace
 metadata:
-  name: cha-playground
+  name: srenix-playground
   labels:
-    app.kubernetes.io/part-of: cluster-health-autopilot
-    cha.bionicaisolutions.com/role: playground
+    app.kubernetes.io/part-of: agentic-sre
+    srenix.ai/role: playground
     # Pod Security Admission — baseline is enough; the drift pods are
     # ordinary (broken) workloads, not privileged.
     pod-security.kubernetes.io/enforce: baseline
@@ -29,8 +29,8 @@ metadata:
 apiVersion: v1
 kind: ResourceQuota
 metadata:
-  name: cha-playground-quota
-  namespace: cha-playground
+  name: srenix-playground-quota
+  namespace: srenix-playground
 spec:
   hard:
     pods: "30"
@@ -44,8 +44,8 @@ spec:
 apiVersion: v1
 kind: LimitRange
 metadata:
-  name: cha-playground-limits
-  namespace: cha-playground
+  name: srenix-playground-limits
+  namespace: srenix-playground
 spec:
   limits:
     - type: Container
@@ -63,8 +63,8 @@ spec:
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: cha-playground-default-deny
-  namespace: cha-playground
+  name: srenix-playground-default-deny
+  namespace: srenix-playground
 spec:
   podSelector: {}
   policyTypes:
@@ -75,8 +75,8 @@ spec:
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: cha-playground-allow-dns
-  namespace: cha-playground
+  name: srenix-playground-allow-dns
+  namespace: srenix-playground
 spec:
   podSelector: {}
   policyTypes:
@@ -95,8 +95,8 @@ spec:
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: cha-playground-allow-intra-and-https
-  namespace: cha-playground
+  name: srenix-playground-allow-intra-and-https
+  namespace: srenix-playground
 spec:
   podSelector: {}
   policyTypes:
@@ -118,18 +118,18 @@ spec:
           port: 6443 # kube-apiserver (kind / k3s)
 ---
 # The drift-injector ServiceAccount. Namespaced Role only — it can create and
-# delete the synthetic-drift objects ONLY inside cha-playground.
+# delete the synthetic-drift objects ONLY inside srenix-playground.
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: cha-playground-injector
-  namespace: cha-playground
+  name: srenix-playground-injector
+  namespace: srenix-playground
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
-  name: cha-playground-injector
-  namespace: cha-playground
+  name: srenix-playground-injector
+  namespace: srenix-playground
 rules:
   # Create/rotate the four synthetic-drift scenarios.
   - apiGroups: [""]
@@ -157,16 +157,16 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: cha-playground-injector
-  namespace: cha-playground
+  name: srenix-playground-injector
+  namespace: srenix-playground
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
-  name: cha-playground-injector
+  name: srenix-playground-injector
 subjects:
   - kind: ServiceAccount
-    name: cha-playground-injector
-    namespace: cha-playground
+    name: srenix-playground-injector
+    namespace: srenix-playground
 ---
 # Read-only ServiceAccount for the live viewer. It only needs to list the
 # cluster-scoped DriftReport CRD (DriftReports are NOT namespaced — see the
@@ -175,27 +175,27 @@ subjects:
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: cha-playground-viewer
-  namespace: cha-playground
+  name: srenix-playground-viewer
+  namespace: srenix-playground
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: cha-playground-viewer-driftreports-read
+  name: srenix-playground-viewer-driftreports-read
 rules:
-  - apiGroups: ["cha.bionicaisolutions.com"]
+  - apiGroups: ["srenix.ai"]
     resources: ["driftreports"]
     verbs: ["get", "list", "watch"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: cha-playground-viewer-driftreports-read
+  name: srenix-playground-viewer-driftreports-read
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: cha-playground-viewer-driftreports-read
+  name: srenix-playground-viewer-driftreports-read
 subjects:
   - kind: ServiceAccount
-    name: cha-playground-viewer
-    namespace: cha-playground
+    name: srenix-playground-viewer
+    namespace: srenix-playground

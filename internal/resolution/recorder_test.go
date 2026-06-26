@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package resolution
@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/snapshot"
+	"github.com/srenix-ai/agentic-sre/internal/snapshot"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
@@ -65,7 +65,7 @@ func TestRecorder_Record_WritesCR(t *testing.T) {
 		Namespace:        "vc-livekit",
 		Source:           "CrashLoopBackOff",
 		SubjectKind:      "Pod",
-		DiagnosticDigest: "Pod vc-livekit/livekit-agent in CrashLoopBackOff (DNS: livekit.bionicaisolutions.com unresolved)",
+		DiagnosticDigest: "Pod vc-livekit/livekit-agent in CrashLoopBackOff (DNS: livekit.srenix.ai unresolved)",
 		ActionKind:       "PatchConfigMap",
 		Target:           "ConfigMap/vc-livekit/vc-livekit-config",
 		Rationale:        "repoint LIVEKIT_URL to the in-cluster service",
@@ -96,8 +96,8 @@ func TestRecorder_Record_WritesCR(t *testing.T) {
 		t.Errorf("proposal.actionKind=%v", prop["actionKind"])
 	}
 	labels := cr.GetLabels()
-	if labels["cha.bionicaisolutions.com/verified"] != "cleared" {
-		t.Errorf("verified label=%v", labels["cha.bionicaisolutions.com/verified"])
+	if labels["srenix.ai/verified"] != "cleared" {
+		t.Errorf("verified label=%v", labels["srenix.ai/verified"])
 	}
 }
 

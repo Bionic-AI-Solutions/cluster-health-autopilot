@@ -30,8 +30,8 @@ Author: investigation 2026-05-16; updated 2026-05-25 post-v1.6.0
 - ✅ **CrashLoopBackOff probe** — generic any-namespace detector
 - ✅ **ETCD probe** — kubeadm static-pod members
 - ✅ **FailedMounts probe** — `ContainerCreating` past 90s grace + kubelet mount events
-- ✅ **Configurable critical-workloads list** — `CHA_CRITICAL_SERVICES` env + `cha.bionicaisolutions.com/probe-critical: "true"` annotation
-- ✅ **Per-probe opt-out env vars** — `CHA_PROBE_<NAME>=off`
+- ✅ **Configurable critical-workloads list** — `SRENIX_CRITICAL_SERVICES` env + `srenix.ai/probe-critical: "true"` annotation
+- ✅ **Per-probe opt-out env vars** — `SRENIX_PROBE_<NAME>=off`
 
 ## v1.7+ roadmap (not yet shipped)
 
@@ -40,19 +40,19 @@ Author: investigation 2026-05-16; updated 2026-05-25 post-v1.6.0
 - ⏳ **ArgoCD** Application sync-status probe (M3)
 - ⏳ **Velero** backup-completion probe (M3)
 - ⏳ **Trigger-class B** status-transition fast path (sub-probe routing)
-- ⏳ **Trigger-class C** Alertmanager webhook → CHA probe trigger
+- ⏳ **Trigger-class C** Alertmanager webhook → Srenix probe trigger
 - ⏳ **Trigger-class E** external webhook ingestion (Vault rotation, cert-manager `Issued`, Cloudflare)
 
 ---
 
 ## Problem
 
-CHA today reacts to **two trigger classes**:
+Srenix today reacts to **two trigger classes**:
 
 - **A — Resource-change events** via `internal/watcher/watcher.go`, subscribed
   to 14 GVRs (Pod, Node, PVC, Event, Deployment, ReplicaSet, StatefulSet, Job,
   CronJob, ExternalSecret, CNPGCluster, CephCluster, Secret, Certificate)
-- **D — Schedule** via the legacy `cha diagnose` cron mode and the watcher's
+- **D — Schedule** via the legacy `srenix diagnose` cron mode and the watcher's
   `ResyncPeriod` fallback
 
 Three more trigger classes are unaddressed:
@@ -60,13 +60,13 @@ Three more trigger classes are unaddressed:
 - **B — Status-transition optimization** — today the watcher re-runs the *full*
   probe + analyzer stack on any GVR change. There's no fast path for "Node
   flipped to NotReady" that bypasses unrelated probes.
-- **C — Prometheus threshold** — CHA *posts* to Alertmanager but never
+- **C — Prometheus threshold** — Srenix *posts* to Alertmanager but never
   *consumes* an alert as a trigger. Drift that doesn't produce a K8s event
   (slow disk fill, error-rate creep, ECC error rate, cert-renewal failure
   caught only by a downstream PromQL alert) waits for the daily resync.
 - **E — External webhook** — Vault rotations, ArgoCD `SyncSucceeded` /
   `SyncFailed`, cert-manager `Issued`, Cloudflare cert renewals — all happen
-  outside CHA and there's no inbound channel for them to trigger a probe.
+  outside Srenix and there's no inbound channel for them to trigger a probe.
 
 Asset-class coverage also has gaps even within the resource-event model:
 
@@ -85,7 +85,7 @@ Asset-class coverage also has gaps even within the resource-event model:
 
 ## Goal
 
-Expand CHA's trigger surface to all 5 classes and close the 10 asset-class
+Expand Srenix's trigger surface to all 5 classes and close the 10 asset-class
 gaps above, organized into 7 incremental milestones that each ship behind a
 feature flag and are individually opt-in.
 
@@ -95,7 +95,7 @@ feature flag and are individually opt-in.
   primary trigger; new classes augment it.
 - **Replace Alertmanager.** Class C is *consumption* of existing PromQL
   alerts, not a competing alerting layer.
-- **Make CHA a metrics scraper.** Probes still read from a `snapshot.Source`;
+- **Make Srenix a metrics scraper.** Probes still read from a `snapshot.Source`;
   if a probe needs Prometheus data it reads from the existing exporter.
 
 ## Trigger-class taxonomy
@@ -105,7 +105,7 @@ feature flag and are individually opt-in.
 | **A** | K8s resource Create / Update / Delete | Secret rotated, Pod CrashLoopBackOff | `internal/watcher/watcher.go` informers (today) |
 | **B** | K8s status-condition transition | Node `Ready` flips false, PVC `Bound` → `Pending` | new `internal/watcher/status.go` — filtered subscriber, fires only relevant probe subset |
 | **C** | Prometheus threshold breach | `disk_used > 85%`, GPU ECC rate > 0, error-budget burn | new `internal/trigger/prom.go` — Alertmanager `/api/v2/alerts` consumer |
-| **D** | Cron / resync ticker | full diagnose pass every 24h | existing — `cha diagnose` + watcher resync |
+| **D** | Cron / resync ticker | full diagnose pass every 24h | existing — `srenix diagnose` + watcher resync |
 | **E** | External webhook | Vault rotation, ArgoCD sync, cert-manager Issued | new `internal/server/webhook.go` — HTTP receiver |
 
 A given probe can be wired to multiple classes; the trigger fan-in is
@@ -127,7 +127,7 @@ the operator refactor that pays for itself once M1–M5 land.
 **Effort:** ~1 day
 **Files:** `internal/watcher/watcher.go` (one-line additions per GVR),
 `internal/snapshot/snapshot.go` (matching `GVR*` constants + capture entries),
-`charts/cluster-health-autopilot/values.yaml` (RBAC additions), test fixtures.
+`charts/agentic-sre/values.yaml` (RBAC additions), test fixtures.
 
 The watcher already auto-discovers Kong-routed services via the Endpoints
 probe's `ingress_discovery.go`, but that discovery only re-runs on
@@ -144,7 +144,7 @@ but the scheduler can't place them — visible in HPA status `conditions`,
 not in Pod events).
 
 `ArgoCD Application` (CRD `argoproj.io/v1alpha1`) closes the loop: when a
-sync goes `OutOfSync` or `Degraded`, CHA picks it up immediately rather than
+sync goes `OutOfSync` or `Degraded`, Srenix picks it up immediately rather than
 waiting for the underlying pod symptom to surface.
 
 **RBAC delta:** `get,list,watch` on `extensions/ingresses`,
@@ -212,7 +212,7 @@ patterns include:
 - `CUDA out of memory` → in-process GPU OOM (vLLM/diffusers)
 - `i/o timeout` rate spike → kubelet→containerd tunnel breakage
 
-Workloads to watch are config-driven: `cha.bionicaisolutions.com/watch-logs:
+Workloads to watch are config-driven: `srenix.ai/watch-logs:
 "vllm,latentsync,search-mcp"` annotation on the Deployment, or a Helm value
 list. Log read uses the existing `corev1` API (`Pod.GetLogs`) with `tailLines:
 500` budget. Patterns are exposed as a Go map so the paid catalog can extend.
@@ -234,13 +234,13 @@ Ingress hostname. Add an optional L7 mode controlled by Ingress annotation:
 ```yaml
 metadata:
   annotations:
-    cha.bionicaisolutions.com/probe-l7-path: "/healthz"
-    cha.bionicaisolutions.com/probe-l7-expect: '"status":"ok"'
-    cha.bionicaisolutions.com/probe-l7-status: "200"
+    srenix.ai/probe-l7-path: "/healthz"
+    srenix.ai/probe-l7-expect: '"status":"ok"'
+    srenix.ai/probe-l7-status: "200"
 ```
 
 When set, the probe additionally issues a `GET <scheme>://<host><path>` with
-the configured client cert / API key (read from `cha.bionicaisolutions.com/probe-l7-secretref`), asserts the status code matches, and that the body
+the configured client cert / API key (read from `srenix.ai/probe-l7-secretref`), asserts the status code matches, and that the body
 contains the expected substring (or matches a regex if prefixed `regex:`).
 
 Closes the "Kong returns 200 but body is wrong" class — the same class that
@@ -258,7 +258,7 @@ investigation (degraded but not zero-result).
 **New package:** `internal/trigger/prom/`
 **Files:** `internal/trigger/prom/client.go`, `prom_test.go`,
 `internal/watcher/watcher.go` (additional `trigCh` source),
-`charts/cluster-health-autopilot/values.yaml` (config block),
+`charts/agentic-sre/values.yaml` (config block),
 `internal/probe/registry.go` (new `Probe.Triggers() []TriggerRef` method
 to express which alerts re-run which probes).
 
@@ -294,7 +294,7 @@ K8s event but do produce a metric.
 **Effort:** ~3 days
 **New package:** `internal/server/webhook/`
 **Files:** `internal/server/webhook/handler.go`, tests,
-`charts/cluster-health-autopilot/templates/webhook-service.yaml`,
+`charts/agentic-sre/templates/webhook-service.yaml`,
 `internal/server/webhook/auth.go` (HMAC-signed bodies; allowed senders
 configured via Helm).
 
@@ -325,7 +325,7 @@ all other public mcp endpoints have).
 
 **Trigger class:** A + B (status-aware)
 **Effort:** ~10 days, requires consensus on the design from
-`project_cha_operator_plan` memory.
+`project_srenix_operator_plan` memory.
 **Scope:** Replace the current "rerun everything on any debounced event"
 model with a controller-runtime / kubebuilder reconcile loop. Each probe
 gains a `Watches(...).Owns(...)` declaration and reconciles per-resource
@@ -337,7 +337,7 @@ analyzers, when in practice only the Pod-related probes need to. The
 operator's reconciler-per-CR model fixes that.
 
 Out of scope for this roadmap doc — the larger design lives in
-`project_cha_operator_plan` memory and a future
+`project_srenix_operator_plan` memory and a future
 `docs/design/2026-Qx-operator-refactor.md`.
 
 ---
@@ -386,7 +386,7 @@ For each Mn:
 
 ## OSS / paid tier split
 
-| milestone | OSS | paid (CHA-com) |
+| milestone | OSS | paid (Srenix Enterprise) |
 |---|---|---|
 | M1 (GVR additions) | full | — |
 | M2 (Kong probe) | full | — |
@@ -394,7 +394,7 @@ For each Mn:
 | M4 (L7 endpoints) | full | — |
 | M5 (Prometheus trigger) | full, polling Alertmanager | PromQL-aware probe dispatcher (auto-derive triggers from existing PromQL) |
 | M6 (Webhook receiver) | full | enterprise auth (mTLS + OIDC instead of HMAC) |
-| M7 (Operator) | full | multi-cluster reconciler via ArgoCD ApplicationSet (existing CHA-com path) |
+| M7 (Operator) | full | multi-cluster reconciler via ArgoCD ApplicationSet (existing Srenix Enterprise path) |
 
 No paid-tier item *requires* a corresponding OSS item to be flagged off —
 they all extend, never replace.
@@ -438,11 +438,11 @@ fully to ✓:
 3. **Webhook auth model** (M6) — HMAC (simple, stateless) vs OIDC (proper
    identity, requires a token service). HMAC for OSS, OIDC for paid is the
    tentative split.
-4. **Operator-mode migration path** (M7) — Do we keep the `cha watch
+4. **Operator-mode migration path** (M7) — Do we keep the `srenix watch
    --live` command as a "lite" mode for users who don't want the
    controller-runtime dependency tree, or fully replace? Tentative: keep
-   `cha watch --live` as the SHIPPING OSS path for v2.x; the operator is
-   the paid CHA-com runtime.
+   `srenix watch --live` as the SHIPPING OSS path for v2.x; the operator is
+   the paid Srenix Enterprise runtime.
 
 ## Risk
 
@@ -453,9 +453,9 @@ fully to ✓:
 - **Log read cost** (M3): tailing 500 lines per watched pod every cycle
   adds non-trivial API server load. Mitigation: log analyzer fires only on
   Pod restart count delta, not every cycle.
-- **Alertmanager polling cost** (M5): `/api/v2/alerts` is cheap, but if CHA
+- **Alertmanager polling cost** (M5): `/api/v2/alerts` is cheap, but if Srenix
   is deployed in a cluster with 10k+ active alerts, payload size matters.
-  Mitigation: poll with a label selector (`cha.bionicaisolutions.com/probe-trigger=true`)
+  Mitigation: poll with a label selector (`srenix.ai/probe-trigger=true`)
   so only opt-in alerts return.
 - **Webhook replay / DoS** (M6): mitigated by HMAC + nonce window + a
   per-source rate limiter in the same handler.
@@ -486,7 +486,7 @@ immediate cluster migration path for the Bionic production cluster. Path B
 for commercial multi-cluster fleet management and PLG discoverability.
 
 **Prerequisites before Path B can ship:**
-1. `docker push docker4zerocool/cha-operator-bundle:v1.9.4` — the bundle
+1. `docker push docker4zerocool/srenix-operator-bundle:v1.9.4` — the bundle
    image exists in CI (bundle-smoke validates it) but has never been pushed
    to Docker Hub. One `docker push` away once the tag is cut.
 2. `operator-sdk olm install` on each target cluster — adds ~10 OLM pods to
@@ -512,5 +512,5 @@ shipped. No code left to write for Path B — just infra and publishing steps.
   via the ApplicationSet path) — captured in the operator-plan memory.
 - Active synthetic-traffic probes (e.g., synthetic load against
   mcp.baisoln.com to detect cold-start regressions). Possible v2.x.
-- Self-probing — CHA reporting on its own pod health to a peer cluster.
+- Self-probing — Srenix reporting on its own pod health to a peer cluster.
   Possible v2.x once multi-cluster is in.

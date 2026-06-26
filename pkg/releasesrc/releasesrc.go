@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 // Package releasesrc finds the file + key in a release-source repo
@@ -16,7 +16,7 @@
 //   - Flux HelmRelease (`spec.values.image.tag`)
 //
 // The package defines a minimal `RepoFiles` interface so any forge
-// client (the cha-com GitHub client, a Git over SSH driver, or an
+// client (the srenix-enterprise GitHub client, a Git over SSH driver, or an
 // in-memory test fixture) can satisfy it without OSS importing a
 // specific implementation.
 package releasesrc
@@ -33,7 +33,7 @@ import (
 )
 
 // RepoFiles is the minimal read-only surface releasesrc needs. The
-// cha-com forge client implements this via a per-(owner, repo, ref)
+// srenix-enterprise forge client implements this via a per-(owner, repo, ref)
 // adapter; tests use an in-memory map.
 type RepoFiles interface {
 	// Get returns the raw bytes of `path` at the configured ref.
@@ -58,11 +58,11 @@ type RepoFiles interface {
 // render a friendly "this file's image.tag is X" message; the
 // authoritative edit anchor is (File, Line).
 type ImageRef struct {
-	File       string // relative path in repo, e.g. "charts/cha/values.yaml"
+	File       string // relative path in repo, e.g. "charts/srenix/values.yaml"
 	Line       int    // 1-based line number of the tag key
 	KeyPath    string // dot-separated path within the YAML, e.g. "image.tag"
 	CurrentTag string // current tag value, e.g. "1.10.0"
-	Repository string // current repository value, e.g. "docker4zerocool/cha-com"
+	Repository string // current repository value, e.g. "docker4zerocool/srenix-enterprise"
 }
 
 // ErrNotFound is returned when no `image:` block holding the expected
@@ -149,7 +149,7 @@ func isNotFound(err error) bool {
 // imageBlockShape mirrors the conventional Helm values.yaml shape:
 //
 //	image:
-//	  repository: docker4zerocool/cha-com
+//	  repository: docker4zerocool/srenix-enterprise
 //	  tag: "1.10.0"
 //
 // Only `repository` + `tag` are decoded — `pullPolicy`, `pullSecrets`,

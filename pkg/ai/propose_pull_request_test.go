@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package ai_test
@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/ai"
+	"github.com/srenix-ai/agentic-sre/pkg/ai"
 )
 
 // validPullRequestProposal returns a proposal that should pass Validate.
@@ -16,13 +16,13 @@ import (
 func validPullRequestProposal() ai.AIProposedAction {
 	now := time.Now().UTC()
 	return ai.AIProposedAction{
-		ActionID:          "Pod/production/cha-com:propose-digest-pin",
+		ActionID:          "Pod/production/srenix-enterprise:propose-digest-pin",
 		ActionKind:        ai.ActionProposePullRequest,
-		Target:            ai.ObjectRef{Kind: "Pod", Namespace: "production", Name: "cha-com-xyz"},
-		PullRequestURL:    "https://github.com/Bionic-AI-Solutions/CHA-com/pull/42",
-		Rationale:         "Pin docker4zerocool/cha-com:1.10.0 to its observed @sha256:...",
+		Target:            ai.ObjectRef{Kind: "Pod", Namespace: "production", Name: "srenix-enterprise-xyz"},
+		PullRequestURL:    "https://github.com/srenix-ai/agentic-sre-enterprise/pull/42",
+		Rationale:         "Pin docker4zerocool/srenix-enterprise:1.10.0 to its observed @sha256:...",
 		Rollback:          ai.RollbackInfo{Description: "Close PR + delete branch"},
-		DiagnosticSubject: "Pod/production/cha-com-xyz",
+		DiagnosticSubject: "Pod/production/srenix-enterprise-xyz",
 		Tier:              ai.TierT1,
 		CreatedAt:         now,
 		ExpiresAt:         now.Add(15 * time.Minute),
@@ -94,7 +94,7 @@ func TestValidate_ProposePullRequest_SelfHostedGitLab_Accepted(t *testing.T) {
 
 func TestValidate_ProposePullRequest_ProtectedNamespaceRejected(t *testing.T) {
 	// Even a PR-proposal action targeting a protected NS workload is
-	// refused — we don't want CHA proposing PRs that modify
+	// refused — we don't want Srenix proposing PRs that modify
 	// kube-system / vault / etc. infra.
 	p := validPullRequestProposal()
 	p.Target.Namespace = "kube-system"

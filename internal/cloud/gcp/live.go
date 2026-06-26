@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package gcp
@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	pkggcp "github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/cloud/gcp"
+	pkggcp "github.com/srenix-ai/agentic-sre/pkg/cloud/gcp"
 	kms "google.golang.org/api/cloudkms/v1"
 	compute "google.golang.org/api/compute/v1"
 	container "google.golang.org/api/container/v1"
@@ -21,7 +21,7 @@ import (
 
 // LiveClient implements pkggcp.Client against the google.golang.org/api
 // generated clients. Auth flows through Application Default
-// Credentials (ADC): for the in-cluster CHA Deployment that's GKE
+// Credentials (ADC): for the in-cluster Srenix Deployment that's GKE
 // Workload Identity (the Helm chart annotates the KSA with the GSA);
 // locally it's `gcloud auth application-default login` or
 // GOOGLE_APPLICATION_CREDENTIALS.
@@ -222,12 +222,21 @@ func (l *LiveClient) GetGKECluster(ctx context.Context, name string) (*pkggcp.GK
 	return out, nil
 }
 
-// ListGKENodePools satisfies pkggcp.Client.
+// ListGKENodePools satisfies pkggcp.Client. Also fetches the parent
+// cluster's currentMasterVersion and stores it in pool.ClusterVersion
+// for version-drift checks.
 func (l *LiveClient) ListGKENodePools(ctx context.Context, clusterName string) ([]pkggcp.GKENodePool, error) {
 	location := l.region
 	if location == "" {
 		location = "-"
 	}
+	// Fetch the cluster to get the control-plane version.
+	clusterVersion := ""
+	cluster, clErr := l.GetGKECluster(ctx, clusterName)
+	if clErr == nil && cluster != nil {
+		clusterVersion = cluster.CurrentVersion
+	}
+
 	parent := fmt.Sprintf("projects/%s/locations/%s/clusters/%s", l.project, location, clusterName)
 	resp, err := l.container.Projects.Locations.Clusters.NodePools.List(parent).Context(ctx).Do()
 	if err != nil {
@@ -239,11 +248,12 @@ func (l *LiveClient) ListGKENodePools(ctx context.Context, clusterName string) (
 	out := make([]pkggcp.GKENodePool, 0, len(resp.NodePools))
 	for _, np := range resp.NodePools {
 		pool := pkggcp.GKENodePool{
-			Name:        np.Name,
-			ClusterName: clusterName,
-			Status:      np.Status,
-			NodeCount:   np.InitialNodeCount,
-			Version:     np.Version,
+			Name:           np.Name,
+			ClusterName:    clusterName,
+			Status:         np.Status,
+			NodeCount:      np.InitialNodeCount,
+			Version:        np.Version,
+			ClusterVersion: clusterVersion,
 		}
 		if np.Autoscaling != nil {
 			pool.Autoscaling = np.Autoscaling.Enabled
@@ -272,6 +282,18 @@ func (l *LiveClient) ListServiceAccounts(ctx context.Context) ([]pkggcp.ServiceA
 				KeyTypes("USER_MANAGED").Context(ctx).Do()
 			if kerr == nil {
 				rec.KeyCount = len(keyResp.Keys)
+			}
+			// Detect a GKE Workload Identity binding: a member of the form
+			// serviceAccount:PROJECT.svc.id.goog[NS/KSA] granted
+			// roles/iam.workloadIdentityUser on THIS GSA's IAM policy.
+			// Best-effort, same as KeyCount: a per-SA getIamPolicy error
+			// (e.g. missing iam.serviceAccounts.getIamPolicy, or the SA was
+			// deleted mid-iteration) leaves OAuth2Bound=false rather than
+			// failing the whole probe. The probe treats false conservatively
+			// — it never pages a keyless SA on the basis of an absent
+			// binding (see iam_subnet_probe.go).
+			if pol, perr := l.iam.Projects.ServiceAccounts.GetIamPolicy(sa.Name).Context(ctx).Do(); perr == nil {
+				rec.OAuth2Bound = hasWorkloadIdentityBinding(pol)
 			}
 			out = append(out, rec)
 		}
@@ -340,7 +362,7 @@ func (l *LiveClient) ListSubnets(ctx context.Context) ([]pkggcp.Subnet, error) {
 func (l *LiveClient) ListBackendServices(ctx context.Context) ([]pkggcp.BackendService, error) {
 	// One ForwardingRules aggregated list per probe cycle builds the
 	// backend-service → forwarding-rule (IP or name) map that feeds
-	// ForwardingRule — the CHA-com "(lb: ...)" RCA join key.
+	// ForwardingRule — the Srenix Enterprise "(lb: ...)" RCA join key.
 	// Best-effort: a failure leaves the map empty (message enrichment
 	// is never worth failing the probe over) and the probe falls back
 	// to the backend-service name.
@@ -527,6 +549,36 @@ func (l *LiveClient) ListKMSKeys(ctx context.Context) ([]pkggcp.KMSKey, error) {
 		return nil, ringErr
 	}
 	return out, nil
+}
+
+// workloadIdentityUserRole is the IAM role a Kubernetes service account
+// member is granted on a Google service account to impersonate it via
+// GKE Workload Identity.
+const workloadIdentityUserRole = "roles/iam.workloadIdentityUser"
+
+// hasWorkloadIdentityBinding reports whether the service account's IAM
+// policy contains a roles/iam.workloadIdentityUser binding with at least
+// one Kubernetes-SA member (serviceAccount:PROJECT.svc.id.goog[NS/KSA]).
+// That binding is what makes the GSA usable keyless from a GKE workload,
+// so its presence is the "OAuth2Bound" (Workload-Identity-bound) signal.
+func hasWorkloadIdentityBinding(pol *iam.Policy) bool {
+	if pol == nil {
+		return false
+	}
+	for _, b := range pol.Bindings {
+		if b == nil || b.Role != workloadIdentityUserRole {
+			continue
+		}
+		for _, m := range b.Members {
+			// KSA members carry the project-scoped workload-identity pool
+			// suffix ".svc.id.goog["; that distinguishes a real WI binding
+			// from a plain serviceAccount: grant.
+			if strings.Contains(m, ".svc.id.goog[") {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // lastPathSegment returns the final segment of a slash-delimited GCP

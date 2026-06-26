@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package watcher
@@ -12,7 +12,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/server/webhook"
+	"github.com/srenix-ai/agentic-sre/internal/server/webhook"
 )
 
 // captureLog redirects the stdlib logger into a buffer for the duration
@@ -30,7 +30,7 @@ func post(h *webhook.Handler, path, sig string) int {
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, path, strings.NewReader("{}"))
 	if sig != "" {
-		req.Header.Set("X-CHA-Signature", sig)
+		req.Header.Set("X-Srenix-Signature", sig)
 	}
 	h.ServeHTTP(rec, req)
 	return rec.Code
@@ -41,7 +41,7 @@ func TestRegisterWebhookSources_EnvUnset_FailClosed(t *testing.T) {
 	ch := make(chan struct{}, 4)
 	h := webhook.New(ch)
 
-	registerWebhookSources(h, []string{"vault=CHA_TEST_UNSET_ENV_VAR"}, func(string) string { return "" })
+	registerWebhookSources(h, []string{"vault=SRENIX_TEST_UNSET_ENV_VAR"}, func(string) string { return "" })
 
 	// Source must NOT be registered → 404, not 202/401.
 	if code := post(h, "/webhook/vault", ""); code != http.StatusNotFound {
@@ -51,7 +51,7 @@ func TestRegisterWebhookSources_EnvUnset_FailClosed(t *testing.T) {
 	if !strings.Contains(out, "fail-closed") {
 		t.Errorf("expected fail-closed error log, got: %q", out)
 	}
-	if !strings.Contains(out, "vault") || !strings.Contains(out, "CHA_TEST_UNSET_ENV_VAR") {
+	if !strings.Contains(out, "vault") || !strings.Contains(out, "SRENIX_TEST_UNSET_ENV_VAR") {
 		t.Errorf("error log must name the source and env var, got: %q", out)
 	}
 }
@@ -93,8 +93,8 @@ func TestRegisterWebhookSources_EnvSet_RegisteredWithHMAC(t *testing.T) {
 	ch := make(chan struct{}, 4)
 	h := webhook.New(ch)
 
-	registerWebhookSources(h, []string{"vault=CHA_TEST_SET_ENV_VAR"}, func(k string) string {
-		if k == "CHA_TEST_SET_ENV_VAR" {
+	registerWebhookSources(h, []string{"vault=SRENIX_TEST_SET_ENV_VAR"}, func(k string) string {
+		if k == "SRENIX_TEST_SET_ENV_VAR" {
 			return "fake-test-secret"
 		}
 		return ""

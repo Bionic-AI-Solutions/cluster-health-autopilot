@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package diagnose
@@ -12,8 +12,8 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/snapshot"
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/vault"
+	"github.com/srenix-ai/agentic-sre/internal/snapshot"
+	"github.com/srenix-ai/agentic-sre/internal/vault"
 )
 
 // fakeVault returns a deterministic key set per path. ErrPathNotFound when
@@ -317,7 +317,7 @@ func TestVaultPathMissing_FilterClusterSecretStore(t *testing.T) {
 }
 
 func TestVaultPathMissing_FilterDegradesWithoutStores(t *testing.T) {
-	// Operator hasn't given cha access to SecretStore CRDs (or they aren't
+	// Operator hasn't given srenix access to SecretStore CRDs (or they aren't
 	// installed). hasAnyStore=false → fall back to v0.2 "treat all ESOs
 	// as Vault-backed" so we don't silently drop real drift detection.
 	eso := makeESOWithStore("ns", "app", "SecretStore", "any",

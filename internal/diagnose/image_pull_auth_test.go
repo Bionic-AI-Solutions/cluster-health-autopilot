@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package diagnose
@@ -8,7 +8,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/snapshot"
+	"github.com/srenix-ai/agentic-sre/internal/snapshot"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )
@@ -118,7 +118,7 @@ func TestImagePullAuth_AuthFailureEmitsDiagnostic(t *testing.T) {
 	if len(got) != 1 {
 		t.Fatalf("expected 1 diagnostic, got %d", len(got))
 	}
-	if got[0].Subject != "image-pull-auth/prod/api/api" {
+	if got[0].Subject != "Pod/prod/api" {
 		t.Errorf("unexpected subject: %s", got[0].Subject)
 	}
 	if !containsAny(got[0].Message, []string{"imagePullSecret", "auth"}) {
@@ -174,7 +174,7 @@ func TestImagePullAuth_InitContainerBackoff(t *testing.T) {
 	if len(got) != 1 {
 		t.Fatalf("expected 1 diagnostic for init container, got %d", len(got))
 	}
-	if got[0].Subject != "image-pull-auth/staging/migrate/init" {
+	if got[0].Subject != "Pod/staging/migrate" {
 		t.Errorf("unexpected subject: %s", got[0].Subject)
 	}
 }

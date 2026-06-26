@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Copyright 2026 Cluster Health Autopilot contributors
+# Copyright 2026 Agentic SRE contributors
 # SPDX-License-Identifier: Apache-2.0
 #
 # changelog-tag-check.sh (O9) — CHANGELOG ↔ git-tag parity gate.
@@ -13,7 +13,7 @@
 # Rules:
 #   1. Every `## [x.y.z]` heading EXCEPT the topmost numbered one must
 #      have a matching git tag: `vx.y.z` (binary release) or
-#      `cluster-health-autopilot-x.y.z` (chart-releaser tag — the
+#      `agentic-sre-x.y.z` (chart-releaser tag — the
 #      1.8.x line shipped chart-only cuts under that form). The topmost
 #      numbered heading is exempt because it is legitimately untagged
 #      while the release PR that introduces it is in flight (the tag is
@@ -79,8 +79,8 @@ while IFS= read -r line; do
       continue
     fi
     if ! git -C "$REPO_DIR" rev-parse -q --verify "refs/tags/v${version}" >/dev/null &&
-       ! git -C "$REPO_DIR" rev-parse -q --verify "refs/tags/cluster-health-autopilot-${version}" >/dev/null; then
-      echo "changelog-tag-check: line $lineno: heading [$version] has no git tag v${version} (or chart tag cluster-health-autopilot-${version}) — the CHANGELOG claims a release that was never cut:" >&2
+       ! git -C "$REPO_DIR" rev-parse -q --verify "refs/tags/agentic-sre-${version}" >/dev/null; then
+      echo "changelog-tag-check: line $lineno: heading [$version] has no git tag v${version} (or chart tag agentic-sre-${version}) — the CHANGELOG claims a release that was never cut:" >&2
       echo "  $line" >&2
       fail=1
     fi

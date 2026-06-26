@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package report
@@ -33,13 +33,13 @@ func TestFormatCriticalPayload_SilenceSnippetAlwaysRendered(t *testing.T) {
 func TestRenderAIBlocks_ApprovalRendersApproveDenyPair(t *testing.T) {
 	var b strings.Builder
 	renderAIBlocks(&b, DeltaDiag{
-		ApprovalURL: "https://cha-approve.example.com/approve?token=abc",
+		ApprovalURL: "https://srenix-approve.example.com/approve?token=abc",
 	})
 	out := b.String()
-	if !strings.Contains(out, "✅ <https://cha-approve.example.com/approve?token=abc|Approve>") {
+	if !strings.Contains(out, "✅ <https://srenix-approve.example.com/approve?token=abc|Approve>") {
 		t.Errorf("expected Approve link; got:\n%s", out)
 	}
-	if !strings.Contains(out, "❌ <https://cha-approve.example.com/deny?token=abc|Deny>") {
+	if !strings.Contains(out, "❌ <https://srenix-approve.example.com/deny?token=abc|Deny>") {
 		t.Errorf("expected symmetric Deny link with /approve? -> /deny? substitution; got:\n%s", out)
 	}
 	if strings.Contains(out, "Apply Fix") {
@@ -168,13 +168,13 @@ func TestRouteAndPost_ActionableFindingsBubbleToTop(t *testing.T) {
 			Subject:     "Pod/zzz-late/actionable",
 			Severity:    "warning",
 			Message:     "needs human review",
-			ApprovalURL: "https://cha-approve.example.com/approve?token=A",
+			ApprovalURL: "https://srenix-approve.example.com/approve?token=A",
 		},
 		DeltaDiag{
 			Subject:     "Pod/zzz-late2/actionable",
 			Severity:    "warning",
 			Message:     "needs human review",
-			ApprovalURL: "https://cha-approve.example.com/approve?token=B",
+			ApprovalURL: "https://srenix-approve.example.com/approve?token=B",
 		},
 	)
 
@@ -455,12 +455,12 @@ func TestSplitCriticalPayloadsConfig_NoChangeDigest_FallsThroughWhenResolvedExis
 //
 // Slack alerts must use "Human Action Required" only when an Approve/Deny
 // button is present. When ALL findings are purely advisory (no ApprovalURL),
-// the title must be "CHA Advisory — Review (no action required)" so on-call
+// the title must be "Srenix Advisory — Review (no action required)" so on-call
 // engineers can triage at a glance without hunting for a non-existent button.
 
 // TestSplitCriticalPayloads_AdvisoryTitleWhenNoActionable asserts that a
 // payload containing ONLY advisory findings (no ApprovalURL on any finding)
-// renders the softer "CHA Advisory" title, NOT "Human Action Required".
+// renders the softer "Srenix Advisory" title, NOT "Human Action Required".
 func TestSplitCriticalPayloads_AdvisoryTitleWhenNoActionable(t *testing.T) {
 	unfixable := []DeltaDiag{
 		{Subject: "ClusterRole/wildcard-role", Severity: "warning", Message: "grants wildcard verb"},
@@ -474,8 +474,8 @@ func TestSplitCriticalPayloads_AdvisoryTitleWhenNoActionable(t *testing.T) {
 	if strings.Contains(text, "Human Action Required") {
 		t.Errorf("advisory-only payload must NOT use 'Human Action Required' title; got:\n%s", text)
 	}
-	if !strings.Contains(text, "CHA Advisory") {
-		t.Errorf("advisory-only payload must use 'CHA Advisory' title; got:\n%s", text)
+	if !strings.Contains(text, "Srenix Advisory") {
+		t.Errorf("advisory-only payload must use 'Srenix Advisory' title; got:\n%s", text)
 	}
 	if !strings.Contains(text, "no action required") {
 		t.Errorf("advisory title must include 'no action required'; got:\n%s", text)
@@ -492,7 +492,7 @@ func TestSplitCriticalPayloads_ActionableTitleWhenAnyActionable(t *testing.T) {
 			Subject:     "NetworkPolicy/ns/missing",
 			Severity:    "warning",
 			Message:     "missing egress rule",
-			ApprovalURL: "https://cha-approve.example.com/approve?token=abc",
+			ApprovalURL: "https://srenix-approve.example.com/approve?token=abc",
 		},
 	}
 	payloads := SplitCriticalPayloads(unfixable, nil)
@@ -503,8 +503,8 @@ func TestSplitCriticalPayloads_ActionableTitleWhenAnyActionable(t *testing.T) {
 	if !strings.Contains(text, "Human Action Required") {
 		t.Errorf("payload with actionable finding must use 'Human Action Required' title; got:\n%s", text)
 	}
-	if strings.Contains(text, "CHA Advisory") {
-		t.Errorf("payload with actionable finding must NOT use 'CHA Advisory' title; got:\n%s", text)
+	if strings.Contains(text, "Srenix Advisory") {
+		t.Errorf("payload with actionable finding must NOT use 'Srenix Advisory' title; got:\n%s", text)
 	}
 }
 
@@ -515,7 +515,7 @@ func TestSplitCriticalPayloads_MixedFindings_HumanActionRequired(t *testing.T) {
 		{Subject: "Advisory/only/one", Severity: "warning", Message: "advisory"},
 		{Subject: "Advisory/only/two", Severity: "critical", Message: "advisory critical"},
 		{Subject: "Actionable/one", Severity: "warning", Message: "needs human",
-			ApprovalURL: "https://cha-approve.example.com/approve?token=xyz"},
+			ApprovalURL: "https://srenix-approve.example.com/approve?token=xyz"},
 	}
 	payloads := SplitCriticalPayloads(unfixable, nil)
 	if len(payloads) == 0 {
@@ -540,8 +540,8 @@ func TestFormatCriticalPayload_AdvisoryTitle(t *testing.T) {
 	if strings.Contains(text, "Human Action Required") {
 		t.Errorf("advisory-only legacy payload must NOT use 'Human Action Required'; got:\n%s", text)
 	}
-	if !strings.Contains(text, "CHA Advisory") {
-		t.Errorf("advisory-only legacy payload must use 'CHA Advisory'; got:\n%s", text)
+	if !strings.Contains(text, "Srenix Advisory") {
+		t.Errorf("advisory-only legacy payload must use 'Srenix Advisory'; got:\n%s", text)
 	}
 }
 
@@ -552,7 +552,7 @@ func TestFormatCriticalPayload_ActionableTitle(t *testing.T) {
 		[]DeltaDiag{
 			{Subject: "Advisory/one", Severity: "warning", Message: "advisory"},
 			{Subject: "Actionable/one", Severity: "warning", Message: "needs human",
-				ApprovalURL: "https://cha-approve.example.com/approve?token=tok"},
+				ApprovalURL: "https://srenix-approve.example.com/approve?token=tok"},
 		},
 		nil,
 	)
@@ -578,8 +578,8 @@ func TestEmitNoChangeDigest_AdvisoryTitle(t *testing.T) {
 	if strings.Contains(text, "Human Action Required") {
 		t.Errorf("no-change digest must NOT use 'Human Action Required'; got:\n%s", text)
 	}
-	if !strings.Contains(text, "CHA Advisory") {
-		t.Errorf("no-change digest must use 'CHA Advisory'; got:\n%s", text)
+	if !strings.Contains(text, "Srenix Advisory") {
+		t.Errorf("no-change digest must use 'Srenix Advisory'; got:\n%s", text)
 	}
 }
 
@@ -607,8 +607,8 @@ func TestSplitCriticalPayloads_PartMarkerPreservesConditionalTitle(t *testing.T)
 		if strings.Contains(text, "Human Action Required") {
 			t.Errorf("chunk %d: advisory-only payload must NOT use 'Human Action Required'; got first 300:\n%s", i, text[:min(300, len(text))])
 		}
-		if !strings.Contains(text, "CHA Advisory") {
-			t.Errorf("chunk %d: advisory-only payload must use 'CHA Advisory'; got first 300:\n%s", i, text[:min(300, len(text))])
+		if !strings.Contains(text, "Srenix Advisory") {
+			t.Errorf("chunk %d: advisory-only payload must use 'Srenix Advisory'; got first 300:\n%s", i, text[:min(300, len(text))])
 		}
 		// Part marker must still appear on multi-chunk payloads.
 		marker := fmt.Sprintf("_(part %d/%d)_", i+1, len(payloads))

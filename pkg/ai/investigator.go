@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package ai
@@ -7,8 +7,8 @@ import (
 	"context"
 	"time"
 
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/diagnose"
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/probe"
+	"github.com/srenix-ai/agentic-sre/pkg/diagnose"
+	"github.com/srenix-ai/agentic-sre/pkg/probe"
 )
 
 // Investigator runs deep-dive read-only diagnostics on a CRITICAL finding
@@ -24,7 +24,7 @@ import (
 //     probes (DNS / HTTP / TLS / describe / events). No LLM cost; always
 //     available; covers the most common failure patterns out of the box.
 //
-//   - The paid CHA-com binary ships an LLM-backed Investigator that picks
+//   - The paid Srenix Enterprise binary ships an LLM-backed Investigator that picks
 //     follow-up probes dynamically from the same closed Environment action
 //     enum. Same interface; subject to the same RBAC ceiling.
 //

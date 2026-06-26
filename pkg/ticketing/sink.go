@@ -1,7 +1,7 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
-// Package ticketing defines the Sink interface CHA uses to file
+// Package ticketing defines the Sink interface Srenix uses to file
 // human-intervention tickets for diagnostics that auto-remediation cannot
 // resolve.
 //
@@ -14,7 +14,7 @@
 //
 // The interface is provider-agnostic. OSS ships an OpenProject
 // implementation in pkg/ticketing/openproject; Jira and ServiceNow live in
-// CHA-com.
+// Srenix Enterprise.
 package ticketing
 
 import (
@@ -62,11 +62,11 @@ type Ticket struct {
 	Source string
 
 	// Cluster identifies the source cluster. Required when one tracker is
-	// shared across multiple CHA installations.
+	// shared across multiple Srenix installations.
 	Cluster string
 
 	// Labels are provider-native labels/tags. Helm-configured defaults
-	// (e.g. ["cha", "auto-filed"]) get merged in here by the adapter.
+	// (e.g. ["srenix", "auto-filed"]) get merged in here by the adapter.
 	Labels []string
 
 	// OpenedAt is the time this Ticket was assembled. Sinks may use it for
@@ -75,9 +75,9 @@ type Ticket struct {
 	OpenedAt time.Time
 }
 
-// TicketRef identifies an existing ticket in a provider so CHA can comment
+// TicketRef identifies an existing ticket in a provider so Srenix can comment
 // on or resolve it on future cycles. Stored on
-// DriftReport.status.ticket so it persists across CHA process restarts.
+// DriftReport.status.ticket so it persists across Srenix process restarts.
 type TicketRef struct {
 	Provider string // "openproject" | "jira" | "servicenow"
 	Key      string // WP-1287 / OPS-42 / INC0012345
@@ -97,7 +97,7 @@ type Sink interface {
 	Upsert(ctx context.Context, t Ticket) (TicketRef, error)
 
 	// Resolve closes/transitions a ticket to a terminal state. reason
-	// is appended as a final comment (e.g. "drift cleared by CHA").
+	// is appended as a final comment (e.g. "drift cleared by Srenix").
 	// Resolving a ticket that is already closed must be a no-op.
 	Resolve(ctx context.Context, ref TicketRef, reason string) error
 

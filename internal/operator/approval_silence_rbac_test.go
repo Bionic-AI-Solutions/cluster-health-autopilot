@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package operator
@@ -20,8 +20,8 @@ func TestBuildApprovalSilenceWriterRole_GrantsCreateSilences(t *testing.T) {
 		t.Fatalf("expected 1 rule; got %d", len(r.Rules))
 	}
 	rule := r.Rules[0]
-	if len(rule.APIGroups) != 1 || rule.APIGroups[0] != "cha.bionicaisolutions.com" {
-		t.Errorf("apiGroups = %v want [cha.bionicaisolutions.com]", rule.APIGroups)
+	if len(rule.APIGroups) != 1 || rule.APIGroups[0] != "srenix.ai" {
+		t.Errorf("apiGroups = %v want [srenix.ai]", rule.APIGroups)
 	}
 	if len(rule.Resources) != 1 || rule.Resources[0] != "silences" {
 		t.Errorf("resources = %v want [silences]", rule.Resources)

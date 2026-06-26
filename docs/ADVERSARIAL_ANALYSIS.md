@@ -1,6 +1,6 @@
-# Adversarial Analysis — Cluster Health Autopilot
+# Adversarial Analysis — Agentic SRE
 
-This document is the cha team's red-team writeup of the **current shipping
+This document is the srenix team's red-team writeup of the **current shipping
 release (v1.5.2)**. It is deliberately written from the *attacker / paranoid
 SRE* point of view. Each finding is rated **Severity** (impact if true) ×
 **Likelihood** (how hard it is to provoke) and resolved as one of:
@@ -26,7 +26,7 @@ SRE* point of view. Each finding is rated **Severity** (impact if true) ×
   (DriftReport-history digest), `alertmanager.go` (direct AM API hub)
 - `pkg/ai/` — `Investigator` interface, closed-enum `Environment`, rule-based
   investigator (OSS). Reviewed in §9.
-- `charts/cluster-health-autopilot/` — Helm chart shape, RBAC, secret wiring
+- `charts/agentic-sre/` — Helm chart shape, RBAC, secret wiring
 - Self-hosted GitHub Actions runner Deployment (WS-C publish pipeline)
 
 ---
@@ -80,7 +80,7 @@ the same blind spot without pattern-matching on hostnames.
 
 The endpoint probe now enumerates every Ingress host in the cluster
 on each cycle and probes it directly. Operators opt out per-Ingress
-via the annotation `cha.bionicaisolutions.com/probe-disable: "true"`;
+via the annotation `srenix.ai/probe-disable: "true"`;
 protected namespaces are skipped by the same list used by fixers. No
 new RBAC was added — the probe reuses the watcher's existing read-only
 Ingress access. Egress surface widens; see §4.5.
@@ -106,9 +106,9 @@ host pointed at an attacker-controlled DNS record can:
 
 **Mitigation**:
 - Protected namespaces are skipped at discovery time.
-- Per-Ingress opt-out via `cha.bionicaisolutions.com/probe-disable: "true"`
+- Per-Ingress opt-out via `srenix.ai/probe-disable: "true"`
   for the legitimate cases where operators do not want the probe.
-- The cluster's egress firewall / NetworkPolicy on the cha namespace
+- The cluster's egress firewall / NetworkPolicy on the srenix namespace
   bounds where probe traffic can land. This control is unchanged from
   v0.9.x (see §4.5).
 - The probe never reads the response body — only status, TLS
@@ -165,12 +165,12 @@ Layer-2 Investigator added in v1.5 adds **zero** new RBAC verbs: its
 ### 2.2 Vault role scope is operator's responsibility
 **Severity: MEDIUM · Likelihood: medium · Resolution: DOCUMENT**
 
-The kubernetes-auth Vault role bound to the cha SA grants read on every
+The kubernetes-auth Vault role bound to the srenix SA grants read on every
 Vault path the SA queries. A malicious operator who can `kubectl edit
 externalsecret` can:
 
 1. Add a remote ref to a sensitive Vault path
-2. Wait for cha to query it
+2. Wait for srenix to query it
 3. Read the diagnostic that reveals key NAMES at the path
 
 **Mitigation**:
@@ -181,7 +181,7 @@ externalsecret` can:
   means byte values never leak.
 
 **Why we accept it**: a malicious operator who can edit ESOs can
-exfiltrate via the legitimate ESO refresh path anyway; the cha
+exfiltrate via the legitimate ESO refresh path anyway; the srenix
 diagnostic is not a novel exfil channel.
 
 ### 2.3 DriftReport CRs are cluster-scoped + readable by anyone
@@ -193,31 +193,31 @@ broken across every namespace" intel that may be sensitive in
 multi-tenant clusters.
 
 **Mitigation**: CRD access is admin-only by default; reader role on the
-CR is explicit only for the cha SA. Operators who want broader
+CR is explicit only for the srenix SA. Operators who want broader
 visibility opt in by RBAC.
 
 ### 2.4 Alertmanager API has no auth in default install
 **Severity: medium · Likelihood: medium · Resolution: DOCUMENT (NEW in v0.9.5)**
 
-CHA posts to `http://alertmanager.<ns>.svc.cluster.local:9093/api/v2/alerts`
+Srenix posts to `http://alertmanager.<ns>.svc.cluster.local:9093/api/v2/alerts`
 on every watcher cycle. The Alertmanager API in a default
 kube-prometheus-stack install accepts un-authenticated writes from
 anything that can reach the Service ClusterIP. An attacker with a pod
 in any namespace can:
 
-- Inject fake `cha_issue` alerts to mask real ones
-- Inject `cha_fixer_acted` alerts to make a real attack look like
+- Inject fake `srenix_issue` alerts to mask real ones
+- Inject `srenix_fixer_acted` alerts to make a real attack look like
   routine self-healing
 - Flood Alertmanager to exhaust dispatch budget
 
 **Mitigation**:
-- This is an Alertmanager surface, not a CHA surface — CHA's payload
+- This is an Alertmanager surface, not a Srenix surface — Srenix's payload
   has no special trust.
 - Production Alertmanager deployments should front the API with
-  NetworkPolicy (or an authenticating proxy) to allow only CHA's
+  NetworkPolicy (or an authenticating proxy) to allow only Srenix's
   ServiceAccount-scoped pod to write.
-- CHA never reads from Alertmanager — only writes. There is no
-  feedback loop an attacker can exploit through CHA.
+- Srenix never reads from Alertmanager — only writes. There is no
+  feedback loop an attacker can exploit through Srenix.
 
 **Why we accept it**: Alertmanager's auth model is the cluster
 operator's choice. Documenting the NetworkPolicy recommendation in
@@ -227,9 +227,9 @@ SETUP_GUIDE.md §5.
 **Severity: low · Likelihood: low · Resolution: DOCUMENT (NEW in v0.9.4)**
 
 The three-channel routing requires three Kubernetes Secrets:
-`cha-slack-ceph-alerts`, `cha-slack-ceph-critical`, `cha-slack-healthinfo`.
+`srenix-slack-ceph-alerts`, `srenix-slack-ceph-critical`, `srenix-slack-healthinfo`.
 Each carries a Slack incoming-webhook URL. Anyone with `secrets get`
-on the `cluster-health-autopilot` namespace can read all three.
+on the `agentic-sre` namespace can read all three.
 
 **Mitigation**:
 - Default install does NOT create these Secrets — operator-supplied,
@@ -269,7 +269,7 @@ the 10-min resync cadence, that's 600 etcd writes/hour.
 **Why we accept it**: etcd writes to a single CRD are well within
 default kube-apiserver throughput budgets. CRD update events are not
 fanned out to LIST-WATCH clients except those explicitly watching
-`driftreports.cha.bionicaisolutions.com`.
+`driftreports.srenix.ai`.
 
 ### 3.3 Alertmanager `/api/v2/alerts` POST every cycle
 **Severity: low · Likelihood: low · Resolution: ACCEPT (NEW in v0.9.5)**
@@ -304,11 +304,11 @@ change without a major bump).
 ### 4.2 `helm uninstall` does not remove DriftReport CRs
 **Severity: low · Likelihood: high · Resolution: DOCUMENT**
 
-The CRD has `helm.sh/resource-policy: keep`. Uninstalling cha leaves
+The CRD has `helm.sh/resource-policy: keep`. Uninstalling srenix leaves
 the CRD + every DriftReport CR behind. Operator must:
 
 ```
-kubectl delete crd driftreports.cha.bionicaisolutions.com
+kubectl delete crd driftreports.srenix.ai
 ```
 
 manually. Documented in NOTES.txt + SETUP_GUIDE.md §9.
@@ -316,7 +316,7 @@ manually. Documented in NOTES.txt + SETUP_GUIDE.md §9.
 ### 4.3 Watcher continuous remediation widens blast radius vs cron
 **Severity: medium · Likelihood: medium · Resolution: ACCEPT + DOCUMENT (NEW in v0.9.0)**
 
-In `cha watch --live --remedy`, fixers run after every diagnose cycle
+In `srenix watch --live --remedy`, fixers run after every diagnose cycle
 (default 10 min). Compared to the daily CronJob (24-hour blast budget),
 a bug in a fixer can mutate the cluster 144× more often before someone
 notices.
@@ -338,7 +338,7 @@ notices.
 container holds:
 
 - A GitHub PAT with `repo` scope (via ExternalSecret from Vault)
-- The cha ServiceAccount token (via projected volume) — same RBAC
+- The srenix ServiceAccount token (via projected volume) — same RBAC
   as the watcher
 
 A workflow run that executes attacker-controlled code in this runner
@@ -348,7 +348,7 @@ inherits both credentials.
 - `runner.enabled` is **off by default**.
 - The runner is opt-in for the WS-C publish-runs pipeline only.
 - The PAT is `repo` scope (not org-admin); blast radius is limited
-  to the cluster-health-autopilot repo.
+  to the agentic-sre repo.
 - GitHub Actions branch-protection rules on `main` prevent merging
   workflow changes without review.
 
@@ -395,7 +395,7 @@ or more HTTPS probes, and one TCP+TLS handshake against the target
 named by the finding. Reviewed in §9. Bounded by a hard 20-second
 wall-clock cap per cycle.
 
-### 4.6 Two cha pods concurrent → racy reconcile
+### 4.6 Two srenix pods concurrent → racy reconcile
 **Severity: low · Likelihood: very low · Resolution: ACCEPT**
 
 CronJob `concurrencyPolicy: Forbid` is default. Watcher Deployment uses
@@ -436,8 +436,8 @@ resync period (default 10 min; recommend ≥ 1 h).
 ### 5.3 GitHub PAT in runner Secret rotates manually
 **Severity: low · Likelihood: medium · Resolution: DOCUMENT (NEW in v0.9.x)**
 
-The runner's GH PAT in `cha-runner-token` Secret (via ExternalSecret
-from Vault path `secret/t6-apps/cha/config:github_pat`) does not rotate
+The runner's GH PAT in `srenix-runner-token` Secret (via ExternalSecret
+from Vault path `secret/t6-apps/srenix/config:github_pat`) does not rotate
 automatically. If the PAT is revoked, the runner enters a fail-loop
 until the operator updates Vault.
 
@@ -497,7 +497,7 @@ client returns only key names) remain in force.
 - [ ] `helm template --set …` rendered against a real production cluster smoke-test.
 - [ ] `kubectl get driftreports -A` round-trips on the production cluster.
 - [ ] Watcher `cycle complete` log line within `resyncPeriod + debounce` of pod start.
-- [ ] Alertmanager `/api/v2/alerts` shows `cha_issue` alerts within 1 cycle.
+- [ ] Alertmanager `/api/v2/alerts` shows `srenix_issue` alerts within 1 cycle.
 - [ ] Three-channel Slack — at least #healthinfo receives a daily digest.
 - [ ] Image size budget: distroless+static, multi-arch, <20 MB compressed.
 
@@ -524,16 +524,16 @@ introducing version.
 
 ---
 
-## 8. AI-tier attack surface (NEW in v1.0.0 — CHA-com)
+## 8. AI-tier attack surface (NEW in v1.0.0 — Srenix Enterprise)
 
 This section reviews the attack surface introduced by the **mutation
-AI tier** (T0–T3) shipped in the commercial CHA-com binary. The OSS
-`cha` binary remains AI-free in this tier; findings here apply only
+AI tier** (T0–T3) shipped in the commercial Srenix Enterprise binary. The OSS
+`srenix` binary remains AI-free in this tier; findings here apply only
 when an operator opts into `ai.enabled=true`. The Layer-2 read-only
 **Investigator** introduced in v1.5 is a separate sibling surface
 reviewed in §9 — it is not gated by `ai.enabled` because the rule-
 based investigator ships in OSS and is not an LLM (the LLM-backed
-investigator in CHA-com is gated the same way as T0–T3).
+investigator in Srenix Enterprise is gated the same way as T0–T3).
 
 The fundamental difference between this tier and the Layer-2
 Investigator: the T0–T3 tier exists to *propose mutations* (which
@@ -556,11 +556,11 @@ interface is never invoked from an LLM response path. Every mutation
 passes through: LLM proposal → validator → signed short-lived JWT →
 human click → approval-server verify (signature, expiry, one-time-use,
 OIDC identity) → admission re-check → optional OPA/Gatekeeper third
-gate → Mutator. Blast radius identical to today's `cha remediate --live`
+gate → Mutator. Blast radius identical to today's `srenix remediate --live`
 plus a human approval gate.
 
 T3 (most powerful tier) is a runbook generator with dual approval —
-CHA-com NEVER writes to Vault.
+Srenix Enterprise NEVER writes to Vault.
 
 ### 8.2 Prompt injection in event messages (LLM01)
 **Severity: medium · Likelihood: medium · Resolution: DEFENSE IN DEPTH**
@@ -593,7 +593,7 @@ Tests: TestApprove_TokenReplay, TestApprove_ExpiredToken, TestApprove_TamperedTo
 
 `RecordApproval` enforces distinct approvers (`ErrSameApprover`) and
 30-min audit window (`ErrTooEarly`). Approver identity from OIDC at
-Ingress, not from a CHA-controlled field. Tests:
+Ingress, not from a Srenix-controlled field. Tests:
 TestRunbookStore_SameApproverRejected, TestRunbookStore_TooEarlyRejected.
 
 ### 8.6 LLM denial-of-service via diagnostic flood (LLM04)
@@ -655,9 +655,9 @@ level.
 
 This section reviews the attack surface introduced by the Layer-2
 read-only Investigator. The rule-based investigator ships in the OSS
-`cha` binary and is wired to the watcher by default for CRITICAL
+`srenix` binary and is wired to the watcher by default for CRITICAL
 findings; an LLM-backed investigator with the same Environment surface
-ships in the CHA-com paid binary and is operator-gated.
+ships in the Srenix Enterprise paid binary and is operator-gated.
 
 The fundamental safety claim of this layer is that **the Investigator
 interface cannot escape the `Environment` interface**, and `Environment`
@@ -712,7 +712,7 @@ incremental egress is a small constant multiple of what the existing
 endpoint probe already does on the same target.
 
 ### 9.3 Prompt injection in observed cluster data (LLM-backed only)
-**Severity: medium · Likelihood: medium · Resolution: DEFENSE IN DEPTH (CHA-com)**
+**Severity: medium · Likelihood: medium · Resolution: DEFENSE IN DEPTH (Srenix Enterprise)**
 
 For the LLM-backed investigator, tool outputs feed back into the LLM
 prompt. An attacker who can influence the *contents* of cluster
@@ -791,12 +791,12 @@ to 6 tool calls plus LLM cost.
 | Threat | Severity | Status |
 |---|---|---|
 | Mutation outside the read-only contract | HIGH | ✅ Architecturally refused (closed-enum `Environment`) |
-| Sensitive info disclosure to LLM (CHA-com) | medium | ✅ Snapshot RBAC ceiling + scrubber + no Secret reads |
-| Prompt injection from observed cluster data (CHA-com) | medium | ✅ Defense in depth (closed-enum + `<observed_data>` + scrubber) |
+| Sensitive info disclosure to LLM (Srenix Enterprise) | medium | ✅ Snapshot RBAC ceiling + scrubber + no Secret reads |
+| Prompt injection from observed cluster data (Srenix Enterprise) | medium | ✅ Defense in depth (closed-enum + `<observed_data>` + scrubber) |
 | Outbound egress amplification | low | ⚠️ Documented; bounded by 20s cap and cluster egress NetPol |
-| DoS via repeated investigations | low | ✅ Streak gate + wall-clock cap + rate limit (CHA-com) |
+| DoS via repeated investigations | low | ✅ Streak gate + wall-clock cap + rate limit (Srenix Enterprise) |
 | Wrong classification (LLM09 / misinformation) | low | ✅ Additive — original finding still surfaces |
-| Supply chain (LLM provider compromise, CHA-com) | medium | ✅ BYOM defaults; rule-based path stays deterministic |
+| Supply chain (LLM provider compromise, Srenix Enterprise) | medium | ✅ BYOM defaults; rule-based path stays deterministic |
 
 Zero MUST-FIX items for the Layer-2 surface. Zero new RBAC verbs.
 The Investigator's read-only contract is enforced at the interface

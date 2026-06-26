@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package diagnose
@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/snapshot"
+	"github.com/srenix-ai/agentic-sre/internal/snapshot"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )
@@ -316,6 +316,12 @@ func (c ConfigDrift) checkConfigChecksumDrift(ctx context.Context, src snapshot.
 		if len(s.values) < 2 {
 			continue
 		}
+		// workload is "Deployment/ns/name" — parse ns+name for valid kubectl syntax.
+		parts := strings.SplitN(workload, "/", 3)
+		rolloutCmd := workload
+		if len(parts) == 3 {
+			rolloutCmd = fmt.Sprintf("deployment/%s -n %s", parts[2], parts[1])
+		}
 		out = append(out, Diagnostic{
 			Source:   "ConfigDrift",
 			Subject:  workload,
@@ -325,7 +331,7 @@ func (c ConfigDrift) checkConfigChecksumDrift(ctx context.Context, src snapshot.
 					"the rolling update from the last config change didn't propagate to all replicas",
 				workload, len(s.values)),
 			Remediation: "Force a fresh rollout to converge all replicas onto the current config: " +
-				"`kubectl rollout restart " + workload + "`. If the rollout still doesn't converge, the issue is likely the same as a stuck-rollout signal — check the deployment's Progressing condition and any pod-level events.",
+				"`kubectl rollout restart " + rolloutCmd + "`. If the rollout still doesn't converge, the issue is likely the same as a stuck-rollout signal — check the deployment's Progressing condition and any pod-level events.",
 		})
 	}
 	return out

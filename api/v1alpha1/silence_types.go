@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package v1alpha1
@@ -75,7 +75,7 @@ type SilenceMatcher struct {
 
 	// MessagePattern narrows by Message substring. v1.21.0
 	// (Phase 2.B.9) — supports class-scoped silences derived from
-	// a "Silence class (7d)" click on a Slack proposal. The CHA-com
+	// a "Silence class (7d)" click on a Slack proposal. The Srenix Enterprise
 	// approval-server's /silence-class handler creates Silences
 	// with this field populated from policy.InferMessagePattern,
 	// e.g. "without digest pin" for SecurityDrift digest-pin
@@ -110,9 +110,9 @@ type SilenceStatus struct {
 	LastMatchAt *metav1.Time `json:"lastMatchAt,omitempty"`
 }
 
-// Silence is the CHA noise-suppression CRD. One CR per active
+// Silence is the Srenix noise-suppression CRD. One CR per active
 // suppression. Operators create these to mute known-benign-but-
-// unfixable findings for a bounded window. CHA's watch loop filters
+// unfixable findings for a bounded window. Srenix's watch loop filters
 // active silences against incoming diagnostics before downstream
 // emission, so a known noisy finding doesn't re-page on every probe
 // cycle.

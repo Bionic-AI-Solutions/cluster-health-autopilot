@@ -1,17 +1,17 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 // Command playground-viewer is a tiny, read-only live view of the DriftReport
-// CRs CHA produces for the cha-playground namespace. It exists so the hosted
-// playground is self-contained OSS (no CHA-com dashboard image required).
+// CRs Srenix produces for the srenix-playground namespace. It exists so the hosted
+// playground is self-contained OSS (no Srenix Enterprise dashboard image required).
 //
-// It does ONE thing: list driftreports.cha.bionicaisolutions.com cluster-wide
+// It does ONE thing: list driftreports.srenix.ai cluster-wide
 // (the CRD is cluster-scoped) and render them as an auto-refreshing HTML table.
 // All dynamic values go through html/template, so report messages — which can
 // contain arbitrary cluster strings — are HTML-escaped (XSS-safe).
 //
 // It mutates nothing and needs only get/list on driftreports (see the
-// cha-playground-viewer ClusterRole in namespace.yaml).
+// srenix-playground-viewer ClusterRole in namespace.yaml).
 package main
 
 import (
@@ -32,7 +32,7 @@ import (
 )
 
 var driftGVR = schema.GroupVersionResource{
-	Group:    "cha.bionicaisolutions.com",
+	Group:    "srenix.ai",
 	Version:  "v1alpha1",
 	Resource: "driftreports",
 }
@@ -59,7 +59,7 @@ const pageTmpl = `<!DOCTYPE html>
 <head>
 <meta charset="utf-8">
 <meta http-equiv="refresh" content="5">
-<title>CHA Playground — live drift</title>
+<title>Srenix Playground — live drift</title>
 <style>
  body{font-family:system-ui,sans-serif;margin:2rem;background:#0d1117;color:#c9d1d9}
  h1{font-size:1.4rem}
@@ -76,10 +76,10 @@ const pageTmpl = `<!DOCTYPE html>
 </style>
 </head>
 <body>
-<h1>Cluster Health Autopilot — live drift in <code>cha-playground</code></h1>
+<h1>Agentic SRE — live drift in <code>srenix-playground</code></h1>
 <div class="meta">
   {{.Total}} active DriftReport(s). Auto-refreshes every 5s. Last fetched {{.Refreshed}}.
-  These findings are produced live by the CHA watcher detecting synthetic drift the injector creates.
+  These findings are produced live by the Srenix watcher detecting synthetic drift the injector creates.
 </div>
 {{if .Err}}<p class="err">Error listing DriftReports: {{.Err}}</p>{{end}}
 {{if .Rows}}

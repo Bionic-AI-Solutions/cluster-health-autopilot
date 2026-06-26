@@ -1,11 +1,11 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
-// Package rag is the read/write contract for CHA's per-cluster learnt
+// Package rag is the read/write contract for Srenix's per-cluster learnt
 // knowledge layer.
 //
 // The OSS build links only NoopReader / NoopWriter — these literally never
-// reach a store. The paid AI tier (cha-com) links a Qdrant-backed
+// reach a store. The paid AI tier (srenix-enterprise) links a Qdrant-backed
 // implementation that persists across cycles and learns from SRE outcomes.
 //
 // Why split it this way: every probe/analyzer that ingests learnt state takes
@@ -19,7 +19,7 @@ package rag
 
 import "time"
 
-// EntryKind enumerates the kinds of cluster-learnt knowledge CHA stores.
+// EntryKind enumerates the kinds of cluster-learnt knowledge Srenix stores.
 // Stored as the partition key inside Qdrant; treated as a stable string —
 // renames need a migration.
 type EntryKind string
@@ -60,7 +60,7 @@ const (
 // probe/analyzer that consumes it. Features carries kind-specific payload.
 type Entry struct {
 	// ClusterID identifies the cluster this entry belongs to. Sourced from
-	// spec.alerting.alertmanager.clusterName on the ClusterHealthAutopilot
+	// spec.alerting.alertmanager.clusterName on the AgenticSRE
 	// CR. Entries from different clusters are isolated and never federate.
 	ClusterID string
 
@@ -94,7 +94,7 @@ type Entry struct {
 	// Sources tracks WHERE this entry was learnt from (multi-source is
 	// possible). E.g. an apex_domain seen in both Cloudflare zone listing
 	// AND auto-discovered Ingress gets ["cloudflare_zone", "ingress_host"].
-	// Useful for explaining "why is CHA probing this?" to operators.
+	// Useful for explaining "why is Srenix probing this?" to operators.
 	Sources []string
 
 	// Features is the kind-specific payload. Example shapes:
@@ -114,7 +114,7 @@ type SignalEvent struct {
 	Timestamp time.Time
 
 	// Action ∈ {"approved", "denied", "silenced", "opened", "resolved"}.
-	// "approved" / "denied" come from cha-com #17 symmetric one-shot
+	// "approved" / "denied" come from srenix-enterprise #17 symmetric one-shot
 	// approval-server clicks. "silenced" comes from Silence-CR creation
 	// events watched by the watcher. "opened" / "resolved" come from the
 	// analyzer cycle itself.

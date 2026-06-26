@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package audit
@@ -11,19 +11,19 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/fake"
 
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/ai"
+	"github.com/srenix-ai/agentic-sre/pkg/ai"
 )
 
 func TestEventsSink_Write_Normal(t *testing.T) {
 	client := fake.NewClientset()
-	s := NewEventsSink(client, "cluster-health-autopilot")
+	s := NewEventsSink(client, "agentic-sre")
 	ctx := context.Background()
 
 	err := s.Write(ctx, ai.AuditEvent{
 		Type:          "ai.proposal.created",
 		CorrelationID: "act-test-1",
 		Tier:          ai.TierT1,
-		Actor:         "cha-com",
+		Actor:         "srenix-enterprise",
 		Subject:       "Pod/default/demo-abc",
 		Details: map[string]any{
 			"action_kind": "DeletePod",
@@ -34,7 +34,7 @@ func TestEventsSink_Write_Normal(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	evs, err := client.CoreV1().Events("cluster-health-autopilot").List(ctx, metav1.ListOptions{})
+	evs, err := client.CoreV1().Events("agentic-sre").List(ctx, metav1.ListOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -51,17 +51,17 @@ func TestEventsSink_Write_Normal(t *testing.T) {
 	if ev.InvolvedObject.Kind != "Pod" || ev.InvolvedObject.Namespace != "default" || ev.InvolvedObject.Name != "demo-abc" {
 		t.Errorf("involved object = %+v; want Pod/default/demo-abc", ev.InvolvedObject)
 	}
-	if ev.Annotations["cha.bionicaisolutions.com/audit-tier"] != "t1" {
-		t.Errorf("tier annotation = %q; want t1", ev.Annotations["cha.bionicaisolutions.com/audit-tier"])
+	if ev.Annotations["srenix.ai/audit-tier"] != "t1" {
+		t.Errorf("tier annotation = %q; want t1", ev.Annotations["srenix.ai/audit-tier"])
 	}
-	if ev.Annotations["cha.bionicaisolutions.com/audit-details"] == "" {
+	if ev.Annotations["srenix.ai/audit-details"] == "" {
 		t.Errorf("missing audit-details annotation")
 	}
 }
 
 func TestEventsSink_Write_Warning(t *testing.T) {
 	client := fake.NewClientset()
-	s := NewEventsSink(client, "cha")
+	s := NewEventsSink(client, "srenix")
 	ctx := context.Background()
 
 	err := s.Write(ctx, ai.AuditEvent{
@@ -76,7 +76,7 @@ func TestEventsSink_Write_Warning(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	evs, _ := client.CoreV1().Events("cha").List(ctx, metav1.ListOptions{})
+	evs, _ := client.CoreV1().Events("srenix").List(ctx, metav1.ListOptions{})
 	if evs.Items[0].Type != corev1.EventTypeWarning {
 		t.Errorf("expected Warning type for rejection event; got %q", evs.Items[0].Type)
 	}
@@ -107,8 +107,8 @@ func TestParseInvolved(t *testing.T) {
 	}{
 		{"Pod/default/demo-abc", "Pod", "default", "demo-abc"},
 		{"missing-key/billing/svc/STRIPE_API_KEY", "missing-key", "billing", "svc"},
-		{"", "AuditScope", "default-ns", "cha"},
-		{"unparseable", "AuditScope", "default-ns", "cha"},
+		{"", "AuditScope", "default-ns", "srenix"},
+		{"unparseable", "AuditScope", "default-ns", "srenix"},
 	}
 	for _, tc := range tests {
 		k, ns, n := parseInvolved(tc.subject, "default-ns")

@@ -2,16 +2,16 @@
 # on every git tag matching v*.*.*. See https://goreleaser.com/.
 version: 2
 
-project_name: cluster-health-autopilot
+project_name: agentic-sre
 
 before:
   hooks:
     - go mod tidy
 
 builds:
-  - id: cha
-    main: ./cmd/cha
-    binary: cha
+  - id: srenix
+    main: ./cmd/srenix
+    binary: srenix
     env:
       - CGO_ENABLED=0
     flags:
@@ -29,7 +29,7 @@ builds:
       - arm64
 
 archives:
-  - id: cha
+  - id: srenix
     formats: [tar.gz]
     format_overrides:
       - goos: windows
@@ -85,25 +85,25 @@ signs:
 
 # Container images: multi-arch, published to Docker Hub (canonical) and
 # GHCR (mirror). The Helm chart's default image.repository is
-# docker4zerocool/cluster-health-autopilot; operators who prefer GHCR
+# docker4zerocool/agentic-sre; operators who prefer GHCR
 # can flip the repository value. The chart's default image.tag matches
 # Chart.appVersion, so a release with tag v1.6.0 produces both
-# docker4zerocool/cluster-health-autopilot:1.6.0 and
-# ghcr.io/bionic-ai-solutions/cluster-health-autopilot:1.6.0.
+# docker4zerocool/agentic-sre:1.6.0 and
+# ghcr.io/srenix-ai/agentic-sre:1.6.0.
 dockers:
   - id: amd64
     image_templates:
-      - "docker4zerocool/cluster-health-autopilot:{{ .Version }}-amd64"
-      - "docker4zerocool/cluster-health-autopilot:latest-amd64"
-      - "ghcr.io/bionic-ai-solutions/cluster-health-autopilot:{{ .Version }}-amd64"
-      - "ghcr.io/bionic-ai-solutions/cluster-health-autopilot:latest-amd64"
+      - "docker4zerocool/agentic-sre:{{ .Version }}-amd64"
+      - "docker4zerocool/agentic-sre:latest-amd64"
+      - "ghcr.io/srenix-ai/agentic-sre:{{ .Version }}-amd64"
+      - "ghcr.io/srenix-ai/agentic-sre:latest-amd64"
     use: buildx
     build_flag_templates:
       - "--platform=linux/amd64"
-      - "--label=org.opencontainers.image.source=https://github.com/Bionic-AI-Solutions/cluster-health-autopilot"
+      - "--label=org.opencontainers.image.source=https://github.com/srenix-ai/agentic-sre"
       - "--label=org.opencontainers.image.title={{ .ProjectName }}"
       - "--label=org.opencontainers.image.description=Self-healing operations layer for Kubernetes"
-      - "--label=org.opencontainers.image.url=https://github.com/Bionic-AI-Solutions/cluster-health-autopilot"
+      - "--label=org.opencontainers.image.url=https://github.com/srenix-ai/agentic-sre"
       - "--label=org.opencontainers.image.version={{ .Version }}"
       - "--label=org.opencontainers.image.revision={{ .FullCommit }}"
       - "--label=org.opencontainers.image.licenses=Apache-2.0"
@@ -123,17 +123,17 @@ dockers:
 
   - id: arm64
     image_templates:
-      - "docker4zerocool/cluster-health-autopilot:{{ .Version }}-arm64"
-      - "docker4zerocool/cluster-health-autopilot:latest-arm64"
-      - "ghcr.io/bionic-ai-solutions/cluster-health-autopilot:{{ .Version }}-arm64"
-      - "ghcr.io/bionic-ai-solutions/cluster-health-autopilot:latest-arm64"
+      - "docker4zerocool/agentic-sre:{{ .Version }}-arm64"
+      - "docker4zerocool/agentic-sre:latest-arm64"
+      - "ghcr.io/srenix-ai/agentic-sre:{{ .Version }}-arm64"
+      - "ghcr.io/srenix-ai/agentic-sre:latest-arm64"
     use: buildx
     build_flag_templates:
       - "--platform=linux/arm64"
-      - "--label=org.opencontainers.image.source=https://github.com/Bionic-AI-Solutions/cluster-health-autopilot"
+      - "--label=org.opencontainers.image.source=https://github.com/srenix-ai/agentic-sre"
       - "--label=org.opencontainers.image.title={{ .ProjectName }}"
       - "--label=org.opencontainers.image.description=Self-healing operations layer for Kubernetes"
-      - "--label=org.opencontainers.image.url=https://github.com/Bionic-AI-Solutions/cluster-health-autopilot"
+      - "--label=org.opencontainers.image.url=https://github.com/srenix-ai/agentic-sre"
       - "--label=org.opencontainers.image.version={{ .Version }}"
       - "--label=org.opencontainers.image.revision={{ .FullCommit }}"
       - "--label=org.opencontainers.image.licenses=Apache-2.0"
@@ -156,23 +156,23 @@ dockers:
 # the right arch for their platform automatically.
 docker_manifests:
   # Canonical: Docker Hub
-  - name_template: "docker4zerocool/cluster-health-autopilot:{{ .Version }}"
+  - name_template: "docker4zerocool/agentic-sre:{{ .Version }}"
     image_templates:
-      - "docker4zerocool/cluster-health-autopilot:{{ .Version }}-amd64"
-      - "docker4zerocool/cluster-health-autopilot:{{ .Version }}-arm64"
-  - name_template: "docker4zerocool/cluster-health-autopilot:latest"
+      - "docker4zerocool/agentic-sre:{{ .Version }}-amd64"
+      - "docker4zerocool/agentic-sre:{{ .Version }}-arm64"
+  - name_template: "docker4zerocool/agentic-sre:latest"
     image_templates:
-      - "docker4zerocool/cluster-health-autopilot:latest-amd64"
-      - "docker4zerocool/cluster-health-autopilot:latest-arm64"
+      - "docker4zerocool/agentic-sre:latest-amd64"
+      - "docker4zerocool/agentic-sre:latest-arm64"
   # Mirror: GHCR
-  - name_template: "ghcr.io/bionic-ai-solutions/cluster-health-autopilot:{{ .Version }}"
+  - name_template: "ghcr.io/srenix-ai/agentic-sre:{{ .Version }}"
     image_templates:
-      - "ghcr.io/bionic-ai-solutions/cluster-health-autopilot:{{ .Version }}-amd64"
-      - "ghcr.io/bionic-ai-solutions/cluster-health-autopilot:{{ .Version }}-arm64"
-  - name_template: "ghcr.io/bionic-ai-solutions/cluster-health-autopilot:latest"
+      - "ghcr.io/srenix-ai/agentic-sre:{{ .Version }}-amd64"
+      - "ghcr.io/srenix-ai/agentic-sre:{{ .Version }}-arm64"
+  - name_template: "ghcr.io/srenix-ai/agentic-sre:latest"
     image_templates:
-      - "ghcr.io/bionic-ai-solutions/cluster-health-autopilot:latest-amd64"
-      - "ghcr.io/bionic-ai-solutions/cluster-health-autopilot:latest-arm64"
+      - "ghcr.io/srenix-ai/agentic-sre:latest-amd64"
+      - "ghcr.io/srenix-ai/agentic-sre:latest-arm64"
 
 # Keyless cosign signing of every container image + multi-arch manifest pushed
 # above (Docker Hub + GHCR). Fulfils the website's "Cosign-signed container
@@ -206,18 +206,18 @@ changelog:
 
 release:
   github:
-    owner: Bionic-AI-Solutions
-    name: cluster-health-autopilot
+    owner: Srenix
+    name: agentic-sre
   draft: false
   prerelease: auto
   name_template: "{{ .ProjectName }} {{ .Version }}"
   header: |
-    Cluster Health Autopilot **{{ .Version }}** — see the [README](https://github.com/Bionic-AI-Solutions/cluster-health-autopilot/blob/main/README.md) for the 30-second demo.
+    Agentic SRE **{{ .Version }}** — see the [README](https://github.com/srenix-ai/agentic-sre/blob/main/README.md) for the 30-second demo.
 
     ## Install
     - Binaries below for darwin-{amd64,arm64}, linux-{amd64,arm64}, and windows-{amd64,arm64}.
-    - Container image: `ghcr.io/bionic-ai-solutions/cluster-health-autopilot:{{ .Version }}` (multi-arch).
-    - Helm chart: `charts/cluster-health-autopilot/` at this tag.
+    - Container image: `ghcr.io/srenix-ai/agentic-sre:{{ .Version }}` (multi-arch).
+    - Helm chart: `charts/agentic-sre/` at this tag.
   footer: |
     ---
-    Full changelog: [{{ .PreviousTag }}...{{ .Tag }}](https://github.com/Bionic-AI-Solutions/cluster-health-autopilot/compare/{{ .PreviousTag }}...{{ .Tag }})
+    Full changelog: [{{ .PreviousTag }}...{{ .Tag }}](https://github.com/srenix-ai/agentic-sre/compare/{{ .PreviousTag }}...{{ .Tag }})

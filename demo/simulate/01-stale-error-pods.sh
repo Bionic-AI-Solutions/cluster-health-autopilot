@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Simulate: Stale Error Pods
-# CHA auto-fix: StaleErrorPods fixer deletes these automatically
+# Srenix auto-fix: StaleErrorPods fixer deletes these automatically
 # Expected Slack: 🔴 Active Issues → 🔧 Fixes Applied → ✅ Resolved (~30s cycle)
 #
 # Set KUBE_CONTEXT to target a specific cluster:
@@ -24,7 +24,7 @@ metadata:
   namespace: ${NAMESPACE}
   labels:
     demo: stale-error-pod
-    injected-by: cha-demo
+    injected-by: srenix-demo
 spec:
   restartPolicy: Never
   containers:
@@ -40,7 +40,7 @@ $KUBECTL wait --for=jsonpath='{.status.phase}'=Failed pod/"${POD_NAME}" \
 
 $KUBECTL get pod "${POD_NAME}" -n "${NAMESPACE}" --no-headers
 echo ""
-echo "==> CHA watcher will detect this within ~10s debounce window."
+echo "==> Srenix watcher will detect this within ~10s debounce window."
 echo "    In autopilot mode: StaleErrorPods fixer will delete it automatically."
 echo "    Watch Slack #aws-alerts for the alert + fix confirmation."
 echo ""

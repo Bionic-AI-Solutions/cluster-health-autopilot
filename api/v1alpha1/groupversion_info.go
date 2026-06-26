@@ -1,23 +1,23 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 // Package v1alpha1 contains the API Schema definitions for the
-// cha.bionicaisolutions.com/v1alpha1 API group.
+// srenix.ai/v1alpha1 API group.
 //
-// The CRDs in this group make CHA an in-cluster operator: the operator
-// reconciles a ClusterHealthAutopilot resource into the existing
+// The CRDs in this group make Srenix an in-cluster operator: the operator
+// reconciles a AgenticSRE resource into the existing
 // watcher Deployment + diagnose CronJob + RBAC. The DriftReport CRD
 // remains the read surface for active drift findings (its types live
 // in pkg/snapshot for now; future PR may move them here).
 //
 // Phase 1 (this package) ships ONLY the type definitions — no
 // controller-runtime dependency, no reconcile loop. The pure-function
-// builders in internal/operator turn a ClusterHealthAutopilotSpec
+// builders in internal/operator turn a AgenticSRESpec
 // into concrete K8s manifests. Phase 2 will add the manager binary
 // and the controller wiring.
 //
 // +kubebuilder:object:generate=true
-// +groupName=cha.bionicaisolutions.com
+// +groupName=srenix.ai
 package v1alpha1
 
 import (
@@ -26,9 +26,9 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
-// GroupVersion is the API group and version for the CHA operator types.
+// GroupVersion is the API group and version for the Srenix operator types.
 var GroupVersion = schema.GroupVersion{
-	Group:   "cha.bionicaisolutions.com",
+	Group:   "srenix.ai",
 	Version: "v1alpha1",
 }
 
@@ -40,14 +40,14 @@ var GroupVersion = schema.GroupVersion{
 var SchemeBuilder = runtime.NewSchemeBuilder(addKnownTypes)
 
 // AddToScheme adds the v1alpha1 types to the given Scheme. Called
-// from cmd/cha-operator/main.go so the manager can encode/decode
-// ClusterHealthAutopilot resources.
+// from cmd/srenix-operator/main.go so the manager can encode/decode
+// AgenticSRE resources.
 var AddToScheme = SchemeBuilder.AddToScheme
 
 func addKnownTypes(scheme *runtime.Scheme) error {
 	scheme.AddKnownTypes(GroupVersion,
-		&ClusterHealthAutopilot{},
-		&ClusterHealthAutopilotList{},
+		&AgenticSRE{},
+		&AgenticSREList{},
 		&Silence{},
 		&SilenceList{},
 	)

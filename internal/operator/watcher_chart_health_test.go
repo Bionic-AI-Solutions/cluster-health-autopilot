@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package operator
@@ -19,7 +19,7 @@ func helmTemplateWatcher(t *testing.T, sets ...string) (string, error) {
 	if _, err := exec.LookPath("helm"); err != nil {
 		t.Skipf("helm not on PATH — skipping watcher chart health gate locally (runs in CI)")
 	}
-	args := []string{"template", "t", "../../charts/cluster-health-autopilot",
+	args := []string{"template", "t", "../../charts/agentic-sre",
 		"--set", "watcher.enabled=true"}
 	for _, s := range sets {
 		args = append(args, "--set", s)

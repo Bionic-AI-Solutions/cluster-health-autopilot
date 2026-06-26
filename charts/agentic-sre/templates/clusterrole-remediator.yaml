@@ -1,0 +1,51 @@
+{{- $remedyEnabled := or .Values.remediation.enabled ((.Values.watcher.remedy).enabled) }}
+{{- if and .Values.rbac.create $remedyEnabled }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "srenix.remediatorName" . }}
+  labels:
+    {{- include "srenix.labels" . | nindent 4 }}
+rules:
+  # Narrow surface — only the verbs each whitelisted fixer actually needs.
+  # No Secret, ConfigMap, or CRD writes by design.
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["delete"]
+  - apiGroups: ["batch"]
+    resources: ["jobs"]
+    verbs: ["delete"]
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["patch"]   # for `kubectl rollout restart` (template restartedAt patch)
+  - apiGroups: ["cert-manager.io"]
+    resources: ["certificaterequests"]
+    verbs: ["delete"]
+  - apiGroups: ["acme.cert-manager.io"]
+    resources: ["orders"]
+    verbs: ["delete"]
+{{- if (.Values.fixers).tlsSecretMismatch }}
+{{- if .Values.fixers.tlsSecretMismatch.enabled }}
+  # TLSSecretMismatch fixer — repoints Ingress.tls[].secretName to a
+  # cert-manager-managed Secret when the wires are crossed.
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["ingresses"]
+    verbs: ["patch"]
+{{- end }}
+{{- end }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "srenix.remediatorName" . }}
+  labels:
+    {{- include "srenix.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "srenix.remediatorName" . }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "srenix.serviceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+{{- end }}

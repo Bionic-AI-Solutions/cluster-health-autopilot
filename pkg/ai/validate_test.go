@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package ai
@@ -139,7 +139,7 @@ func newValidManifestProposal(t *testing.T) AIProposedAction {
 	p := newValidProposal()
 	p.ActionID = "act-manifest-1"
 	p.ActionKind = ActionApplyManifest
-	p.Target = ObjectRef{Kind: "NetworkPolicy", Namespace: "app", Name: "cha-proposed-allow-intracluster"}
+	p.Target = ObjectRef{Kind: "NetworkPolicy", Namespace: "app", Name: "srenix-proposed-allow-intracluster"}
 	p.ManifestYAML = []byte(validNetworkPolicy)
 	// Sanity: the fixture itself must be valid under the strict creation check.
 	if err := p.Validate(); err != nil {

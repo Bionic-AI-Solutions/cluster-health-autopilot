@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package aws
@@ -6,15 +6,21 @@ package aws
 import (
 	"context"
 	"fmt"
+	"log"
 	"os"
+	"strconv"
+	"strings"
 
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/cloud"
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/probe"
+	"github.com/srenix-ai/agentic-sre/pkg/cloud"
+	"github.com/srenix-ai/agentic-sre/pkg/probe"
 )
 
-// EKSControlPlane flags an EKS cluster whose status is not "ACTIVE".
-// Configured via CLOUD_AWS_EKS_CLUSTER env var (set by the Helm chart
-// from cloud.aws.probes.eksClusterName); SKIPPED when unset.
+// EKSControlPlane flags:
+//   - EKS cluster status not ACTIVE
+//   - version skew between control plane and node groups (> 1 minor version)
+//   - add-on staleness (DEGRADED / CREATE_FAILED / UPDATE_FAILED status)
+//
+// Configured via CLOUD_AWS_EKS_CLUSTER env var; SKIPPED when unset.
 type EKSControlPlane struct{}
 
 const eksClusterName = "aws-eks-control-plane"
@@ -65,6 +71,53 @@ func (EKSControlPlane) Run(ctx context.Context, src cloud.Source) probe.Result {
 			Remediation: "aws eks describe-cluster --name " + name,
 		})
 	}
+
+	// --- version skew: control plane vs node groups ---
+	ngs, ngErr := awsClient.ListEKSNodeGroups(ctx, name)
+	if ngErr != nil {
+		log.Printf("aws-eks-control-plane: skipping version-skew check: %v", ngErr)
+	} else {
+		for _, ng := range ngs {
+			if ng.Version == "" || cluster.Version == "" {
+				continue
+			}
+			skew := minorVersionSkew(cluster.Version, ng.Version)
+			if skew > 1 || minorVersionNewer(ng.Version, cluster.Version) {
+				ngSubject := fmt.Sprintf("aws-eks-nodegroup/%s/%s/%s", awsClient.Region(), name, ng.Name)
+				findings = append(findings, probe.Finding{
+					Component: ngSubject, Severity: probe.SeverityWarning,
+					Message:     fmt.Sprintf("EKS node group %q runs Kubernetes %s but control plane is %s (version skew)", ng.Name, ng.Version, cluster.Version),
+					Remediation: fmt.Sprintf("aws eks update-nodegroup-version --cluster-name %s --nodegroup-name %s", name, ng.Name),
+				})
+			}
+		}
+	}
+
+	// --- addon staleness ---
+	addons, addonErr := awsClient.ListEKSAddons(ctx, name)
+	if addonErr != nil {
+		log.Printf("aws-eks-control-plane: skipping addon-staleness check: %v", addonErr)
+	} else {
+		for _, addon := range addons {
+			addonSubject := fmt.Sprintf("aws-eks-addon/%s/%s/%s", awsClient.Region(), name, addon.AddonName)
+			switch addon.Status {
+			case "DEGRADED", "CREATE_FAILED", "UPDATE_FAILED":
+				findings = append(findings, probe.Finding{
+					Component: addonSubject, Severity: probe.SeverityWarning,
+					Message:     fmt.Sprintf("EKS addon %q is in status %s", addon.AddonName, addon.Status),
+					Remediation: fmt.Sprintf("aws eks describe-addon --cluster-name %s --addon-name %s", name, addon.AddonName),
+				})
+			}
+			if addon.MarketplaceVersion != "" && addon.AddonVersion != "" &&
+				addon.AddonVersion != addon.MarketplaceVersion {
+				findings = append(findings, probe.Finding{
+					Component: addonSubject, Severity: probe.SeverityInfo,
+					Message: fmt.Sprintf("EKS addon %q version %s has a newer release available (%s)", addon.AddonName, addon.AddonVersion, addon.MarketplaceVersion),
+				})
+			}
+		}
+	}
+
 	return probe.Result{
 		Component: probe.ComponentResult{
 			Component: eksClusterName,
@@ -73,4 +126,44 @@ func (EKSControlPlane) Run(ctx context.Context, src cloud.Source) probe.Result {
 		},
 		Findings: findings,
 	}
+}
+
+// minorVersionSkew returns the absolute difference in Kubernetes minor
+// versions between two version strings like "1.30" or "1.30.2". Returns
+// 0 when either version is unparseable.
+func minorVersionSkew(v1, v2 string) int {
+	m1 := parseMinor(v1)
+	m2 := parseMinor(v2)
+	if m1 < 0 || m2 < 0 {
+		return 0
+	}
+	d := m1 - m2
+	if d < 0 {
+		d = -d
+	}
+	return d
+}
+
+// minorVersionNewer reports whether vA is a newer minor version than vB.
+func minorVersionNewer(vA, vB string) bool {
+	mA := parseMinor(vA)
+	mB := parseMinor(vB)
+	if mA < 0 || mB < 0 {
+		return false
+	}
+	return mA > mB
+}
+
+// parseMinor extracts the minor version number from a Kubernetes version
+// string. "1.30" → 30, "1.30.2" → 30, "" or unparseable → -1.
+func parseMinor(v string) int {
+	parts := strings.SplitN(v, ".", 3)
+	if len(parts) < 2 {
+		return -1
+	}
+	n, err := strconv.Atoi(parts[1])
+	if err != nil {
+		return -1
+	}
+	return n
 }

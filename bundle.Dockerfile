@@ -1,10 +1,10 @@
-# OLM bundle image for cha-operator. A bundle image is a tiny scratch-
+# OLM bundle image for srenix-operator. A bundle image is a tiny scratch-
 # based image whose ONLY purpose is to deliver the manifests/ + metadata/
 # tree to the OLM catalog. No binaries; no runtime.
 #
-# Build:    docker build -f bundle.Dockerfile -t docker4zerocool/cha-operator-bundle:v1.9.4 .
-# Push:     docker push docker4zerocool/cha-operator-bundle:v1.9.4
-# Test:     operator-sdk run bundle docker4zerocool/cha-operator-bundle:v1.9.4
+# Build:    docker build -f bundle.Dockerfile -t docker4zerocool/srenix-operator-bundle:v1.9.4 .
+# Push:     docker push docker4zerocool/srenix-operator-bundle:v1.9.4
+# Test:     operator-sdk run bundle docker4zerocool/srenix-operator-bundle:v1.9.4
 #
 # The bundle image's labels are read by OLM's registry sub-system to
 # place this bundle into the right package / channel. Lines below must
@@ -18,7 +18,7 @@ LABEL operators.operatorframework.io.bundle.manifests.v1=manifests/
 LABEL operators.operatorframework.io.bundle.metadata.v1=metadata/
 
 # Package + channel placement.
-LABEL operators.operatorframework.io.bundle.package.v1=cluster-health-autopilot
+LABEL operators.operatorframework.io.bundle.package.v1=agentic-sre
 LABEL operators.operatorframework.io.bundle.channels.v1=alpha
 LABEL operators.operatorframework.io.bundle.channel.default.v1=alpha
 

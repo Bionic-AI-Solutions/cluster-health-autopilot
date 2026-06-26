@@ -10,7 +10,7 @@ annotations:
   operators.operatorframework.io.bundle.metadata.v1: "metadata/"
   # The package name the bundle belongs to. Matches the CSV's
   # spec.displayName slug + the operator's chart name.
-  operators.operatorframework.io.bundle.package.v1: "cluster-health-autopilot"
+  operators.operatorframework.io.bundle.package.v1: "agentic-sre"
   # The channel(s) this bundle ships on. `alpha` while the operator
   # port is pre-1.0; `stable` lands when Phase 1c + 2 + 3 are GA.
   operators.operatorframework.io.bundle.channels.v1: "alpha"

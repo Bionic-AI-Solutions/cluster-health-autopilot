@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 //
 // Tests for the 9 non-RDS probes. RDS lives in rds_probe_test.go.
@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	pkgaws "github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/cloud/aws"
+	pkgaws "github.com/srenix-ai/agentic-sre/pkg/cloud/aws"
 )
 
 // --- EBS ---------------------------------------------------------------
@@ -149,7 +149,7 @@ func TestIAM_SkippedWithoutRolesEnv(t *testing.T) {
 }
 
 func TestIAM_MissingRoleCritical(t *testing.T) {
-	t.Setenv(iamRolesEnv, "arn:aws:iam::123:role/cha-irsa")
+	t.Setenv(iamRolesEnv, "arn:aws:iam::123:role/srenix-irsa")
 	src := &fakeSource{aws: &fakeAWS{region: "us-east-1"}} // no roles configured
 	r := (IAMRoles{}).Run(context.Background(), src)
 	if r.Component.Status != "CRITICAL" {
@@ -158,11 +158,11 @@ func TestIAM_MissingRoleCritical(t *testing.T) {
 }
 
 func TestIAM_PresentHealthy(t *testing.T) {
-	t.Setenv(iamRolesEnv, "arn:aws:iam::123:role/cha-irsa")
+	t.Setenv(iamRolesEnv, "arn:aws:iam::123:role/srenix-irsa")
 	src := &fakeSource{aws: &fakeAWS{
 		region: "us-east-1",
 		roles: []pkgaws.IAMRole{
-			{ARN: "arn:aws:iam::123:role/cha-irsa", Exists: true, HasTrustPolicy: true},
+			{ARN: "arn:aws:iam::123:role/srenix-irsa", Exists: true, HasTrustPolicy: true},
 		},
 	}}
 	r := (IAMRoles{}).Run(context.Background(), src)
@@ -199,7 +199,7 @@ func TestALB_EmptyTargetGroupWarn(t *testing.T) {
 	}
 }
 
-// CHA-com RCA join contract (ai/cloudcontext): the 0-healthy message
+// Srenix Enterprise RCA join contract (ai/cloudcontext): the 0-healthy message
 // carries a " (lb: <LB DNS name>)" suffix when the live wrapper
 // resolved the owning load balancer. See internal/cloud/contract_test.go.
 func TestALB_ZeroHealthyMessageCarriesLBJoinKey(t *testing.T) {

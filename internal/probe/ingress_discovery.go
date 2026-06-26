@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package probe
@@ -10,7 +10,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/snapshot"
+	"github.com/srenix-ai/agentic-sre/internal/snapshot"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 
@@ -29,7 +29,7 @@ type DiscoveryOptions struct {
 
 	// OptOutAnnotation is the Ingress annotation key that, when set to "true",
 	// excludes that Ingress's hosts from auto-discovery. Defaults to
-	// "cha.bionicaisolutions.com/probe-disable".
+	// "srenix.ai/probe-disable".
 	OptOutAnnotation string
 
 	// Scheme is the URL scheme used to construct probe URLs. Defaults to "https".
@@ -42,14 +42,14 @@ func DefaultDiscoveryOptions() DiscoveryOptions {
 	return DiscoveryOptions{
 		Enabled:          true,
 		SkipNamespaces:   defaultSkipNamespaces(),
-		OptOutAnnotation: "cha.bionicaisolutions.com/probe-disable",
+		OptOutAnnotation: "srenix.ai/probe-disable",
 		Scheme:           "https",
 	}
 }
 
 // defaultSkipNamespaces mirrors the fixer protected-namespace list — hosts
 // exposed by platform components in these namespaces are out of scope for
-// CHA probing by design.
+// Srenix probing by design.
 func defaultSkipNamespaces() map[string]struct{} {
 	return map[string]struct{}{
 		"kube-system":      {},
@@ -87,7 +87,7 @@ func DiscoverIngressTargets(
 	}
 	annotation := opts.OptOutAnnotation
 	if annotation == "" {
-		annotation = "cha.bionicaisolutions.com/probe-disable"
+		annotation = "srenix.ai/probe-disable"
 	}
 
 	ingresses, err := src.List(ctx, snapshot.GVRIngress, "")
@@ -223,7 +223,7 @@ func DiscoverTraefikRouteTargets(
 	}
 	annotation := opts.OptOutAnnotation
 	if annotation == "" {
-		annotation = "cha.bionicaisolutions.com/probe-disable"
+		annotation = "srenix.ai/probe-disable"
 	}
 
 	routes, err := src.List(ctx, snapshot.GVRTraefikIngressRoute, "")
@@ -304,14 +304,14 @@ func DiscoverTraefikRouteTargets(
 //
 // Annotation keys:
 //
-//	cha.bionicaisolutions.com/probe-l7-path     → L7.Path (required)
-//	cha.bionicaisolutions.com/probe-l7-expect   → L7.ExpectBody (optional)
-//	cha.bionicaisolutions.com/probe-l7-status   → L7.ExpectStatus (optional integer)
+//	srenix.ai/probe-l7-path     → L7.Path (required)
+//	srenix.ai/probe-l7-expect   → L7.ExpectBody (optional)
+//	srenix.ai/probe-l7-status   → L7.ExpectStatus (optional integer)
 func readL7Annotations(anns map[string]string) *EndpointL7Spec {
 	const (
-		annPath   = "cha.bionicaisolutions.com/probe-l7-path"
-		annExpect = "cha.bionicaisolutions.com/probe-l7-expect"
-		annStatus = "cha.bionicaisolutions.com/probe-l7-status"
+		annPath   = "srenix.ai/probe-l7-path"
+		annExpect = "srenix.ai/probe-l7-expect"
+		annStatus = "srenix.ai/probe-l7-status"
 	)
 	if anns == nil {
 		return nil

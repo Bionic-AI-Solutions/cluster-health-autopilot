@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package diagnose
@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	pkgsnapshot "github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/snapshot"
+	pkgsnapshot "github.com/srenix-ai/agentic-sre/pkg/snapshot"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -216,7 +216,7 @@ func TestConfigDrift_DeployRolloutStuck_Warning(t *testing.T) {
 func TestConfigDrift_DeployRolloutStuck_RemediationSubstitutesSelector(t *testing.T) {
 	// Operators reading the rollout-stuck remediation had no way to use
 	// the suggested `kubectl get pods -l <selector>` — they had to
-	// inspect the Deployment manually first. CHA already has the
+	// inspect the Deployment manually first. Srenix already has the
 	// Deployment in hand; substitute spec.selector.matchLabels into the
 	// remediation so it's directly copy-pasteable.
 	src := &memSourceCfg{byResource: map[string][]unstructured.Unstructured{

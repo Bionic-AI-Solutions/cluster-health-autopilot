@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# CHA Demo Master Script
+# Srenix Demo Master Script
 # Runs through the key capabilities in sequence with pause points for narration
 #
 # Set KUBE_CONTEXT to target the remote AWS cluster:
@@ -37,7 +37,7 @@ header() {
 }
 
 # ─── Pre-flight ───────────────────────────────────────────────────────────────
-header "CHA Demo — Pre-flight Checks"
+header "Srenix Demo — Pre-flight Checks"
 
 echo -e "${BOLD}Cluster context:${NC} ${KUBE_CONTEXT:-$(kubectl config current-context 2>/dev/null)}"
 echo ""
@@ -45,8 +45,8 @@ echo -e "${BOLD}Cluster info:${NC}"
 $KUBECTL cluster-info 2>/dev/null | head -2
 
 echo ""
-echo -e "${BOLD}CHA watcher status:${NC}"
-$KUBECTL get pods -n cha --no-headers 2>/dev/null || echo "  ⚠ CHA not running in 'cha' namespace"
+echo -e "${BOLD}Srenix watcher status:${NC}"
+$KUBECTL get pods -n srenix --no-headers 2>/dev/null || echo "  ⚠ Srenix not running in 'srenix' namespace"
 
 echo ""
 echo -e "${BOLD}Demo namespace:${NC}"
@@ -59,10 +59,10 @@ $KUBECTL get pods -n "${NAMESPACE}" --no-headers 2>/dev/null | head -10 || true
 pause "Pre-flight done. Open Slack #aws-alerts in browser. Ready to start demo?"
 
 # ─── Section 1: Architecture Overview ────────────────────────────────────────
-header "Section 1 — What CHA Is"
+header "Section 1 — What Srenix Is"
 
 cat <<'EOF'
-Cluster Health Autopilot (CHA) is an event-driven Kubernetes operator that:
+Agentic SRE (Srenix) is an event-driven Kubernetes operator that:
 
   DETECT  → Runs 5 infrastructure probes + 7 application analyzers
   FIX     → Applies 4 whitelisted auto-remediations (no human needed)
@@ -70,7 +70,7 @@ Cluster Health Autopilot (CHA) is an event-driven Kubernetes operator that:
   REPORT  → Posts to Slack with full context: what failed + what was fixed
 
 Key differentiator: the watcher captures pre-fix diagnostic state before
-running fixers, so Slack always shows WHAT was wrong even when CHA fixed
+running fixers, so Slack always shows WHAT was wrong even when Srenix fixed
 it in the same cycle (< 10 seconds from detection to resolution).
 
 DriftReport CRDs persist state in-cluster — no Slack flood on pod restart.
@@ -81,7 +81,7 @@ pause "Section 1 narrated. Ready for live demo — Section 2?"
 # ─── Section 2: Current Cluster Health ───────────────────────────────────────
 header "Section 2 — Live Cluster Health Snapshot"
 
-echo -e "${BOLD}DriftReports in cluster (CHA's persistent diagnostic state):${NC}"
+echo -e "${BOLD}DriftReports in cluster (Srenix's persistent diagnostic state):${NC}"
 $KUBECTL get driftreports -A --no-headers 2>/dev/null | head -20 || \
   echo "  (no active diagnostics — cluster is healthy)"
 
@@ -90,14 +90,14 @@ pause "Section 2 done. Ready to simulate a stale pod failure?"
 # ─── Section 3: Auto-Fix Demo — Stale Error Pods ─────────────────────────────
 header "Section 3 — Autopilot: Stale Pod Detection + Auto-Fix"
 
-echo -e "${BOLD}Creating a Failed pod that CHA will auto-delete...${NC}"
+echo -e "${BOLD}Creating a Failed pod that Srenix will auto-delete...${NC}"
 echo ""
 KUBE_CONTEXT="${KUBE_CONTEXT:-}" bash "${DEMO_DIR}/simulate/01-stale-error-pods.sh" "${NAMESPACE}"
 
 echo ""
 echo -e "${BOLD}Expected sequence (watch Slack #aws-alerts):${NC}"
 echo "  1. Pod enters Failed state"
-echo "  2. CHA watcher detects within ~10s debounce"
+echo "  2. Srenix watcher detects within ~10s debounce"
 echo "  3. StaleErrorPods fixer deletes it"
 echo "  4. Slack: 🔴 Active Issues + 🔧 Fixes Applied"
 echo "  5. Next cycle: ✅ Resolved"
@@ -112,7 +112,7 @@ echo ""
 KUBE_CONTEXT="${KUBE_CONTEXT:-}" bash "${DEMO_DIR}/simulate/02-missing-secret-key.sh" "${NAMESPACE}"
 
 echo ""
-pause "CHA is detecting this. Check Slack for SecretKeyMissing alert. Ready to fix it manually?"
+pause "Srenix is detecting this. Check Slack for SecretKeyMissing alert. Ready to fix it manually?"
 
 echo -e "${BOLD}Fixing: Adding missing key to Secret...${NC}"
 KUBE_CONTEXT="${KUBE_CONTEXT:-}" bash "${DEMO_DIR}/fix-scripts/fix-missing-secret-key.sh" \
@@ -135,7 +135,7 @@ echo "  • Job's pod entered CreateContainerConfigError immediately"
 echo "  • Script patched CronJob template to the correct key (root cause fixed)"
 echo "  • But the OLD Job is still Active — blocking CronJob (concurrencyPolicy=Forbid)"
 echo ""
-echo -e "${BOLD}CHA will:${NC}"
+echo -e "${BOLD}Srenix will:${NC}"
 echo "  1. Detect pod with 'couldn't find key API_KEY' in waiting.message"
 echo "  2. Confirm parent CronJob exists"
 echo "  3. Delete the frozen Job"
@@ -146,18 +146,18 @@ pause "Section 5 done. Ready for the snapshot / zero-trust demo?"
 # ─── Section 6: Zero-Trust Snapshot Demo ─────────────────────────────────────
 header "Section 6 — Zero-Trust: Offline Snapshot Analysis"
 
-echo -e "${BOLD}CHA can diagnose without any live cluster access:${NC}"
+echo -e "${BOLD}Srenix can diagnose without any live cluster access:${NC}"
 echo ""
 echo "  # On any machine — no kubeconfig, no RBAC, no network to cluster:"
-echo "  cha diagnose --snapshot examples/sample-cluster/"
+echo "  srenix diagnose --snapshot examples/sample-cluster/"
 echo ""
 
 REPO_DIR="$(dirname "${DEMO_DIR}")"
 if [[ -d "${REPO_DIR}/examples/sample-cluster" ]]; then
   cd "${REPO_DIR}"
-  go run ./cmd/cha diagnose --snapshot examples/sample-cluster/ 2>/dev/null || true
+  go run ./cmd/srenix diagnose --snapshot examples/sample-cluster/ 2>/dev/null || true
 else
-  echo "  (examples/sample-cluster/ not found — skip or run: cha diagnose --snapshot <path>)"
+  echo "  (examples/sample-cluster/ not found — skip or run: srenix diagnose --snapshot <path>)"
 fi
 
 pause "Section 6 done. Ready for cleanup?"
@@ -179,4 +179,4 @@ echo "  ✓ Manual fix → Slack ✅ Resolved confirmation"
 echo "  ✓ Frozen CronJob Job auto-deleted to unblock concurrencyPolicy=Forbid"
 echo "  ✓ Zero-trust offline snapshot mode (no cluster access needed)"
 echo ""
-echo "Repo: https://github.com/Bionic-AI-Solutions/cluster-health-autopilot"
+echo "Repo: https://github.com/srenix-ai/agentic-sre"

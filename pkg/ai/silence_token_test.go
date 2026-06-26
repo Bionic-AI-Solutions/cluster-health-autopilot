@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package ai
@@ -14,8 +14,8 @@ import (
 func makeSilenceClaims(exp time.Duration) SilenceTokenClaims {
 	now := time.Now()
 	return SilenceTokenClaims{
-		Issuer:         "cha/approval-server",
-		Audience:       "cha/silence",
+		Issuer:         "srenix/approval-server",
+		Audience:       "srenix/silence",
 		JTI:            "sil-subj-stalepods-pod-default-x-1",
 		IssuedAt:       now.Unix(),
 		ExpiresAt:      now.Add(exp).Unix(),

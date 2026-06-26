@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package summarize
@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/anonymize"
+	"github.com/srenix-ai/agentic-sre/internal/anonymize"
 )
 
 func writeJSONL(t *testing.T, dir, filename string, recs []anonymize.RunRecord) {
@@ -138,7 +138,7 @@ func TestRender_ContainsExpectedSections(t *testing.T) {
 	md := sb.String()
 
 	for _, want := range []string{
-		"# Cluster Health Autopilot",
+		"# Agentic SRE",
 		"## Health trend",
 		"2026-05-01",
 		"## Diagnostic patterns",

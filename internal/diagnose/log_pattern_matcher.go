@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package diagnose
@@ -9,7 +9,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/snapshot"
+	"github.com/srenix-ai/agentic-sre/internal/snapshot"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 
@@ -31,7 +31,7 @@ import (
 // Each match produces one diagnostic per (involved-object, pattern)
 // pair, with the matching event message included verbatim so the
 // operator can search for the root cause directly. Opts out via
-// CHA_ANALYZER_LOG_PATTERN_MATCHER=off.
+// SRENIX_ANALYZER_LOG_PATTERN_MATCHER=off.
 type LogPatternMatcher struct{}
 
 // Name satisfies the Analyzer contract.
@@ -53,9 +53,14 @@ type logPattern struct {
 // suffixes don't miss the signal.
 var logPatterns = []logPattern{
 	{
-		label:    "ImagePullBackOff",
-		re:       regexp.MustCompile(`(?i)(ImagePullBackOff|ErrImagePull|manifest unknown)`),
-		severity: "warning",
+		label: "ImagePullBackOff",
+		re:    regexp.MustCompile(`(?i)(ImagePullBackOff|ErrImagePull|manifest unknown)`),
+		// Critical: a container kubelet has backed off pulling cannot start —
+		// the workload is down for as long as the pull keeps failing. This is
+		// the event-based companion to the status-based ImagePullAuth analyzer;
+		// both now agree on Critical so a stuck pull reaches the human-action
+		// channel regardless of which one wins the per-subject dedup.
+		severity: "critical",
 		remed:    "Confirm the image tag/digest exists in the registry, then verify the imagePullSecret is mounted and valid: kubectl describe pod <pod>",
 	},
 	{

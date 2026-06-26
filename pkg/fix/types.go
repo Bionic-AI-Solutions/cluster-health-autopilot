@@ -1,8 +1,8 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 // Package fix defines the Fixer interface and associated types that form
-// the exported API surface for the CHA pattern registry.
+// the exported API surface for the Srenix pattern registry.
 //
 // External pattern catalogs (paid tier, community plugins) implement Fixer
 // and register their implementations via pkg/registry.
@@ -11,7 +11,7 @@ package fix
 import (
 	"context"
 
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/snapshot"
+	"github.com/srenix-ai/agentic-sre/pkg/snapshot"
 )
 
 // Action records one mutation applied during a fixer run.

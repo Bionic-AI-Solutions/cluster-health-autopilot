@@ -2,7 +2,7 @@
 
 **Status:** active — starts 2026-06-08 in local-only mode.
 
-**Parent:** [2026-06-07-cha-phase-2-master.md](2026-06-07-cha-phase-2-master.md)
+**Parent:** [2026-06-07-srenix-phase-2-master.md](2026-06-07-srenix-phase-2-master.md)
 
 **Branch:** `phase2b/approve-remember-class` (stacking; will split when pushed).
 
@@ -16,7 +16,7 @@ The watcher currently runs as a single replica. If that pod dies, no cycles run 
 
 - Followers do NOT run analyzers in shadow mode. Idle until promoted. (No per-cycle LLM cost duplication; no per-cycle Slack/PR dedup work.)
 - No external coordination service. Lease lives in the cluster the watcher already has access to (ConfigMap or coordination.k8s.io/v1.Lease).
-- No split-brain mitigation beyond the standard client-go lease semantics — clusters with broken kube-api are already in worse trouble than CHA can fix.
+- No split-brain mitigation beyond the standard client-go lease semantics — clusters with broken kube-api are already in worse trouble than Srenix can fix.
 
 ## Sub-tasks
 
@@ -37,7 +37,7 @@ The watcher currently runs as a single replica. If that pod dies, no cycles run 
 
 ### 2.F.4 — Lease lock implementation
 - [ ] Use `coordination.k8s.io/v1.Lease` (modern; replaces ConfigMap lock)
-- [ ] Lock name: `cha-aiwatch-leader` in install namespace
+- [ ] Lock name: `srenix-aiwatch-leader` in install namespace
 - [ ] Lease duration 15s, renew deadline 10s, retry 2s (matches client-go defaults)
 
 ### 2.F.5 — Audit lease transitions

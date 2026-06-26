@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package audit
@@ -16,7 +16,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/ai"
+	"github.com/srenix-ai/agentic-sre/pkg/ai"
 )
 
 // memorySink is a slice-backed AuditSink used in tests. Captures the
@@ -75,7 +75,7 @@ func writeN(t *testing.T, s *ChainedSink, n int) {
 	for i := 0; i < n; i++ {
 		e := ai.AuditEvent{
 			Type:    "ai.proposal.created",
-			Actor:   "cha",
+			Actor:   "srenix",
 			Subject: "Pod/demo/x" + string(rune('0'+i)),
 		}
 		if err := s.Write(context.Background(), e); err != nil {
@@ -87,7 +87,7 @@ func writeN(t *testing.T, s *ChainedSink, n int) {
 func TestChainedSink_AnchorIsEmptyHash(t *testing.T) {
 	mem := &memorySink{}
 	s := NewChainedSink(mem)
-	e := ai.AuditEvent{Type: "ai.proposal.created", Actor: "cha"}
+	e := ai.AuditEvent{Type: "ai.proposal.created", Actor: "srenix"}
 	if err := s.Write(context.Background(), e); err != nil {
 		t.Fatalf("Write: %v", err)
 	}
@@ -303,7 +303,7 @@ func TestCanonicalJSON_UnicodeStability(t *testing.T) {
 		"rtl":       "שלום עולם",
 		"escape":    "line1\nline2\t\"quoted\" <html>",
 	}
-	e := ai.AuditEvent{Type: "ai.unicode", Actor: "cha", Details: details}
+	e := ai.AuditEvent{Type: "ai.unicode", Actor: "srenix", Details: details}
 	first, err := canonicalJSON(e)
 	if err != nil {
 		t.Fatalf("canonicalJSON: %v", err)
@@ -356,7 +356,7 @@ func TestCanonicalJSON_NestedDetailsStability(t *testing.T) {
 
 // TestCanonicalJSON_FormatContract pins the EXACT canonical bytes — the
 // frozen cross-version contract that external verifiers (and the
-// production CHA-com binaries already writing chains in this form) must
+// production Srenix Enterprise binaries already writing chains in this form) must
 // replicate byte-for-byte: struct fields in declaration order, map keys
 // sorted, HTML-escaping ON (<, >, & as backslash-u escapes), RFC3339Nano
 // timestamps. If this test fails, the canonical format changed and every

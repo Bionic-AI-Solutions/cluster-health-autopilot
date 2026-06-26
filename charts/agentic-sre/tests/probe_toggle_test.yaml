@@ -1,0 +1,156 @@
+suite: M2 probe-class toggles (v1.8.2)
+templates:
+  - templates/watcher-deployment.yaml
+tests:
+  - it: no SRENIX_PROBE_* env when all M2 probes default-on
+    template: templates/watcher-deployment.yaml
+    set:
+      watcher.enabled: true
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SRENIX_PROBE_KONG
+            value: "off"
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SRENIX_PROBE_VELERO
+            value: "off"
+
+  - it: SRENIX_PROBE_KONG=off when probes.kong.enabled=false
+    template: templates/watcher-deployment.yaml
+    set:
+      watcher.enabled: true
+      probes.kong.enabled: false
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SRENIX_PROBE_KONG
+            value: "off"
+
+  - it: SRENIX_PROBE_HPA_SCALING=off when probes.hpaScaling.enabled=false
+    template: templates/watcher-deployment.yaml
+    set:
+      watcher.enabled: true
+      probes.hpaScaling.enabled: false
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SRENIX_PROBE_HPA_SCALING
+            value: "off"
+
+  - it: SRENIX_PROBE_ARGOCD_APP=off when probes.argocdApp.enabled=false
+    template: templates/watcher-deployment.yaml
+    set:
+      watcher.enabled: true
+      probes.argocdApp.enabled: false
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SRENIX_PROBE_ARGOCD_APP
+            value: "off"
+
+  - it: SRENIX_PROBE_VELERO=off when probes.velero.enabled=false
+    template: templates/watcher-deployment.yaml
+    set:
+      watcher.enabled: true
+      probes.velero.enabled: false
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SRENIX_PROBE_VELERO
+            value: "off"
+
+  # Base-probe toggles — the original six probes, gated in catalog.go.
+  - it: no base-probe SRENIX_PROBE_* env when all base probes default-on
+    template: templates/watcher-deployment.yaml
+    set:
+      watcher.enabled: true
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SRENIX_PROBE_CEPH
+            value: "off"
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SRENIX_PROBE_CRITICAL_WORKLOADS
+            value: "off"
+
+  - it: SRENIX_PROBE_CEPH=off when probes.ceph.enabled=false
+    template: templates/watcher-deployment.yaml
+    set:
+      watcher.enabled: true
+      probes.ceph.enabled: false
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SRENIX_PROBE_CEPH
+            value: "off"
+
+  - it: SRENIX_PROBE_NODES=off when probes.nodes.enabled=false
+    template: templates/watcher-deployment.yaml
+    set:
+      watcher.enabled: true
+      probes.nodes.enabled: false
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SRENIX_PROBE_NODES
+            value: "off"
+
+  - it: SRENIX_PROBE_POSTGRES=off when probes.postgres.enabled=false
+    template: templates/watcher-deployment.yaml
+    set:
+      watcher.enabled: true
+      probes.postgres.enabled: false
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SRENIX_PROBE_POSTGRES
+            value: "off"
+
+  - it: SRENIX_PROBE_PVCS=off when probes.pvcs.enabled=false
+    template: templates/watcher-deployment.yaml
+    set:
+      watcher.enabled: true
+      probes.pvcs.enabled: false
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SRENIX_PROBE_PVCS
+            value: "off"
+
+  - it: SRENIX_PROBE_CRITICAL_WORKLOADS=off when probes.criticalWorkloads.enabled=false
+    template: templates/watcher-deployment.yaml
+    set:
+      watcher.enabled: true
+      probes.criticalWorkloads.enabled: false
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SRENIX_PROBE_CRITICAL_WORKLOADS
+            value: "off"
+
+  - it: SRENIX_PROBE_ENDPOINTS=off when probes.endpoints.enabled=false
+    template: templates/watcher-deployment.yaml
+    set:
+      watcher.enabled: true
+      probes.endpoints.enabled: false
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SRENIX_PROBE_ENDPOINTS
+            value: "off"

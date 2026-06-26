@@ -1,6 +1,6 @@
 # AI Audit Trail — Event Schema and Query Guide
 
-Every AI-related operation in CHA-com v1.0.0 emits a structured audit
+Every AI-related operation in Srenix Enterprise v1.0.0 emits a structured audit
 event. This doc is the schema reference + query cookbook for SOC 2 /
 ISO 27001 compliance reviews and incident response.
 
@@ -116,10 +116,10 @@ investigator's only externally observable output).
 
 Kubernetes Events sink (default) maps:
 - `type` → Event `reason` (CamelCase: `AIActionApplied`)
-- `tier` → annotation `cha.bionicaisolutions.com/audit-tier`
-- `actor` → annotation `cha.bionicaisolutions.com/audit-actor`
-- `correlation_id` → annotation `cha.bionicaisolutions.com/audit-correlation-id`
-- `details` → annotation `cha.bionicaisolutions.com/audit-details` (JSON string)
+- `tier` → annotation `srenix.ai/audit-tier`
+- `actor` → annotation `srenix.ai/audit-actor`
+- `correlation_id` → annotation `srenix.ai/audit-correlation-id`
+- `details` → annotation `srenix.ai/audit-details` (JSON string)
 
 ---
 
@@ -128,23 +128,23 @@ Kubernetes Events sink (default) maps:
 ### Recent AI events (default Kubernetes Events sink)
 
 ```sh
-kubectl -n cluster-health-autopilot get events --sort-by=lastTimestamp \
+kubectl -n agentic-sre get events --sort-by=lastTimestamp \
   | grep -E "AI(Enrichment|Proposal|Approval|Action|Runbook|RateLimited|CircuitBreaker)"
 ```
 
 ### Filter by tier
 
 ```sh
-kubectl -n cluster-health-autopilot get events -o json | \
-  jq '.items[] | select(.metadata.annotations."cha.bionicaisolutions.com/audit-tier" == "t1")'
+kubectl -n agentic-sre get events -o json | \
+  jq '.items[] | select(.metadata.annotations."srenix.ai/audit-tier" == "t1")'
 ```
 
 ### Trace a single approval chain (all events for one correlation_id)
 
 ```sh
 CID=act-a3f0b1c2d3e4
-kubectl -n cluster-health-autopilot get events -o json | \
-  jq --arg cid "$CID" '.items[] | select(.metadata.annotations."cha.bionicaisolutions.com/audit-correlation-id" == $cid)
+kubectl -n agentic-sre get events -o json | \
+  jq --arg cid "$CID" '.items[] | select(.metadata.annotations."srenix.ai/audit-correlation-id" == $cid)
                                   | {time: .lastTimestamp, reason: .reason, message: .message}'
 ```
 
@@ -154,13 +154,13 @@ kubectl -n cluster-health-autopilot get events -o json | \
 # Paid LLM-backed investigator only — rule-based emits none.
 # correlation_id is the DriftReport name.
 CID=tls-mismatch-prod-shop-2026-05-12
-kubectl -n cluster-health-autopilot get events -o json | \
+kubectl -n agentic-sre get events -o json | \
   jq --arg cid "$CID" '.items[] | select(.reason | startswith("AIInvestigator"))
-                                  | select(.metadata.annotations."cha.bionicaisolutions.com/audit-correlation-id" == $cid)
+                                  | select(.metadata.annotations."srenix.ai/audit-correlation-id" == $cid)
                                   | {time: .lastTimestamp, reason: .reason, message: .message}'
 
 # OSS rule-based investigator audit — read the DriftReport directly
-kubectl -n cluster-health-autopilot get driftreport "$CID" \
+kubectl -n agentic-sre get driftreport "$CID" \
   -o jsonpath='{.spec.investigation}' && echo
 ```
 
@@ -168,19 +168,19 @@ kubectl -n cluster-health-autopilot get driftreport "$CID" \
 
 ```logql
 # All approval grants in the last 24h
-{job="cha-ai", event_type="ai.approval.granted"} | json | __error__=""
+{job="srenix-ai", event_type="ai.approval.granted"} | json | __error__=""
 
 # Failures by approver
-{job="cha-ai", event_type="ai.action.failed"} | json | line_format "{{.approver}}: {{.reason}}"
+{job="srenix-ai", event_type="ai.action.failed"} | json | line_format "{{.approver}}: {{.reason}}"
 
 # Circuit breaker trips
-{job="cha-ai", event_type=~"ai\\.circuit_breaker\\..*"}
+{job="srenix-ai", event_type=~"ai\\.circuit_breaker\\..*"}
 
 # Firecrawl web-research calls (deep-RCA investigator)
-{job="cha-ai", event_type="ai.investigator.tool_call"} | json | details_tool="firecrawl"
+{job="srenix-ai", event_type="ai.investigator.tool_call"} | json | details_tool="firecrawl"
 
 # Ticket-closure outcomes persisted to RAG
-{job="cha-ai", event_type="ai.memory.recorded"} | json | details_delivery="ticket-closed"
+{job="srenix-ai", event_type="ai.memory.recorded"} | json | details_delivery="ticket-closed"
 ```
 
 ---
@@ -191,7 +191,7 @@ kubectl -n cluster-health-autopilot get driftreport "$CID" \
 
 ```sh
 # Circuit-breaker trip events in the audit period
-kubectl -n cluster-health-autopilot get events --field-selector reason=AICircuitBreakerTripped \
+kubectl -n agentic-sre get events --field-selector reason=AICircuitBreakerTripped \
   --output-version=v1 -o yaml > soc2-cc7.2-circuit-breaker-events.yaml
 ```
 
@@ -202,13 +202,13 @@ For each incident, gather the full correlation chain:
 ```sh
 # Given an incident's ActionID, dump every event that referenced it
 ACTION_ID=act-XXXX
-kubectl -n cluster-health-autopilot get events -o json | \
-  jq --arg id "$ACTION_ID" '[.items[] | select(.metadata.annotations."cha.bionicaisolutions.com/audit-correlation-id" == $id)]' \
+kubectl -n agentic-sre get events -o json | \
+  jq --arg id "$ACTION_ID" '[.items[] | select(.metadata.annotations."srenix.ai/audit-correlation-id" == $id)]' \
   > incident-${ACTION_ID}.json
 ```
 
 ### ISO 27001 A.12.4 (logging)
 
-For long-term retention, point CHA-com at a Loki/OTLP sink (see
+For long-term retention, point Srenix Enterprise at a Loki/OTLP sink (see
 SETUP_GUIDE.md §14.9). The Kubernetes Events sink is for short-term
 in-cluster review only.

@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package chartgate
@@ -16,12 +16,12 @@ import (
 )
 
 // ChartDir is the path to the chart relative to a test file in this
-// package. Exported so the cmd/cha and cmd/cha-operator parity gates
+// package. Exported so the cmd/srenix and cmd/srenix-operator parity gates
 // (which live in their own main packages) can render through a shared
 // path resolved against this package's source location.
 func chartDir() string {
 	_, thisFile, _, _ := runtime.Caller(0)
-	return filepath.Join(filepath.Dir(thisFile), "..", "..", "charts", "cluster-health-autopilot")
+	return filepath.Join(filepath.Dir(thisFile), "..", "..", "charts", "agentic-sre")
 }
 
 // maximalValues turns on every feature that adds a container flag so the
@@ -41,8 +41,8 @@ watcher:
       alertNameFilter: ["DiskFillUp"]
     webhook:
       listen: ":8090"
-      sources: ["vault=CHA_WEBHOOK_VAULT_SECRET"]
-      secretName: cha-webhook-secrets
+      sources: ["vault=SRENIX_WEBHOOK_VAULT_SECRET"]
+      secretName: srenix-webhook-secrets
   slack:
     criticalRepeatInterval: "4h"
 diagnose:
@@ -54,13 +54,13 @@ operator:
 slack:
   alerts:
     enabled: true
-    secretName: cha-slack
+    secretName: srenix-slack
   critical:
     enabled: true
-    secretName: cha-slack
+    secretName: srenix-slack
   healthinfo:
     enabled: true
-    secretName: cha-slack
+    secretName: srenix-slack
 alertmanager:
   enabled: true
   url: "http://alertmanager.monitoring.svc:9093"
@@ -73,7 +73,7 @@ ticketing:
   typeID: "7"
   closedStatusID: "12"
   webURLPrefix: "https://op.example.com"
-  labels: ["cha"]
+  labels: ["srenix"]
   dryRun: true
 cloud:
   enabled: true
@@ -89,7 +89,7 @@ cloud:
 `
 
 // RoleArgs maps a workload role label
-// (cha.bionicaisolutions.com/role) to the de-duplicated set of
+// (srenix.ai/role) to the de-duplicated set of
 // container args rendered for it across all pod specs that carry that
 // role. Operator Deployments are keyed under "operator" by name match
 // since they carry no role label.
@@ -175,7 +175,7 @@ type podTemplate struct {
 	} `json:"spec"`
 }
 
-const roleLabel = "cha.bionicaisolutions.com/role"
+const roleLabel = "srenix.ai/role"
 
 func parseRoleArgs(t *testing.T, rendered string) RoleArgs {
 	t.Helper()

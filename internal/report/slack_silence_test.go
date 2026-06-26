@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package report
@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/probe"
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/ai"
+	"github.com/srenix-ai/agentic-sre/internal/probe"
+	"github.com/srenix-ai/agentic-sre/pkg/ai"
 )
 
 func criticalResults() []probe.Result {
@@ -67,7 +67,7 @@ func TestFormatSlack_RendersSilenceLinks_WhenConfigured(t *testing.T) {
 	cfg := &SilenceLinkConfig{
 		PrivateKey: priv,
 		KeyID:      "kid-1",
-		BaseURL:    "https://cha-approve.example.com",
+		BaseURL:    "https://srenix-approve.example.com",
 		ShortDur:   24 * time.Hour,
 		LongDur:    2160 * time.Hour,
 	}

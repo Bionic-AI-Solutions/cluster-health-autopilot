@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package diagnose
@@ -9,7 +9,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/snapshot"
+	"github.com/srenix-ai/agentic-sre/internal/snapshot"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 
@@ -92,7 +92,12 @@ func (SecretKeyMissing) Run(ctx context.Context, src snapshot.Source) []Diagnost
 		}
 		out = append(out, Diagnostic{
 			Subject: "Secret/" + dedupe,
-			Message: hint,
+			// Critical: a pod stuck in CreateContainerConfigError on a missing
+			// Secret key never starts — the workload is hard-down. Matches the
+			// website/docs, which label SecretKeyMissing a Critical analyzer.
+			// (Previously emitted with empty severity → normalized to "warning".)
+			Severity: "critical",
+			Message:  hint,
 		})
 	}
 	return out

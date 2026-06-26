@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 // Package fix contains whitelisted auto-remediation fixers.
@@ -23,7 +23,7 @@
 // The aliases below keep all internal implementations compiling unchanged.
 package fix
 
-import pkgfix "github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/fix"
+import pkgfix "github.com/srenix-ai/agentic-sre/pkg/fix"
 
 // Action is re-exported from pkg/fix; see that package for the canonical definition.
 type Action = pkgfix.Action

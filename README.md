@@ -1,4 +1,4 @@
-# Cluster Health Autopilot (`cha`)
+# Agentic SRE (`srenix`)
 
 A self-healing operational layer for Kubernetes clusters: **detect → remediate → re-verify → report**, on a schedule, without dashboards or pagers.
 
@@ -14,22 +14,22 @@ A self-healing operational layer for Kubernetes clusters: **detect → remediate
 | **Drift-class analyzers (6)** — `GitOpsDrift`, `WorkloadStateDrift`, `RBACDrift` (v1.7) + `ConfigDrift`, `CapacityDrift`, `SecurityDrift` (v1.8) | ✅ shipped |
 | Fixers (4 default + 1 opt-in) with GitOps + paused + suspended + cert-mgr-health safety gates | ✅ shipped |
 | **Cloud probes (30) — 10 each AWS / GCP / Azure**, all with Live SDK wrappers (IRSA / GCP Workload Identity / AAD Workload Identity). Off by default; enable per-provider, disable per-probe (`cloud.<provider>.probes.<name>`). AWS fetches every signal live; GCP Cloud SQL storage-% and Azure SQL storage-% / App Gateway backend health come from the cloud Monitoring APIs (best-effort, "not measured" when unavailable). GCP subnet IP checks are capacity-only (GCP exposes no cheap used-IP count — utilization lives in Network Analyzer; the probe flags small-capacity subnets, threshold configurable via `cloud.gcp.subnetsSmallPrefixThreshold`); Azure subnet utilization is measured live (used IPs counted from subnet-attached NICs, App Gateway IP configs, IP-config profiles, and private endpoints; available = total − used) | ✅ shipped |
-| **Operator port (controller-runtime, v1.8)** — `ClusterHealthAutopilot` CRD + `cha-operator` manager reconciling watcher Deployment / CronJobs / RBAC; `Ready` + `WatcherRunning` conditions. Opt-in via `operator.enabled` | ✅ shipped (Phase 1 + 1b) |
+| **Operator port (controller-runtime, v1.8)** — `AgenticSRE` CRD + `srenix-operator` manager reconciling watcher Deployment / CronJobs / RBAC; `Ready` + `WatcherRunning` conditions. Opt-in via `operator.enabled` | ✅ shipped (Phase 1 + 1b) |
 | Helm chart (v1.8.3) with lease-based leader election, configurable workloads, narrow RBAC, per-severity Slack repeat intervals, analyzer + cloud-provider toggles, per-probe M2 toggles (`probes.<name>.enabled`), and AI-tier flag wiring for the commercial binary | ✅ shipped |
 | OpenProject ticketing sink (OSS) via MCP, Slack 3-channel routing with `--slack-critical-repeat-interval`, Alertmanager | ✅ shipped |
-| Layer-2 Investigator (OSS: deterministic implementation; CHA-com: LLM-backed agent) with event scrubbing + 6-tool action space | ✅ shipped |
-| CHA-com paid binary v1.8.2: approval-server, Ed25519 signing, gen-signing-key, paid catalog — now pinned to OSS v1.8.2 so the paid binary carries the full v1.7/v1.8 detection surface (drift classes + M2 + 30 cloud probes) alongside the AI tier | ✅ shipped at `docker4zerocool/cha-com:v1.8.2` |
-| Four paid-tier analyzers: `VaultPathDriftPro`, `CertificateChainAnomaly`, `MultiClusterDrift`, `StatefulSetReplicaPressure` | ✅ shipped (CHA-com v1.0.1–v1.0.4) |
-| Paid AI tiers — T0 narration, T1 fix proposer (5 operator-policy-bounded action_kinds), T2 multi-step planner, T3 vault break-glass runbook (dual-approval, JWT-signed, hash-chained audit) | ✅ shipped (CHA-com v1.1.0–v1.4.0) |
-| `cha-com watch` subcommand — AI-layered poll loop with fingerprint dedup, `--ai-audit-log` JSONL sink | ✅ shipped (CHA-com v1.5.0) |
-| **`LLMFixerMatcher`** (CHA-com v1.7.0, opt-in `--ai-llm-fixer-matcher`) — LLM-classified fixer matching with keyword fallback | ✅ shipped |
+| Layer-2 Investigator (OSS: deterministic implementation; Srenix Enterprise: LLM-backed agent) with event scrubbing + 6-tool action space | ✅ shipped |
+| Srenix Enterprise paid binary v1.8.2: approval-server, Ed25519 signing, gen-signing-key, paid catalog — now pinned to OSS v1.8.2 so the paid binary carries the full v1.7/v1.8 detection surface (drift classes + M2 + 30 cloud probes) alongside the AI tier | ✅ shipped at `docker4zerocool/srenix-enterprise:v1.8.2` |
+| Four paid-tier analyzers: `VaultPathDriftPro`, `CertificateChainAnomaly`, `MultiClusterDrift`, `StatefulSetReplicaPressure` | ✅ shipped (Srenix Enterprise v1.0.1–v1.0.4) |
+| Paid AI tiers — T0 narration, T1 fix proposer (5 operator-policy-bounded action_kinds), T2 multi-step planner, T3 vault break-glass runbook (dual-approval, JWT-signed, hash-chained audit) | ✅ shipped (Srenix Enterprise v1.1.0–v1.4.0) |
+| `srenix-enterprise watch` subcommand — AI-layered poll loop with fingerprint dedup, `--ai-audit-log` JSONL sink | ✅ shipped (Srenix Enterprise v1.5.0) |
+| **`LLMFixerMatcher`** (Srenix Enterprise v1.7.0, opt-in `--ai-llm-fixer-matcher`) — LLM-classified fixer matching with keyword fallback | ✅ shipped |
 | Operator OLM bundle (Phase 1c), trigger-classes C (Alertmanager webhook) / E (external webhook) | ⏳ roadmap (v1.9+) |
 
 ---
 
 ## What it does
 
-`cha` runs a battery of probes against your cluster, applies operator-policy-bounded fixes for recognized failure patterns, re-probes, and produces a single report listing fixes applied and any residual issues with precise remediation hints. The paid CHA-com layer adds an **LLM Investigator agent** and the T0–T3 AI SRE tiers on top — same policy bounds, signed actions, hash-chained audit. CHA runs in two modes:
+`srenix` runs a battery of probes against your cluster, applies operator-policy-bounded fixes for recognized failure patterns, re-probes, and produces a single report listing fixes applied and any residual issues with precise remediation hints. The paid Srenix Enterprise layer adds an **LLM Investigator agent** and the T0–T3 AI SRE tiers on top — same policy bounds, signed actions, hash-chained audit. Srenix runs in two modes:
 
 - **Zero-trust offline mode** — point it at a captured `kubectl get … -o json` snapshot. No install, no RBAC, no write permissions. Diagnose your cluster from your laptop in 30 seconds.
 - **In-cluster live mode** — installed via Helm; runs as a CronJob with two narrowly-scoped ClusterRoles (read-only + tightly-bounded write); posts to Slack on a schedule.
@@ -39,9 +39,9 @@ A self-healing operational layer for Kubernetes clusters: **detect → remediate
 Try the analyzer against the sample fixture in this repo:
 
 ```sh
-git clone https://github.com/Bionic-AI-Solutions/cluster-health-autopilot.git
-cd cluster-health-autopilot
-go run ./cmd/cha diagnose --snapshot examples/sample-cluster
+git clone https://github.com/srenix-ai/agentic-sre.git
+cd agentic-sre
+go run ./cmd/srenix diagnose --snapshot examples/sample-cluster
 ```
 
 Expected output:
@@ -68,37 +68,37 @@ That's the headline: a precise diagnosis (which Secret, which key, which Deploym
 
 ```sh
 # 1. Capture a snapshot of your cluster (read-only — never modifies state)
-cha snapshot capture --out ./my-cluster
+srenix snapshot capture --out ./my-cluster
 # or single-tarball form for sharing:
-cha snapshot capture --tar my-cluster.tgz
+srenix snapshot capture --tar my-cluster.tgz
 
 # 2. Diagnose offline against the captured snapshot
-cha diagnose --snapshot ./my-cluster
+srenix diagnose --snapshot ./my-cluster
 
 # 3. Or just run it against the live cluster directly
-cha diagnose --live
+srenix diagnose --live
 ```
 
-`cha snapshot capture` reads only — it cannot modify any cluster state. It writes a directory (or `.tgz`) of `kubectl get -o json` files for the canonical resource set the analyzers need.
+`srenix snapshot capture` reads only — it cannot modify any cluster state. It writes a directory (or `.tgz`) of `kubectl get -o json` files for the canonical resource set the analyzers need.
 
 ## In-cluster install (Helm)
 
 ```sh
-helm repo add cha https://bionic-ai-solutions.github.io/cluster-health-autopilot
+helm repo add srenix https://srenix-ai.github.io/agentic-sre
 helm repo update
-helm install cha cha/cluster-health-autopilot \
-  --namespace cluster-health-autopilot --create-namespace \
-  --set slackWebhookSecretName=cha-slack-webhook
+helm install srenix srenix/agentic-sre \
+  --namespace agentic-sre --create-namespace \
+  --set slackWebhookSecretName=srenix-slack-webhook
 ```
 
-Full Helm chart at [`charts/cluster-health-autopilot/`](charts/cluster-health-autopilot) — published at `https://bionic-ai-solutions.github.io/cluster-health-autopilot/`.
+Full Helm chart at [`charts/agentic-sre/`](charts/agentic-sre) — published at `https://srenix-ai.github.io/agentic-sre/`.
 
 ## What it checks (12 probes)
 
 K8s cluster:
 - **Ceph storage** — health, capacity, OSD readiness
 - **PostgreSQL** — CloudNativePG + Zalando Spilo/Patroni, auto-detected
-- **Critical workloads** — configurable list (32 Bionic defaults + `CHA_CRITICAL_SERVICES` env + `cha.bionicaisolutions.com/probe-critical: "true"` annotation auto-discovery)
+- **Critical workloads** — configurable list (32 Bionic defaults + `SRENIX_CRITICAL_SERVICES` env + `srenix.ai/probe-critical: "true"` annotation auto-discovery)
 - **Cluster Nodes** — Ready condition
 - **PVC binding** — Bound vs Pending
 - **External endpoints** — Ingress host auto-discovery + flake suppression (Layer-1)
@@ -109,7 +109,7 @@ K8s cluster:
 - **ETCD** *(v1.6)* — kubeadm-style static-pod etcd; honest "blind probe" Warning on external/managed etcd rather than false-greening
 - **Failed mounts** *(v1.6)* — joins pods stuck `ContainerCreating` with kubelet `FailedMount` / `FailedAttachVolume` / `ProvisioningFailed` events
 
-Each probe can be disabled independently via `CHA_PROBE_<NAME>=off`.
+Each probe can be disabled independently via `SRENIX_PROBE_<NAME>=off`.
 
 ## What it diagnoses (8 OSS analyzers — read-only)
 
@@ -120,7 +120,7 @@ Each probe can be disabled independently via `CHA_PROBE_<NAME>=off`.
 - **ImagePullAuth** — pod in `ImagePullBackOff` with kubelet event auth signals (401, denied, unauthorized).
 - **CertExpiry** — cert-manager Certificate not Ready, expiring within 14 days, or already expired.
 - **TLSSecretMismatch** — Ingress points at an expired Secret while cert-manager is renewing a healthy cert into a different Secret in the same namespace. (Two-Secret naming drift.)
-- **VaultPathMissing** — Apache-2.0 source ships in OSS; requires you to construct a Vault client and register it explicitly (`reg.RegisterAnalyzer(diagnose.VaultPathMissing{Client: vc})`). Queries Vault directly to catch drift before ESO's next refresh marks `Ready=False`. The paid CHA Enterprise binary auto-wires this from your Vault configuration.
+- **VaultPathMissing** — Apache-2.0 source ships in OSS; requires you to construct a Vault client and register it explicitly (`reg.RegisterAnalyzer(diagnose.VaultPathMissing{Client: vc})`). Queries Vault directly to catch drift before ESO's next refresh marks `Ready=False`. The paid Srenix Enterprise binary auto-wires this from your Vault configuration.
 
 ## What it checks in your cloud account (AWS — opt-in)
 
@@ -151,30 +151,30 @@ GCP and Azure probes are scoped for the M2 milestone of the cloud-probe roadmap;
 
 ## Probe behavior (v1.2 / v1.4)
 
-- **Auto-discovery** — every Ingress host in the cluster is auto-probed externally. Per-Ingress opt-out via annotation `cha.bionicaisolutions.com/probe-disable: "true"`. Protected namespaces always skipped.
+- **Auto-discovery** — every Ingress host in the cluster is auto-probed externally. Per-Ingress opt-out via annotation `srenix.ai/probe-disable: "true"`. Protected namespaces always skipped.
 - **Flake suppression** — first failed probe of a target is tagged `[transient, 1/2]` and emits at warning; only a second consecutive failure escalates to CRITICAL. Deterministic failures (TLS error, status mismatch, invalid URL) bypass the streak counter and alert immediately.
 
 ## Layer-2 Investigator (v1.5)
 
 When a Finding or Diagnostic reaches CRITICAL, a read-only Investigator runs a deep-dive (DNS, HTTP probe, TLS inspect, kubectl describe, recent events) and attaches a one-line root-cause Summary to the alert. Renders as a 🔬 block in Slack/Alertmanager and persists on `DriftReport.spec.investigation`.
 
-OSS ships a deterministic Investigator implementation covering TLS expiry, TLS SAN mismatch, DNS failure, slow-DNS classification, transient-recovery detection, status mismatch, ExternalSecret diagnostics, and Certificate state — the predictable baseline. No new RBAC; reuses the watcher's existing read access. Disable with `CHA_INVESTIGATOR=off`. The paid CHA-com binary replaces it with an **LLM Investigator agent** using the same closed-enum `Environment` surface — same read-only tool space, same audit shape, more reasoning.
+OSS ships a deterministic Investigator implementation covering TLS expiry, TLS SAN mismatch, DNS failure, slow-DNS classification, transient-recovery detection, status mismatch, ExternalSecret diagnostics, and Certificate state — the predictable baseline. No new RBAC; reuses the watcher's existing read access. Disable with `SRENIX_INVESTIGATOR=off`. The paid Srenix Enterprise binary replaces it with an **LLM Investigator agent** using the same closed-enum `Environment` surface — same read-only tool space, same audit shape, more reasoning.
 
 ## Architecture
 
 - Two CronJobs (diagnose + remediate), one ServiceAccount, three ClusterRoles (reader, remediator, driftreport). An optional long-running Watcher Deployment and an Approval Server are deployed when their features are enabled.
-- Container image: a single `cha` Go binary (~30 MB) on `gcr.io/distroless/static:nonroot`. No shell, no package manager, no proprietary registry. Built via the [Dockerfile](Dockerfile) at the repo root.
+- Container image: a single `srenix` Go binary (~30 MB) on `gcr.io/distroless/static:nonroot`. No shell, no package manager, no proprietary registry. Built via the [Dockerfile](Dockerfile) at the repo root.
 - Credentials: ExternalSecret from Vault wherever possible — no plaintext credentials baked into any manifest.
 - Footprint: ~30 MB RSS, sub-second CPU, <60 s wall-clock per probe-and-fix cycle.
 - See [`docs/READINESS.md`](docs/READINESS.md) for pilot-vs-production limits, RBAC blast-radius notes, and known operational caveats.
 
 ## Docs
 
-- **[docs/CHA_OVERVIEW.md](docs/CHA_OVERVIEW.md)** — **two-pager**: what CHA is, OSS vs Paid, what it does/doesn't do, what AI does/doesn't do (and why). Start here.
+- **[docs/SRENIX_OVERVIEW.md](docs/SRENIX_OVERVIEW.md)** — **two-pager**: what Srenix is, OSS vs Paid, what it does/doesn't do, what AI does/doesn't do (and why). Start here.
 - **[docs/ONE_PAGER.md](docs/ONE_PAGER.md)** — design-partner brief; the elevator-pitch version of this README with pricing and validation.
 - **[docs/FAILURE_MODES.md](docs/FAILURE_MODES.md)** — every fixer + analyzer in the catalog: symptom, root cause, why it's safe, real-world example, source link.
 - **[docs/AI_TIERS.md](docs/AI_TIERS.md)** — definitive spec for Layer-2 + T0–T3 (capabilities, inputs, output schemas, safety contracts).
-- **[docs/AI_USAGE.md](docs/AI_USAGE.md)** — positioning: LLM-free hot path; deterministic Layer-2 investigator baseline in OSS; LLM-backed Investigator agent + AI tiers in CHA-com (paid + opt-in).
+- **[docs/AI_USAGE.md](docs/AI_USAGE.md)** — positioning: LLM-free hot path; deterministic Layer-2 investigator baseline in OSS; LLM-backed Investigator agent + AI tiers in Srenix Enterprise (paid + opt-in).
 - **[docs/SETUP_GUIDE.md](docs/SETUP_GUIDE.md)** — install reference, Helm value catalog, RBAC, troubleshooting.
 - **[docs/DEMO_GUIDE.md](docs/DEMO_GUIDE.md)** — storyboarded demo flow with deliberate-failure scenarios.
 - **[docs/design/2026-05-investigator-agent.md](docs/design/2026-05-investigator-agent.md)** — architecture rationale for Layer-2.
@@ -183,11 +183,11 @@ OSS ships a deterministic Investigator implementation covering TLS expiry, TLS S
 
 [Apache License 2.0](LICENSE) for the engine and the default signature library.
 
-The **Verified Signature Library** (curated, regression-tested patterns added monthly) ships as a separate signed bundle under a commercial subscription license to CHA Enterprise customers. See [`LICENSE-VERIFIED-LIBRARY.md`](LICENSE-VERIFIED-LIBRARY.md) for the terms.
+The **Verified Signature Library** (curated, regression-tested patterns added monthly) ships as a separate signed bundle under a commercial subscription license to Srenix Enterprise customers. See [`LICENSE-VERIFIED-LIBRARY.md`](LICENSE-VERIFIED-LIBRARY.md) for the terms.
 
 ## Security
 
-To report a vulnerability, email **cha-security@baisoln.com**. See [SECURITY.md](SECURITY.md).
+To report a vulnerability, email **security@srenix.ai**. See [SECURITY.md](SECURITY.md).
 
 ## Roadmap
 

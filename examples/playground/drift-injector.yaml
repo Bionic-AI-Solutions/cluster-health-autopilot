@@ -2,7 +2,7 @@
 #
 # A CronJob runs every few minutes, tears down last cycle's broken objects, and
 # recreates four scenarios. Each maps 1:1 to a SHIPPED OSS analyzer/probe so the
-# CHA watcher in this namespace produces a real DriftReport for each. No custom
+# Srenix watcher in this namespace produces a real DriftReport for each. No custom
 # image: we run an inline bash script on the stock alpine/k8s image (kubectl +
 # bash; openssl is apk-added at runtime for the TLS scenario).
 #
@@ -17,7 +17,7 @@
 #   2. SecretKeyMissing       -> internal/diagnose/secret_key_missing.go (SecretKeyMissing)
 #        A Job whose pod env references a key that does NOT exist in an existing
 #        Secret. Kubelet -> CreateContainerConfigError with
-#        "couldn't find key <KEY> in Secret cha-playground/<secret>". This is the
+#        "couldn't find key <KEY> in Secret srenix-playground/<secret>". This is the
 #        "StuckJobsWithBadSecretRef" scenario from the plan.
 #
 #   3. TLSSecretMismatch      -> internal/diagnose/tls_secret_mismatch.go (TLSSecretMismatch)
@@ -38,14 +38,14 @@
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: cha-playground-injector-script
-  namespace: cha-playground
+  name: srenix-playground-injector-script
+  namespace: srenix-playground
 data:
   inject.sh: |
     #!/usr/bin/env bash
     set -euo pipefail
-    NS=cha-playground
-    LABEL="cha.bionicaisolutions.com/playground=drift"
+    NS=srenix-playground
+    LABEL="srenix.ai/playground=drift"
 
     # alpine/k8s ships kubectl + bash but not openssl; add it (egress :443 is
     # allowed by the namespace NetworkPolicy). If apk is unavailable the TLS
@@ -65,7 +65,7 @@ data:
       --docker-username=nobody --docker-password=wrongpass \
       --docker-email=nobody@example.com \
       --dry-run=client -o yaml | kubectl label -f - --local -o yaml \
-      "cha.bionicaisolutions.com/playground=drift" | kubectl apply -f -
+      "srenix.ai/playground=drift" | kubectl apply -f -
     BADSECRET=$(kubectl -n "$NS" get secret -l "$LABEL" -o name | grep -m1 pg-badcreds | cut -d/ -f2)
     cat <<EOF | kubectl apply -f -
     apiVersion: apps/v1
@@ -73,12 +73,12 @@ data:
     metadata:
       name: imagepull-auth-drift
       namespace: $NS
-      labels: { cha.bionicaisolutions.com/playground: drift }
+      labels: { srenix.ai/playground: drift }
     spec:
       replicas: 1
       selector: { matchLabels: { app: imagepull-auth-drift } }
       template:
-        metadata: { labels: { app: imagepull-auth-drift, cha.bionicaisolutions.com/playground: drift } }
+        metadata: { labels: { app: imagepull-auth-drift, srenix.ai/playground: drift } }
         spec:
           # avoid GPU nodes
           affinity:
@@ -104,18 +104,18 @@ data:
     kubectl -n "$NS" create secret generic playground-config \
       --from-literal=PRESENT_KEY=value \
       --dry-run=client -o yaml | kubectl label -f - --local -o yaml \
-      "cha.bionicaisolutions.com/playground=drift" | kubectl apply -f -
+      "srenix.ai/playground=drift" | kubectl apply -f -
     cat <<EOF | kubectl apply -f -
     apiVersion: batch/v1
     kind: Job
     metadata:
       name: stuck-job-badsecretref-drift
       namespace: $NS
-      labels: { cha.bionicaisolutions.com/playground: drift }
+      labels: { srenix.ai/playground: drift }
     spec:
       backoffLimit: 6
       template:
-        metadata: { labels: { app: stuck-job-badsecretref-drift, cha.bionicaisolutions.com/playground: drift } }
+        metadata: { labels: { app: stuck-job-badsecretref-drift, srenix.ai/playground: drift } }
         spec:
           restartPolicy: Never
           affinity:
@@ -137,7 +137,7 @@ data:
     EOF
 
     echo "==> [3/4] TLSSecretMismatch: ingress serving an EXPIRED tls secret while a healthy same-host cert secret exists under another name"
-    HOST="playground-tls-demo.cha-playground.svc"
+    HOST="playground-tls-demo.srenix-playground.svc"
     if command -v openssl >/dev/null 2>&1; then
     # Mint an ALREADY-EXPIRED cert for the Ingress to serve. `req -x509` only
     # accepts positive -days across OpenSSL versions, so we sign a leaf via
@@ -172,14 +172,14 @@ data:
     kubectl -n "$NS" create secret tls expired-served-tls \
       --cert=/tmp/exp.crt --key=/tmp/exp.key \
       --dry-run=client -o yaml | kubectl label -f - --local -o yaml \
-      "cha.bionicaisolutions.com/playground=drift" | kubectl apply -f -
+      "srenix.ai/playground=drift" | kubectl apply -f -
     # Healthy cert-manager-style secret for the SAME host under a DIFFERENT name.
     openssl req -x509 -newkey rsa:2048 -nodes -keyout /tmp/ok.key -out /tmp/ok.crt \
       -days 90 -subj "/CN=$HOST" -addext "subjectAltName=DNS:$HOST" 2>/dev/null
     kubectl -n "$NS" create secret tls healthy-renewed-tls \
       --cert=/tmp/ok.crt --key=/tmp/ok.key \
       --dry-run=client -o yaml | kubectl label -f - --local -o yaml \
-      "cha.bionicaisolutions.com/playground=drift" | kubectl apply -f -
+      "srenix.ai/playground=drift" | kubectl apply -f -
     # A Ready cert-manager Certificate for the SAME host targeting the DIFFERENT
     # (healthy) secret. TLSSecretMismatch matches the crossed wires ONLY when such
     # a Ready Certificate exists (findMismatchedManagedCert in the analyzer). This
@@ -195,7 +195,7 @@ data:
     metadata:
       name: healthy-renewed
       namespace: $NS
-      labels: { cha.bionicaisolutions.com/playground: drift }
+      labels: { srenix.ai/playground: drift }
     spec:
       secretName: healthy-renewed-tls
       dnsNames: ["$HOST"]
@@ -218,7 +218,7 @@ data:
     metadata:
       name: tls-mismatch-drift
       namespace: $NS
-      labels: { cha.bionicaisolutions.com/playground: drift }
+      labels: { srenix.ai/playground: drift }
     spec:
       tls:
         - hosts: ["$HOST"]
@@ -245,12 +245,12 @@ data:
     metadata:
       name: crashloop-drift
       namespace: $NS
-      labels: { cha.bionicaisolutions.com/playground: drift }
+      labels: { srenix.ai/playground: drift }
     spec:
       replicas: 1
       selector: { matchLabels: { app: crashloop-drift } }
       template:
-        metadata: { labels: { app: crashloop-drift, cha.bionicaisolutions.com/playground: drift } }
+        metadata: { labels: { app: crashloop-drift, srenix.ai/playground: drift } }
         spec:
           affinity:
             nodeAffinity:
@@ -270,13 +270,13 @@ data:
 apiVersion: batch/v1
 kind: CronJob
 metadata:
-  name: cha-playground-drift-injector
-  namespace: cha-playground
+  name: srenix-playground-drift-injector
+  namespace: srenix-playground
   labels:
-    cha.bionicaisolutions.com/role: playground-injector
+    srenix.ai/role: playground-injector
 spec:
   # Rotate every 15 minutes so the demo is always live and self-heals if a
-  # visitor (or CHA, if remedy were on) cleans a scenario up.
+  # visitor (or Srenix, if remedy were on) cleans a scenario up.
   schedule: "*/15 * * * *"
   concurrencyPolicy: Forbid
   successfulJobsHistoryLimit: 1
@@ -289,9 +289,9 @@ spec:
       template:
         metadata:
           labels:
-            cha.bionicaisolutions.com/role: playground-injector
+            srenix.ai/role: playground-injector
         spec:
-          serviceAccountName: cha-playground-injector
+          serviceAccountName: srenix-playground-injector
           restartPolicy: Never
           # Keep the injector itself off GPU nodes.
           affinity:
@@ -314,5 +314,5 @@ spec:
           volumes:
             - name: script
               configMap:
-                name: cha-playground-injector-script
+                name: srenix-playground-injector-script
                 defaultMode: 0755

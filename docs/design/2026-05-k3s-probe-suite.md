@@ -16,7 +16,7 @@
 
 ## 1. Motivation
 
-The running Bionic cluster is a bare-metal k3s cluster. k3s ships meaningful differences from a kubeadm-provisioned cluster, and several existing CHA probes either produce false positives or are silently blind on it:
+The running Bionic cluster is a bare-metal k3s cluster. k3s ships meaningful differences from a kubeadm-provisioned cluster, and several existing Srenix probes either produce false positives or are silently blind on it:
 
 | Existing probe | Behaviour on k3s |
 |---|---|
@@ -34,7 +34,7 @@ Add the following to the `var (...)` block in `source.go`. All four are cluster-
 
 ```go
 // Traefik IngressRoute CRDs — present on any k3s cluster with the
-// default Traefik ingress controller. CHA probes auto-skip when the
+// default Traefik ingress controller. Srenix probes auto-skip when the
 // list call returns a "no such resource" error (same pattern as Kong).
 GVRTraefikIngressRoute = schema.GroupVersionResource{
     Group: "traefik.io", Version: "v1alpha1", Resource: "ingressroutes",
@@ -72,7 +72,7 @@ type TraefikRoutes struct{}
 The probe opens with a `src.List(ctx, snapshot.GVRTraefikIngressRoute, "")` call. If the error is non-nil (CRD absent, RBAC missing, k3s without Traefik), it sets `Component.Status = "SKIPPED"` with `Detail = "Traefik CRDs not installed"` and returns immediately — identical to the Kong probe pattern. This makes the probe safe to register default-on on any cluster.
 
 ### Opt-out
-`CHA_PROBE_TRAEFIK_ROUTES=off` — guarded in `catalog.go` exactly as the Kong/Velero/ArgoCD probes are today.
+`SRENIX_PROBE_TRAEFIK_ROUTES=off` — guarded in `catalog.go` exactly as the Kong/Velero/ArgoCD probes are today.
 
 ### Data collected per Run
 
@@ -127,7 +127,7 @@ Uses the same `rollupComponentStatus(findings)` helper that Kong and other probe
 
 ### Snapshot capture RBAC note
 
-The RBAC reader ClusterRole template in `charts/cluster-health-autopilot/templates/clusterrole-reader.yaml` must add `get` / `list` / `watch` for the four Traefik GVRs when `probes.traefikRoutes.enabled` is true. The Helm values key is described in Section 7.
+The RBAC reader ClusterRole template in `charts/agentic-sre/templates/clusterrole-reader.yaml` must add `get` / `list` / `watch` for the four Traefik GVRs when `probes.traefikRoutes.enabled` is true. The Helm values key is described in Section 7.
 
 ---
 
@@ -150,7 +150,7 @@ type K3sLocalPathStorage struct {
 `"K3s LocalPath Storage"`
 
 ### Opt-out
-`CHA_PROBE_K3S_LOCALPATH=off`
+`SRENIX_PROBE_K3S_LOCALPATH=off`
 
 ### Background
 
@@ -194,7 +194,7 @@ type K3sDatastore struct{}
 `"K3s Datastore"`
 
 ### Opt-out
-`CHA_PROBE_K3S_DATASTORE=off`
+`SRENIX_PROBE_K3S_DATASTORE=off`
 
 ### Background and detection approach
 
@@ -206,7 +206,7 @@ k3s embeds etcd or SQLite as its datastore. Neither runs as a pod visible to the
 
 3. **For embedded etcd clusters:** evaluate pod readiness + restart counts (same signals as the ETCD probe) and check for recent `k3s-etcd-snapshot-*` ConfigMaps in `kube-system`.
 
-4. **For SQLite mode:** emit a SeverityInfo advisory about the lack of HA. Suppressed when `CHA_K3S_SINGLE_NODE_OK=true`.
+4. **For SQLite mode:** emit a SeverityInfo advisory about the lack of HA. Suppressed when `SRENIX_K3S_SINGLE_NODE_OK=true`.
 
 ### Finding classes
 
@@ -250,7 +250,7 @@ Handles single-host, multi-host OR, and combined Host + PathPrefix/Headers expre
 
 ### Opt-out annotation
 
-The same `cha.bionicaisolutions.com/probe-disable: "true"` annotation on the IngressRoute object suppresses its hosts from discovery.
+The same `srenix.ai/probe-disable: "true"` annotation on the IngressRoute object suppresses its hosts from discovery.
 
 ---
 
@@ -259,17 +259,17 @@ The same `cha.bionicaisolutions.com/probe-disable: "true"` annotation on the Ing
 Ready-to-use Helm values overlay for k3s clusters. Apply alongside chart defaults:
 
 ```bash
-helm upgrade --install cha \
-  bionic-ai-solutions/cluster-health-autopilot \
+helm upgrade --install srenix \
+  bionic-ai-solutions/agentic-sre \
   -f examples/k3s-edge/values.yaml \
-  --namespace cha --create-namespace
+  --namespace srenix --create-namespace
 ```
 
 Key overrides:
-- `CHA_PROBE_ETCD=off` — prevents spurious "no etcd pods" warning.
-- `CHA_PROBE_TRAEFIK_ROUTES=on`, `CHA_PROBE_K3S_LOCALPATH=on`, `CHA_PROBE_K3S_DATASTORE=on` — enable the k3s-specific probes.
+- `SRENIX_PROBE_ETCD=off` — prevents spurious "no etcd pods" warning.
+- `SRENIX_PROBE_TRAEFIK_ROUTES=on`, `SRENIX_PROBE_K3S_LOCALPATH=on`, `SRENIX_PROBE_K3S_DATASTORE=on` — enable the k3s-specific probes.
 - `probes.kong.enabled: false` — most k3s edge clusters use Traefik, not Kong.
-- Tolerations for `node-role.kubernetes.io/master`, `node-role.kubernetes.io/control-plane`, and `CriticalAddonsOnly` — allows CHA pods to run on combined control-plane+worker nodes.
+- Tolerations for `node-role.kubernetes.io/master`, `node-role.kubernetes.io/control-plane`, and `CriticalAddonsOnly` — allows Srenix pods to run on combined control-plane+worker nodes.
 
 ---
 
@@ -278,13 +278,13 @@ Key overrides:
 Three new opt-out blocks in `RegisterOSS`, after the Velero block:
 
 ```go
-if os.Getenv("CHA_PROBE_TRAEFIK_ROUTES") != "off" {
+if os.Getenv("SRENIX_PROBE_TRAEFIK_ROUTES") != "off" {
     r.RegisterProbe(probe.TraefikRoutes{})
 }
-if os.Getenv("CHA_PROBE_K3S_LOCALPATH") != "off" {
+if os.Getenv("SRENIX_PROBE_K3S_LOCALPATH") != "off" {
     r.RegisterProbe(probe.K3sLocalPathStorage{})
 }
-if os.Getenv("CHA_PROBE_K3S_DATASTORE") != "off" {
+if os.Getenv("SRENIX_PROBE_K3S_DATASTORE") != "off" {
     r.RegisterProbe(probe.K3sDatastore{})
 }
 ```
@@ -320,7 +320,7 @@ The `ConfigMap` read in `kube-system` (for etcd snapshot detection) is already c
 
 ## 10. Helm chart values keys
 
-Add under the `probes:` block in `charts/cluster-health-autopilot/values.yaml`:
+Add under the `probes:` block in `charts/agentic-sre/values.yaml`:
 
 ```yaml
 probes:
@@ -332,7 +332,7 @@ probes:
     enabled: true
 ```
 
-The chart templates translate `probes.traefikRoutes.enabled: false` into `CHA_PROBE_TRAEFIK_ROUTES=off`, following the same template helper pattern as the existing M2 probes.
+The chart templates translate `probes.traefikRoutes.enabled: false` into `SRENIX_PROBE_TRAEFIK_ROUTES=off`, following the same template helper pattern as the existing M2 probes.
 
 ---
 

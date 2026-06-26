@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package fix
@@ -13,7 +13,7 @@ import (
 // reconciled by a GitOps controller (Argo CD, Flux, Helm). If any of these
 // annotations is present with a non-empty value, fixers should refuse to
 // mutate — the edit belongs in the source repo, and mutating in-cluster
-// will be reverted on the next reconcile, putting CHA and the controller
+// will be reverted on the next reconcile, putting Srenix and the controller
 // into a tight fight loop.
 //
 // This list is intentionally conservative. False negatives (controller we
@@ -49,7 +49,7 @@ var knownGitOpsManagedByValues = map[string]struct{}{
 }
 
 // GitOpsReason returns a human-readable reason string when the given
-// resource is reconciled by a known GitOps controller, or empty when CHA
+// resource is reconciled by a known GitOps controller, or empty when Srenix
 // may safely mutate it. The reason is intended for log lines and Skipped
 // entries on the fixer Result, not for parsing — its exact text may evolve.
 //
@@ -81,7 +81,7 @@ func GitOpsReason(u unstructured.Unstructured) string {
 // to true. Returns false for any other kind (StatefulSet, DaemonSet, etc.)
 // and for Deployments where the field is absent or false.
 //
-// CHA fixers consult this before rolling-restarting a Deployment: a paused
+// Srenix fixers consult this before rolling-restarting a Deployment: a paused
 // rollout means an operator has deliberately frozen updates, and forcing a
 // restart violates that intent.
 func IsPaused(u unstructured.Unstructured) bool {

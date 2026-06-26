@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package v1alpha1
@@ -13,30 +13,30 @@ func TestApprovalSpec_DeepCopy_AllFields(t *testing.T) {
 		Replicas:       2,
 		AuditNamespace: "audit",
 		Image: &ImageSpec{
-			Repository:  "docker4zerocool/cha-com",
+			Repository:  "docker4zerocool/srenix-enterprise",
 			Tag:         "v1.9.4",
 			PullPolicy:  "IfNotPresent",
 			PullSecrets: []string{"dockerhub"},
 		},
 		SigningKey: &ApprovalSigningKeySpec{
-			SecretName: "cha-approval-signing-key",
+			SecretName: "srenix-approval-signing-key",
 		},
 		Store: &ApprovalStoreSpec{
 			Backend:          "configmap",
-			Namespace:        "cha-system",
-			ReplayConfigMap:  "cha-approval-replay",
-			RunbookConfigMap: "cha-approval-runbooks",
+			Namespace:        "srenix-system",
+			ReplayConfigMap:  "srenix-approval-replay",
+			RunbookConfigMap: "srenix-approval-runbooks",
 		},
 		Ingress: &ApprovalIngressSpec{
 			Enabled:          true,
 			IngressClassName: "kong",
-			Host:             "approve.cha.example.com",
+			Host:             "approve.srenix.example.com",
 			Annotations: map[string]string{
 				"cert-manager.io/cluster-issuer": "letsencrypt-prod",
 			},
 			TLS: &ApprovalIngressTLSSpec{
 				Enabled:    true,
-				SecretName: "cha-approval-tls",
+				SecretName: "srenix-approval-tls",
 			},
 		},
 	}
@@ -107,8 +107,8 @@ func TestApprovalIngressSpec_DeepCopy_Nil(t *testing.T) {
 	}
 }
 
-func TestClusterHealthAutopilotSpec_DeepCopy_IncludesApproval(t *testing.T) {
-	src := &ClusterHealthAutopilotSpec{
+func TestAgenticSRESpec_DeepCopy_IncludesApproval(t *testing.T) {
+	src := &AgenticSRESpec{
 		Image:    ImageSpec{Repository: "a", Tag: "b"},
 		Approval: &ApprovalSpec{Enabled: true, Replicas: 3},
 	}

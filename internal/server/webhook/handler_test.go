@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package webhook
@@ -48,7 +48,7 @@ func TestPOST_RegisteredSource_WithBadSig_401(t *testing.T) {
 	h.RegisterSource("vault", "supersecret")
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/webhook/vault", strings.NewReader(`{"type":"x"}`))
-	req.Header.Set("X-CHA-Signature", "sha256=deadbeef")
+	req.Header.Set("X-Srenix-Signature", "sha256=deadbeef")
 	h.ServeHTTP(rec, req)
 	if rec.Code != http.StatusUnauthorized {
 		t.Errorf("bad sig: got %d want 401", rec.Code)
@@ -61,7 +61,7 @@ func TestPOST_RegisteredSource_WithValidSig_202_PushesTrigger(t *testing.T) {
 	body := []byte(`{"type":"secret_rotation","path":"secret/x","version":42}`)
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/webhook/vault", bytes.NewReader(body))
-	req.Header.Set("X-CHA-Signature", Sign(body, "supersecret"))
+	req.Header.Set("X-Srenix-Signature", Sign(body, "supersecret"))
 	h.ServeHTTP(rec, req)
 	if rec.Code != http.StatusAccepted {
 		t.Errorf("good sig: got %d want 202", rec.Code)
@@ -110,8 +110,8 @@ func TestPOST_TimestampedHMAC_Valid_202(t *testing.T) {
 	ts := strconv.FormatInt(time.Now().Unix(), 10)
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/webhook/vault", bytes.NewReader(body))
-	req.Header.Set("X-CHA-Timestamp", ts)
-	req.Header.Set("X-CHA-Signature", signTimestamped(ts, body, "fake-test-secret"))
+	req.Header.Set("X-Srenix-Timestamp", ts)
+	req.Header.Set("X-Srenix-Signature", signTimestamped(ts, body, "fake-test-secret"))
 	h.ServeHTTP(rec, req)
 	if rec.Code != http.StatusAccepted {
 		t.Errorf("valid timestamped HMAC: got %d want 202 (body=%q)", rec.Code, rec.Body.String())
@@ -133,8 +133,8 @@ func TestPOST_TimestampedHMAC_Stale_401(t *testing.T) {
 	ts := strconv.FormatInt(time.Now().Add(-10*time.Minute).Unix(), 10)
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/webhook/vault", bytes.NewReader(body))
-	req.Header.Set("X-CHA-Timestamp", ts)
-	req.Header.Set("X-CHA-Signature", signTimestamped(ts, body, "fake-test-secret"))
+	req.Header.Set("X-Srenix-Timestamp", ts)
+	req.Header.Set("X-Srenix-Signature", signTimestamped(ts, body, "fake-test-secret"))
 	h.ServeHTTP(rec, req)
 	if rec.Code != http.StatusUnauthorized {
 		t.Errorf("stale timestamp: got %d want 401", rec.Code)
@@ -153,8 +153,8 @@ func TestPOST_TimestampedHMAC_FutureBeyondWindow_401(t *testing.T) {
 	ts := strconv.FormatInt(time.Now().Add(10*time.Minute).Unix(), 10)
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/webhook/vault", bytes.NewReader(body))
-	req.Header.Set("X-CHA-Timestamp", ts)
-	req.Header.Set("X-CHA-Signature", signTimestamped(ts, body, "fake-test-secret"))
+	req.Header.Set("X-Srenix-Timestamp", ts)
+	req.Header.Set("X-Srenix-Signature", signTimestamped(ts, body, "fake-test-secret"))
 	h.ServeHTTP(rec, req)
 	if rec.Code != http.StatusUnauthorized {
 		t.Errorf("future timestamp: got %d want 401", rec.Code)
@@ -167,8 +167,8 @@ func TestPOST_TimestampedHMAC_MalformedTimestamp_401(t *testing.T) {
 	body := []byte("{}")
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/webhook/vault", bytes.NewReader(body))
-	req.Header.Set("X-CHA-Timestamp", "not-a-number")
-	req.Header.Set("X-CHA-Signature", Sign(body, "fake-test-secret"))
+	req.Header.Set("X-Srenix-Timestamp", "not-a-number")
+	req.Header.Set("X-Srenix-Signature", Sign(body, "fake-test-secret"))
 	h.ServeHTTP(rec, req)
 	if rec.Code != http.StatusUnauthorized {
 		t.Errorf("malformed timestamp: got %d want 401", rec.Code)
@@ -176,14 +176,14 @@ func TestPOST_TimestampedHMAC_MalformedTimestamp_401(t *testing.T) {
 }
 
 func TestPOST_LegacyBodyOnlyHMAC_Still202(t *testing.T) {
-	// Backward compat: no X-CHA-Timestamp header → body-only HMAC must
+	// Backward compat: no X-Srenix-Timestamp header → body-only HMAC must
 	// keep working so existing senders don't break.
 	h, ch := newHandlerT(t)
 	h.RegisterSource("vault", "fake-test-secret")
 	body := []byte(`{"type":"legacy"}`)
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/webhook/vault", bytes.NewReader(body))
-	req.Header.Set("X-CHA-Signature", Sign(body, "fake-test-secret"))
+	req.Header.Set("X-Srenix-Signature", Sign(body, "fake-test-secret"))
 	h.ServeHTTP(rec, req)
 	if rec.Code != http.StatusAccepted {
 		t.Errorf("legacy body-only HMAC: got %d want 202", rec.Code)

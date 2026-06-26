@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 // Package snapshot provides the data-layer abstraction that decouples the
@@ -18,7 +18,7 @@
 package snapshot
 
 import (
-	pkgsnapshot "github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/snapshot"
+	pkgsnapshot "github.com/srenix-ai/agentic-sre/pkg/snapshot"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
@@ -54,11 +54,11 @@ var (
 	GVRCNPGCluster = schema.GroupVersionResource{Group: "postgresql.cnpg.io", Version: "v1", Resource: "clusters"}
 	GVRCephCluster = schema.GroupVersionResource{Group: "ceph.rook.io", Version: "v1", Resource: "cephclusters"}
 	GVRSecret      = schema.GroupVersionResource{Group: "", Version: "v1", Resource: "secrets"}
-	GVRDriftReport = schema.GroupVersionResource{Group: "cha.bionicaisolutions.com", Version: "v1alpha1", Resource: "driftreports"}
+	GVRDriftReport = schema.GroupVersionResource{Group: "srenix.ai", Version: "v1alpha1", Resource: "driftreports"}
 	// GVRResolutionRecord is the append-only outcome log: one record per
 	// applied+verified (or rejected/reverted) remediation. Source of truth
 	// for the RAG memory layer (P1/P2 of the AI-remediation plan).
-	GVRResolutionRecord = schema.GroupVersionResource{Group: "cha.bionicaisolutions.com", Version: "v1alpha1", Resource: "resolutionrecords"}
+	GVRResolutionRecord = schema.GroupVersionResource{Group: "srenix.ai", Version: "v1alpha1", Resource: "resolutionrecords"}
 
 	GVRSecretStore        = schema.GroupVersionResource{Group: "external-secrets.io", Version: "v1", Resource: "secretstores"}
 	GVRClusterSecretStore = schema.GroupVersionResource{Group: "external-secrets.io", Version: "v1", Resource: "clustersecretstores"}
@@ -87,7 +87,7 @@ var (
 	GVRScaledObject = schema.GroupVersionResource{Group: "keda.sh", Version: "v1alpha1", Resource: "scaledobjects"}
 
 	// GVRArgoCDApplication — Argo CD's Application CRD. Phase 1.7 (M1).
-	// Closes the GitOps loop: when a sync goes OutOfSync/Degraded, CHA
+	// Closes the GitOps loop: when a sync goes OutOfSync/Degraded, Srenix
 	// picks it up immediately rather than waiting for the underlying pod
 	// symptom to surface. Optional GVR — if Argo CD's CRD isn't installed,
 	// the watcher logs a one-line "skipping" notice and proceeds without it.

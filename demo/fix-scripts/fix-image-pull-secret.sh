@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Manual fix: ImagePullBackOff auth failure
-# CHA reports this but cannot fix it — imagePullSecret must be created/patched
+# Srenix reports this but cannot fix it — imagePullSecret must be created/patched
 #
 # Usage: ./fix-image-pull-secret.sh <namespace> <deployment-or-pod> [registry] [username] [password]
 # Example: ./fix-image-pull-secret.sh demo-app worker docker4zerocool myuser mypassword
@@ -68,4 +68,4 @@ else
 fi
 
 echo ""
-echo "==> Done. CHA watcher will detect the recovery and post ✅ Resolved to Slack."
+echo "==> Done. Srenix watcher will detect the recovery and post ✅ Resolved to Slack."

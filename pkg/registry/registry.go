@@ -1,8 +1,8 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 // Package registry holds the active set of probes, analyzers, and fixers
-// for a cha run.
+// for a srenix run.
 //
 // The OSS binary seeds it from the catalog package. The paid binary imports
 // the same catalog and additionally registers private-tier patterns:
@@ -13,17 +13,17 @@
 package registry
 
 import (
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/ai"
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/cloudprobe"
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/diagnose"
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/fix"
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/probe"
+	"github.com/srenix-ai/agentic-sre/pkg/ai"
+	"github.com/srenix-ai/agentic-sre/pkg/cloudprobe"
+	"github.com/srenix-ai/agentic-sre/pkg/diagnose"
+	"github.com/srenix-ai/agentic-sre/pkg/fix"
+	"github.com/srenix-ai/agentic-sre/pkg/probe"
 )
 
 // Registry holds the active pattern set.
 //
 // The AI fields default to nil; OSS users never see them populated.
-// The CHA-com paid binary registers Enricher/FixProposer/etc. at
+// The Srenix Enterprise paid binary registers Enricher/FixProposer/etc. at
 // process start. The watcher and reporters check for nil before using
 // any AI component, so an empty registry produces today's behavior
 // bit-for-bit.

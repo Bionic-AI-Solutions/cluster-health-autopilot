@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package diagnose
@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/snapshot"
+	"github.com/srenix-ai/agentic-sre/internal/snapshot"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 
@@ -26,7 +26,7 @@ import (
 //	the Ingress serves a hand-made cert that has no renewal path.
 //
 // This pattern silently survives until the served cert expires and end users
-// see TLS errors. It is invisible to every other CHA analyzer because each
+// see TLS errors. It is invisible to every other Srenix analyzer because each
 // piece looks healthy in isolation (Secret exists, Certificate is Ready).
 type TLSSecretMismatch struct {
 	// ExpiryWindow is how far ahead of expiry to start warning. Zero means

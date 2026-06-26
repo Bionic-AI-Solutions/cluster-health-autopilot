@@ -1,15 +1,15 @@
-# CHA Hosted Playground (P6.8)
+# Srenix Hosted Playground (P6.8)
 
 A self-contained bundle that powers the website's **"Try it now" / playground**
-CTA: a visitor watches Cluster Health Autopilot detect synthetic drift **live**.
+CTA: a visitor watches Agentic SRE detect synthetic drift **live**.
 
-It is honest about what it shows — real CHA, real DriftReports, real synthetic
+It is honest about what it shows — real Srenix, real DriftReports, real synthetic
 K8s drift — and it is **isolated** so it can never disturb a production workload.
 
 ## What it demonstrates
 
 A `drift-injector` CronJob continuously creates and rotates four synthetic
-drift scenarios in the isolated `cha-playground` namespace. The OSS CHA watcher
+drift scenarios in the isolated `srenix-playground` namespace. The OSS Srenix watcher
 (diagnose-only, **never** remediates) detects them and writes `DriftReport` CRs.
 A tiny read-only viewer renders those reports as an auto-refreshing page.
 
@@ -24,23 +24,23 @@ All four were verified firing on a kind cluster (see "kind verification" below).
 
 ## Isolation
 
-- **Dedicated namespace** `cha-playground`, Pod-Security `baseline`.
+- **Dedicated namespace** `srenix-playground`, Pod-Security `baseline`.
 - **ResourceQuota** caps the whole demo at 30 pods / 1 CPU / 1Gi requests.
 - **LimitRange** gives every container a tiny default + a hard max.
 - **NetworkPolicy** default-deny ingress+egress; only DNS, in-namespace, and
   HTTPS-out (image pulls / apiserver) are re-opened.
 - **RBAC**: the injector SA holds a **namespaced Role** (acts only inside
-  `cha-playground`); the viewer SA holds a ClusterRole granting **only**
+  `srenix-playground`); the viewer SA holds a ClusterRole granting **only**
   `get/list/watch` on `driftreports` (nothing else).
 - **GPU nodes excluded**: every workload (injector, viewer, scenario pods, the
-  CHA watcher) carries a `nodeAffinity` requiring `nvidia.com/gpu.present`
+  Srenix watcher) carries a `nodeAffinity` requiring `nvidia.com/gpu.present`
   `DoesNotExist`.
 
-> **Scope note (honest):** `DriftReport` is a **cluster-scoped** CRD and the CHA
-> watcher lists cluster-wide (there is no namespace-scope flag on `cha watch`),
+> **Scope note (honest):** `DriftReport` is a **cluster-scoped** CRD and the Srenix
+> watcher lists cluster-wide (there is no namespace-scope flag on `srenix watch`),
 > so its reader ClusterRole is cluster-wide **read-only**. That is safe — with
 > `watcher.remedy.enabled=false` it never mutates — and the injector only ever
-> creates drift in `cha-playground`, so every DriftReport you see originates
+> creates drift in `srenix-playground`, so every DriftReport you see originates
 > here. For hard read-isolation, run the playground on its own cluster (the kind
 > quick-try does exactly that).
 
@@ -52,7 +52,7 @@ All four were verified firing on a kind cluster (see "kind verification" below).
 | `drift-injector.yaml` | CronJob (alpine/k8s + inline bash) that creates/rotates the 4 scenarios |
 | `viewer.yaml` | Read-only viewer Deployment + Service + Ingress (`playground.asre.baisoln.com`) |
 | `viewer/` | The ~180-line Go viewer (lists DriftReports, html/template, XSS-safe) + Dockerfile + test |
-| `cha-values.yaml` | Helm values: CHA watcher, diagnose-only, remedy/AI/approval off |
+| `srenix-values.yaml` | Helm values: Srenix watcher, diagnose-only, remedy/AI/approval off |
 | `kustomization.yaml` | Bundles namespace + injector + viewer for `kubectl apply -k` |
 
 ---
@@ -62,26 +62,26 @@ All four were verified firing on a kind cluster (see "kind verification" below).
 Prereqs: `docker`, `kind`, `kubectl`, `helm`, and this repo checked out.
 
 ```bash
-cd cluster-health-autopilot
+cd agentic-sre
 
 # 1. cluster
-kind create cluster --name cha-pg
+kind create cluster --name srenix-pg
 
-# 2. build + load the viewer image (and the CHA watcher image from this repo)
-docker build -f examples/playground/viewer/Dockerfile -t cha-playground-viewer:dev .
-docker build -t cha-local:playground .                 # the cha watcher binary
-kind load docker-image cha-playground-viewer:dev --name cha-pg
-kind load docker-image cha-local:playground --name cha-pg
+# 2. build + load the viewer image (and the Srenix watcher image from this repo)
+docker build -f examples/playground/viewer/Dockerfile -t srenix-playground-viewer:dev .
+docker build -t srenix-local:playground .                 # the srenix watcher binary
+kind load docker-image srenix-playground-viewer:dev --name srenix-pg
+kind load docker-image srenix-local:playground --name srenix-pg
 
 # 3. cert-manager CRDs ONLY (so the Certificate object for scenario 3 can exist;
 #    no controller needed — the injector stamps Ready=True itself)
 kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.15.3/cert-manager.crds.yaml
 
-# 4. install the CHA watcher (CRDs + diagnose-only watcher) into cha-playground
-helm install cha-playground charts/cluster-health-autopilot \
-  -n cha-playground --create-namespace \
-  -f examples/playground/cha-values.yaml \
-  --set image.repository=cha-local --set image.tag=playground
+# 4. install the Srenix watcher (CRDs + diagnose-only watcher) into srenix-playground
+helm install srenix-playground charts/agentic-sre \
+  -n srenix-playground --create-namespace \
+  -f examples/playground/srenix-values.yaml \
+  --set image.repository=srenix-local --set image.tag=playground
 
 # 5. apply the isolated namespace, injector, and viewer
 #    (point the viewer Deployment at your loaded tag first)
@@ -90,11 +90,11 @@ helm install cha-playground charts/cluster-health-autopilot \
 kubectl apply -k examples/playground/
 
 # 6. fire one injection immediately (the CronJob runs every 15 min otherwise)
-kubectl -n cha-playground create job --from=cronjob/cha-playground-drift-injector inject-now
+kubectl -n srenix-playground create job --from=cronjob/srenix-playground-drift-injector inject-now
 
 # 7. watch the live findings
 kubectl get driftreports -w
-kubectl -n cha-playground port-forward svc/cha-playground-viewer 8080:80
+kubectl -n srenix-playground port-forward svc/srenix-playground-viewer 8080:80
 #   open http://localhost:8080
 ```
 
@@ -104,7 +104,7 @@ You should see DriftReports for all four scenarios (sources `analyzer`
 ### Teardown
 
 ```bash
-kind delete cluster --name cha-pg
+kind delete cluster --name srenix-pg
 ```
 
 ---
@@ -115,15 +115,15 @@ On a real cluster (Kong ingress + cert-manager + GPU nodes labelled
 `nvidia.com/gpu.present`):
 
 ```bash
-# 1. CHA watcher into cha-playground (use the published OSS image tag)
-helm install cha-playground charts/cluster-health-autopilot \
-  -n cha-playground --create-namespace \
-  -f examples/playground/cha-values.yaml
+# 1. Srenix watcher into srenix-playground (use the published OSS image tag)
+helm install srenix-playground charts/agentic-sre \
+  -n srenix-playground --create-namespace \
+  -f examples/playground/srenix-values.yaml
 
 # 2. build + push the viewer to your registry, set viewer.yaml's image, then
-docker build -f examples/playground/viewer/Dockerfile -t docker4zerocool/cha-playground-viewer:<tag> .
-docker push docker4zerocool/cha-playground-viewer:<tag>
-# edit examples/playground/viewer.yaml -> spec...image: docker4zerocool/cha-playground-viewer:<tag>
+docker build -f examples/playground/viewer/Dockerfile -t docker4zerocool/srenix-playground-viewer:<tag> .
+docker push docker4zerocool/srenix-playground-viewer:<tag>
+# edit examples/playground/viewer.yaml -> spec...image: docker4zerocool/srenix-playground-viewer:<tag>
 
 # 3. apply the isolated namespace + injector + viewer + ingress
 kubectl apply -k examples/playground/
@@ -163,19 +163,19 @@ record **and** an entry in the deploy repo's DNS map:
 ### Teardown (prod)
 
 ```bash
-helm uninstall cha-playground -n cha-playground
+helm uninstall srenix-playground -n srenix-playground
 kubectl delete -k examples/playground/
-kubectl delete ns cha-playground
+kubectl delete ns srenix-playground
 # the DriftReport/Silence/* CRDs are cluster-scoped and shared — only remove
-# them if no other CHA install uses them.
+# them if no other Srenix install uses them.
 ```
 
 ## Notes / honesty
 
-- The viewer is the **OSS** tiny read-only page (not the CHA-com P6.6 dashboard),
+- The viewer is the **OSS** tiny read-only page (not the Srenix Enterprise P6.6 dashboard),
   so the whole playground is self-contained OSS and `kind`-runnable by anyone.
-  Swapping in the CHA-com dashboard is possible but needs its private image.
-- The CHA watcher runs **diagnose-only** (`remedy.enabled=false`). The playground
+  Swapping in the Srenix Enterprise dashboard is possible but needs its private image.
+- The Srenix watcher runs **diagnose-only** (`remedy.enabled=false`). The playground
   shows DETECTION; it never mutates the cluster.
 - Scenario 3 stamps the `Certificate` Ready itself because no cert-manager
   controller runs in the playground; the `TLSSecretMismatch` analyzer only reads

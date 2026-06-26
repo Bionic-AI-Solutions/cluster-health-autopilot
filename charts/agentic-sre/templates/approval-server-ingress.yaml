@@ -1,0 +1,49 @@
+{{- if and ((.Values.approval).enabled) (((.Values.approval).ingress).enabled) }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "srenix.fullname" . }}-approval-server
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "srenix.labels" . | nindent 4 }}
+    srenix.ai/role: approval-server
+  {{- with .Values.approval.ingress.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- if .Values.approval.ingress.ingressClassName }}
+  ingressClassName: {{ .Values.approval.ingress.ingressClassName }}
+  {{- end }}
+  {{- if .Values.approval.ingress.tls.enabled }}
+  tls:
+    - hosts:
+        - {{ required ".Values.approval.ingress.host is required when approval.ingress.enabled" .Values.approval.ingress.host }}
+      secretName: {{ .Values.approval.ingress.tls.secretName | default (printf "%s-approval-server-tls" (include "srenix.fullname" .)) }}
+  {{- end }}
+  rules:
+    - host: {{ required ".Values.approval.ingress.host is required" .Values.approval.ingress.host }}
+      http:
+        paths:
+          - path: /approve
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "srenix.fullname" . }}-approval-server
+                port:
+                  name: http
+          - path: /deny
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "srenix.fullname" . }}-approval-server
+                port:
+                  name: http
+          - path: /healthz
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "srenix.fullname" . }}-approval-server
+                port:
+                  name: http
+{{- end }}

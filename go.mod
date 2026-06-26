@@ -1,4 +1,4 @@
-module github.com/Bionic-AI-Solutions/cluster-health-autopilot
+module github.com/srenix-ai/agentic-sre
 
 go 1.26.0
 

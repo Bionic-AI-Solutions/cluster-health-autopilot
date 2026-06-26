@@ -1,4 +1,4 @@
-# Bundle-smoke — end-to-end OLM install of the cha-operator on a kind
+# Bundle-smoke — end-to-end OLM install of the srenix-operator on a kind
 # cluster. Catches three classes of regression that pure unit tests
 # can't:
 #   1. The CSV doesn't validate against OLM's admission webhooks
@@ -53,17 +53,17 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       # Build the operator + watcher binary image. The Dockerfile at
-      # the repo root produces a single image carrying BOTH /cha and
-      # /cha-operator binaries; the operator-deployment overrides the
-      # default command to /cha-operator.
+      # the repo root produces a single image carrying BOTH /srenix and
+      # /srenix-operator binaries; the operator-deployment overrides the
+      # default command to /srenix-operator.
       - name: Build operator image
         run: |
-          docker build -t cluster-health-autopilot:smoke .
+          docker build -t agentic-sre:smoke .
 
       # Build the OLM bundle image (scratch + COPY manifests/metadata).
       - name: Build bundle image
         run: |
-          docker build -t cha-operator-bundle:smoke -f bundle.Dockerfile .
+          docker build -t srenix-operator-bundle:smoke -f bundle.Dockerfile .
 
       # Patch the CSV's deployment image to the local smoke tag BEFORE
       # the bundle is consumed. The CSV ships pointing at the public
@@ -80,9 +80,9 @@ jobs:
           # Keep the registry-host portion in lockstep with the value
           # used in the `Start local registry` + `kind cluster …
           # extraConfig` steps below.
-          sed -i 's|docker4zerocool/cluster-health-autopilot:1\.9\.[0-9]\+|localhost:5001/cluster-health-autopilot:smoke|g' \
-              bundle/manifests/cha.clusterserviceversion.yaml
-          docker build -t cha-operator-bundle:smoke -f bundle.Dockerfile .
+          sed -i 's|docker4zerocool/agentic-sre:1\.9\.[0-9]\+|localhost:5001/agentic-sre:smoke|g' \
+              bundle/manifests/srenix.clusterserviceversion.yaml
+          docker build -t srenix-operator-bundle:smoke -f bundle.Dockerfile .
 
       - name: Install kind
         run: |
@@ -142,10 +142,10 @@ jobs:
 
       - name: Push operator + bundle images to the local registry
         run: |
-          docker tag cluster-health-autopilot:smoke localhost:5001/cluster-health-autopilot:smoke
-          docker tag cha-operator-bundle:smoke      localhost:5001/cha-operator-bundle:smoke
-          docker push localhost:5001/cluster-health-autopilot:smoke
-          docker push localhost:5001/cha-operator-bundle:smoke
+          docker tag agentic-sre:smoke localhost:5001/agentic-sre:smoke
+          docker tag srenix-operator-bundle:smoke      localhost:5001/srenix-operator-bundle:smoke
+          docker push localhost:5001/agentic-sre:smoke
+          docker push localhost:5001/srenix-operator-bundle:smoke
 
       - name: Install operator-sdk
         run: |
@@ -192,7 +192,7 @@ jobs:
 
       - name: Create install namespace
         run: |
-          kubectl create namespace cha-system
+          kubectl create namespace srenix-system
 
       - name: Run the bundle
         run: |
@@ -202,18 +202,18 @@ jobs:
           # tells the registry pod to pull via plain HTTP (the local
           # registry isn't TLS'd; production users override the bundle
           # ref to an HTTPS registry).
-          operator-sdk run bundle localhost:5001/cha-operator-bundle:smoke \
-            --namespace cha-system \
+          operator-sdk run bundle localhost:5001/srenix-operator-bundle:smoke \
+            --namespace srenix-system \
             --install-mode OwnNamespace \
             --use-http \
             --timeout 10m
 
       - name: Show operator state
         run: |
-          kubectl -n cha-system get deploy,po
-          kubectl -n cha-system get csv -o yaml | head -120
+          kubectl -n srenix-system get deploy,po
+          kubectl -n srenix-system get csv -o yaml | head -120
 
-      - name: Apply sample ClusterHealthAutopilot CR
+      - name: Apply sample AgenticSRE CR
         run: |
           kubectl apply -f bundle/tests/sample-cr.yaml
 
@@ -223,7 +223,7 @@ jobs:
           # the watcher Deployment, and computes ReaderRBACReady +
           # WatcherRunning. Ready=True means BOTH gate-conditions are
           # met AND no reconcile error.
-          kubectl -n cha-system wait clusterhealthautopilot/smoke \
+          kubectl -n srenix-system wait agenticsre/smoke \
             --for=condition=Ready=true --timeout=5m
 
       - name: Verify operator-provisioned reader RBAC (Phase 1c slice A)
@@ -232,15 +232,15 @@ jobs:
           # AND the binding must target the operator-created SA. This
           # ratifies that slice A's code-path actually fired end-to-end
           # under OLM (not just in unit tests).
-          kubectl get clusterrole cha-operator-watcher-reader
-          kubectl get clusterrolebinding cha-operator-watcher-cha-system-smoke \
+          kubectl get clusterrole srenix-operator-watcher-reader
+          kubectl get clusterrolebinding srenix-operator-watcher-srenix-system-smoke \
             -o jsonpath='{.subjects[0].name}' | grep -q '^smoke-sa$'
 
       # ── Phase 2+ smoke (AI + approval-server objects) ──────────────────
       # Purpose: verify the operator creates the full AI stack objects and
       # runs the reconciler successfully (no InvalidSpec / ReconcileError).
       # We do NOT wait for Ready=True because the smoke image is the OSS
-      # binary, not cha-com — aiwatch/approval pods stay in ErrImagePull.
+      # binary, not srenix-enterprise — aiwatch/approval pods stay in ErrImagePull.
       # What we verify is that the operator exercised ALL reconcile code
       # paths (Phase 2 aiwatch, Phase 2b Qdrant, Phase 2c approval-server
       # RBAC + signing-key) without hitting a 403 or a validation error.
@@ -252,11 +252,11 @@ jobs:
         run: |
           # We wait for the CR to have ANY status condition set (meaning
           # the operator reconciled it at least once) rather than Ready=True
-          # (the cha-com pods won't start with the OSS smoke image).
+          # (the srenix-enterprise pods won't start with the OSS smoke image).
           # A 60s poll is sufficient — the operator reconciles within seconds
           # of the CR being created.
           for i in $(seq 1 12); do
-            CONDITIONS=$(kubectl -n cha-system get clusterhealthautopilot/smoke-ai \
+            CONDITIONS=$(kubectl -n srenix-system get agenticsre/smoke-ai \
               -o jsonpath='{.status.conditions}' 2>/dev/null || echo "")
             if [ -n "$CONDITIONS" ] && [ "$CONDITIONS" != "null" ] && [ "$CONDITIONS" != "[]" ]; then
               echo "Status conditions set: $CONDITIONS"
@@ -269,20 +269,20 @@ jobs:
       - name: Verify Phase 2+ objects created by the operator
         run: |
           # approval-server ServiceAccount
-          kubectl -n cha-system get serviceaccount smoke-ai-approval-server
+          kubectl -n srenix-system get serviceaccount smoke-ai-approval-server
           # approval-server Service
-          kubectl -n cha-system get service smoke-ai-approval-server
+          kubectl -n srenix-system get service smoke-ai-approval-server
           # approval-server Deployment (may not be running, but must exist)
-          kubectl -n cha-system get deployment smoke-ai-approval-server
+          kubectl -n srenix-system get deployment smoke-ai-approval-server
           # signing-key Secret — MUST have both PEM keys (the operator
           # generates the Ed25519 keypair at reconcile time)
-          SIGNING_KEY=$(kubectl -n cha-system get secret cha-approval-signing-key \
+          SIGNING_KEY=$(kubectl -n srenix-system get secret srenix-approval-signing-key \
             -o jsonpath='{.data.signing\.key}' 2>/dev/null || echo "")
           if [ -z "$SIGNING_KEY" ]; then
             echo "FAIL: signing-key Secret missing signing.key"
             exit 1
           fi
-          SIGNING_PUB=$(kubectl -n cha-system get secret cha-approval-signing-key \
+          SIGNING_PUB=$(kubectl -n srenix-system get secret srenix-approval-signing-key \
             -o jsonpath='{.data.signing\.pub}' 2>/dev/null || echo "")
           if [ -z "$SIGNING_PUB" ]; then
             echo "FAIL: signing-key Secret missing signing.pub"
@@ -290,14 +290,14 @@ jobs:
           fi
           echo "PASS: signing-key Secret has both PEM keys"
           # approval-fixer ClusterRoleBinding (cluster-scoped, per-CR)
-          kubectl get clusterrolebinding cha-operator-approval-fixer-cha-system-smoke-ai \
+          kubectl get clusterrolebinding srenix-operator-approval-fixer-srenix-system-smoke-ai \
             -o jsonpath='{.subjects[0].name}' | grep -q '^smoke-ai-approval-server$'
           echo "PASS: fixer ClusterRoleBinding targets approval-server SA"
           # approval-fixer ClusterRole (shared, created by operator)
-          kubectl get clusterrole cha-operator-approval-fixer
+          kubectl get clusterrole srenix-operator-approval-fixer
           echo "PASS: fixer ClusterRole exists"
           # aiwatch Deployment (may not be running, but must exist)
-          kubectl -n cha-system get deployment smoke-ai-aiwatch
+          kubectl -n srenix-system get deployment smoke-ai-aiwatch
 
       - name: Verify no InvalidSpec / ReconcileError condition on Phase 2+ CR
         run: |
@@ -307,11 +307,11 @@ jobs:
           # Phase 2+ reconcile path. ApprovalServerReady=False/
           # NoAvailableReplicas is acceptable (pods can't start with smoke
           # image), but InvalidSpec or ReconcileError is a hard failure.
-          READY_REASON=$(kubectl -n cha-system get clusterhealthautopilot/smoke-ai \
+          READY_REASON=$(kubectl -n srenix-system get agenticsre/smoke-ai \
             -o jsonpath='{.status.conditions[?(@.type=="Ready")].reason}' 2>/dev/null || echo "NotSet")
           echo "Ready.reason = $READY_REASON"
           if [ "$READY_REASON" = "InvalidSpec" ] || [ "$READY_REASON" = "ReconcileError" ]; then
-            READY_MSG=$(kubectl -n cha-system get clusterhealthautopilot/smoke-ai \
+            READY_MSG=$(kubectl -n srenix-system get agenticsre/smoke-ai \
               -o jsonpath='{.status.conditions[?(@.type=="Ready")].message}' 2>/dev/null)
             echo "FAIL: Ready.reason=$READY_REASON message=$READY_MSG"
             exit 1
@@ -334,10 +334,10 @@ jobs:
           check() {
             local path="$1"
             local got
-            got=$(kubectl -n cha-system get clusterhealthautopilot/smoke-full \
+            got=$(kubectl -n srenix-system get agenticsre/smoke-full \
               -o jsonpath="{${path}}" 2>/dev/null || echo "")
             if [ -z "$got" ]; then
-              echo "FAIL: ${path} came back EMPTY — the installed CRD schema is missing this subtree and the apiserver pruned it (the v1.24.0 bug class). Hand-port the missing subtree into bundle/manifests/cha.bionicaisolutions.com_clusterhealthautopilots.yaml from the chart CRD."
+              echo "FAIL: ${path} came back EMPTY — the installed CRD schema is missing this subtree and the apiserver pruned it (the v1.24.0 bug class). Hand-port the missing subtree into bundle/manifests/srenix.ai_agenticsres.yaml from the chart CRD."
               exit 1
             fi
             echo "PASS: ${path} = ${got}"
@@ -365,21 +365,21 @@ jobs:
         if: failure()
         run: |
           echo "=== CSVs ==="
-          kubectl -n cha-system get csv -o yaml
+          kubectl -n srenix-system get csv -o yaml
           echo "=== Operator pod logs ==="
-          kubectl -n cha-system logs deploy/cha-operator --tail=200 || true
+          kubectl -n srenix-system logs deploy/srenix-operator --tail=200 || true
           echo "=== CR + conditions (watcher) ==="
-          kubectl -n cha-system get clusterhealthautopilot/smoke -o yaml || true
+          kubectl -n srenix-system get agenticsre/smoke -o yaml || true
           echo "=== CR + conditions (AI+approval) ==="
-          kubectl -n cha-system get clusterhealthautopilot/smoke-ai -o yaml || true
+          kubectl -n srenix-system get agenticsre/smoke-ai -o yaml || true
           echo "=== CR as stored (full-surface pruning sample) ==="
-          kubectl -n cha-system get clusterhealthautopilot/smoke-full -o yaml || true
+          kubectl -n srenix-system get agenticsre/smoke-full -o yaml || true
           echo "=== approval-server objects ==="
-          kubectl -n cha-system get deploy,svc,sa,secret -l app.kubernetes.io/instance=smoke-ai || true
-          kubectl get clusterrolebinding -l cha.bionicaisolutions.com/managed-by-cr=smoke-ai || true
+          kubectl -n srenix-system get deploy,svc,sa,secret -l app.kubernetes.io/instance=smoke-ai || true
+          kubectl get clusterrolebinding -l srenix.ai/managed-by-cr=smoke-ai || true
           echo "=== InstallPlans ==="
-          kubectl -n cha-system get installplans -o yaml || true
+          kubectl -n srenix-system get installplans -o yaml || true
           echo "=== Subscriptions ==="
-          kubectl -n cha-system get subscriptions -o yaml || true
+          kubectl -n srenix-system get subscriptions -o yaml || true
           echo "=== All events ==="
-          kubectl -n cha-system get events --sort-by=.lastTimestamp | tail -50
+          kubectl -n srenix-system get events --sort-by=.lastTimestamp | tail -50

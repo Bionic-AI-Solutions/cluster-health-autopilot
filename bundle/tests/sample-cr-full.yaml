@@ -16,14 +16,14 @@
 #
 # Every secretName / secretKeyRef below is an obviously-fake REFERENCE to
 # a Secret that does not exist. No secret VALUES appear here, ever.
-apiVersion: cha.bionicaisolutions.com/v1alpha1
-kind: ClusterHealthAutopilot
+apiVersion: srenix.ai/v1alpha1
+kind: AgenticSRE
 metadata:
   name: smoke-full
-  namespace: cha-system
+  namespace: srenix-system
 spec:
   image:
-    repository: cluster-health-autopilot
+    repository: agentic-sre
     tag: "smoke"
     pullPolicy: IfNotPresent
     pullSecrets: ["fake-pull-secret"]
@@ -31,7 +31,7 @@ spec:
   # does NOT create it (and nothing waits on it; all workloads are off).
   serviceAccountName: "smoke-full-byo-sa"
   # Append-only protected-namespace extension → rendered as
-  # CHA_PROTECTED_NAMESPACES_EXTRA on watcher/cronjobs/aiwatch.
+  # SRENIX_PROTECTED_NAMESPACES_EXTRA on watcher/cronjobs/aiwatch.
   protectedNamespacesExtra: ["smoke-protected-extra", "smoke-protected-extra-2"]
   watcher:
     enabled: false
@@ -76,15 +76,15 @@ spec:
   ai:
     enabled: false
     tier: t1
-    endpoint: "http://fake-llm.cha-system.svc:8000/v1"
+    endpoint: "http://fake-llm.srenix-system.svc:8000/v1"
     model: "fake-model"
     interval: "3600s"
     allowSaas: false
     llmFixerMatcher: true
     auditLog: "-"
-    approvalServerUrl: "http://smoke-full-approval-server.cha-system.svc:8443"
+    approvalServerUrl: "http://smoke-full-approval-server.srenix-system.svc:8443"
     image:
-      repository: cha-com
+      repository: srenix-enterprise
       tag: "smoke"
       pullPolicy: IfNotPresent
       pullSecrets: ["fake-pull-secret"]
@@ -106,9 +106,9 @@ spec:
         size: "1Gi"
         className: "standard"
       embeddings:
-        endpoint: "http://fake-llm.cha-system.svc:8000/v1"
+        endpoint: "http://fake-llm.srenix-system.svc:8000/v1"
         model: "fake-embedding-model"
-      storeUrl: "http://smoke-full-rag.cha-system.svc:6333"
+      storeUrl: "http://smoke-full-rag.srenix-system.svc:6333"
       topK: 5
     extraArgs: ["--fake-flag=true"]
     extraEnv:
@@ -132,9 +132,9 @@ spec:
   approval:
     enabled: false
     replicas: 1
-    auditNamespace: "cha-system"
+    auditNamespace: "srenix-system"
     image:
-      repository: cha-com
+      repository: srenix-enterprise
       tag: "smoke"
       pullPolicy: IfNotPresent
       pullSecrets: ["fake-pull-secret"]
@@ -142,7 +142,7 @@ spec:
       secretName: "fake-signing-key-secret"
     store:
       backend: configmap
-      namespace: "cha-system"
+      namespace: "srenix-system"
       replayConfigMap: "smoke-approval-replay"
       runbookConfigMap: "smoke-approval-runbooks"
     silence:
@@ -173,7 +173,7 @@ spec:
     enabled: false
     provider: openproject
     cluster: "smoke"
-    mcpURL: "http://fake-mcp.cha-system.svc:8006/mcp"
+    mcpURL: "http://fake-mcp.srenix-system.svc:8006/mcp"
     project: "1"
     typeID: "36"
     closedStatusID: "82"
@@ -182,22 +182,23 @@ spec:
       critical: "75"
       warning: "74"
       info: "73"
-    labels: ["cha", "smoke"]
+    labels: ["srenix", "smoke"]
     dryRun: true
     resolveOnClear: true
     commentInterval: "1h"
+    minSeverity: critical
     auth:
       enabled: false
       secretName: "fake-ticketing-api-key-secret"
       secretKey: "api-key"
-    # CHA-com sinks — full-surface coverage so the bundle-smoke pruning
+    # Srenix Enterprise sinks — full-surface coverage so the bundle-smoke pruning
     # gate exercises every Jira/ServiceNow/route path. Credentials are
     # fake secret-refs (never literal tokens).
     route: "severity>=critical->servicenow"
     jira:
       url: "https://fake.atlassian.net"
       project: "OPS"
-      email: "cha-bot@example.com"
+      email: "srenix-bot@example.com"
       issueType: "Bug"
       priority:
         critical: "Highest"
@@ -209,7 +210,7 @@ spec:
         key: "token"
     servicenow:
       url: "https://fake.service-now.com"
-      user: "cha.bot"
+      user: "srenix.bot"
       urgency:
         critical: "1"
         warning: "2"

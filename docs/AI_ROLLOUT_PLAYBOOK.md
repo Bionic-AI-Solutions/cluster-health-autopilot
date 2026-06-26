@@ -1,8 +1,8 @@
 # AI Rollout Playbook — W1 → W4 Customer Onboarding
 
-CHA-com v1.0.0 shipped all four LLM tiers day one. v1.4 and v1.5 added
+Srenix Enterprise v1.0.0 shipped all four LLM tiers day one. v1.4 and v1.5 added
 the Layer-1 flake-suppression upgrade to the Endpoints probe and the
-Layer-2 Investigator (rule-based in OSS, LLM-backed in CHA-com). This
+Layer-2 Investigator (rule-based in OSS, LLM-backed in Srenix Enterprise). This
 playbook covers how to introduce them to customers in waves.
 
 **Build vs deploy posture**: Build is single-pass (v1.5.x has all
@@ -17,9 +17,9 @@ decision per customer, not a release cadence.
 |---|---|---|---|
 | **W0a: Flake suppression** | Layer-1 (on by default, OSS) | v1.4.0 upgrade | None — auto-engaged on upgrade |
 | **W0b: Rule-based investigation** | Layer-2 (on by default, OSS) | v1.5.0 upgrade | None — auto-engaged on upgrade |
-| **W0c: Opt-in TLS-secret-mismatch fixer** | OSS fixer (off by default) | v1.3.0+, customer-requested | "Allow CHA to JSON-patch Ingress.spec.tls[].secretName on non-GitOps Ingresses" |
+| **W0c: Opt-in TLS-secret-mismatch fixer** | OSS fixer (off by default) | v1.3.0+, customer-requested | "Allow Srenix to JSON-patch Ingress.spec.tls[].secretName on non-GitOps Ingresses" |
 | **W1: Narration** | T0 read-only | v1.0.0 release | "Add LLM enrichment to your Slack/AM alerts" |
-| **W1b: LLM-backed investigation** | Layer-2 paid override | After T0 pilot | "Let CHA-com pick investigation tools dynamically instead of by rule" |
+| **W1b: LLM-backed investigation** | Layer-2 paid override | After T0 pilot | "Let Srenix Enterprise pick investigation tools dynamically instead of by rule" |
 | **W2: Click-to-fix** | T1 (opt-in) | First design partner accepts T0 | "Sign off on one-click approved fixes" |
 | **W3: Multi-step plans** | T2 (opt-in) | Cascading drift patterns observed | "Step-by-step approved plans" |
 | **W4: Break-glass** | T3 (opt-in) | SOC2 + Vault-heavy fleet | "Dual-approval Vault recovery runbooks" |
@@ -83,7 +83,7 @@ finding as a `🔬` block in Slack and Alertmanager.
   failure modes (TLS expiry, ESO target mismatch, slow DNS, etc.).
 - No degraded probe latency from the per-cycle 20s investigation cap.
 
-**Downshift**: Set `CHA_INVESTIGATOR=off` on the watcher Deployment
+**Downshift**: Set `SRENIX_INVESTIGATOR=off` on the watcher Deployment
 env. The investigator stops running; DriftReports continue without
 `spec.investigation`. Behavior matches pre-v1.5 OSS bit-for-bit.
 
@@ -104,10 +104,10 @@ env. The investigator stops running; DriftReports continue without
 
 **Activation**:
 - [ ] `helm upgrade --set fixers.tlsSecretMismatch.enabled=true`. The
-      chart sets `CHA_FIXER_TLS_SECRET_MISMATCH=true` on the watcher
+      chart sets `SRENIX_FIXER_TLS_SECRET_MISMATCH=true` on the watcher
       and adds the `networking.k8s.io/ingresses [patch]` verb to the
       remediator ClusterRole.
-- [ ] Verify the fixer registers: `kubectl logs deploy/cha-cluster-health-autopilot`
+- [ ] Verify the fixer registers: `kubectl logs deploy/srenix-agentic-sre`
       should show the fixer in the catalog list at startup.
 
 **Acceptance test**:
@@ -138,8 +138,8 @@ mismatch with the suggested `kubectl patch` command.
       `ai.endpoint=<their-llm>`.
 
 **Activation**:
-- [ ] Customer's existing CHA install bumped to image
-      `docker4zerocool/cha-com:v1.0.0`.
+- [ ] Customer's existing Srenix install bumped to image
+      `docker4zerocool/srenix-enterprise:v1.0.0`.
 - [ ] Helm upgrade applied with T0 values.
 - [ ] Verify `AIEnrichmentApplied` Events appear within one cycle.
 - [ ] Verify `🤖` blocks render correctly in customer's Slack channel.
@@ -167,7 +167,7 @@ mismatch with the suggested `kubectl patch` command.
       only the *tool selection* moves from pattern-match to LLM.
 
 **Activation**:
-- [ ] CHA-com image installed; `ai.enabled=true`; `ai.tier=t0` (or
+- [ ] Srenix Enterprise image installed; `ai.enabled=true`; `ai.tier=t0` (or
       higher). The paid catalog re-calls `RegisterInvestigator` after
       `catalog.RegisterOSS`, replacing the rule-based one.
 - [ ] Verify the override took effect: at least one DriftReport in
@@ -175,7 +175,7 @@ mismatch with the suggested `kubectl patch` command.
       output that the rule-based version would not have produced
       (more nuanced summary; tool sequence varies per finding).
 - [ ] Verify the new audit events emit:
-      `kubectl -n cluster-health-autopilot get events --sort-by=lastTimestamp \
+      `kubectl -n agentic-sre get events --sort-by=lastTimestamp \
         | grep -E "AIInvestigator(Started|ToolCall|Completed|BudgetExceeded)"`.
 
 **Pilot duration**: 2 weeks. Success criteria:
@@ -200,7 +200,7 @@ running.
 
 **Activation**:
 - [ ] Approval-server Deployment + Ingress applied.
-- [ ] Signing-key Secret confirmed (`kubectl get secret cha-approval-signing-key`).
+- [ ] Signing-key Secret confirmed (`kubectl get secret srenix-approval-signing-key`).
 - [ ] OIDC route configured for `/approve` paths.
 - [ ] (Recommended) OPA Gatekeeper installed.
 
@@ -240,7 +240,7 @@ running.
 **Pre-wave**:
 - [ ] T2 pilot complete; customer has Vault-heavy fleet (≥10 ESOs).
 - [ ] Customer has formal SOC2/ISO27001 audit program.
-- [ ] `cha.io/approver` group has ≥2 distinct members in customer's
+- [ ] `srenix.io/approver` group has ≥2 distinct members in customer's
       RBAC.
 - [ ] Customer security team has reviewed `THREAT_MODEL_AI.md §LLM08`
       and signed off on T3 specifically.

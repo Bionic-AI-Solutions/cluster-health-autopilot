@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package report
@@ -10,8 +10,8 @@ import (
 
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/diagnose"
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/probe"
+	"github.com/srenix-ai/agentic-sre/internal/diagnose"
+	"github.com/srenix-ai/agentic-sre/internal/probe"
 )
 
 // DriftReportList is a thin view over the DriftReport CR list used by
@@ -52,7 +52,7 @@ func FormatDailyDigest(
 	_, color, headline := overallStatus(results)
 
 	var b strings.Builder
-	fmt.Fprintf(&b, ":hospital: *Cluster Health Autopilot* — Daily Report  %s\n", now.Format("2006-01-02 15:04 UTC"))
+	fmt.Fprintf(&b, ":hospital: *Agentic SRE* — Daily Report  %s\n", now.Format("2006-01-02 15:04 UTC"))
 	fmt.Fprintf(&b, "%s\n\n", headline)
 
 	// Component status table.
@@ -129,7 +129,7 @@ func FormatDailyDigest(
 		Attachments: []SlackAttachment{{
 			Color:    color,
 			Text:     b.String(),
-			Footer:   "K8s Cluster Health Autopilot — Daily Digest",
+			Footer:   "K8s Agentic SRE — Daily Digest",
 			Ts:       now.Unix(),
 			MrkdwnIn: []string{"text"},
 		}},

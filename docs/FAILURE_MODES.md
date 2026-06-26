@@ -3,14 +3,14 @@
 The default catalog (v1.5.2) covers **four default auto-fixers + one opt-in**
 and **eight OSS analyzers**. All analyzer source code ships under Apache 2.0.
 `VaultPathMissing` requires a constructed Vault client to register — the OSS
-ships it unwired (you supply the client); the paid CHA Enterprise binary
+ships it unwired (you supply the client); the paid Srenix Enterprise binary
 auto-wires it from your Vault configuration. Each is a separate Go function
 with a published unit-test corpus under [`internal/`](../internal/). The
 "real example" column is a real incident from the cluster the product was
 built on.
 
 Since v1.5, every CRITICAL finding also passes through a **Layer-2 Investigator**
-(rule-based in OSS, optional LLM-backed in CHA-com) that attaches a root-cause
+(rule-based in OSS, optional LLM-backed in Srenix Enterprise) that attaches a root-cause
 summary before the alert reaches Slack / Alertmanager / DriftReport. See §C
 at the bottom of this document.
 
@@ -52,7 +52,7 @@ Each fixer is gated by the **Mutator interface** at the type-system level: `snap
 | **Root cause class** | A transient condition that has since cleared (image pull retry, scheduler quirk) prevented the new pod from starting at the moment of the rollout, and the ReplicaSet hasn't retried because `progressDeadlineSeconds` hasn't fired. |
 | **What it does** | Detects a CCE pod owned by a ReplicaSet whose `revision` annotation differs from the live Deployment's `revision`. Patches the Deployment template's `kubectl.kubernetes.io/restartedAt` annotation — the same patch `kubectl rollout restart` produces. Kubernetes spawns a new ReplicaSet, the old wedged one ages out. **Refuses** to restart when the failure is "couldn't find key" — rollout would reproduce the same error against the same Secret; that needs human action and is handled by the analyzer below. |
 | **Why it's safe** | `kubectl rollout restart` is the standard SRE remedy for stuck rollouts; the patched annotation is the documented mechanism. Kubernetes itself decides which pods get replaced and in what order. |
-| **Safety gates (v1.6)** | Refuses when the Deployment carries an Argo / Flux / Helm GitOps annotation (the controller would revert the restart annotation and lock CHA in a fight loop) OR when `spec.paused=true` (an operator deliberately froze rollouts). The shared `internal/fix.GitOpsReason()` helper handles the GitOps detection across all fixers. |
+| **Safety gates (v1.6)** | Refuses when the Deployment carries an Argo / Flux / Helm GitOps annotation (the controller would revert the restart annotation and lock Srenix in a fight loop) OR when `spec.paused=true` (an operator deliberately froze rollouts). The shared `internal/fix.GitOpsReason()` helper handles the GitOps detection across all fixers. |
 | **Real example** | `frontend-deploy` revision 7 stuck because revision 6's pod template had a different env layout that took longer than `progressDeadlineSeconds=600` to converge. Manual `kubectl rollout restart` from on-call cleared it; this fixer does the same automatically when the revision diff says it's safe. |
 | **Source** | [`internal/fix/stuck_rs_pods.go`](../internal/fix/stuck_rs_pods.go) |
 
@@ -76,15 +76,15 @@ Each fixer is gated by the **Mutator interface** at the type-system level: `snap
 | **Root cause class** | Two-Secret naming drift. A hand-crafted Secret (`foo-secret`) gets the Ingress wired to it early; later cert-manager is added with a Certificate targeting a different name (`foo-tls`). The Ingress is never updated. Operator sees "cert-manager works" + "Ingress works" — both true in isolation. Discovery of the issue typically waits until the original cert expires and traffic breaks. |
 | **What it does** | Patches `Ingress.spec.tls[N].secretName` from the stale Secret to the cert-manager-managed Secret via JSON patch. Verifies the candidate is `Ready=True` and has the matching host in `dnsNames`. **Skips** protected namespaces. **Skips** GitOps-managed Ingresses (annotations: `argocd.argoproj.io/instance`, `argocd.argoproj.io/tracking-id`, `kustomize.toolkit.fluxcd.io/{name,namespace}`, `meta.helm.sh/release-{name,namespace}`; label `app.kubernetes.io/managed-by` ∈ {helm, argocd, flux, fluxcd}) — patching those would fight the reconcile loop. |
 | **Why it's safe** | The patch is narrow (one field, one Ingress), reversible (operator can patch it back), and only fires when there is independent evidence (a healthy Certificate CR) that the destination Secret is the right one. GitOps-managed Ingresses are refused because the right fix for those lives in the source repo. |
-| **Why opt-in** | Default off because GitOps adoption varies. Enable with Helm value `fixers.tlsSecretMismatch.enabled=true`, which: flips env var `CHA_FIXER_TLS_SECRET_MISMATCH=true`, registers the fixer in the catalog, and conditionally adds `networking.k8s.io/ingresses [patch]` to the remediator ClusterRole. |
-| **Real example** | `pg.bionicaisolutions.com` Ingress was wired to `pg-bionicaisolutions-com-secret` (hand-crafted, expired 2026-01-07). cert-manager Certificate `pg-bionicaisolutions-com` had been dutifully renewing into `pg-bionicaisolutions-com-tls` (the `-tls` suffix) for months. Once the cert expired, traffic broke. With this fixer enabled, the next reconcile would have repointed the Ingress before the cert went stale. |
+| **Why opt-in** | Default off because GitOps adoption varies. Enable with Helm value `fixers.tlsSecretMismatch.enabled=true`, which: flips env var `SRENIX_FIXER_TLS_SECRET_MISMATCH=true`, registers the fixer in the catalog, and conditionally adds `networking.k8s.io/ingresses [patch]` to the remediator ClusterRole. |
+| **Real example** | `pg.srenix.ai` Ingress was wired to `pg-srenix.ai-secret` (hand-crafted, expired 2026-01-07). cert-manager Certificate `pg-srenix.ai` had been dutifully renewing into `pg-srenix.ai-tls` (the `-tls` suffix) for months. Once the cert expired, traffic broke. With this fixer enabled, the next reconcile would have repointed the Ingress before the cert went stale. |
 | **Source** | [`internal/fix/tls_secret_mismatch.go`](../internal/fix/tls_secret_mismatch.go) |
 
 ---
 
 ## B. Analyzers (read-only; never act; surface diagnostics for human action)
 
-Analyzers run in both `cha diagnose` and `cha remediate`. They produce structured diagnostics that go into the Slack report's `Diagnostics` section, alongside any auto-fixes that were applied.
+Analyzers run in both `srenix diagnose` and `srenix remediate`. They produce structured diagnostics that go into the Slack report's `Diagnostics` section, alongside any auto-fixes that were applied.
 
 ### 1. `SecretKeyMissing`
 
@@ -152,7 +152,7 @@ Analyzers run in both `cha diagnose` and `cha remediate`. They produce structure
 |---|---|
 | **Symptom** | A pod is in `ImagePullBackOff` and the kubelet event message contains an authentication signal — `401`, `unauthorized`, `denied`, `authentication required`, or `pull access denied`. Other pull failures (`manifest unknown`, `image not found`) are intentionally ignored — those are not auth issues. |
 | **What it produces** | Filters pods in `ImagePullBackOff`, scans the kubelet events for auth-signal substrings, emits one Diagnostic per affected pod + image. |
-| **Why no auto-fix** | Resolution requires creating/fixing an `imagePullSecret` — a credential write that CHA's RBAC explicitly excludes. |
+| **Why no auto-fix** | Resolution requires creating/fixing an `imagePullSecret` — a credential write that Srenix's RBAC explicitly excludes. |
 | **Output (verbatim)** | `🔎 Pod monitoring/metrics-exporter container "exporter" cannot pull image 'ghcr.io/myorg/metrics-exporter:v2.1.0': auth failure — 401 unauthorized: authentication required.` |
 | **Source** | [`internal/diagnose/image_pull_auth.go`](../internal/diagnose/image_pull_auth.go) |
 
@@ -163,13 +163,13 @@ Analyzers run in both `cha diagnose` and `cha remediate`. They produce structure
 | **Symptom** | Kong serves an expired (or soon-expiring) cert on a host even though cert-manager has been renewing a fresh cert in the same namespace. Both states look healthy in isolation — the Secret exists with a cert; the Certificate CR is `Ready=True`. The bug is that the Ingress points at the wrong Secret name. |
 | **What it produces** | Walks every `networking.k8s.io/v1` Ingress, parses x509 from `Secret.data.tls.crt` for each `tls[].secretName`, and when the served cert is expired or within 14 days of expiry, checks for a Certificate CR in the same namespace whose `spec.dnsNames` covers the host AND whose `spec.secretName` is a different name AND that is `Ready=True`. Emits a Diagnostic with the exact `kubectl patch` command. |
 | **Why no auto-fix in the analyzer** | The matching `TLSSecretMismatch` fixer (§A.5) IS the auto-fix path — opt-in, with a GitOps escape hatch. The analyzer always runs; the fixer is gated. |
-| **Output (verbatim)** | `🔎 Ingress pg/kong-pgadmin-ingress host pg.bionicaisolutions.com serves expired cert from Secret pg-bionicaisolutions-com-secret while cert-manager is renewing a healthy cert for the same host into Secret pg-bionicaisolutions-com-tls in the same namespace. Wires crossed — Kong is serving the wrong Secret. Remediation: kubectl -n pg patch ingress kong-pgadmin-ingress --type=json -p '[{"op":"replace","path":"/spec/tls/0/secretName","value":"pg-bionicaisolutions-com-tls"}]'` |
+| **Output (verbatim)** | `🔎 Ingress pg/kong-pgadmin-ingress host pg.srenix.ai serves expired cert from Secret pg-srenix.ai-secret while cert-manager is renewing a healthy cert for the same host into Secret pg-srenix.ai-tls in the same namespace. Wires crossed — Kong is serving the wrong Secret. Remediation: kubectl -n pg patch ingress kong-pgadmin-ingress --type=json -p '[{"op":"replace","path":"/spec/tls/0/secretName","value":"pg-srenix.ai-tls"}]'` |
 | **Source** | [`internal/diagnose/tls_secret_mismatch.go`](../internal/diagnose/tls_secret_mismatch.go) |
 
 > **Note**: an earlier `IngressCoverage` analyzer (v0.9.x) was REMOVED in v1.2.
 > It warned about Ingress hosts not present in `probe.DefaultEndpointTargets()`.
 > v1.2 added auto-discovery — every Ingress host is now probed automatically
-> (with per-Ingress opt-out via `cha.bionicaisolutions.com/probe-disable=true`),
+> (with per-Ingress opt-out via `srenix.ai/probe-disable=true`),
 > so the gap that analyzer warned about no longer exists.
 
 ---
@@ -183,7 +183,7 @@ and Alertmanager; the `DriftReport` CR persists it under `spec.investigation`.
 
 The OSS catalog registers a deterministic **rule-based Investigator**
 ([`internal/investigator/rules.go`](../internal/investigator/rules.go)) by
-default. The paid CHA-com binary may replace it with an LLM-backed
+default. The paid Srenix Enterprise binary may replace it with an LLM-backed
 implementation that uses the same closed-enum `Environment` surface:
 
 | Tool | What it sees | Used by which rule |
@@ -212,7 +212,7 @@ Hard contract:
 - **No new RBAC.** Reuses the watcher's existing read access.
 - **20-second wall-clock cap** across all critical findings in one cycle.
 - **Soft-fail per item.** Investigation is additive; the original finding always surfaces.
-- **Disable with `CHA_INVESTIGATOR=off`** (env var on the watcher Deployment).
+- **Disable with `SRENIX_INVESTIGATOR=off`** (env var on the watcher Deployment).
 
 Design rationale in [`docs/design/2026-05-investigator-agent.md`](design/2026-05-investigator-agent.md).
 
@@ -231,8 +231,8 @@ the env vars listed below.
 | **Symptom** | Nodes show `Ready=True` but `kubectl top node` indicates near-exhaustion; kubelet starts evicting pods minutes later with no warning. |
 | **Root cause class** | The basic Nodes probe only checks the `Ready` condition. The four pressure conditions (DiskPressure, MemoryPressure, PIDPressure, NetworkUnavailable) flip independently and warn before Ready goes False. Ignoring them is how slow-burn resource exhaustion turns into a sudden cluster-wide eviction storm. |
 | **What it does** | Walks node status.conditions, surfaces any with status=True. DiskPressure and NetworkUnavailable auto-escalate to Critical (eviction or broken pod traffic imminent). MemoryPressure and PIDPressure stay Warning. |
-| **Why it's read-only** | Pressure conditions cannot be patched by CHA — the node hardware / kernel has to free up the resource. The probe's value is *visibility*, not action. |
-| **Disable** | `CHA_PROBE_NODE_PRESSURE=off` |
+| **Why it's read-only** | Pressure conditions cannot be patched by Srenix — the node hardware / kernel has to free up the resource. The probe's value is *visibility*, not action. |
+| **Disable** | `SRENIX_PROBE_NODE_PRESSURE=off` |
 | **Source** | [`internal/probe/node_pressure.go`](../internal/probe/node_pressure.go) |
 
 ### D2. `DaemonSets`
@@ -242,7 +242,7 @@ the env vars listed below.
 | **Symptom** | Workloads stay Ready but pod-to-pod traffic fails; new mounts hang; the cluster *feels* broken without a clear pod-level failure. |
 | **Root cause class** | A broken CNI (Cilium, Calico, Flannel) / CSI plugin (rook-ceph, longhorn) / kube-proxy pod silently starves the cluster. Nodes flip Ready=False eventually but the kubelet often keeps them Ready for minutes after the underlying daemon dies. |
 | **What it does** | Inspects DaemonSets in eight system namespaces (`kube-system`, `cilium-system`, `calico-system`, `kube-flannel`, `rook-ceph`, `longhorn-system`, `openebs`, `metallb-system`). Flags when `numberReady < desiredNumberScheduled` on any DS that has `desiredNumberScheduled > 0`. Intentionally-idle DSes (zero desired) are not flagged. |
-| **Disable / customize** | `CHA_PROBE_DAEMONSETS=off`, or set `SystemNamespaces` via catalog override. |
+| **Disable / customize** | `SRENIX_PROBE_DAEMONSETS=off`, or set `SystemNamespaces` via catalog override. |
 | **Source** | [`internal/probe/daemonsets.go`](../internal/probe/daemonsets.go) |
 
 ### D3. `PendingPods`
@@ -252,7 +252,7 @@ the env vars listed below.
 | **Symptom** | `kubectl get pods -A` shows pods stuck in `Pending` indefinitely; the scheduler is silent in events because it ran once, declared the cluster unschedulable, and gave up. |
 | **Root cause class** | Cluster capacity exhausted, taints/tolerations mismatch, PVC unbound, nodeSelector matches nothing. The pod just sits there. |
 | **What it does** | Pods with `phase=Pending` AND `conditions[type=PodScheduled].status=False` past a 60s grace window. Skips `ImagePullBackOff` (owned by the existing `ImagePullAuth` analyzer). Reason-aware remediation distinguishes Insufficient CPU/Memory, unbound PVC, taint mismatch, nodeSelector miss. |
-| **Disable** | `CHA_PROBE_PENDING_PODS=off` |
+| **Disable** | `SRENIX_PROBE_PENDING_PODS=off` |
 | **Source** | [`internal/probe/pending_pods.go`](../internal/probe/pending_pods.go) |
 
 ### D4. `CrashLoopBackOff`
@@ -262,7 +262,7 @@ the env vars listed below.
 | **Symptom** | A random Deployment in a random namespace is in a crash loop, and the operator only notices when a downstream feature breaks. |
 | **Root cause class** | Bad config, missing dependency, OOM, broken liveness probe. The existing `Services` probe only watches workloads on the hardcoded critical-services list — anything outside that list crashes silently. |
 | **What it does** | Generic crash-loop detector for *any* namespace. Inspects both regular and init containers. Protected-namespace pods (kube-system, etc.) are always Critical. User-namespace pods are Warning by default; escalate to Critical past the restart threshold (default 10, configurable). Recovered pods (currently Running, even with high historical restart count) are not flagged. |
-| **Disable / customize** | `CHA_PROBE_CRASHLOOP=off`, or set `CriticalRestartThreshold` via catalog override. |
+| **Disable / customize** | `SRENIX_PROBE_CRASHLOOP=off`, or set `CriticalRestartThreshold` via catalog override. |
 | **Source** | [`internal/probe/crashloop.go`](../internal/probe/crashloop.go) |
 
 ### D5. `ETCD`
@@ -272,7 +272,7 @@ the env vars listed below.
 | **Symptom** | Kubernetes API responds, control plane *looks* healthy, but etcd is the canary nobody's watching. |
 | **Root cause class** | etcd member down (disk full, slow fsync, OOM), quorum at risk, leader churn. |
 | **What it does** | Watches kubeadm-style static-pod etcd members in `kube-system` (matched by `component=etcd` label OR `etcd-<node>` name prefix). Any `Ready=False` or `restartCount > 0` is Critical. For external etcd (managed services, k3s sqlite, etc.) the probe **honestly reports Warning ("probe is blind")** rather than false-greening. |
-| **Disable / customize** | `CHA_PROBE_ETCD=off`. Set `Namespace` via catalog override for non-`kube-system` installs. |
+| **Disable / customize** | `SRENIX_PROBE_ETCD=off`. Set `Namespace` via catalog override for non-`kube-system` installs. |
 | **Source** | [`internal/probe/etcd.go`](../internal/probe/etcd.go) |
 
 ### D6. `FailedMounts`
@@ -282,7 +282,7 @@ the env vars listed below.
 | **Symptom** | Pods stuck in `ContainerCreating` forever; the PVCs probe shows the PVC as Bound. |
 | **Root cause class** | PVC is bound but the kubelet can't attach or mount: CSI controller pod unhealthy, NFS export changed permissions, rook-ceph OSD readiness, storage backend out-of-quota. |
 | **What it does** | Joins Pods with `phase=Pending` + `ContainerCreating` waiting state, past a 90s grace window, with their kubelet `FailedMount` / `FailedAttachVolume` / `FailedDetachVolume` / `ProvisioningFailed` events. Reason-aware remediation. |
-| **Disable** | `CHA_PROBE_FAILED_MOUNTS=off` |
+| **Disable** | `SRENIX_PROBE_FAILED_MOUNTS=off` |
 | **Source** | [`internal/probe/failed_mounts.go`](../internal/probe/failed_mounts.go) |
 
 ---

@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package probe
@@ -6,7 +6,7 @@ package probe
 import (
 	"testing"
 
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/ai"
+	"github.com/srenix-ai/agentic-sre/pkg/ai"
 )
 
 // probeFloor pins the compiled-in always-critical floor consumed by the
@@ -42,7 +42,7 @@ func TestIsProtectedNamespace_Floor(t *testing.T) {
 
 // TestIsProtectedNamespace_ExtensionEscalatesSeverity — the probe-side
 // escalation honors the same append-only extension the fixer guard and
-// the AI validator read (CHA_PROTECTED_NAMESPACES_EXTRA /
+// the AI validator read (SRENIX_PROTECTED_NAMESPACES_EXTRA /
 // ai.SetExtraProtectedNamespaces), so an issue in an extra-protected
 // namespace is escalated, not just shielded from auto-fix.
 func TestIsProtectedNamespace_ExtensionEscalatesSeverity(t *testing.T) {

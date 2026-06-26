@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package rag
@@ -13,7 +13,7 @@ import "context"
 //     default into every probe/analyzer that supports a learnt source.
 //     OSS clusters use this; their probes work exactly as they did pre-2d.
 //
-//   - QdrantReader (cha-com, paid AI tier): backed by per-cluster Qdrant.
+//   - QdrantReader (srenix-enterprise, paid AI tier): backed by per-cluster Qdrant.
 //     Replaces NoopReader at operator startup when spec.ai.enabled=true.
 //
 // Failure-mode contract: implementations MUST return (nil, err) on

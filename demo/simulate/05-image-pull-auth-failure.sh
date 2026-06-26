@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Simulate: ImagePullBackOff due to auth failure
-# CHA reports: ImagePullAuth analyzer
-# CHA auto-fix: NONE — imagePullSecret must be created/fixed
+# Srenix reports: ImagePullAuth analyzer
+# Srenix auto-fix: NONE — imagePullSecret must be created/fixed
 # Manual fix:   demo/fix-scripts/fix-image-pull-secret.sh
 #
 # Set KUBE_CONTEXT to target a specific cluster:
@@ -42,7 +42,7 @@ echo "    Watch pod status:"
 echo "    ${KUBECTL} get pod ${POD_NAME} -n ${NAMESPACE} -w"
 echo "    ${KUBECTL} describe pod ${POD_NAME} -n ${NAMESPACE} | grep -A5 Events"
 echo ""
-echo "==> CHA ImagePullAuth analyzer will detect auth-failure keywords in events."
+echo "==> Srenix ImagePullAuth analyzer will detect auth-failure keywords in events."
 echo "    Check Slack #aws-alerts for: 'cannot pull image — auth failure'"
 echo ""
 echo "    To fix: run demo/fix-scripts/fix-image-pull-secret.sh ${NAMESPACE} ${POD_NAME}"

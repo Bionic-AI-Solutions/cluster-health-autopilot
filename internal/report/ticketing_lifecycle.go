@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package report
@@ -13,8 +13,8 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/types"
 
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/snapshot"
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/ticketing"
+	"github.com/srenix-ai/agentic-sre/internal/snapshot"
+	"github.com/srenix-ai/agentic-sre/pkg/ticketing"
 )
 
 // RouteResolves auto-closes tickets whose underlying finding has cleared
@@ -26,7 +26,7 @@ import (
 // For each cleared subject that has a status.ticket:
 //   - already-resolved (status.ticket.resolved == true) → no-op
 //     (idempotency: never re-resolve a ticket every cycle), and
-//   - otherwise → Sink.Resolve(ref, "CHA: condition cleared as of <ts>")
+//   - otherwise → Sink.Resolve(ref, "Srenix: condition cleared as of <ts>")
 //     then stamp status.ticket.resolved=true + resolvedAt so a second
 //     pass (e.g. a flapping subject re-clearing before the CR is gone)
 //     is a no-op.
@@ -52,7 +52,7 @@ func RouteResolves(
 		log.Printf("ticketing: resolve-on-clear list driftreports: %v", err)
 		return
 	}
-	reason := fmt.Sprintf("CHA: condition cleared as of %s", cycleTime.UTC().Format(time.RFC3339))
+	reason := fmt.Sprintf("Srenix: condition cleared as of %s", cycleTime.UTC().Format(time.RFC3339))
 	resolved := 0
 	for _, subj := range clearedSubjects {
 		cr, ok := bySubject[subj]
@@ -81,6 +81,63 @@ func RouteResolves(
 		resolved++
 	}
 	log.Printf("ticketing: resolve-on-clear (cleared=%d resolved=%d)", len(clearedSubjects), resolved)
+}
+
+// RouteTicketCleanup closes any still-open ticket whose finding severity is
+// now BELOW the MinSeverity floor. It retires the backlog left behind when the
+// floor is tightened (e.g. raising it to "critical" auto-closes the warning /
+// info / observation tickets filed under the old, looser policy) so the issue
+// tracker converges on genuine human-action items only.
+//
+// Idempotent: a ticket already marked resolved is skipped, so once the backlog
+// is drained this is a no-op. Best-effort, like the rest of ticketing.
+//
+// Runs BEFORE Reconcile (same as RouteResolves) so the persisted TicketRef on
+// status.ticket is still readable.
+func RouteTicketCleanup(
+	ctx context.Context,
+	cfg TicketingConfig,
+	src snapshot.Source,
+	mut snapshot.Mutator,
+	cycleTime time.Time,
+) {
+	if cfg.Sink == nil || mut == nil || !cfg.ResolveOnClear {
+		return
+	}
+	bySubject, err := indexDriftReportsBySubject(ctx, src)
+	if err != nil {
+		log.Printf("ticketing: cleanup list driftreports: %v", err)
+		return
+	}
+	reason := fmt.Sprintf("Srenix: closed — finding severity is below the ticketing floor (%s); no human action required. Tracked via DriftReport / Slack only. (%s)",
+		ticketFloorLabel(cfg), cycleTime.UTC().Format(time.RFC3339))
+	closed := 0
+	for _, cr := range bySubject {
+		ref, ok := readTicketRef(cr)
+		if !ok || ticketResolved(cr) {
+			continue
+		}
+		if cfg.meetsTicketThreshold(driftReportSeverity(cr)) {
+			continue // still at/above floor — legitimately open
+		}
+		if err := cfg.Sink.Resolve(ctx, ref, reason); err != nil {
+			log.Printf("ticketing: cleanup resolve %s/%s: %v", ref.Provider, ref.Key, err)
+			continue
+		}
+		if err := markTicketResolved(ctx, mut, cr.GetName(), cycleTime); err != nil {
+			log.Printf("ticketing: cleanup persist resolved flag %s: %v", ref.Key, err)
+		}
+		closed++
+	}
+	if closed > 0 {
+		log.Printf("ticketing: cleanup closed %d below-floor ticket(s)", closed)
+	}
+}
+
+// driftReportSeverity reads spec.severity off a DriftReport CR.
+func driftReportSeverity(cr *unstructured.Unstructured) string {
+	s, _, _ := unstructured.NestedString(cr.Object, "spec", "severity")
+	return s
 }
 
 // maybeCommentOnRecurrence handles a still-present finding that already has
@@ -158,16 +215,16 @@ func buildRecurrenceComment(d DeltaDiag, cluster, runID string, wasResolved, sev
 	switch {
 	case wasResolved:
 		return fmt.Sprintf(
-			"**CHA: condition recurred.** This finding previously cleared and the ticket was resolved; it has reappeared and is active again.\n\n"+
+			"**Srenix: condition recurred.** This finding previously cleared and the ticket was resolved; it has reappeared and is active again.\n\n"+
 				"**Subject:** `%s`\n**Severity:** %s\n\n%s\n\n---\nCluster: `%s` · Run: `%s` · %s",
 			d.Subject, d.Severity, d.Message, cluster, runID, now)
 	case sevChanged:
 		return fmt.Sprintf(
-			"**CHA: severity changed** %s → %s.\n\n**Subject:** `%s`\n\n%s\n\n---\nCluster: `%s` · Run: `%s` · %s",
+			"**Srenix: severity changed** %s → %s.\n\n**Subject:** `%s`\n\n%s\n\n---\nCluster: `%s` · Run: `%s` · %s",
 			prevSeverity, d.Severity, d.Subject, d.Message, cluster, runID, now)
 	default:
 		return fmt.Sprintf(
-			"**CHA: condition still active.**\n\n**Subject:** `%s`\n**Severity:** %s\n\n%s\n\n---\nCluster: `%s` · Run: `%s` · %s",
+			"**Srenix: condition still active.**\n\n**Subject:** `%s`\n**Severity:** %s\n\n%s\n\n---\nCluster: `%s` · Run: `%s` · %s",
 			d.Subject, d.Severity, d.Message, cluster, runID, now)
 	}
 }

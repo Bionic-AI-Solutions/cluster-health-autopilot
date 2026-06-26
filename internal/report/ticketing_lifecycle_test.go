@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package report
@@ -12,7 +12,7 @@ import (
 
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/ticketing"
+	"github.com/srenix-ai/agentic-sre/pkg/ticketing"
 )
 
 // --- Resolve-on-clear (M2) ---

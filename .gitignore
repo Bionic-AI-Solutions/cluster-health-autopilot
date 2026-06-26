@@ -25,7 +25,7 @@ testdata/local/
 /docs/*.pdf
 /docs/*.docx
 
-# Raw cluster run data — anonymized versions are published via `cha anonymize`
+# Raw cluster run data — anonymized versions are published via `srenix anonymize`
 /runs/*.jsonl
 /runs/SUMMARY.md
 
@@ -35,5 +35,10 @@ Thumbs.db
 dist/
 
 # stray local build binary (use bin/ for builds)
-/cha
+/srenix
 .worktrees
+/cha
+/cha-operator
+/srenix
+/srenix-operator
+/srenix-enterprise

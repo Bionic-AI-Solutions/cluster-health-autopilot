@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package gcp
@@ -8,9 +8,9 @@ import (
 	"fmt"
 	"time"
 
-	intcloud "github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/cloud"
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/cloud"
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/probe"
+	intcloud "github.com/srenix-ai/agentic-sre/internal/cloud"
+	"github.com/srenix-ai/agentic-sre/pkg/cloud"
+	"github.com/srenix-ai/agentic-sre/pkg/probe"
 )
 
 // LoadBalancerBackends flags LB backend services with no healthy
@@ -40,7 +40,7 @@ func (LoadBalancerBackends) Run(ctx context.Context, src cloud.Source) probe.Res
 		switch {
 		case s.HealthyCount == 0 && (s.UnhealthyCount > 0 || s.TotalBackends > 0):
 			// The "(lb: <forwarding-rule IP or name>)" suffix is the
-			// CHA-com RCA join key; unmapped backend services fall back
+			// Srenix Enterprise RCA join key; unmapped backend services fall back
 			// to the backend-service name — see internal/cloud/joinkeys.go.
 			// contract: internal/cloud/contract_test.go
 			lbValue := s.ForwardingRule

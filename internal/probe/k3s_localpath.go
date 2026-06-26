@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package probe
@@ -7,7 +7,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/snapshot"
+	"github.com/srenix-ai/agentic-sre/internal/snapshot"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )
@@ -38,7 +38,7 @@ import (
 //	     Severity Warning — scheduling failure or node capacity issue.
 //
 // No-ops gracefully when no local-path PVCs are found.
-// Opt-out: CHA_PROBE_K3S_LOCALPATH=off
+// Opt-out: SRENIX_PROBE_K3S_LOCALPATH=off
 type K3sLocalPathStorage struct {
 	// DiskFreeThreshold is the fraction of ephemeral-storage that must
 	// remain free before the probe emits a warning. Zero → 0.20 (20%).

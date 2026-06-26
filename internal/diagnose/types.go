@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 // Package diagnose contains read-only analyzers that produce precise,
@@ -16,7 +16,7 @@
 // exported interface expected by pkg/registry.
 package diagnose
 
-import pkgdiagnose "github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/diagnose"
+import pkgdiagnose "github.com/srenix-ai/agentic-sre/pkg/diagnose"
 
 // Diagnostic is re-exported from pkg/diagnose; see that package for the
 // canonical definition.

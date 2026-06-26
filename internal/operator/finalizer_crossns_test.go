@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package operator
@@ -7,7 +7,7 @@ import (
 	"context"
 	"testing"
 
-	chav1alpha1 "github.com/Bionic-AI-Solutions/cluster-health-autopilot/api/v1alpha1"
+	chav1alpha1 "github.com/srenix-ai/agentic-sre/api/v1alpha1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
@@ -26,7 +26,7 @@ import (
 // them.
 func TestReconcile_OnDelete_CleansCrossNamespaceEventsRBAC(t *testing.T) {
 	cr := approvalCR()
-	cr.Spec.Approval.AuditNamespace = "audit-ns" // different from cr.Namespace (cha-system)
+	cr.Spec.Approval.AuditNamespace = "audit-ns" // different from cr.Namespace (srenix-system)
 
 	r, c := newReconciler(t, cr)
 	// Steady state: pass 1 adds finalizer, pass 2 reconciles children.
@@ -50,7 +50,7 @@ func TestReconcile_OnDelete_CleansCrossNamespaceEventsRBAC(t *testing.T) {
 	}
 
 	// Delete the CR and run the finalizer pass.
-	var live chav1alpha1.ClusterHealthAutopilot
+	var live chav1alpha1.AgenticSRE
 	if err := c.Get(context.Background(), types.NamespacedName{Name: cr.Name, Namespace: cr.Namespace}, &live); err != nil {
 		t.Fatalf("get CR: %v", err)
 	}
@@ -82,7 +82,7 @@ func TestReconcile_OnDelete_SameNamespaceEventsRBAC_NoError(t *testing.T) {
 	reconcileOnce(t, r, cr)
 	reconcileOnce(t, r, cr)
 
-	var live chav1alpha1.ClusterHealthAutopilot
+	var live chav1alpha1.AgenticSRE
 	if err := c.Get(context.Background(), types.NamespacedName{Name: cr.Name, Namespace: cr.Namespace}, &live); err != nil {
 		t.Fatalf("get CR: %v", err)
 	}

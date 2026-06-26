@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package diagnose
@@ -143,7 +143,7 @@ func TestUnprovisionedSecret_EmitsWhenNoESO(t *testing.T) {
 }
 
 func TestUnprovisionedSecret_SilentWhenESOProvisions(t *testing.T) {
-	// ESO targets the same Secret name — CHA should trust ESO is handling it.
+	// ESO targets the same Secret name — Srenix should trust ESO is handling it.
 	src := loadSrc(t, map[string]string{
 		"deploy.json": unprovDeployEnvFrom,
 		"eso.json":    esoProvisionedSecret,

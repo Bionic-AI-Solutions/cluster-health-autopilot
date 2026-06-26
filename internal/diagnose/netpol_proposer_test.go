@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package diagnose
@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/netpol"
-	pkgsnapshot "github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/snapshot"
+	"github.com/srenix-ai/agentic-sre/pkg/netpol"
+	pkgsnapshot "github.com/srenix-ai/agentic-sre/pkg/snapshot"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )

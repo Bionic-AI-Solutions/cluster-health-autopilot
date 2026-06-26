@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package watcher
@@ -62,7 +62,7 @@ func TestRunWithLeader_SingleCandidateAcquiresAndRuns(t *testing.T) {
 	called := make(chan struct{}, 1)
 	cfg := LeaderConfig{
 		Namespace:     "test-ns",
-		LeaseName:     "test-cha",
+		LeaseName:     "test-srenix",
 		Identity:      "pod-a",
 		LeaseDuration: 200 * time.Millisecond,
 		RenewDeadline: 150 * time.Millisecond,
@@ -95,7 +95,7 @@ func TestRunWithLeader_TwoCandidatesOnlyOneRuns(t *testing.T) {
 	cfgFor := func(id string) LeaderConfig {
 		return LeaderConfig{
 			Namespace:     "test-ns",
-			LeaseName:     "test-cha",
+			LeaseName:     "test-srenix",
 			Identity:      id,
 			LeaseDuration: 200 * time.Millisecond,
 			RenewDeadline: 150 * time.Millisecond,
@@ -155,7 +155,7 @@ func TestRunWithLeader_BodyCtxCancelsOnParentDone(t *testing.T) {
 	bodyExited := make(chan struct{})
 	cfg := LeaderConfig{
 		Namespace:     "test-ns",
-		LeaseName:     "test-cha-cancel",
+		LeaseName:     "test-srenix-cancel",
 		Identity:      "pod-a",
 		LeaseDuration: 200 * time.Millisecond,
 		RenewDeadline: 150 * time.Millisecond,
@@ -189,10 +189,10 @@ func TestLeaderConfig_WithDefaults_FillsInBlanks(t *testing.T) {
 	_ = os.Unsetenv("MY_POD_NAMESPACE")
 	_ = os.Unsetenv("MY_POD_NAME")
 	cfg := LeaderConfig{}.withDefaults()
-	if cfg.Namespace != "cluster-health-autopilot" {
+	if cfg.Namespace != "agentic-sre" {
 		t.Errorf("default namespace = %q", cfg.Namespace)
 	}
-	if cfg.LeaseName != "cha-watcher" {
+	if cfg.LeaseName != "srenix-watcher" {
 		t.Errorf("default lease name = %q", cfg.LeaseName)
 	}
 	if cfg.LeaseDuration != 30*time.Second {
@@ -210,32 +210,32 @@ func TestLeaderConfig_WithDefaults_FillsInBlanks(t *testing.T) {
 }
 
 func TestLeaderConfig_WithDefaults_ReadsDownwardAPI(t *testing.T) {
-	t.Setenv("MY_POD_NAMESPACE", "prod-cha")
-	t.Setenv("MY_POD_NAME", "cha-watcher-x4z2")
+	t.Setenv("MY_POD_NAMESPACE", "prod-srenix")
+	t.Setenv("MY_POD_NAME", "srenix-watcher-x4z2")
 	cfg := LeaderConfig{}.withDefaults()
-	if cfg.Namespace != "prod-cha" {
+	if cfg.Namespace != "prod-srenix" {
 		t.Errorf("MY_POD_NAMESPACE should populate Namespace; got %q", cfg.Namespace)
 	}
-	if cfg.Identity != "cha-watcher-x4z2" {
+	if cfg.Identity != "srenix-watcher-x4z2" {
 		t.Errorf("MY_POD_NAME should populate Identity; got %q", cfg.Identity)
 	}
 }
 
 func TestLeaderElectionDisabledFromEnv(t *testing.T) {
 	for _, in := range []string{"off", "OFF", "false", "0"} {
-		t.Setenv("CHA_LEADER_ELECTION", in)
+		t.Setenv("SRENIX_LEADER_ELECTION", in)
 		if !leaderElectionDisabledFromEnv() && in != "OFF" {
 			// "OFF" should also disable per case-insensitivity, but our
 			// implementation only matches the literals listed. Treat OFF
 			// as a documented gap — current behavior is case-sensitive.
-			t.Errorf("CHA_LEADER_ELECTION=%q should disable; got enabled", in)
+			t.Errorf("SRENIX_LEADER_ELECTION=%q should disable; got enabled", in)
 		}
 	}
-	t.Setenv("CHA_LEADER_ELECTION", "on")
+	t.Setenv("SRENIX_LEADER_ELECTION", "on")
 	if leaderElectionDisabledFromEnv() {
-		t.Errorf(`CHA_LEADER_ELECTION=on should NOT disable`)
+		t.Errorf(`SRENIX_LEADER_ELECTION=on should NOT disable`)
 	}
-	_ = os.Unsetenv("CHA_LEADER_ELECTION")
+	_ = os.Unsetenv("SRENIX_LEADER_ELECTION")
 	if leaderElectionDisabledFromEnv() {
 		t.Errorf("unset env should NOT disable; defaults to enabled")
 	}

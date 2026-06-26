@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package watcher
@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/report"
-	pkgai "github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/ai"
+	"github.com/srenix-ai/agentic-sre/internal/report"
+	pkgai "github.com/srenix-ai/agentic-sre/pkg/ai"
 )
 
 // TestAttachApprovalURLs_MintsSilenceLinks asserts the watcher mints BOTH
@@ -33,7 +33,7 @@ func TestAttachApprovalURLs_MintsSilenceLinks(t *testing.T) {
 		cfg: Config{
 			SilenceLinks: report.SilenceLinkConfig{
 				PrivateKey: priv,
-				BaseURL:    "https://cha-approve.example.com",
+				BaseURL:    "https://srenix-approve.example.com",
 				ShortDur:   24 * time.Hour,
 				LongDur:    90 * 24 * time.Hour,
 			},
@@ -127,7 +127,7 @@ func TestAttachSilenceLinks_WarningAdvisoryFinding_GetsLinks(t *testing.T) {
 		cfg: Config{
 			SilenceLinks: report.SilenceLinkConfig{
 				PrivateKey: priv,
-				BaseURL:    "https://cha-approve.example.com",
+				BaseURL:    "https://srenix-approve.example.com",
 				ShortDur:   24 * time.Hour,
 				LongDur:    90 * 24 * time.Hour,
 			},
@@ -185,7 +185,7 @@ func TestAttachSilenceLinks_EmptySource_SubjectFallback(t *testing.T) {
 		cfg: Config{
 			SilenceLinks: report.SilenceLinkConfig{
 				PrivateKey: priv,
-				BaseURL:    "https://cha-approve.example.com",
+				BaseURL:    "https://srenix-approve.example.com",
 				ShortDur:   24 * time.Hour,
 				LongDur:    90 * 24 * time.Hour,
 			},

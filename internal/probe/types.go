@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 // Package probe contains read-only health probes that run against a snapshot.Source.
@@ -12,7 +12,7 @@
 // exported interface expected by pkg/registry.
 package probe
 
-import pkgprobe "github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/probe"
+import pkgprobe "github.com/srenix-ai/agentic-sre/pkg/probe"
 
 // Probe is re-exported from pkg/probe; see that package for the canonical definition.
 type Probe = pkgprobe.Probe

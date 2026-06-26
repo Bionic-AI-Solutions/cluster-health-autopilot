@@ -1,0 +1,97 @@
+{{- if (.Values.ai.memory).enabled }}
+# Dedicated RAG vector store (Qdrant) for the AI-remediation memory loop.
+#
+# Runs in-namespace alongside the other Srenix objects (per the design
+# decision in Srenix Enterprise docs/design/2026-05-ai-remediation-rag-plan.md).
+# The aiwatch embeds ResolutionRecords (via the in-cluster gpu-ai
+# embeddings endpoint) and upserts them here, then retrieves the top-k
+# prior resolutions to ground T1–T3 proposals. Append-only system of
+# record is the ResolutionRecord CRD; this is the semantic index over it
+# and is rebuildable by re-embedding the CRs.
+#
+# Gated on ai.memory.enabled → OSS / non-AI installs never stand it up.
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "srenix.fullname" . }}-rag
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "srenix.labels" . | nindent 4 }}
+    srenix.ai/role: rag
+spec:
+  serviceName: {{ include "srenix.fullname" . }}-rag
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "srenix.selectorLabels" . | nindent 6 }}
+      srenix.ai/role: rag
+  template:
+    metadata:
+      labels:
+        {{- include "srenix.selectorLabels" . | nindent 8 }}
+        srenix.ai/role: rag
+    spec:
+      {{- with .Values.image.pullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: qdrant
+          image: "{{ (.Values.ai.memory.image).repository | default "qdrant/qdrant" }}:{{ (.Values.ai.memory.image).tag | default "v1.12.4" }}"
+          imagePullPolicy: {{ (.Values.ai.memory.image).pullPolicy | default "IfNotPresent" }}
+          ports:
+            - name: http
+              containerPort: 6333
+              protocol: TCP
+            - name: grpc
+              containerPort: 6334
+              protocol: TCP
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          # The Pod's root filesystem is read-only (.Values.securityContext
+          # sets readOnlyRootFilesystem: true), but Qdrant writes BOTH its
+          # main DB AND a sibling snapshots/temp directory at startup. By
+          # default they land at /qdrant/snapshots and /qdrant/.qdrant-temp
+          # — on the read-only image FS — and the container CrashLoops with
+          # "Can't create Snapshots directory: ReadOnlyFilesystem". Redirect
+          # both under the mounted PVC so one volume serves all writes.
+          env:
+            - name: QDRANT__STORAGE__SNAPSHOTS_PATH
+              value: /qdrant/storage/snapshots
+            - name: QDRANT__STORAGE__TEMP_PATH
+              value: /qdrant/storage/temp
+          livenessProbe:
+            httpGet:
+              path: /livez
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          volumeMounts:
+            - name: storage
+              mountPath: /qdrant/storage
+          resources:
+            {{- toYaml (.Values.ai.memory.resources | default dict) | nindent 12 }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+  volumeClaimTemplates:
+    - metadata:
+        name: storage
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        {{- with (.Values.ai.memory.storage).className }}
+        storageClassName: {{ . }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ (.Values.ai.memory.storage).size | default "5Gi" }}
+{{- end }}

@@ -1,8 +1,8 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 // Package webhook implements the M6 class-E trigger source: external
-// systems POST to `/webhook/<source>` to ask CHA to re-run its diagnose
+// systems POST to `/webhook/<source>` to ask Srenix to re-run its diagnose
 // cycle now, rather than wait for the next resync.
 //
 // Each registered source has its own HMAC-SHA256 secret; the handler
@@ -10,15 +10,15 @@
 // return 404. Recognized + authenticated requests respond 202 + push a
 // signal to the watcher's trigCh.
 //
-// Signature schemes (X-CHA-Signature header, value "sha256=<hex>"):
+// Signature schemes (X-Srenix-Signature header, value "sha256=<hex>"):
 //
 //   - Timestamped (recommended): the request also carries
-//     X-CHA-Timestamp=<unix-seconds> and the signed payload is
+//     X-Srenix-Timestamp=<unix-seconds> and the signed payload is
 //     "<timestamp>.<body>", i.e. sha256=hex(hmac-sha256(secret,
 //     timestamp + "." + body)). Requests whose timestamp is more than
 //     5 minutes from server time (either direction) are rejected with
 //     401, bounding the replay window of a captured request.
-//   - Legacy body-only (backward compat): no X-CHA-Timestamp header;
+//   - Legacy body-only (backward compat): no X-Srenix-Timestamp header;
 //     the signed payload is just the body. Captured requests replay
 //     forever — a once-per-source notice is logged recommending the
 //     timestamp header.
@@ -47,7 +47,7 @@ import (
 )
 
 // maxTimestampSkew bounds the replay window for timestamped signatures:
-// |now - X-CHA-Timestamp| must be within this duration.
+// |now - X-Srenix-Timestamp| must be within this duration.
 const maxTimestampSkew = 5 * time.Minute
 
 // sourceCfg is the per-source auth configuration.
@@ -70,7 +70,7 @@ type Handler struct {
 	trigC   chan<- struct{}
 
 	// legacyNoticed tracks sources that already logged the
-	// once-per-source "use X-CHA-Timestamp" recommendation;
+	// once-per-source "use X-Srenix-Timestamp" recommendation;
 	// emptyNoticed does the same for the empty-secret rejection
 	// (the endpoint is reachable unauthenticated, so per-request
 	// logging would let an attacker spam the logs).
@@ -190,8 +190,8 @@ func (h *Handler) authenticate(w http.ResponseWriter, r *http.Request, src strin
 		return false
 	}
 
-	sig := r.Header.Get("X-CHA-Signature")
-	tsHdr := r.Header.Get("X-CHA-Timestamp")
+	sig := r.Header.Get("X-Srenix-Signature")
+	tsHdr := r.Header.Get("X-Srenix-Timestamp")
 	if tsHdr == "" {
 		// Legacy body-only scheme — kept for backward compatibility.
 		if !verifyHMAC(body, cfg.secret, sig) {
@@ -205,11 +205,11 @@ func (h *Handler) authenticate(w http.ResponseWriter, r *http.Request, src strin
 	// Timestamped scheme: signed payload is "<timestamp>.<body>".
 	ts, err := strconv.ParseInt(tsHdr, 10, 64)
 	if err != nil {
-		http.Error(w, "invalid X-CHA-Timestamp (want unix seconds)", http.StatusUnauthorized)
+		http.Error(w, "invalid X-Srenix-Timestamp (want unix seconds)", http.StatusUnauthorized)
 		return false
 	}
 	if skew := time.Since(time.Unix(ts, 0)); skew > maxTimestampSkew || skew < -maxTimestampSkew {
-		http.Error(w, "X-CHA-Timestamp outside replay window", http.StatusUnauthorized)
+		http.Error(w, "X-Srenix-Timestamp outside replay window", http.StatusUnauthorized)
 		return false
 	}
 	payload := make([]byte, 0, len(tsHdr)+1+len(body))
@@ -232,7 +232,7 @@ func (h *Handler) noticeLegacy(src string) {
 		return
 	}
 	h.legacyNoticed[src] = true
-	log.Printf("webhook: source %q authenticated with legacy body-only HMAC — recommend sending X-CHA-Timestamp and signing 'timestamp.body' so captured requests cannot be replayed beyond %s", src, maxTimestampSkew)
+	log.Printf("webhook: source %q authenticated with legacy body-only HMAC — recommend sending X-Srenix-Timestamp and signing 'timestamp.body' so captured requests cannot be replayed beyond %s", src, maxTimestampSkew)
 }
 
 // noticeEmptySecret logs the empty-secret rejection once per source —
@@ -248,7 +248,7 @@ func (h *Handler) noticeEmptySecret(src string) {
 	log.Printf("webhook: source %q registered with empty HMAC secret — rejecting all requests (fail-closed)", src)
 }
 
-// verifyHMAC validates the X-CHA-Signature header against payload.
+// verifyHMAC validates the X-Srenix-Signature header against payload.
 // Expected format: "sha256=<hex>". Constant-time comparison via
 // hmac.Equal. Empty header → false.
 func verifyHMAC(payload []byte, secret, header string) bool {
@@ -277,7 +277,7 @@ func Sign(body []byte, secret string) string {
 
 // SignWithTimestamp returns the timestamped signature header value:
 // sha256=hex(hmac-sha256(secret, "<ts>.<body>")), where ts is unix
-// seconds and must also be sent as the X-CHA-Timestamp header.
+// seconds and must also be sent as the X-Srenix-Timestamp header.
 func SignWithTimestamp(body []byte, secret string, ts int64) string {
 	mac := hmac.New(sha256.New, []byte(secret))
 	mac.Write([]byte(strconv.FormatInt(ts, 10)))

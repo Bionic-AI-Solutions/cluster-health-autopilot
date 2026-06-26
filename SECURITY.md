@@ -13,7 +13,7 @@ Once `v1.0.0` ships, the latest minor and the previous minor will receive securi
 
 **Please do not open a public GitHub issue.**
 
-Email **cha-security@baisoln.com** with:
+Email **security@srenix.ai** with:
 
 - A description of the issue and its impact.
 - Reproduction steps or a proof-of-concept (if applicable).
@@ -26,9 +26,9 @@ You should receive an acknowledgement within **2 business days**. We aim to publ
 
 In scope:
 
-- The `cha` CLI binary and its source code.
-- The Helm chart (`charts/cluster-health-autopilot/`).
-- The container image published to `ghcr.io/<org>/cha`.
+- The `srenix` CLI binary and its source code.
+- The Helm chart (`charts/agentic-sre/`).
+- The container image published to `ghcr.io/<org>/srenix`.
 - Documented attack surfaces in the README.
 
 Out of scope:

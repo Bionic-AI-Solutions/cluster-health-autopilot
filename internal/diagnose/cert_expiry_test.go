@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package diagnose
@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/snapshot"
+	"github.com/srenix-ai/agentic-sre/internal/snapshot"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )
@@ -96,7 +96,7 @@ func TestCertExpiry_NotReady(t *testing.T) {
 	if len(got) != 1 {
 		t.Fatalf("not-Ready cert should produce 1 diagnostic, got %d", len(got))
 	}
-	if got[0].Subject != "cert-expiry/infra/api-tls" {
+	if got[0].Subject != "Certificate/infra/api-tls" {
 		t.Errorf("unexpected subject: %s", got[0].Subject)
 	}
 	if !strings.Contains(got[0].Message, "not Ready") {

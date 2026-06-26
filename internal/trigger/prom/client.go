@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 // Package prom implements the M5 Alertmanager polling trigger source.
@@ -189,7 +189,7 @@ func (c *Client) fetchAlerts(ctx context.Context) ([]alert, error) {
 		return nil, err
 	}
 	req.Header.Set("Accept", "application/json")
-	req.Header.Set("User-Agent", "cha-prom-trigger/1.0")
+	req.Header.Set("User-Agent", "srenix-prom-trigger/1.0")
 	resp, err := c.cfg.HTTP.Do(req)
 	if err != nil {
 		return nil, err

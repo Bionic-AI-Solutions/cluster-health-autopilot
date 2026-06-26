@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package snapshot
@@ -21,7 +21,7 @@ import (
 const endpointsDeprecationFragment = "v1 Endpoints is deprecated"
 
 // suppressingWarningHandler drops the core/v1 Endpoints deprecation warning
-// and forwards every other server warning to next. CHA keeps a handful of
+// and forwards every other server warning to next. Srenix keeps a handful of
 // deliberate legacy-Endpoints fallback reads (DNSChainDrift + KongRoutes
 // when EndpointSlices are unavailable, snapshot capture); without this
 // filter the deployed watcher/aiwatch printed the same deprecation line for

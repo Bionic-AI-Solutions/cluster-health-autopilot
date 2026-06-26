@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package anonymize
@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/diagnose"
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/probe"
+	"github.com/srenix-ai/agentic-sre/internal/diagnose"
+	"github.com/srenix-ai/agentic-sre/internal/probe"
 )
 
 func TestAnonSubject_KnownSafePassthrough(t *testing.T) {

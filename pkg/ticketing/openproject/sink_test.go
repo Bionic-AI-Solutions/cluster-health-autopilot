@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package openproject
@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/ticketing"
+	"github.com/srenix-ai/agentic-sre/pkg/ticketing"
 )
 
 // recordingClient is a MCPClient that captures every CallTool invocation
@@ -36,7 +36,7 @@ func (r *recordingClient) CallTool(_ context.Context, name string, args map[stri
 
 func sampleTicket() ticketing.Ticket {
 	return ticketing.Ticket{
-		Fingerprint: "cha-deadbeef0badc0de",
+		Fingerprint: "srenix-deadbeef0badc0de",
 		Title:       "Secret/mcp/openproject-secrets/openproject-url missing",
 		Body:        "## Diagnostic\nKey absent.\n\n## Remediation\nRestore via Vault.",
 		Severity:    ticketing.SeverityCritical,
@@ -63,7 +63,7 @@ func TestUpsertSendsCorrectMCPSchema(t *testing.T) {
 		SeverityPriority: map[string]string{
 			ticketing.SeverityCritical: "75",
 		},
-		Labels: []string{"cha", "auto-filed"},
+		Labels: []string{"srenix", "auto-filed"},
 	}, cli)
 
 	ref, err := sink.Upsert(context.Background(), sampleTicket())
@@ -101,10 +101,10 @@ func TestUpsertSendsCorrectMCPSchema(t *testing.T) {
 	}
 	// Labels + fingerprint should be in the description footer.
 	desc, _ := call.Args["description"].(string)
-	if !strings.Contains(desc, "**Labels:** ceph, cha, auto-filed") {
+	if !strings.Contains(desc, "**Labels:** ceph, srenix, auto-filed") {
 		t.Errorf("description missing labels footer: %q", desc)
 	}
-	if !strings.Contains(desc, "cha-deadbeef0badc0de") {
+	if !strings.Contains(desc, "srenix-deadbeef0badc0de") {
 		t.Errorf("description missing fingerprint footer: %q", desc)
 	}
 }

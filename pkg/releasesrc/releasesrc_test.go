@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package releasesrc_test
@@ -10,11 +10,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/releasesrc"
+	"github.com/srenix-ai/agentic-sre/pkg/releasesrc"
 )
 
 // memFiles is a deterministic in-memory RepoFiles for tests. Mirrors
-// the contract of the real cha-com forge client adapter: missing
+// the contract of the real srenix-enterprise forge client adapter: missing
 // files return an error whose message contains "not found" so the
 // detector's isNotFound() recognises it.
 type memFiles struct {
@@ -45,9 +45,9 @@ func (m *memFiles) List(_ context.Context, _ []string) ([]string, error) {
 // Tests
 // ---------------------------------------------------------------------------
 
-const goodValuesYAML = `# CHA Helm chart values.yaml
+const goodValuesYAML = `# Srenix Helm chart values.yaml
 image:
-  repository: docker4zerocool/cluster-health-autopilot
+  repository: docker4zerocool/agentic-sre
   tag: "1.16.0"
   pullPolicy: IfNotPresent
 operator:
@@ -57,7 +57,7 @@ operator:
 const umbrellaChartValues = `apiwatch:
   enabled: false
 image:
-  repository: docker4zerocool/cha-com
+  repository: docker4zerocool/srenix-enterprise
   tag: "1.10.0"
 ai:
   enabled: true
@@ -69,7 +69,7 @@ const wrongRepoValues = `image:
 `
 
 const noTagValues = `image:
-  repository: docker4zerocool/cha-com
+  repository: docker4zerocool/srenix-enterprise
   pullPolicy: IfNotPresent
 `
 
@@ -77,22 +77,22 @@ const garbleYAML = `this is { not yaml :::`
 
 func TestDetectInHelmValues_HappyPath_UmbrellaChartLayout(t *testing.T) {
 	files := &memFiles{contents: map[string]string{
-		"charts/cha/values.yaml": goodValuesYAML,
+		"charts/srenix/values.yaml": goodValuesYAML,
 	}}
-	ref, err := releasesrc.DetectInHelmValues(context.Background(), files, "cha", "docker4zerocool/cluster-health-autopilot")
+	ref, err := releasesrc.DetectInHelmValues(context.Background(), files, "srenix", "docker4zerocool/agentic-sre")
 	if err != nil {
 		t.Fatalf("DetectInHelmValues: %v", err)
 	}
 	if ref == nil {
 		t.Fatal("ref nil for valid match")
 	}
-	if ref.File != "charts/cha/values.yaml" {
+	if ref.File != "charts/srenix/values.yaml" {
 		t.Errorf("file: got %q", ref.File)
 	}
 	if ref.CurrentTag != "1.16.0" {
 		t.Errorf("tag: got %q want 1.16.0", ref.CurrentTag)
 	}
-	if ref.Repository != "docker4zerocool/cluster-health-autopilot" {
+	if ref.Repository != "docker4zerocool/agentic-sre" {
 		t.Errorf("repo: got %q", ref.Repository)
 	}
 	if ref.KeyPath != "image.tag" {
@@ -108,7 +108,7 @@ func TestDetectInHelmValues_HappyPath_RootValuesYAML(t *testing.T) {
 	files := &memFiles{contents: map[string]string{
 		"values.yaml": umbrellaChartValues,
 	}}
-	ref, err := releasesrc.DetectInHelmValues(context.Background(), files, "cha-com", "docker4zerocool/cha-com")
+	ref, err := releasesrc.DetectInHelmValues(context.Background(), files, "srenix-enterprise", "docker4zerocool/srenix-enterprise")
 	if err != nil {
 		t.Fatalf("DetectInHelmValues: %v", err)
 	}
@@ -124,7 +124,7 @@ func TestDetectInHelmValues_RepositoryMismatch_ReturnsNotFound(t *testing.T) {
 	files := &memFiles{contents: map[string]string{
 		"charts/x/values.yaml": wrongRepoValues, // image is docker.io/library/redis
 	}}
-	_, err := releasesrc.DetectInHelmValues(context.Background(), files, "x", "docker4zerocool/cha-com")
+	_, err := releasesrc.DetectInHelmValues(context.Background(), files, "x", "docker4zerocool/srenix-enterprise")
 	if !errors.Is(err, releasesrc.ErrNotFound) {
 		t.Errorf("want ErrNotFound on repo mismatch; got %v", err)
 	}
@@ -134,7 +134,7 @@ func TestDetectInHelmValues_NoTagField_ReturnsNotFound(t *testing.T) {
 	files := &memFiles{contents: map[string]string{
 		"charts/x/values.yaml": noTagValues,
 	}}
-	_, err := releasesrc.DetectInHelmValues(context.Background(), files, "x", "docker4zerocool/cha-com")
+	_, err := releasesrc.DetectInHelmValues(context.Background(), files, "x", "docker4zerocool/srenix-enterprise")
 	if !errors.Is(err, releasesrc.ErrNotFound) {
 		t.Errorf("want ErrNotFound when tag absent; got %v", err)
 	}
@@ -147,7 +147,7 @@ func TestDetectInHelmValues_GarbledYAML_SilentlySkipped(t *testing.T) {
 		"charts/x/values.yaml": garbleYAML,
 		"values.yaml":          umbrellaChartValues,
 	}}
-	ref, err := releasesrc.DetectInHelmValues(context.Background(), files, "x", "docker4zerocool/cha-com")
+	ref, err := releasesrc.DetectInHelmValues(context.Background(), files, "x", "docker4zerocool/srenix-enterprise")
 	if err != nil {
 		t.Fatalf("garbled chart file should not abort the probe; got %v", err)
 	}
@@ -158,7 +158,7 @@ func TestDetectInHelmValues_GarbledYAML_SilentlySkipped(t *testing.T) {
 
 func TestDetectInHelmValues_AllPathsMissing_ReturnsNotFound(t *testing.T) {
 	files := &memFiles{contents: map[string]string{}}
-	_, err := releasesrc.DetectInHelmValues(context.Background(), files, "x", "docker4zerocool/cha-com")
+	_, err := releasesrc.DetectInHelmValues(context.Background(), files, "x", "docker4zerocool/srenix-enterprise")
 	if !errors.Is(err, releasesrc.ErrNotFound) {
 		t.Errorf("want ErrNotFound when no candidate files exist; got %v", err)
 	}
@@ -169,7 +169,7 @@ func TestDetectInHelmValues_TransportError_Propagated(t *testing.T) {
 	// proposer can surface "GitHub unreachable" instead of silently
 	// degrading.
 	files := &memFiles{getErr: errors.New("connection refused: dial tcp 1.2.3.4:443")}
-	_, err := releasesrc.DetectInHelmValues(context.Background(), files, "x", "docker4zerocool/cha-com")
+	_, err := releasesrc.DetectInHelmValues(context.Background(), files, "x", "docker4zerocool/srenix-enterprise")
 	if err == nil || errors.Is(err, releasesrc.ErrNotFound) {
 		t.Errorf("want non-NotFound transport error; got %v", err)
 	}
@@ -179,7 +179,7 @@ func TestDetectInHelmValues_TransportError_Propagated(t *testing.T) {
 }
 
 func TestDetectInHelmValues_NilFiles_Errors(t *testing.T) {
-	_, err := releasesrc.DetectInHelmValues(context.Background(), nil, "x", "docker4zerocool/cha-com")
+	_, err := releasesrc.DetectInHelmValues(context.Background(), nil, "x", "docker4zerocool/srenix-enterprise")
 	if err == nil {
 		t.Error("nil RepoFiles should error")
 	}
@@ -197,7 +197,7 @@ func TestDetectInHelmValues_EmptyChartName_FallsBackToRootOnly(t *testing.T) {
 	files := &memFiles{contents: map[string]string{
 		"values.yaml": goodValuesYAML,
 	}}
-	ref, err := releasesrc.DetectInHelmValues(context.Background(), files, "", "docker4zerocool/cluster-health-autopilot")
+	ref, err := releasesrc.DetectInHelmValues(context.Background(), files, "", "docker4zerocool/agentic-sre")
 	if err != nil {
 		t.Fatalf("empty chart name should fall back to root values.yaml; got %v", err)
 	}
@@ -213,7 +213,7 @@ func TestDetectInHelmValues_PathTraversalAttempt_Sanitized(t *testing.T) {
 		"charts/etc/values.yaml": goodValuesYAML,
 		"values.yaml":            umbrellaChartValues,
 	}}
-	ref, err := releasesrc.DetectInHelmValues(context.Background(), files, "../../etc", "docker4zerocool/cluster-health-autopilot")
+	ref, err := releasesrc.DetectInHelmValues(context.Background(), files, "../../etc", "docker4zerocool/agentic-sre")
 	if err != nil {
 		t.Fatalf("path-traversal chart name should be sanitized to basename; got %v", err)
 	}
@@ -227,10 +227,10 @@ func TestDetectInHelmValues_LineNumber_CorrectForRealYAML(t *testing.T) {
 	// (header on 1, image: on 2, repository: on 3, tag: on 4).
 	yaml := "# header\n" +
 		"image:\n" +
-		"  repository: docker4zerocool/cha-com\n" +
+		"  repository: docker4zerocool/srenix-enterprise\n" +
 		"  tag: \"1.10.0\"\n"
 	files := &memFiles{contents: map[string]string{"values.yaml": yaml}}
-	ref, err := releasesrc.DetectInHelmValues(context.Background(), files, "x", "docker4zerocool/cha-com")
+	ref, err := releasesrc.DetectInHelmValues(context.Background(), files, "x", "docker4zerocool/srenix-enterprise")
 	if err != nil {
 		t.Fatalf("DetectInHelmValues: %v", err)
 	}

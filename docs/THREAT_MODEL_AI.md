@@ -1,13 +1,13 @@
 # AI Tier Threat Model (v1.5.2)
 
-Maps the CHA AI surfaces to recognized AI safety frameworks. Each row
+Maps the Srenix AI surfaces to recognized AI safety frameworks. Each row
 identifies a class of risk, the framework that names it, the control
 implemented in the current shipping release, and the source/test that
 validates the control.
 
 There are two distinct AI surfaces in scope:
 
-1. **Mutation AI tier (T0–T3, CHA-com only, since v1.0.0)** — proposes
+1. **Mutation AI tier (T0–T3, Srenix Enterprise only, since v1.0.0)** — proposes
    mutations that humans then approve and the deterministic engine
    applies. Reviewed in ADVERSARIAL_ANALYSIS.md §8.
 2. **Layer-2 Investigator (since v1.5.0)** — a read-only diagnostic
@@ -16,10 +16,10 @@ There are two distinct AI surfaces in scope:
    DriftReports. **Two implementations**: a deterministic rule-based
    investigator that ships in OSS (no LLM, most LLM-specific rows are
    N/A), and an LLM-backed **deep-RCA investigator** that ships in
-   CHA-com (v0.2.0-alpha.1) and extends the closed-enum Environment with optional
+   Srenix Enterprise (v0.2.0-alpha.1) and extends the closed-enum Environment with optional
    Firecrawl web research. Reviewed in ADVERSARIAL_ANALYSIS.md §9.
 
-**External egress exception (v0.2.0-alpha.1, CHA-com only):** Firecrawl is the
+**External egress exception (v0.2.0-alpha.1, Srenix Enterprise only):** Firecrawl is the
 one deliberate exception to the "payload never leaves the cluster"
 invariant. Mitigation layers (defense in depth):
 
@@ -65,7 +65,7 @@ ExternalSecret) could embed instructions that override system intent.
 
 - *Rule-based investigator (OSS)*: **N/A** — no LLM in the path; tool
   selection is deterministic Go code.
-- *LLM-backed investigator (CHA-com)*: same defense as above —
+- *LLM-backed investigator (Srenix Enterprise)*: same defense as above —
   `<observed_data>` wrapping on every tool output before it is fed
   back to the model; closed-enum tool surface (`pkg/ai.Environment`
   has exactly five methods) parsed at decode time so an unrecognized
@@ -86,7 +86,7 @@ schema enforcement.
 | Closed-enum `ActionKind` whitelist | `pkg/ai/types.go:ActionKind`, `IsValid()` | `pkg/ai/validate_test.go:TestActionKindIsValid` (8 cases, 5 valid + 3 rejected) |
 | Re-validation at executor entry | `ai/approval/executor.go:Execute` calls `p.Validate()` before any Mutator call | `ai/approval/server_test.go` (executor failure path) |
 | Markdown fence stripping prevents prompt-leakage attacks via `\`\`\`json` | `ai/enricher.go:parseEnrichmentResponse`, `ai/fix_proposer.go:parseProposerResponse` | `ai/enricher_test.go:TestEnricher_HandlesMarkdownFences` |
-| **Patch-payload allow-list (v1.6 / Sprint 3.1)** — closed-enum ActionKind gates verbs; this gates *shape*. `PatchDeployment` permits exactly `spec.template.metadata.annotations.kubectl.kubernetes.io/restartedAt`; everything else (replicas, selector, container images, immutable fields, additional annotations, oversized payloads) returns `ErrPatchForbidden`. Closes the StatefulSet-replicas-zero data-loss vector. | `CHA-com/ai/approval/patch_validator.go` | `CHA-com/ai/approval/patch_validator_test.go` (10 cases) |
+| **Patch-payload allow-list (v1.6 / Sprint 3.1)** — closed-enum ActionKind gates verbs; this gates *shape*. `PatchDeployment` permits exactly `spec.template.metadata.annotations.kubectl.kubernetes.io/restartedAt`; everything else (replicas, selector, container images, immutable fields, additional annotations, oversized payloads) returns `ErrPatchForbidden`. Closes the StatefulSet-replicas-zero data-loss vector. | `Srenix Enterprise/ai/approval/patch_validator.go` | `Srenix Enterprise/ai/approval/patch_validator_test.go` (10 cases) |
 
 **Layer-2 Investigator (v1.5)** (this is the row that maps most
 directly to "Improper Output Handling" in the 2025 OWASP rename):
@@ -94,7 +94,7 @@ directly to "Improper Output Handling" in the 2025 OWASP rename):
 - *Rule-based investigator (OSS)*: **N/A** — output is a typed Go
   struct (`pkg/ai.InvestigationResult`) constructed by the rule
   engine; no parse step from a model's free-form output.
-- *LLM-backed investigator (CHA-com)*: the model's response is
+- *LLM-backed investigator (Srenix Enterprise)*: the model's response is
   parsed into a closed schema; the tool-selection field is
   validated against the closed `Environment` enum at parse time
   and malformed entries are dropped (not invoked). On repeated
@@ -132,8 +132,8 @@ the LLM endpoint budget or rate limit.
 | Control | Where | Validated by |
 |---|---|---|
 | Token-bucket rate limiter per tier | `ai/rate_limit.go:RateLimiter` | `ai/rate_limit_test.go` (capacity, refill, per-tier override) |
-| **Independent investigation budget (v1.6 / Sprint 3.2)** — `TakeInvestigation(class)` keyed on `(approver, diagnostic_class)` with default 10/hour. Previously the proposal budget gated `Take(tier)` but Layer-2 investigations had no separate ceiling; a flapping workload could uncapped-burn ~144 investigations/day per resource. | `CHA-com/ai/rate_limit.go::TakeInvestigation` | `CHA-com/ai/rate_limit_test.go::TestTakeInvestigation_*` (4 cases) |
-| **Cold-start mitigation (v1.6 / Sprint 3.3)** — new buckets initialize at 0 tokens, not full capacity, so a pod-restart attacker can't extract a free `ActionsPerHour`-sized burst on each restart. `ColdStartFull: true` re-enables legacy burst behavior for stable, long-running deployments. | `CHA-com/ai/rate_limit.go::newScopedBucket` | `CHA-com/ai/rate_limit_test.go::TestColdStart_*` (3 cases) |
+| **Independent investigation budget (v1.6 / Sprint 3.2)** — `TakeInvestigation(class)` keyed on `(approver, diagnostic_class)` with default 10/hour. Previously the proposal budget gated `Take(tier)` but Layer-2 investigations had no separate ceiling; a flapping workload could uncapped-burn ~144 investigations/day per resource. | `Srenix Enterprise/ai/rate_limit.go::TakeInvestigation` | `Srenix Enterprise/ai/rate_limit_test.go::TestTakeInvestigation_*` (4 cases) |
+| **Cold-start mitigation (v1.6 / Sprint 3.3)** — new buckets initialize at 0 tokens, not full capacity, so a pod-restart attacker can't extract a free `ActionsPerHour`-sized burst on each restart. `ColdStartFull: true` re-enables legacy burst behavior for stable, long-running deployments. | `Srenix Enterprise/ai/rate_limit.go::newScopedBucket` | `Srenix Enterprise/ai/rate_limit_test.go::TestColdStart_*` (3 cases) |
 | Circuit breaker tripping at N consecutive failures | `ai/circuit_breaker.go` | `ai/circuit_breaker_test.go` (4 cases) |
 | Response cache keyed by (system prompt + user message + model) | `ai/client/cache.go:CachingClient` | `ai/client/cache_test.go` (7 cases) |
 | Cycle-wide enrichment timeout | `internal/watcher/enrich.go:enrichmentTimeout` (default 30s) | `internal/watcher/enrich_test.go:TestEnrichDiagnostics_ContextCancellation` |
@@ -146,7 +146,7 @@ under the OWASP 2025 LLM10 rename — see also LLM10 below):
   20-second wall-clock cap per cycle (`ctx.Done()` honored). The
   investigator MUST return whatever was gathered when the deadline
   fires — no extended I/O loops.
-- *LLM-backed investigator (CHA-com)*: same 20-second wall-clock
+- *LLM-backed investigator (Srenix Enterprise)*: same 20-second wall-clock
   cap; max 6 tool calls per investigation; existing AI-tier
   rate limiter (`ai/rate_limit.go`) applies to investigation calls
   as well. Investigation runs *only* on CRITICAL findings that
@@ -173,7 +173,7 @@ under the OWASP 2025 LLM10 rename — see also LLM10 below):
 
 - *Rule-based investigator (OSS)*: deterministic engine; no
   third-party LLM dependency.
-- *LLM-backed investigator (CHA-com)*: BYOM default identical to
+- *LLM-backed investigator (Srenix Enterprise)*: BYOM default identical to
   the T0–T3 tier; operator-chosen endpoint; the same closed-enum
   Environment contract prevents a compromised provider from
   inducing a mutation. The Investigator interface has no return
@@ -196,7 +196,7 @@ under the OWASP 2025 LLM10 rename — see also LLM10 below):
 | Cluster domain → `<cluster>` placeholder | `pkg/ai/redact.go:clusterDomainRE` | `pkg/ai/redact_test.go:TestRedactText_ClusterDomain` |
 | **Event-message scrubbing (v1.6 / Sprint 3.4)** — `RedactEvents` applies identifier redaction PLUS secret-heuristic substitution (AWS access keys, Vault `hvs.*` tokens, JWTs, GitHub PATs, Slack tokens, long base64/hex) to Kubernetes event `.Message` fields before they reach the Layer-2 LLM-backed investigator. Wired into `LiveEnvironment.GetEvents`. | `pkg/ai/redact.go:RedactEvents`, `internal/investigator/env_live.go:GetEvents` | `pkg/ai/redact_test.go::TestRedactEventMessage_*` and `TestRedactEvents_*` (7 cases) |
 | **`Diagnostic.Message` secret-heuristic scrub (v1.6 / Sprint 3.4b)** — analyzers that copy event text into a Diagnostic's Message field now also pass through the secret-heuristic substitution via the same `redactText` helper. Closes the leak path where an analyzer captures a kubelet event verbatim. | `pkg/ai/redact.go:redactText` (extended) | `pkg/ai/redact_test.go::TestRedactDiagnostic_ScrubsSecretsInMessage`, `TestRedactDiagnostic_ScrubsSecretsInRemediation` |
-| **Audit-trail tamper evidence (v1.6 / Sprint 3.6)** — `ChainedSink` wraps any `AuditSink` and embeds `prev_hash` + `entry_hash` SHA-256 fields. `VerifyChain` walks the chain and returns the first broken-link index — detecting content mutation, reordering, and insertion/deletion. Not a signing scheme (tamper *evidence*, not resistance); layer over an append-only Vault audit device for full resistance. | `CHA-com/ai/audit/hash_chain.go` | `CHA-com/ai/audit/hash_chain_test.go` (7 cases) |
+| **Audit-trail tamper evidence (v1.6 / Sprint 3.6)** — `ChainedSink` wraps any `AuditSink` and embeds `prev_hash` + `entry_hash` SHA-256 fields. `VerifyChain` walks the chain and returns the first broken-link index — detecting content mutation, reordering, and insertion/deletion. Not a signing scheme (tamper *evidence*, not resistance); layer over an append-only Vault audit device for full resistance. | `Srenix Enterprise/ai/audit/hash_chain.go` | `Srenix Enterprise/ai/audit/hash_chain_test.go` (7 cases) |
 
 **Layer-2 Investigator (v1.5)**:
 
@@ -205,7 +205,7 @@ under the OWASP 2025 LLM10 rename — see also LLM10 below):
   on namespaced resources. `Environment.Describe` and
   `Environment.GetEvents` route through `snapshot.Source`, which
   preserves the v0.2 privacy contract (`for k := range secret.Data`).
-- *LLM-backed deep-RCA investigator (CHA-com, v0.2.0-alpha.1)*: every tool
+- *LLM-backed deep-RCA investigator (Srenix Enterprise, v0.2.0-alpha.1)*: every tool
   output is actively redacted via `pkg/ai.RedactEventMessage` /
   `pkg/ai.RedactEvents` (`pkg/ai/redact.go`) — substituting AWS keys,
   Vault `hvs.*` tokens, JWTs, GitHub PATs, Slack tokens, base64≥40, and
@@ -222,7 +222,7 @@ under the OWASP 2025 LLM10 rename — see also LLM10 below):
 **Risk**: Plugins or tools the LLM can call could expand the action
 surface unexpectedly.
 
-**Controls**: For the T0–T3 mutation tier, CHA-com does NOT use LLM
+**Controls**: For the T0–T3 mutation tier, Srenix Enterprise does NOT use LLM
 tool-use / function-calling features. The LLM emits a JSON proposal;
 the proposal is parsed and matched against a closed enum. There is no
 callback path from the LLM into Kubernetes APIs.
@@ -259,7 +259,7 @@ controls or discover safety scaffolding.
   every safety property is implemented in code (validator, admission,
   approval JWT) rather than in the prompt. Prompt leakage discloses
   no privileged information.
-- For the Layer-2 Investigator (LLM-backed, CHA-com): the investigator
+- For the Layer-2 Investigator (LLM-backed, Srenix Enterprise): the investigator
   prompts will be checked into `ai/prompts/` and are similarly public.
   Every safety property — closed-enum `Environment`, 20-second
   wall-clock cap, read-only RBAC ceiling, scrubber — is enforced in
@@ -355,7 +355,7 @@ the OWASP 2025 rename):
 
 ### LLM10 — Unbounded Consumption (Model Theft in pre-2025 OWASP)
 
-For pre-2025 OWASP "Model Theft": not directly applicable — CHA uses
+For pre-2025 OWASP "Model Theft": not directly applicable — Srenix uses
 LLM endpoints, doesn't ship a model. BYOM ensures the operator's
 model stays under their control.
 
@@ -376,7 +376,7 @@ Map, Measure, Manage. v1.0.0 controls map as follows:
 |---|---|
 | **Govern** | Documented opt-in tier model with explicit defaults (T0–T3: `ai.enabled=false`; Layer-2 LLM-backed: same gate; Layer-2 rule-based: on by default in OSS but read-only and bounded). Operator policy via Helm values. Audit log of every AI-related event. |
 | **Map** | This document + AI_TIERS.md + ADVERSARIAL_ANALYSIS.md §8 (T0–T3) and §9 (Layer-2 Investigator) enumerate the risk classes per surface. |
-| **Measure** | Prometheus metrics: `cha_ai_actions_proposed_total`, `cha_ai_approvals_granted_total`, `cha_ai_post_apply_verified_total`, `cha_ai_circuit_breaker_state`. Layer-2 adds `cha_investigations_total{conclusion=...}` and `cha_investigation_duration_seconds`. Rate limiter exposes hit/miss counters. |
+| **Measure** | Prometheus metrics: `srenix_ai_actions_proposed_total`, `srenix_ai_approvals_granted_total`, `srenix_ai_post_apply_verified_total`, `srenix_ai_circuit_breaker_state`. Layer-2 adds `srenix_investigations_total{conclusion=...}` and `srenix_investigation_duration_seconds`. Rate limiter exposes hit/miss counters. |
 | **Manage** | Circuit breaker auto-disables on threshold failures (both T0–T3 and Layer-2 LLM-backed). Audit-trail events pageable via Alertmanager when failure events fire. Manual reset via operator endpoint. Layer-2 soft-fails per investigation without breaking the cycle. |
 
 ---
@@ -441,7 +441,7 @@ The following drills must pass before tagging the current release:
 | Drill | What it asserts | Test |
 |---|---|---|
 | Wall-clock cap honored | `Investigate(ctx, ...)` with a 20-second deadline returns within bound | `pkg/ai/investigator_test.go` |
-| Unknown tool name dropped | LLM-backed parse of an unrecognized tool does NOT invoke anything | Parser unit test (CHA-com) |
+| Unknown tool name dropped | LLM-backed parse of an unrecognized tool does NOT invoke anything | Parser unit test (Srenix Enterprise) |
 | Environment interface is read-only | No method on `pkg/ai.Environment` mutates state | Code review + Go interface assertion |
 | Investigator cannot reach `Mutator` | The Investigator interface's signature does not expose a Mutator | Code review |
 | Investigation soft-fails | `Investigate` returning an error does NOT block the rest of the cycle; original Critical finding still surfaces | Watcher integration test |

@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package ai
@@ -21,7 +21,7 @@ import (
 // diagnose, remediate, and aiwatch containers, so the fixer guard
 // (internal/fix.IsProtectedNamespace) and the AI-action validator
 // (ai.IsProtectedNamespace) always agree on the boundary.
-const EnvProtectedNamespacesExtra = "CHA_PROTECTED_NAMESPACES_EXTRA"
+const EnvProtectedNamespacesExtra = "SRENIX_PROTECTED_NAMESPACES_EXTRA"
 
 var (
 	extraMu        sync.RWMutex
@@ -56,9 +56,9 @@ func ParseProtectedNamespacesExtra(raw string) []string {
 // ever ADD namespaces. Calling with no arguments clears the extras
 // back to floor-only. Entries are trimmed/deduped; empties ignored.
 //
-// Embedders (e.g. the CHA-com aiwatch) normally don't need to call
+// Embedders (e.g. the Srenix Enterprise aiwatch) normally don't need to call
 // this: the first IsProtectedNamespace check lazily reads
-// CHA_PROTECTED_NAMESPACES_EXTRA. The setter exists for hosts that
+// SRENIX_PROTECTED_NAMESPACES_EXTRA. The setter exists for hosts that
 // configure the extension from another source, and for tests.
 func SetExtraProtectedNamespaces(namespaces ...string) {
 	list, set := buildExtraSet(strings.Join(namespaces, ","))
@@ -81,7 +81,7 @@ func buildExtraSet(raw string) ([]string, map[string]struct{}) {
 }
 
 // LoadExtraProtectedNamespacesFromEnv (re)reads
-// CHA_PROTECTED_NAMESPACES_EXTRA and replaces the extra set with its
+// SRENIX_PROTECTED_NAMESPACES_EXTRA and replaces the extra set with its
 // contents. Happens automatically on first use; exported so hosts and
 // tests can force a re-read after mutating the environment.
 func LoadExtraProtectedNamespacesFromEnv() {
@@ -90,7 +90,7 @@ func LoadExtraProtectedNamespacesFromEnv() {
 
 // IsExtraProtectedNamespace reports whether ns is in the operator-
 // extended (append-only) protected set sourced from
-// CHA_PROTECTED_NAMESPACES_EXTRA or SetExtraProtectedNamespaces. The
+// SRENIX_PROTECTED_NAMESPACES_EXTRA or SetExtraProtectedNamespaces. The
 // compiled-in floor is NOT consulted here — callers that keep their own
 // floor (internal/fix) OR this set with it. Most callers want
 // IsProtectedNamespace instead.

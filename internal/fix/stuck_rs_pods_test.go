@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package fix
@@ -198,9 +198,9 @@ func TestStuckRSPods_ProtectedNamespace(t *testing.T) {
 }
 
 // argoManagedDeployment has the live revision (matches what stuckRSPod's
-// owning RS doesn't) AND an argocd.argoproj.io/instance annotation. CHA
+// owning RS doesn't) AND an argocd.argoproj.io/instance annotation. Srenix
 // must refuse to roll-restart it — Argo will revert the restart annotation
-// on the next reconcile cycle, locking CHA and Argo into a fight loop.
+// on the next reconcile cycle, locking Srenix and Argo into a fight loop.
 const argoManagedDeployment = `{
   "apiVersion": "apps/v1", "kind": "Deployment",
   "metadata": {

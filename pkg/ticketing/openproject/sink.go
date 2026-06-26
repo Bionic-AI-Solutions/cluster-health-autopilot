@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package openproject
@@ -9,16 +9,16 @@ import (
 	"log"
 	"strings"
 
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/ticketing"
+	"github.com/srenix-ai/agentic-sre/pkg/ticketing"
 )
 
 // providerName is the value returned by Sink.Provider() and stored in
 // DriftReport.status.ticket.provider. Lowercase, matches the convention
-// other CHA components use.
+// other Srenix components use.
 const providerName = "openproject"
 
 // Config holds Sink-construction parameters. Wired from Helm values.yaml
-// in cmd/cha or the watcher bootstrap.
+// in cmd/srenix or the watcher bootstrap.
 //
 // All ID fields accept either numeric strings ("6") or names that the
 // OpenProject MCP server resolves — match the catalog values discovered
@@ -32,25 +32,25 @@ type Config struct {
 	// Task). REQUIRED for create_work_package. Look up via list_types.
 	TypeID string
 
-	// SeverityPriority maps CHA severities ("critical" / "warning" /
+	// SeverityPriority maps Srenix severities ("critical" / "warning" /
 	// "info") to OpenProject priority IDs (e.g. "75" for Immediate,
 	// "74" for High, "73" for Normal). Missing severities skip the
 	// priority_id field and let OpenProject use the project default.
 	SeverityPriority map[string]string
 
 	// ClosedStatusID is the OpenProject status ID to transition to when
-	// CHA resolves a ticket. E.g. "82" for "Closed". Look up via
+	// Srenix resolves a ticket. E.g. "82" for "Closed". Look up via
 	// list_statuses (rows where is_closed=true).
 	ClosedStatusID string
 
 	// Labels are appended to the work package description as a markdown
 	// footer line, since OpenProject's create_work_package tool does
-	// not accept a native labels field. CHA's global Helm-configured
-	// labels (e.g. ["cha", "auto-filed"]) flow through here.
+	// not accept a native labels field. Srenix's global Helm-configured
+	// labels (e.g. ["srenix", "auto-filed"]) flow through here.
 	Labels []string
 
 	// WebURLPrefix is the operator-facing base URL of OpenProject up to
-	// (but not including) the work-package path segment. CHA appends
+	// (but not including) the work-package path segment. Srenix appends
 	// "/work_packages/<id>" to build the TicketRef.URL. Example:
 	// "https://openproject.example.com". Empty leaves TicketRef.URL
 	// blank — operators can still open the ticket via key.
@@ -78,7 +78,7 @@ type ToolNames struct {
 	GetWorkPackage          string
 }
 
-// DefaultToolNames returns the MCP tool names CHA uses unless overridden.
+// DefaultToolNames returns the MCP tool names Srenix uses unless overridden.
 // Verified 2026-05-22 against mcp-openproject-server:8006/mcp tools/list.
 func DefaultToolNames() ToolNames {
 	return ToolNames{
@@ -127,7 +127,7 @@ func New(cfg Config, client MCPClient) *Sink {
 func (s *Sink) Provider() string { return providerName }
 
 // Upsert implements ticketing.Sink. Because the OpenProject MCP server
-// does not expose a portable "find by custom-field" tool CHA can rely
+// does not expose a portable "find by custom-field" tool Srenix can rely
 // on, dedup is handled one level up by the routing adapter via
 // DriftReport.status.ticket. This method always issues a create call;
 // callers must skip it when a TicketRef already exists for the
@@ -233,7 +233,7 @@ func (s *Sink) Comment(ctx context.Context, ref ticketing.TicketRef, body string
 	return nil
 }
 
-// priorityFor returns the OpenProject priority ID for a CHA severity,
+// priorityFor returns the OpenProject priority ID for a Srenix severity,
 // or "" to let OpenProject use the project default.
 func (s *Sink) priorityFor(severity string) string {
 	if v, ok := s.cfg.SeverityPriority[severity]; ok {
@@ -265,7 +265,7 @@ func (s *Sink) mergeLabels(ticketLabels []string) []string {
 	return out
 }
 
-// appendLabelFooter inserts CHA labels + fingerprint into the
+// appendLabelFooter inserts Srenix labels + fingerprint into the
 // description body as markdown. OpenProject's create_work_package tool
 // does not accept a native labels field, so this is the only place
 // they get persisted for filtering.
@@ -285,7 +285,7 @@ func appendLabelFooter(body string, labels []string, fingerprint string) string 
 		b.WriteString("\n\n")
 	}
 	if fingerprint != "" {
-		fmt.Fprintf(&b, "**CHA Fingerprint:** `%s`\n", fingerprint)
+		fmt.Fprintf(&b, "**Srenix Fingerprint:** `%s`\n", fingerprint)
 	}
 	return b.String()
 }

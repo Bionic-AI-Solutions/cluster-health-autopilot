@@ -2,7 +2,7 @@
 
 > **STATUS: ✅ SHIPPED — v1.10.0** _(P4.1 honest-header pass, 2026-06-11)_
 >
-> The `DNSChainDrift` analyzer (Cloudflare → Ingress → Service → Endpoints chain walk) shipped in **OSS v1.10.0** via PR #125 ("DNSChainDrift analyzer") + release bump PR #127. Files: `internal/diagnose/dns_chain_drift.go`, `internal/dns/cloudflare/client.go`. False-positive hardening followed: v1.10.3 (PR #130, DNS-chain false positives + silence snippet) and duplicate-ingress-host path-collision fix (7c07c0e). Optional external-DNS hop is gated on `CHA_CLOUDFLARE_TOKEN`; operator-managed token injection (`spec.externalDNS.cloudflare.apiTokenSecretRef`) was a silently-dead-feature later fixed under P1.5 (see [Unreleased] CHANGELOG).
+> The `DNSChainDrift` analyzer (Cloudflare → Ingress → Service → Endpoints chain walk) shipped in **OSS v1.10.0** via PR #125 ("DNSChainDrift analyzer") + release bump PR #127. Files: `internal/diagnose/dns_chain_drift.go`, `internal/dns/cloudflare/client.go`. False-positive hardening followed: v1.10.3 (PR #130, DNS-chain false positives + silence snippet) and duplicate-ingress-host path-collision fix (7c07c0e). Optional external-DNS hop is gated on `SRENIX_CLOUDFLARE_TOKEN`; operator-managed token injection (`spec.externalDNS.cloudflare.apiTokenSecretRef`) was a silently-dead-feature later fixed under P1.5 (see [Unreleased] CHANGELOG).
 >
 > No material as-shipped delta vs this design. Body below is the original design, preserved for context.
 
@@ -12,11 +12,11 @@
 **Parent context:**
   - `internal/probe/endpoints.go` — current static probe target list + auto-discovery.
   - `internal/investigator/rules.go:131` — current DNS failure handling (lookup + "go check Cloudflare" hint).
-  - `feedback_dns_new_subdomains` memory — every new host needs a Cloudflare record AND an entry in `deploy/lib/dns.sh`; today CHA detects neither.
-  - `cha-ai-remediation-direction` memory — judgment-class fixes must be AI-gated + memory-grounded; this design lands the **detection** half, so a later AI-gated fixer has structured findings to act on.
+  - `feedback_dns_new_subdomains` memory — every new host needs a Cloudflare record AND an entry in `deploy/lib/dns.sh`; today Srenix detects neither.
+  - `srenix-ai-remediation-direction` memory — judgment-class fixes must be AI-gated + memory-grounded; this design lands the **detection** half, so a later AI-gated fixer has structured findings to act on.
 **Scope:** A new OSS analyzer that walks the DNS-→-Ingress-→-Service-→-Endpoints chain for every host the cluster claims to serve, and emits a structured diagnostic naming the **specific broken link** when any layer fails. Optional Cloudflare integration extends the chain to include the external-DNS hop.
 
-This closes a real gap. Today, when `https://livekit.bionicaisolutions.com` fails to probe, CHA reports "DNS resolution for livekit.bionicaisolutions.com failed: NXDOMAIN. Check Cloudflare / upstream DNS records." That's a hint, not a diagnosis. It does not tell the operator:
+This closes a real gap. Today, when `https://livekit.srenix.ai` fails to probe, Srenix reports "DNS resolution for livekit.srenix.ai failed: NXDOMAIN. Check Cloudflare / upstream DNS records." That's a hint, not a diagnosis. It does not tell the operator:
 
   - Whether a Cloudflare record exists at all, and if so where it points.
   - Whether the cluster Ingress for that host exists, and what Service it points to.
@@ -40,7 +40,7 @@ Cloudflare DNS record for H        ──→ value matches → cluster ingress L
 
 A finding is emitted for the **highest layer that's broken** (operator only needs to fix one thing at a time). Lower layers are reported as observations in the diagnostic body but don't generate independent findings — a missing Cloudflare record is the root cause; the resulting Ingress-orphan doesn't need its own ticket.
 
-## 2. Why this is OSS, not a paid (CHA-com) analyzer
+## 2. Why this is OSS, not a paid (Srenix Enterprise) analyzer
 
 | Question | Answer |
 |---|---|
@@ -48,7 +48,7 @@ A finding is emitted for the **highest layer that's broken** (operator only need
 | Where does the Endpoints probe live today? | OSS (`internal/probe/endpoints.go`). Moving the chain check elsewhere splits the surface — DNS failures get reported in OSS but the diagnosis lives in paid. |
 | Does Cloudflare integration require paid-tier infra? | No. The Cloudflare API is a single HTTP call with a read-only token; the credential surface is the same shape as the existing `secret/shared/cloudflare` Vault path. It's optional config, not a new infra dependency. |
 | What's the natural paid-tier extension? | Multi-zone / multi-cloud DNS reasoning — Route53 + Cloudflare + GCP Cloud DNS across multi-cluster setups, plus drift detection vs a canonical DNS-as-code source (`deploy/lib/dns.sh`). That sits cleanly on top of this OSS analyzer; it does not replace it. |
-| Does the existing GTM model support this? | Yes. Per `cha_gtm` memory, the open-core split is "OSS = base patterns / paid = pro patterns (vault drift pro, multi-cluster drift)". This analyzer is a base pattern. |
+| Does the existing GTM model support this? | Yes. Per `srenix_gtm` memory, the open-core split is "OSS = base patterns / paid = pro patterns (vault drift pro, multi-cluster drift)". This analyzer is a base pattern. |
 
 **Recommendation: OSS analyzer with Cloudflare config optional.** When Cloudflare creds are present, the full chain runs; when absent, the analyzer runs the K8s hops and emits an info-tier "external DNS hop not verified" annotation on each host so the operator knows the chain is partial.
 
@@ -56,7 +56,7 @@ A finding is emitted for the **highest layer that's broken** (operator only need
 
 Per the discussion that scoped this design: **all cluster Ingress hosts + `DefaultEndpointTargets` static list**.
 
-  1. **Ingress discovery** — reuse `internal/probe/ingress_discovery.go` semantics: list every `Ingress` in every namespace, extract `spec.rules[].host`, honour the existing `cha.bionicaisolutions.com/probe-disable` annotation as an opt-out.
+  1. **Ingress discovery** — reuse `internal/probe/ingress_discovery.go` semantics: list every `Ingress` in every namespace, extract `spec.rules[].host`, honour the existing `srenix.ai/probe-disable` annotation as an opt-out.
   2. **Static seed list** — pull from `probe.DefaultEndpointTargets()` (the same source the `Endpoints` probe uses), de-duped against the Ingress set. Hosts on this list that have NO matching Ingress in-cluster are flagged as "external-only" — they're expected to be served from outside the cluster (e.g. apex domains via Cloudflare Pages), so the analyzer skips the Ingress/Service/Endpoints layers and only verifies the Cloudflare layer.
   3. **Deduplication key:** lowercased host. Multiple Ingresses for the same host short-circuit to "the first Ingress with `H` in its rules; the others are co-routes."
 
@@ -76,7 +76,7 @@ spec:
       apiTokenSecretRef:
         name: cloudflare-api-token
         key: token
-      # Zone IDs CHA is allowed to query. Empty = all zones the token can see.
+      # Zone IDs Srenix is allowed to query. Empty = all zones the token can see.
       zoneIDs: []
       # Optional: the expected target value(s) DNS records should point at.
       # Multiple values allowed (e.g. ingress LB IPv4 + IPv6).
@@ -118,20 +118,20 @@ For each `(H, Service N/S)` pair resolved from the Ingress layer:
 
 ## 5. Output shape — worked example
 
-For `https://livekit.bionicaisolutions.com` when the Cloudflare record is missing:
+For `https://livekit.srenix.ai` when the Cloudflare record is missing:
 
 ```
-Subject:     missing-cloudflare-record/livekit.bionicaisolutions.com
+Subject:     missing-cloudflare-record/livekit.srenix.ai
 Severity:    error
 Source:      DNSChainDrift
-Message:     livekit.bionicaisolutions.com: no Cloudflare DNS record found in the
-             configured zones (bionicaisolutions.com, baisoln.com). Ingress
+Message:     livekit.srenix.ai: no Cloudflare DNS record found in the
+             configured zones (srenix.ai, baisoln.com). Ingress
              vc-livekit/livekit-ingress exists and points at Service
              vc-livekit/livekit (5 ready endpoints) — the cluster side is healthy;
              only the external DNS hop is missing.
-Remediation: Add `livekit.bionicaisolutions.com` to deploy/lib/dns.sh with target
+Remediation: Add `livekit.srenix.ai` to deploy/lib/dns.sh with target
              <ingress-LB-IP>, then re-run the deploy step. Suggested record:
-             A livekit.bionicaisolutions.com → <ingress-LB-IP> (proxied=false).
+             A livekit.srenix.ai → <ingress-LB-IP> (proxied=false).
 ```
 
 Two qualities to call out:
@@ -155,8 +155,8 @@ Files to modify:
 | File | Change |
 |---|---|
 | `catalog/catalog.go` | Append `diagnose.DNSChainDrift{...}` to the `r.RegisterAnalyzer(...)` call. |
-| `api/v1alpha1/clusterhealthautopilot_types.go` | Add `ExternalDNS` field to Spec; CRD codegen via `make generate manifests`. |
-| `charts/cluster-health-autopilot/templates/configmap.yaml` (and the operator builder for the equivalent env vars) | Plumb `externalDNS.cloudflare.*` through to the analyzer. |
+| `api/v1alpha1/agenticsre_types.go` | Add `ExternalDNS` field to Spec; CRD codegen via `make generate manifests`. |
+| `charts/agentic-sre/templates/configmap.yaml` (and the operator builder for the equivalent env vars) | Plumb `externalDNS.cloudflare.*` through to the analyzer. |
 | `internal/probe/endpoints.go` | No code change, but the comment at L350–360 (`DefaultEndpointTargets returns the canonical set...`) gets a back-reference: "Also walked by the DNS-chain analyzer to verify Cloudflare wiring." |
 
 Interface signature:
@@ -165,7 +165,7 @@ Interface signature:
 type DNSChainDrift struct {
     Client       cloudflare.Client     // nil when Cloudflare hop is disabled
     SeedTargets  []probe.EndpointTarget // typically probe.DefaultEndpointTargets()
-    OptOutAnno   string                 // "cha.bionicaisolutions.com/probe-disable"
+    OptOutAnno   string                 // "srenix.ai/probe-disable"
     Resolver     dnsresolver.LBResolver // derives expected target from ingress-controller Svc
 }
 
@@ -186,7 +186,7 @@ Unit tests, all driven by snapshot fixtures (`pkg/snapshot/fakesrc.go` pattern, 
   5. **Ingress orphan Service** — Ingress references a Service that doesn't exist. Expect: `ingress-orphan-service/<ns>/<name>/<H>`.
   6. **Service no endpoints** — Service exists, selector matches nothing. Expect: `service-no-endpoints/<N>/<S>/<H>`.
   7. **Duplicate Ingress hosts** — two Ingresses claim the same host. Expect: `duplicate-ingress-host/<H>` (warn).
-  8. **Opt-out annotation** — Ingress has `cha.bionicaisolutions.com/probe-disable=true`. Expect: no findings for any host on that Ingress.
+  8. **Opt-out annotation** — Ingress has `srenix.ai/probe-disable=true`. Expect: no findings for any host on that Ingress.
   9. **Cloudflare disabled** — `Client` is nil. Expect: K8s-layer findings only, plus exactly one info-tier "external DNS hop not verified" diagnostic per host (collapsed into one summary finding, not N).
   10. **External-only seed host** — on seed list, no Ingress, Cloudflare record exists and matches. Expect: zero findings (Cloudflare-verified, K8s side intentionally absent).
   11. **CRD absent (Ingress GVR not installed)** — degenerate cluster. Expect: nil return, no panic.
@@ -194,7 +194,7 @@ Unit tests, all driven by snapshot fixtures (`pkg/snapshot/fakesrc.go` pattern, 
 
 Integration verification (post-merge, run by hand on the Bionic cluster):
 
-  - Confirm finding on `livekit.bionicaisolutions.com` matches reality.
+  - Confirm finding on `livekit.srenix.ai` matches reality.
   - Toggle Cloudflare token off, re-run, confirm degraded mode.
   - Add a new Ingress for `dns-chain-test.baisoln.com` *without* a Cloudflare record, confirm `missing-cloudflare-record` finding fires within one watcher cycle.
 
@@ -207,17 +207,17 @@ Integration verification (post-merge, run by hand on the Bionic cluster):
 
 ## 9. Cross-references to the trigger-expansion roadmap
 
-The `project_cha_trigger_expansion_roadmap` memory already includes a milestone for expanding trigger classes A→A+B+C+D+E. This analyzer fits cleanly under **Class B (config drift)** — DNS configuration is config-as-data — and adds a new probe / analyzer pair that doesn't overlap with the existing Kong / HPA / Velero / Vault / ArgoCD probes scoped in v1.8.
+The `project_srenix_trigger_expansion_roadmap` memory already includes a milestone for expanding trigger classes A→A+B+C+D+E. This analyzer fits cleanly under **Class B (config drift)** — DNS configuration is config-as-data — and adds a new probe / analyzer pair that doesn't overlap with the existing Kong / HPA / Velero / Vault / ArgoCD probes scoped in v1.8.
 
 If the implementation slips, the roadmap doc should be updated to call this out explicitly under the v1.10 milestone.
 
 ## 10. Out of scope (deferred follow-ups)
 
-  - **AI-gated fixer.** The natural next step (per `cha_ai_remediation_direction` memory): an `AIProposedAction` linked to `missing-cloudflare-record/<H>` findings that proposes the exact `deploy/lib/dns.sh` patch + Cloudflare API call, gated through approval-server. This needs its own design doc.
-  - **DNS-as-code drift detection** vs `deploy/lib/dns.sh`. Logical follow-on but requires CHA to read the deploy repo. Better as a multi-cluster / paid-tier analyzer that runs against a checked-in source-of-truth.
+  - **AI-gated fixer.** The natural next step (per `srenix_ai_remediation_direction` memory): an `AIProposedAction` linked to `missing-cloudflare-record/<H>` findings that proposes the exact `deploy/lib/dns.sh` patch + Cloudflare API call, gated through approval-server. This needs its own design doc.
+  - **DNS-as-code drift detection** vs `deploy/lib/dns.sh`. Logical follow-on but requires Srenix to read the deploy repo. Better as a multi-cluster / paid-tier analyzer that runs against a checked-in source-of-truth.
   - **Route53 / GCP Cloud DNS** providers. Deferred to the paid `MultiCloudDNSDrift` analyzer (parallel to existing `MultiClusterDrift` paid analyzer).
   - **Cert chain validation.** Already covered by `CertExpiry` + `TLSSecretMismatch` analyzers; this analyzer deliberately stops at DNS.
-  - **Cloudflare WAF / page rule drift.** Not health-related; out of scope for CHA.
+  - **Cloudflare WAF / page rule drift.** Not health-related; out of scope for Srenix.
 
 ---
 

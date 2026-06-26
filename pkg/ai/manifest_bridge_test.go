@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package ai_test
@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/ai"
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/diagnose"
+	"github.com/srenix-ai/agentic-sre/pkg/ai"
+	"github.com/srenix-ai/agentic-sre/pkg/diagnose"
 )
 
 const goodNetPolYAML = `apiVersion: networking.k8s.io/v1

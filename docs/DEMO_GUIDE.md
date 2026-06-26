@@ -1,6 +1,6 @@
-# Cluster Health Autopilot — Demo Script & Instruction Guide
+# Agentic SRE — Demo Script & Instruction Guide
 
-**Audience**: SRE / Platform Engineer evaluating CHA as a design partner or pilot customer.  
+**Audience**: SRE / Platform Engineer evaluating Srenix as a design partner or pilot customer.  
 **Time**: ~45 minutes end-to-end; zero-trust section alone takes 5 minutes.  
 **What you need**: macOS or Linux laptop with `jq` installed; `kubectl` context to a real cluster only for Parts 3 and 4 (optional).
 
@@ -15,31 +15,31 @@
 
 ```bash
 # macOS arm64 (Apple Silicon)
-curl -L https://github.com/Bionic-AI-Solutions/cluster-health-autopilot/releases/latest/download/cluster-health-autopilot_darwin_arm64.tar.gz \
+curl -L https://github.com/srenix-ai/agentic-sre/releases/latest/download/agentic-sre_darwin_arm64.tar.gz \
   | tar xz
-chmod +x cha
+chmod +x srenix
 
 # macOS amd64 (Intel)
-curl -L https://github.com/Bionic-AI-Solutions/cluster-health-autopilot/releases/latest/download/cluster-health-autopilot_darwin_amd64.tar.gz \
+curl -L https://github.com/srenix-ai/agentic-sre/releases/latest/download/agentic-sre_darwin_amd64.tar.gz \
   | tar xz
-chmod +x cha
+chmod +x srenix
 
 # Linux amd64
-curl -L https://github.com/Bionic-AI-Solutions/cluster-health-autopilot/releases/latest/download/cluster-health-autopilot_linux_amd64.tar.gz \
+curl -L https://github.com/srenix-ai/agentic-sre/releases/latest/download/agentic-sre_linux_amd64.tar.gz \
   | tar xz
-chmod +x cha
+chmod +x srenix
 
 # Linux arm64
-curl -L https://github.com/Bionic-AI-Solutions/cluster-health-autopilot/releases/latest/download/cluster-health-autopilot_linux_arm64.tar.gz \
+curl -L https://github.com/srenix-ai/agentic-sre/releases/latest/download/agentic-sre_linux_arm64.tar.gz \
   | tar xz
-chmod +x cha
+chmod +x srenix
 ```
 
 **Windows** (PowerShell):
 ```powershell
-Invoke-WebRequest -Uri "https://github.com/Bionic-AI-Solutions/cluster-health-autopilot/releases/latest/download/cluster-health-autopilot_windows_amd64.zip" -OutFile cha.zip
-Expand-Archive cha.zip -DestinationPath .
-# Binary is cha.exe — run as: .\cha.exe diagnose --snapshot examples\sample-cluster
+Invoke-WebRequest -Uri "https://github.com/srenix-ai/agentic-sre/releases/latest/download/agentic-sre_windows_amd64.zip" -OutFile srenix.zip
+Expand-Archive srenix.zip -DestinationPath .
+# Binary is srenix.exe — run as: .\srenix.exe diagnose --snapshot examples\sample-cluster
 ```
 
 No Docker, no Go, no runtime dependencies. Single static binary.
@@ -47,8 +47,8 @@ No Docker, no Go, no runtime dependencies. Single static binary.
 ### 1.2 — Clone the repo to get the example snapshot
 
 ```bash
-git clone https://github.com/Bionic-AI-Solutions/cluster-health-autopilot.git
-cd cluster-health-autopilot
+git clone https://github.com/srenix-ai/agentic-sre.git
+cd agentic-sre
 ```
 
 The snapshot at `examples/sample-cluster/` is a real anonymized capture from a production Kubernetes cluster with deliberately injected failures.
@@ -56,7 +56,7 @@ The snapshot at `examples/sample-cluster/` is a real anonymized capture from a p
 ### 1.3 — Run diagnostics
 
 ```bash
-./cha diagnose --snapshot examples/sample-cluster
+./srenix diagnose --snapshot examples/sample-cluster
 ```
 
 **Expected output** (the exact output your audience will see):
@@ -85,14 +85,14 @@ Total findings: 0, diagnostics: 9
 **Talking points**:
 - Five probes ran across storage, nodes, database, PVCs, and services — all green.
 - Nine diagnostics from six different analyzers spanning: secret key mismatch, two failing ExternalSecrets with t6 path hints, a case/format key name mismatch, an unprovisioned Secret (no ESO), a registry auth failure, a cert-manager ACME rate-limit, and an expired TLS certificate.
-- The `playground-agent` Deployment references a Secret that has no ExternalSecret — CHA suggests the exact Vault path to create.
-- The `repomind` Deployment references `github-token` but the Secret contains `GITHUB_TOKEN` — CHA detected the format variant before the pod crashed.
+- The `playground-agent` Deployment references a Secret that has no ExternalSecret — Srenix suggests the exact Vault path to create.
+- The `repomind` Deployment references `github-token` but the Secret contains `GITHUB_TOKEN` — Srenix detected the format variant before the pod crashed.
 - **Nothing was connected to your cluster**. Zero RBAC. Zero trust required.
 
 ### 1.4 — Switch to JSON output (for pipeline demos)
 
 ```bash
-./cha diagnose --snapshot examples/sample-cluster --format json | jq .
+./srenix diagnose --snapshot examples/sample-cluster --format json | jq .
 ```
 
 The structured output is designed for fleet-console pipelines: each diagnostic carries `kind`, `name`, `namespace`, `message`, and `analyzer`.
@@ -103,7 +103,7 @@ The structured output is designed for fleet-console pipelines: each diagnostic c
 
 > All four failures below are visible from the same `examples/sample-cluster/` snapshot — no
 > live cluster or `kubectl` needed. The `jq` queries let you "open the hood" and show the
-> audience the raw data CHA reasoned over.
+> audience the raw data Srenix reasoned over.
 
 ### Failure 1: SecretKeyMissing
 
@@ -113,7 +113,7 @@ The structured output is designed for fleet-console pipelines: each diagnostic c
 - Kubernetes copied the lowercase key into the Secret; the uppercase reference is missing.
 - Pod state: `CreateContainerConfigError`.
 
-**CHA detection**:
+**Srenix detection**:
 ```
 🔎 Secret `billing/billing-svc-secrets` missing key `STRIPE_API_KEY` (SecretKeyMissing)
 ```
@@ -136,7 +136,7 @@ cat examples/sample-cluster/core-pods.json \
 - `billing/billing-svc-secrets`: ESO fetched the secret but the key name in the Vault response didn't match the `remoteRef.property` in the ExternalSecret spec.
 - `billing/old-payment-gateway`: ESO tried to sync but the Vault path `shared/legacy/payments` no longer exists — it was never migrated to the t6 hierarchy.
 
-**CHA detection** (v0.9.1+: t6 path hint appended when path doesn't follow `t6-apps/` convention):
+**Srenix detection** (v0.9.1+: t6 path hint appended when path doesn't follow `t6-apps/` convention):
 ```
 🔎 ExternalSecret `billing/billing-svc-secrets` not Ready: cannot find secret data for key: "stripe_api_key".
    Check Vault path / property names. Vault path `shared/billing/config` does not follow t6 hierarchy;
@@ -164,7 +164,7 @@ cat examples/sample-cluster/external-secrets.io-externalsecrets.json \
 - The Deployment's `env[].valueFrom.secretKeyRef.key` was written as `github-token` (lowercase-hyphen) — a different format.
 - The Secret exists and ESO is healthy, but the pod will crash on the next restart.
 
-**CHA detection** (v0.9.1+: near-miss hint when case/format variant exists):
+**Srenix detection** (v0.9.1+: near-miss hint when case/format variant exists):
 ```
 🔎 Secret `tools/repomind-secrets` exists but is missing key `github-token` (referenced by Deployment/repomind in ns tools).
    Pod will hit CreateContainerConfigError on next restart. Existing keys: [GITHUB_TOKEN].
@@ -193,7 +193,7 @@ cat examples/sample-cluster/apps-deployments.json \
 - No ExternalSecret exists in the `playground` namespace targeting this Secret name.
 - The Secret itself is missing — there is no provisioning mechanism at all.
 
-**CHA detection** (v0.9.1+: new `UnprovisionedSecret` analyzer):
+**Srenix detection** (v0.9.1+: new `UnprovisionedSecret` analyzer):
 ```
 🔎 Secret `playground/playground-agent-secrets` does NOT exist (referenced by Deployment/playground-agent
    in ns playground, envFrom whole-secret import). Pod will fail to start on next restart.
@@ -226,7 +226,7 @@ cat examples/sample-cluster/apps-deployments.json \
 - No `imagePullSecret` is configured — the kubelet's pull attempt returns HTTP 401.
 - Pod state: `ImagePullBackOff`.
 
-**CHA detection**:
+**Srenix detection**:
 ```
 🔎 Pod `monitoring/metrics-exporter-5c7d8b-abc12` container "exporter" cannot pull image
    "ghcr.io/myorg/metrics-exporter:v2.1.0": auth failure — 401 unauthorized: authentication required
@@ -247,7 +247,7 @@ cat examples/sample-cluster/core-events.json \
         | {pod: .involvedObject.name, ns: .metadata.namespace, message: .message}'
 ```
 
-**Why CHA ignores non-auth pull failures**: `manifest unknown`, `image not found`, and other deployment errors are noise — the team already knows their image tags. CHA only surfaces auth-signal keywords (`401`, `unauthorized`, `denied`, `authentication required`, `pull access denied`) so the on-call engineer doesn't have to grep events manually.
+**Why Srenix ignores non-auth pull failures**: `manifest unknown`, `image not found`, and other deployment errors are noise — the team already knows their image tags. Srenix only surfaces auth-signal keywords (`401`, `unauthorized`, `denied`, `authentication required`, `pull access denied`) so the on-call engineer doesn't have to grep events manually.
 
 ---
 
@@ -257,7 +257,7 @@ cat examples/sample-cluster/core-events.json \
 - `monitoring/grafana-tls`: cert-manager hit an ACME rate-limit and cannot renew. The certificate is not Ready.
 - `production/api-server-tls`: The certificate expired on 2025-02-28. TLS secrets are still mounted in running pods but will break on the next pod restart.
 
-**CHA detection**:
+**Srenix detection**:
 ```
 🔎 Certificate `monitoring/grafana-tls` is not Ready: ACME rate-limited (too many certificates issued)
 🔎 Certificate `production/api-server-tls` EXPIRED at 2025-02-28 00:00 UTC
@@ -271,7 +271,7 @@ cat examples/sample-cluster/cert-manager.io-certificates.json \
                     notAfter: .status.notAfter}'
 ```
 
-**Three conditions CHA flags** (explain to the audience):
+**Three conditions Srenix flags** (explain to the audience):
 1. `Ready: False` — renewal stalled (ACME error, issuer down, DNS misconfiguration)
 2. `notAfter` in the past — certificate already expired
 3. `notAfter` within 14 days — cert-manager renewal has likely stalled (sits above the default 2/3-of-validity renewal point)
@@ -290,13 +290,13 @@ helm version
 kubectl config current-context
 
 # Add the chart repo (one-time setup)
-helm repo add cha https://bionic-ai-solutions.github.io/cluster-health-autopilot
+helm repo add srenix https://srenix-ai.github.io/agentic-sre
 helm repo update
 ```
 
 ### 3.1 — Install (scheduled diagnostics + optional real-time watcher)
 
-CHA has two complementary operational layers. Deploy one or both depending on what you want to show:
+Srenix has two complementary operational layers. Deploy one or both depending on what you want to show:
 
 | Layer | Command | Latency | Best for |
 |---|---|---|---|
@@ -305,8 +305,8 @@ CHA has two complementary operational layers. Deploy one or both depending on wh
 
 **Minimal install (scheduled diagnostics only)**:
 ```bash
-helm install cha cha/cluster-health-autopilot \
-  --namespace cluster-health-autopilot \
+helm install srenix srenix/agentic-sre \
+  --namespace agentic-sre \
   --create-namespace
 ```
 
@@ -317,8 +317,8 @@ This deploys:
 
 **Recommended for live demos — watcher + Alertmanager hub** (production posture):
 ```bash
-helm install cha cha/cluster-health-autopilot \
-  --namespace cluster-health-autopilot \
+helm install srenix srenix/agentic-sre \
+  --namespace agentic-sre \
   --create-namespace \
   --set image.tag=v1.5.2 \
   --set watcher.enabled=true \
@@ -330,33 +330,33 @@ helm install cha cha/cluster-health-autopilot \
 **With three-channel Slack** (instead of or in addition to Alertmanager):
 ```bash
 # First create the three Slack webhook secrets (one per channel):
-kubectl create secret generic cha-slack-ceph-alerts \
-  --namespace cluster-health-autopilot \
+kubectl create secret generic srenix-slack-ceph-alerts \
+  --namespace agentic-sre \
   --from-literal=WEBHOOK_URL=https://hooks.slack.com/services/.../alerts/...
-kubectl create secret generic cha-slack-ceph-critical \
-  --namespace cluster-health-autopilot \
+kubectl create secret generic srenix-slack-ceph-critical \
+  --namespace agentic-sre \
   --from-literal=WEBHOOK_URL=https://hooks.slack.com/services/.../critical/...
-kubectl create secret generic cha-slack-healthinfo \
-  --namespace cluster-health-autopilot \
+kubectl create secret generic srenix-slack-healthinfo \
+  --namespace agentic-sre \
   --from-literal=WEBHOOK_URL=https://hooks.slack.com/services/.../healthinfo/...
 
 # Then install with all three channels enabled:
-helm install cha cha/cluster-health-autopilot \
-  --namespace cluster-health-autopilot \
+helm install srenix srenix/agentic-sre \
+  --namespace agentic-sre \
   --create-namespace \
   --set image.tag=v1.5.2 \
   --set watcher.enabled=true \
-  --set slack.alerts.enabled=true --set slack.alerts.secretName=cha-slack-ceph-alerts \
-  --set slack.critical.enabled=true --set slack.critical.secretName=cha-slack-ceph-critical \
-  --set slack.healthinfo.enabled=true --set slack.healthinfo.secretName=cha-slack-healthinfo
+  --set slack.alerts.enabled=true --set slack.alerts.secretName=srenix-slack-ceph-alerts \
+  --set slack.critical.enabled=true --set slack.critical.secretName=srenix-slack-ceph-critical \
+  --set slack.healthinfo.enabled=true --set slack.healthinfo.secretName=srenix-slack-healthinfo
 ```
 
 The watcher is a long-running `Deployment` that reacts within seconds of a cluster event — no manual job triggers needed (see Part 5). The CronJob and watcher run concurrently and serve different purposes.
 
 Verify the install:
 ```bash
-kubectl get all -n cluster-health-autopilot
-kubectl get clusterrole | grep cha
+kubectl get all -n agentic-sre
+kubectl get clusterrole | grep srenix
 ```
 
 ### 3.2 — On-demand run (one-shot audit without waiting for the cron)
@@ -364,9 +364,9 @@ kubectl get clusterrole | grep cha
 For an immediate audit snapshot — useful when you want to confirm the current cluster state before or after a change:
 
 ```bash
-kubectl create job --from=cronjob/cha-cluster-health-autopilot-diagnose cha-diagnose-manual \
-  -n cluster-health-autopilot
-kubectl logs -f job/cha-diagnose-manual -n cluster-health-autopilot
+kubectl create job --from=cronjob/srenix-agentic-sre-diagnose srenix-diagnose-manual \
+  -n agentic-sre
+kubectl logs -f job/srenix-diagnose-manual -n agentic-sre
 ```
 
 You will see the same probe + diagnostic output as the snapshot mode, but against the live cluster.
@@ -389,26 +389,26 @@ DriftReports are Kubernetes objects — they integrate with any existing alertin
 
 ### 3.4 — Alerting and reporting
 
-CHA v1.5.2 offers two complementary delivery modes — pick one or both:
+Srenix v1.5.2 offers two complementary delivery modes — pick one or both:
 
-**Mode A: Alertmanager-as-hub (recommended)**. CHA posts active issues to
+**Mode A: Alertmanager-as-hub (recommended)**. Srenix posts active issues to
 `/api/v2/alerts` every cycle. Alertmanager handles dedup, silencing, and
 fan-out to any receiver (Slack, PagerDuty, Teams, email, webhook). Best
 choice when you already run kube-prometheus-stack.
 
 ```bash
-helm upgrade cha cha/cluster-health-autopilot \
-  --namespace cluster-health-autopilot --reuse-values \
+helm upgrade srenix srenix/agentic-sre \
+  --namespace agentic-sre --reuse-values \
   --set alertmanager.enabled=true \
   --set alertmanager.url=http://alertmanager.<ns>.svc.cluster.local:9093 \
   --set alertmanager.clusterName=<your-cluster>
 ```
 
-Then configure Alertmanager routes for `alertname=~"cha_.*"` (see SETUP_GUIDE.md §5).
+Then configure Alertmanager routes for `alertname=~"srenix_.*"` (see SETUP_GUIDE.md §5).
 
-**Mode B: Direct three-channel Slack**. CHA posts directly to three
+**Mode B: Direct three-channel Slack**. Srenix posts directly to three
 dedicated channels based on whether it acted on the issue:
-- `#ceph-alerts` ← CHA auto-fixed (informational)
+- `#ceph-alerts` ← Srenix auto-fixed (informational)
 - `#ceph-critical` ← issues needing human attention
 - `#healthinfo` ← daily 09:00 UTC digest
 
@@ -419,27 +419,27 @@ post time:
 ```bash
 for ch in ceph-alerts ceph-critical healthinfo; do
   printf '%s' "https://hooks.slack.com/services/YOUR/${ch}/URL" \
-    | kubectl create secret generic cha-slack-${ch} \
+    | kubectl create secret generic srenix-slack-${ch} \
         --from-file=WEBHOOK_URL=/dev/stdin \
-        -n cluster-health-autopilot
+        -n agentic-sre
 done
 ```
 
 Verify a value is clean (no `$` before the next bash prompt means no trailing newline):
 
 ```bash
-kubectl get secret cha-slack-ceph-alerts -n cluster-health-autopilot \
+kubectl get secret srenix-slack-ceph-alerts -n agentic-sre \
   -o jsonpath='{.data.WEBHOOK_URL}' | base64 -d | cat -A
 ```
 
 Enable the channels in the Helm release:
 
 ```bash
-helm upgrade cha cha/cluster-health-autopilot \
-  --namespace cluster-health-autopilot --reuse-values \
-  --set slack.alerts.enabled=true    --set slack.alerts.secretName=cha-slack-ceph-alerts \
-  --set slack.critical.enabled=true  --set slack.critical.secretName=cha-slack-ceph-critical \
-  --set slack.healthinfo.enabled=true --set slack.healthinfo.secretName=cha-slack-healthinfo
+helm upgrade srenix srenix/agentic-sre \
+  --namespace agentic-sre --reuse-values \
+  --set slack.alerts.enabled=true    --set slack.alerts.secretName=srenix-slack-ceph-alerts \
+  --set slack.critical.enabled=true  --set slack.critical.secretName=srenix-slack-ceph-critical \
+  --set slack.healthinfo.enabled=true --set slack.healthinfo.secretName=srenix-slack-healthinfo
 ```
 
 ---
@@ -448,22 +448,22 @@ helm upgrade cha cha/cluster-health-autopilot \
 
 > Always demo remediation in dry-run first. The whitelist is narrow and intentional.
 
-CHA offers two remediation paths — both use the same whitelisted fixers:
+Srenix offers two remediation paths — both use the same whitelisted fixers:
 
 | Path | Trigger | Latency | When to use |
 |---|---|---|---|
 | **Watcher `--remedy`** | event-driven (recommended) | seconds | live demos, on-call automation |
 | **Remediate CronJob** | scheduled (opt-in) | daily or on-demand | scheduled batch cleanup |
 
-For live demos, the watcher with `--remedy` is the best story: a failure appears, CHA detects and fixes it within seconds, Slack confirms the resolution — no manual job triggers.
+For live demos, the watcher with `--remedy` is the best story: a failure appears, Srenix detects and fixes it within seconds, Slack confirms the resolution — no manual job triggers.
 
 ### 4.1 — Enable dry-run remediation (verify what would be fixed)
 
 **Primary: watcher in dry-run mode**
 
 ```bash
-helm upgrade cha cha/cluster-health-autopilot \
-  --namespace cluster-health-autopilot \
+helm upgrade srenix srenix/agentic-sre \
+  --namespace agentic-sre \
   --reuse-values \
   --set watcher.enabled=true \
   --set watcher.remedy.enabled=true \
@@ -472,8 +472,8 @@ helm upgrade cha cha/cluster-health-autopilot \
 
 Watch the logs to see dry-run output on the next event:
 ```bash
-kubectl logs -f deployment/cha-cluster-health-autopilot-watcher \
-  -n cluster-health-autopilot
+kubectl logs -f deployment/srenix-agentic-sre-watcher \
+  -n agentic-sre
 # [DRY-RUN] Would delete pod staging/old-deploy-abc123 (StaleErrorPods)
 # [DRY-RUN] Would delete Job billing/billing-sync-1704067200 (StuckJobsWithBadSecretRef)
 ```
@@ -482,8 +482,8 @@ kubectl logs -f deployment/cha-cluster-health-autopilot-watcher \
 
 Enable the remediate CronJob for batch/scheduled cleanup:
 ```bash
-helm upgrade cha cha/cluster-health-autopilot \
-  --namespace cluster-health-autopilot \
+helm upgrade srenix srenix/agentic-sre \
+  --namespace agentic-sre \
   --reuse-values \
   --set remediation.enabled=true \
   --set remediation.dryRun=true
@@ -491,9 +491,9 @@ helm upgrade cha cha/cluster-health-autopilot \
 
 Trigger a manual remediation run:
 ```bash
-kubectl create job --from=cronjob/cha-cluster-health-autopilot-remediate cha-remediate-dryrun \
-  -n cluster-health-autopilot
-kubectl logs -f job/cha-remediate-dryrun -n cluster-health-autopilot
+kubectl create job --from=cronjob/srenix-agentic-sre-remediate srenix-remediate-dryrun \
+  -n agentic-sre
+kubectl logs -f job/srenix-remediate-dryrun -n agentic-sre
 ```
 
 ### 4.2 — The whitelisted fixers
@@ -547,16 +547,16 @@ kubectl get pods -n default -l job-name=crash-demo
 
 The watcher fires within ~10–15 seconds of the pod entering `Error` state. Watch the logs:
 ```bash
-kubectl logs -f deployment/cha-cluster-health-autopilot-watcher \
-  -n cluster-health-autopilot
+kubectl logs -f deployment/srenix-agentic-sre-watcher \
+  -n agentic-sre
 # watcher: event-triggered cycle
 # [DRY-RUN] Would delete pod default/crash-demo-abc12 (StaleErrorPods)
 ```
 
 Switch the watcher to live mode:
 ```bash
-helm upgrade cha cha/cluster-health-autopilot \
-  --namespace cluster-health-autopilot \
+helm upgrade srenix srenix/agentic-sre \
+  --namespace agentic-sre \
   --reuse-values \
   --set watcher.remedy.dryRun=false
 ```
@@ -568,20 +568,20 @@ The next event cycle deletes the pod automatically. Slack receives a combined re
 If you prefer to demonstrate the CronJob flow instead:
 ```bash
 # Confirm detection (dry-run)
-kubectl create job --from=cronjob/cha-cluster-health-autopilot-remediate cha-remediate-check \
-  -n cluster-health-autopilot
-kubectl logs -f job/cha-remediate-check -n cluster-health-autopilot
+kubectl create job --from=cronjob/srenix-agentic-sre-remediate srenix-remediate-check \
+  -n agentic-sre
+kubectl logs -f job/srenix-remediate-check -n agentic-sre
 # [DRY-RUN] Would delete pod default/crash-demo-abc12 (StaleErrorPods)
 
 # Switch to live and run
-helm upgrade cha cha/cluster-health-autopilot \
-  --namespace cluster-health-autopilot \
+helm upgrade srenix srenix/agentic-sre \
+  --namespace agentic-sre \
   --reuse-values \
   --set remediation.dryRun=false
 
-kubectl create job --from=cronjob/cha-cluster-health-autopilot-remediate cha-remediate-live \
-  -n cluster-health-autopilot
-kubectl logs -f job/cha-remediate-live -n cluster-health-autopilot
+kubectl create job --from=cronjob/srenix-agentic-sre-remediate srenix-remediate-live \
+  -n agentic-sre
+kubectl logs -f job/srenix-remediate-live -n agentic-sre
 # Deleted pod default/crash-demo-abc12 (StaleErrorPods)
 ```
 
@@ -596,7 +596,7 @@ kubectl get pods -n default -l job-name=crash-demo
 ## Part 5 — Event-Driven Watcher (Real-Time Alerts)
 
 > **New in v0.9.0.** Instead of waiting for a CronJob tick, the watcher reacts
-> within seconds of a Kubernetes event. Great for showing how CHA integrates into
+> within seconds of a Kubernetes event. Great for showing how Srenix integrates into
 > an on-call workflow.
 
 ### 5.1 — Enable the watcher via Helm
@@ -606,24 +606,24 @@ either through Alertmanager (recommended) or through the three Slack
 channels — see §3.4 for setting either up. Just enable the watcher itself:
 
 ```bash
-helm upgrade cha cha/cluster-health-autopilot \
-  --namespace cluster-health-autopilot \
+helm upgrade srenix srenix/agentic-sre \
+  --namespace agentic-sre \
   --reuse-values \
   --set watcher.enabled=true
 ```
 
 This deploys a long-running `Deployment` (single replica, `Recreate` strategy)
-that watches all resource types CHA already analyzes.
+that watches all resource types Srenix already analyzes.
 
 Verify it's running:
 
 ```bash
-kubectl get deployment -n cluster-health-autopilot
+kubectl get deployment -n agentic-sre
 # NAME                             READY   UP-TO-DATE   AVAILABLE
-# cha-...-watcher                  1/1     1            1
+# srenix-...-watcher                  1/1     1            1
 
-kubectl logs -f deployment/cha-cluster-health-autopilot-watcher \
-  -n cluster-health-autopilot
+kubectl logs -f deployment/srenix-agentic-sre-watcher \
+  -n agentic-sre
 # watcher: pre-populated seen map with N DriftReports
 # watcher: initial diagnose cycle
 # watcher: driftreports: 0 created, N updated, 0 deleted
@@ -671,7 +671,7 @@ EOF
 
 Within ~10–15 seconds (debounce + one diagnose cycle), the alert flows
 either via Alertmanager (if enabled) → its configured Slack receiver, OR
-directly to `#ceph-critical` (since CHA cannot auto-fix an ESO).
+directly to `#ceph-critical` (since Srenix cannot auto-fix an ESO).
 
 > **Note on endpoint-probe flake suppression (v1.4+).** When the failure mode
 > is a transient endpoint error (connection reset, EOF, `no such host`,
@@ -684,7 +684,7 @@ directly to `#ceph-critical` (since CHA cannot auto-fix an ESO).
 > deterministic; for a network-flake demo, expect a warning first.
 
 ```
-🔴 CHA Issues | <cluster-name>
+🔴 Srenix Issues | <cluster-name>
 
 ⚠️ ExternalSecret/default/watcher-demo-bad-es
 ExternalSecret `default/watcher-demo-bad-es` not Ready: …
@@ -695,7 +695,7 @@ Clean up:
 ```bash
 kubectl delete externalsecret watcher-demo-bad-es -n default
 # Within the next watcher cycle, the alert auto-resolves:
-#   - Alertmanager: the cha_issue alert disappears (TTL = 2 × resyncPeriod + 1 min)
+#   - Alertmanager: the srenix_issue alert disappears (TTL = 2 × resyncPeriod + 1 min)
 #   - Direct Slack: a ✅ Resolved message posts if --slack-post-on-resolved=true (default)
 ```
 
@@ -704,8 +704,8 @@ kubectl delete externalsecret watcher-demo-bad-es -n default
 Enable remediation on the watcher:
 
 ```bash
-helm upgrade cha cha/cluster-health-autopilot \
-  --namespace cluster-health-autopilot \
+helm upgrade srenix srenix/agentic-sre \
+  --namespace agentic-sre \
   --reuse-values \
   --set watcher.remedy.enabled=true
 ```
@@ -718,7 +718,7 @@ Now on each cycle, after the diagnose pass the watcher:
 **Talking points for the audience**:
 - Detection latency drops from minutes (CronJob) to seconds (watch event + 10 s debounce).
 - Slack remains quiet for stable clusters — no alert fatigue.
-- Remediation is the same whitelist as `cha remediate --live`; no new risk surface.
+- Remediation is the same whitelist as `srenix remediate --live`; no new risk surface.
 - Pod restart does not re-flood Slack — DriftReport CRs serve as the durable state.
 
 ### 5.5 — TLSSecretMismatch demo (v1.3, analyzer always on, fixer opt-in)
@@ -784,16 +784,16 @@ kubectl annotate ingress tls-mismatch-demo -n tls-demo \
 Now enable the opt-in fixer:
 
 ```bash
-helm upgrade cha cha/cluster-health-autopilot \
-  --namespace cluster-health-autopilot --reuse-values \
+helm upgrade srenix srenix/agentic-sre \
+  --namespace agentic-sre --reuse-values \
   --set fixers.tlsSecretMismatch.enabled=true
 ```
 
 Watch the logs:
 
 ```bash
-kubectl logs -f deployment/cha-cluster-health-autopilot-watcher \
-  -n cluster-health-autopilot | grep -i tls
+kubectl logs -f deployment/srenix-agentic-sre-watcher \
+  -n agentic-sre | grep -i tls
 # Expected:
 #   analyzer:TLSSecretMismatch emitted diagnostic for tls-demo/tls-mismatch-demo
 #   fixer:TLSSecretMismatch SKIPPED (gitops-managed: argocd.argoproj.io/instance)
@@ -807,7 +807,7 @@ kubectl annotate ingress tls-mismatch-demo -n tls-demo \
 ```
 
 The next cycle patches the Ingress; the diagnostic resolves; `#ceph-alerts` posts a
-`cha_fixer_acted` confirmation.
+`srenix_fixer_acted` confirmation.
 
 ```bash
 kubectl get ingress tls-mismatch-demo -n tls-demo \
@@ -823,7 +823,7 @@ kubectl get ingress tls-mismatch-demo -n tls-demo \
   flag off, nothing in the chart can patch any Ingress — auditable from the rendered
   RBAC alone.
 - The GitOps escape hatch is automatic for ArgoCD / Flux / Helm and for any
-  `app.kubernetes.io/managed-by` label — CHA never fights another reconciler.
+  `app.kubernetes.io/managed-by` label — Srenix never fights another reconciler.
 
 Clean up:
 
@@ -887,18 +887,18 @@ kubectl get driftreport -A -o json \
          | {subject:.spec.subject, investigation:.spec.investigation}'
 ```
 
-**Show the kill switch** (CHA-com runs the same demo but swaps in the LLM-backed
+**Show the kill switch** (Srenix Enterprise runs the same demo but swaps in the LLM-backed
 implementation — same `🔬` block, richer prose):
 
 ```bash
 # Disable cluster-wide
-kubectl set env deployment/cha-cluster-health-autopilot-watcher \
-  -n cluster-health-autopilot CHA_INVESTIGATOR=off
+kubectl set env deployment/srenix-agentic-sre-watcher \
+  -n agentic-sre SRENIX_INVESTIGATOR=off
 
 # Next cycle: the diagnostic fires normally, but with no 🔬 block.
 # Re-enable by removing the env var or setting it to empty:
-kubectl set env deployment/cha-cluster-health-autopilot-watcher \
-  -n cluster-health-autopilot CHA_INVESTIGATOR-
+kubectl set env deployment/srenix-agentic-sre-watcher \
+  -n agentic-sre SRENIX_INVESTIGATOR-
 ```
 
 Clean up:
@@ -911,8 +911,8 @@ kubectl delete ingress investigator-demo -n default
 - Zero new RBAC. The Investigator uses verbs already on the reader ClusterRole.
 - Deterministic and reproducible — rule-based output for the same finding is byte-for-byte
   identical, which matters for audit reviews.
-- The CHA-com binary plugs an LLM-backed implementation into the same interface and
-  respects the same `CHA_INVESTIGATOR=off` kill switch; design rationale at
+- The Srenix Enterprise binary plugs an LLM-backed implementation into the same interface and
+  respects the same `SRENIX_INVESTIGATOR=off` kill switch; design rationale at
   [`docs/design/2026-05-investigator-agent.md`](design/2026-05-investigator-agent.md).
 - Operators can scan `DriftReport.spec.investigation` cluster-wide with one `kubectl get
   driftreports -o json | jq`; the field is durable and survives watcher restarts.
@@ -921,7 +921,7 @@ kubectl delete ingress investigator-demo -n default
 
 ## Part 6 — Snapshot Capture (Your Own Cluster, Zero-Trust)
 
-Use this when a prospect wants to see CHA run against their cluster without giving you access.
+Use this when a prospect wants to see Srenix run against their cluster without giving you access.
 
 ### 6.1 — They capture, you analyze
 
@@ -929,13 +929,13 @@ Send the prospect this one-liner (they run it; you never see their kubeconfig):
 
 ```bash
 # They run this on their workstation with kubectl configured
-./cha snapshot capture --tar /tmp/my-cluster-$(date +%Y%m%d).tgz
+./srenix snapshot capture --tar /tmp/my-cluster-$(date +%Y%m%d).tgz
 ```
 
 They send you the `.tgz`. You analyze it:
 
 ```bash
-./cha diagnose --snapshot /tmp/my-cluster-20260504.tgz
+./srenix diagnose --snapshot /tmp/my-cluster-20260504.tgz
 ```
 
 **What's in the snapshot**: pods, nodes, PVCs, events, deployments, replicasets, jobs, cronjobs, externalsecrets, cnpg clusters, ceph clusters, cert-manager certificates.
@@ -948,7 +948,7 @@ They send you the `.tgz`. You analyze it:
 
 > This section is for demos after Gate G3 (week 8 onward).
 >
-> The watcher (Part 5) handles real-time alerting. The nightly CronJob pipeline here is the **compliance evidence layer** — it produces immutable JSONL run logs, a rolling `SUMMARY.md`, and the `cha diagnose --format jsonl` output that WS-C requires. Both layers run concurrently; they serve different audiences.
+> The watcher (Part 5) handles real-time alerting. The nightly CronJob pipeline here is the **compliance evidence layer** — it produces immutable JSONL run logs, a rolling `SUMMARY.md`, and the `srenix diagnose --format jsonl` output that WS-C requires. Both layers run concurrently; they serve different audiences.
 
 ```bash
 # View the accumulating run history
@@ -973,7 +973,7 @@ The `SUMMARY.md` is auto-generated nightly by the GitHub Actions workflow in Mod
 - CertExpiry:             1 occurrence, 1 resolved (cert renewed by cert-manager)
 ```
 
-**Talking point**: "This is 30 days of real cluster data, anonymized and public. Every incident class that CHA caught is catalogued — including the one we almost missed when someone rotated a Vault key and forgot to update the ExternalSecret property name."
+**Talking point**: "This is 30 days of real cluster data, anonymized and public. Every incident class that Srenix caught is catalogued — including the one we almost missed when someone rotated a Vault key and forgot to update the ExternalSecret property name."
 
 ---
 
@@ -981,7 +981,7 @@ The `SUMMARY.md` is auto-generated nightly by the GitHub Actions workflow in Mod
 
 After the demo, hand the prospect three things:
 
-1. **Their own snapshot analyzed** — run `cha diagnose --snapshot` against the `.tgz` they captured. Show them their cluster's actual state.
+1. **Their own snapshot analyzed** — run `srenix diagnose --snapshot` against the `.tgz` they captured. Show them their cluster's actual state.
 
 2. **`helm install --dry-run` against their cluster** — proves the chart is non-invasive, shows exactly what RBAC it requests before they approve it.
 
@@ -997,14 +997,14 @@ The ask: "Let us deploy the Helm chart to one non-prod namespace with the watche
 
 | Symptom | Fix |
 |---|---|
-| `cha: permission denied` | `chmod +x cha` |
-| `cha diagnose --snapshot` shows no diagnostics on sample-cluster | Verify you're using the repo's `examples/sample-cluster/` directory, not a custom snapshot |
+| `srenix: permission denied` | `chmod +x srenix` |
+| `srenix diagnose --snapshot` shows no diagnostics on sample-cluster | Verify you're using the repo's `examples/sample-cluster/` directory, not a custom snapshot |
 | Helm install fails: `no matches for kind "ExternalSecret"` | ESO not installed; the diagnose CronJob still runs — it simply skips ExternalSecret probes |
-| Runner pod stays `Pending` | `kubectl describe pod -n cluster-health-autopilot -l app=cha-runner` — likely imagePullBackOff on `myoung34/github-runner:ubuntu-jammy` |
-| DriftReports not appearing | Check `kubectl logs -n cluster-health-autopilot job/<latest-diagnose-job>`; DriftReport CRD may need manual install: `kubectl apply -f charts/cluster-health-autopilot/crds/` |
-| `cha remediate --live` refuses in snapshot mode | Expected — fixers are type-system-gated. Must use `--live` flag with valid kubeconfig |
-| Watcher pod restarts in a loop | Check `kubectl logs deployment/cha-…-watcher`; likely kubeconfig missing or SA lacks `watch` verb. Run `helm upgrade` to pick up the updated ClusterRole |
-| Slack flooded after watcher pod restart | Expected only if DriftReport CRD is absent (seen-map cannot be seeded). Install the CRD: `kubectl apply -f charts/cluster-health-autopilot/templates/crd-driftreport.yaml` |
+| Runner pod stays `Pending` | `kubectl describe pod -n agentic-sre -l app=srenix-runner` — likely imagePullBackOff on `myoung34/github-runner:ubuntu-jammy` |
+| DriftReports not appearing | Check `kubectl logs -n agentic-sre job/<latest-diagnose-job>`; DriftReport CRD may need manual install: `kubectl apply -f charts/agentic-sre/crds/` |
+| `srenix remediate --live` refuses in snapshot mode | Expected — fixers are type-system-gated. Must use `--live` flag with valid kubeconfig |
+| Watcher pod restarts in a loop | Check `kubectl logs deployment/srenix-…-watcher`; likely kubeconfig missing or SA lacks `watch` verb. Run `helm upgrade` to pick up the updated ClusterRole |
+| Slack flooded after watcher pod restart | Expected only if DriftReport CRD is absent (seen-map cannot be seeded). Install the CRD: `kubectl apply -f charts/agentic-sre/templates/crd-driftreport.yaml` |
 | Watcher posts Slack on every resync | `--slack-repeat-interval` defaults to 4 h; reduce alert volume with `watcher.slack.repeatInterval: 0` to disable repeats |
 | Watcher not firing on CRD resources (e.g. ExternalSecrets) | Normal if the CRD is not installed in this cluster — the watcher skips the watch silently. Check logs for `watch … no matches for kind` |
 
@@ -1048,14 +1048,14 @@ The ask: "Let us deploy the Helm chart to one non-prod namespace with the watche
 **Layer-2 root-cause classifier**:
 | Component | What it does |
 |---|---|
-| **Rule-based Investigator** (v1.5, OSS, default-on) | Pattern-matches each finding (TLS expiry, SAN mismatch, connection failure with transient detection, HTTP status, slow DNS, ExternalSecret, Secret missing/missing-key, Certificate expiry) and runs read-only tools (`DNSLookup`, `HTTPProbe`, `TLSInspect`, `Describe`, `GetEvents`). Attaches a `🔬` Summary to Slack/AM/DriftReport. No new RBAC. Disable with `CHA_INVESTIGATOR=off` |
-| **LLM-backed Investigator** (CHA-com only) | Same interface; consults rule-based first, falls back to LLM for richer free-form writeups on rule-misses |
+| **Rule-based Investigator** (v1.5, OSS, default-on) | Pattern-matches each finding (TLS expiry, SAN mismatch, connection failure with transient detection, HTTP status, slow DNS, ExternalSecret, Secret missing/missing-key, Certificate expiry) and runs read-only tools (`DNSLookup`, `HTTPProbe`, `TLSInspect`, `Describe`, `GetEvents`). Attaches a `🔬` Summary to Slack/AM/DriftReport. No new RBAC. Disable with `SRENIX_INVESTIGATOR=off` |
+| **LLM-backed Investigator** (Srenix Enterprise only) | Same interface; consults rule-based first, falls back to LLM for richer free-form writeups on rule-misses |
 
 **Routing & reporting**:
 | Component | What it does |
 |---|---|
-| **Alertmanager hub** (v0.9.5) | POSTs `cha_issue` / `cha_fixer_acted` alerts to `/api/v2/alerts` every watcher cycle; AM handles dedup, silencing, fan-out |
-| **Three-channel Slack** (v0.9.4) | `#ceph-alerts` (CHA-fixed) · `#ceph-critical` (needs human) · `#healthinfo` (daily digest) |
-| **Daily digest** (v0.9.4) | `cha diagnose --format=daily` reads DriftReport CR history; categorizes new (firstObserved < 24h) / persistent / auto-fixed |
+| **Alertmanager hub** (v0.9.5) | POSTs `srenix_issue` / `srenix_fixer_acted` alerts to `/api/v2/alerts` every watcher cycle; AM handles dedup, silencing, fan-out |
+| **Three-channel Slack** (v0.9.4) | `#ceph-alerts` (Srenix-fixed) · `#ceph-critical` (needs human) · `#healthinfo` (daily digest) |
+| **Daily digest** (v0.9.4) | `srenix diagnose --format=daily` reads DriftReport CR history; categorizes new (firstObserved < 24h) / persistent / auto-fixed |
 | **DriftReport seeding** (v0.9.0) | Watcher seeds its seen-map from existing DriftReport CRs on pod startup — no Slack flood after rolling update |
 | **DriftReport `spec.investigation`** (v1.5) | Investigator Summary persisted on every Create AND Update path; maxLength 1024 |

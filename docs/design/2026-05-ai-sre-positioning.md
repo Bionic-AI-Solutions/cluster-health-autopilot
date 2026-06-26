@@ -26,7 +26,7 @@ Three workstreams below, each broken into PR-sized work items.
 ## Workstream A — Repositioning ("AI SRE for K8s", not "cluster analyzer")
 
 ### Goal
-Move CHA's category claim from *cluster monitoring* (Datadog / Prometheus
+Move Srenix's category claim from *cluster monitoring* (Datadog / Prometheus
 adjacent) to *agentic SRE* (Komodor / Robusta / Causely / PagerDuty AIOps
 adjacent). The product already fits the new category; only the framing is
 wrong.
@@ -42,7 +42,7 @@ doesn't)
 
 ### Work items (priority order)
 
-A1. **Homepage rewrite.** [`cha-website/src/pages/index.astro`]
+A1. **Homepage rewrite.** [`srenix-website/src/pages/index.astro`]
   - Hero: replace *"self-healing operational layer"* with *"Autonomous SRE
     for Kubernetes — policy-bounded, audit-anchored, bring-your-own-LLM."*
   - Above-the-fold: live demo loop showing T0 → T1 → T2 → T3 flow
@@ -51,22 +51,22 @@ A1. **Homepage rewrite.** [`cha-website/src/pages/index.astro`]
     (instead of the current probe-list grid).
   - **Target: 2026-06-03.** Effort: 0.5 day.
 
-A2. **Pricing tier rename.** [`cha-website/src/pages/pricing.astro`]
-  - `OSS` → `CHA Open Core (cluster runtime)`
-  - `CHA-com Team` → `AI SRE Team`
-  - `CHA-com Enterprise` → `AI SRE Enterprise`
+A2. **Pricing tier rename.** [`srenix-website/src/pages/pricing.astro`]
+  - `OSS` → `Srenix Open Core (cluster runtime)`
+  - `Srenix Enterprise Team` → `AI SRE Team`
+  - `Srenix Enterprise Enterprise` → `AI SRE Enterprise`
   - Federal track keeps its name.
   - Update CTAs accordingly.
   - **Target: 2026-06-03.** Effort: 0.25 day.
 
-A3. **Comparison page.** [`cha-website/src/pages/compare/` — new directory]
+A3. **Comparison page.** [`srenix-website/src/pages/compare/` — new directory]
   - `index.astro`: tabular comparison vs Komodor / Robusta / Causely on
     in-cluster execution, mutation, audit, LLM bring-your-own,
     open-source posture.
-  - Per-competitor sub-pages with longer-form "why CHA" framing.
+  - Per-competitor sub-pages with longer-form "why Srenix" framing.
   - **Target: 2026-06-10.** Effort: 1 day.
 
-A4. **Demo refresh.** [`cluster-health-autopilot/demo/`]
+A4. **Demo refresh.** [`agentic-sre/demo/`]
   - Current `run-demo-v2.sh` emphasises deterministic fixers.
   - New `run-demo-v3.sh`: synthetic broken pod → DriftReport →
     T1 fix-proposal flowing into click-to-fix URL → operator approves →
@@ -188,27 +188,27 @@ the wrappers do.
 
   | File | Phrase to replace | Replacement |
   |------|------------------|-------------|
-  | `cluster-health-autopilot/README.md` L17 | "Layer-2 rule-based Investigator (OSS)" | "Layer-2 LLM Investigator agent (6-tool action space)" |
-  | `cluster-health-autopilot/docs/design/2026-05-investigator-agent.md` | "rule-based" mentions | "policy-bounded" / drop where redundant |
-  | `cluster-health-autopilot/README.md` "Fixers (4 default + 1 opt-in)" line | "whitelist" framing | "operator-policy-bounded action library" |
-  | `cha-website/src/pages/index.astro` | "whitelisted fixers" | "policy-bounded fixers" |
-  | `cha-website/src/pages/pricing.astro` | "All 5 whitelisted fixers" | "All 5 policy-bounded fixers" |
-  | `cha-website/src/pages/features/index.astro` | "rule-based" mentions | drop / reframe |
-  | `cha-website/src/pages/security.astro` | "whitelist of safe actions" | "operator-defined action policy" |
+  | `agentic-sre/README.md` L17 | "Layer-2 rule-based Investigator (OSS)" | "Layer-2 LLM Investigator agent (6-tool action space)" |
+  | `agentic-sre/docs/design/2026-05-investigator-agent.md` | "rule-based" mentions | "policy-bounded" / drop where redundant |
+  | `agentic-sre/README.md` "Fixers (4 default + 1 opt-in)" line | "whitelist" framing | "operator-policy-bounded action library" |
+  | `srenix-website/src/pages/index.astro` | "whitelisted fixers" | "policy-bounded fixers" |
+  | `srenix-website/src/pages/pricing.astro` | "All 5 whitelisted fixers" | "All 5 policy-bounded fixers" |
+  | `srenix-website/src/pages/features/index.astro` | "rule-based" mentions | drop / reframe |
+  | `srenix-website/src/pages/security.astro` | "whitelist of safe actions" | "operator-defined action policy" |
   | All design docs | "deterministic" qualifier on the engine | drop (the engine IS deterministic; we just don't *lead* with that) |
 
 ### Work items
 
-C1. **OSS docs sweep.** Replace per the table above in `cluster-health-autopilot`.
+C1. **OSS docs sweep.** Replace per the table above in `agentic-sre`.
    PR onto main. **Target: 2026-06-03.** Effort: 0.5 day.
 
-C2. **Website docs sweep.** Same table, but on `cha-website`. Ship as part
+C2. **Website docs sweep.** Same table, but on `srenix-website`. Ship as part
    of the A1 homepage rewrite. **Target: 2026-06-03.** Effort: 0.25 day.
 
-C3. **CHA-com docs sweep.** `CHA-com/CHANGELOG.md`, `docs/AI_TIERS.md`
+C3. **Srenix Enterprise docs sweep.** `Srenix Enterprise/CHANGELOG.md`, `docs/AI_TIERS.md`
    if any "rule-based" references. **Target: 2026-06-03.** Effort: 0.25 day.
 
-C4. **Action-policy explainer page.** New `cha-website/src/pages/features/policy.astro`
+C4. **Action-policy explainer page.** New `srenix-website/src/pages/features/policy.astro`
    that explains the safety envelope as *"the leash you put on the agent"* —
    covers operator-defined action_kinds, target-namespace allowlists,
    approval-threshold thresholds, dual-approval for T3.
@@ -223,7 +223,7 @@ C5. **(Stretch) Replace `DefaultFixerMatcher` keyword heuristic with an
    **Target: v1.7 (2026-07-08).** Effort: 2 days.
 
 ### Acceptance criteria
-  - `grep -i "rule-based\|whitelist" cha-website/src cluster-health-autopilot/{README.md,docs/}`
+  - `grep -i "rule-based\|whitelist" srenix-website/src agentic-sre/{README.md,docs/}`
     returns ≤ 3 hits (down from ~30 today).
   - New `/features/policy` page exists and is linked from pricing.
   - The README's investigator description leads with "LLM agent," not
@@ -240,13 +240,13 @@ D1. **Refresh the live-evidence claims on the homepage.** Yesterday's
    Embed it as the proof-point on the homepage.
    **Target: 2026-06-03.** Effort: 0.25 day.
 
-D2. **Public roadmap update.** `cha-website/src/pages/roadmap.astro` —
+D2. **Public roadmap update.** `srenix-website/src/pages/roadmap.astro` —
    add v1.7 "drift-class expansion" block alongside the existing operator
    port + GCP/Azure cloud probes.
    **Target: 2026-06-03.** Effort: 0.25 day.
 
 D3. **New blog post.** "From cluster health analyzer to AI SRE — why we
-   re-framed CHA." Walks through the feedback, the reframe, the safety
+   re-framed Srenix." Walks through the feedback, the reframe, the safety
    story under the new name, and the v1.7 commitments.
    **Target: 2026-06-17.** Effort: 1 day.
 
@@ -273,7 +273,7 @@ D3. **New blog post.** "From cluster health analyzer to AI SRE — why we
     Mitigation: enforce the existing per-class rate budget; add a 1-call-per-fingerprint
     short-circuit so the same diagnostic doesn't re-call.
   - **Risk: Repositioning could confuse existing pilots.** Mitigation: keep
-    the OSS "CHA" name (the cluster runtime); only rename the paid tier
+    the OSS "Srenix" name (the cluster runtime); only rename the paid tier
     public marketing to "AI SRE." Existing pilot binaries and Helm charts
     are unchanged.
   - **Dependency: comparison page (A3) needs current Komodor / Robusta

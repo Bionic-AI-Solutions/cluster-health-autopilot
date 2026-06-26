@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package probe
@@ -16,8 +16,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/snapshot"
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/rag"
+	"github.com/srenix-ai/agentic-sre/internal/snapshot"
+	"github.com/srenix-ai/agentic-sre/pkg/rag"
 )
 
 // EndpointTarget is a single URL to probe externally.
@@ -34,9 +34,9 @@ type EndpointTarget struct {
 	// L7 is the optional Layer-7 body assertion (M4). Populated by
 	// IngressDiscovery from these Ingress annotations:
 	//
-	//   cha.bionicaisolutions.com/probe-l7-path     → L7.Path
-	//   cha.bionicaisolutions.com/probe-l7-expect   → L7.ExpectBody (substring or "regex:<pattern>")
-	//   cha.bionicaisolutions.com/probe-l7-status   → L7.ExpectStatus (overrides top-level)
+	//   srenix.ai/probe-l7-path     → L7.Path
+	//   srenix.ai/probe-l7-expect   → L7.ExpectBody (substring or "regex:<pattern>")
+	//   srenix.ai/probe-l7-status   → L7.ExpectStatus (overrides top-level)
 	//
 	// When L7.Path != "", the probe issues a second GET against
 	// scheme://host<path> after the base reachability check passes,
@@ -321,7 +321,7 @@ func checkEndpoint(ctx context.Context, client *http.Client, t EndpointTarget) (
 			Message:   fmt.Sprintf("invalid URL %q: %v", t.URL, err),
 		}, false
 	}
-	req.Header.Set("User-Agent", "cha-endpoint-probe/1.0")
+	req.Header.Set("User-Agent", "srenix-endpoint-probe/1.0")
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -351,7 +351,7 @@ func checkEndpoint(ctx context.Context, client *http.Client, t EndpointTarget) (
 		}, false
 	}
 	// M4 — Layer-7 body assertion. Only runs when the Ingress has
-	// the cha.bionicaisolutions.com/probe-l7-* annotation set. Closes
+	// the srenix.ai/probe-l7-* annotation set. Closes
 	// the "200 OK but body is wrong" class.
 	if t.L7 != nil && t.L7.Path != "" {
 		if f, ok := checkEndpointL7(ctx, client, t); !ok {
@@ -388,7 +388,7 @@ func checkEndpointL7(ctx context.Context, client *http.Client, t EndpointTarget)
 			Message:   fmt.Sprintf("L7 check: build request: %v", err),
 		}, false
 	}
-	req.Header.Set("User-Agent", "cha-endpoint-probe-l7/1.0")
+	req.Header.Set("User-Agent", "srenix-endpoint-probe-l7/1.0")
 	resp, err := client.Do(req)
 	if err != nil {
 		return Finding{
@@ -482,13 +482,13 @@ func unwrapErr(err error) string {
 }
 
 // DefaultEndpointTargets returns the canonical set of public-facing endpoints
-// to probe. CHA OSS ships with an EMPTY default — bundling specific hostnames
+// to probe. Srenix OSS ships with an EMPTY default — bundling specific hostnames
 // here would silently make every OSS install probe whichever organization's
 // domains were baked in at build time. That's a cluster-leak.
 //
 // Sources of probe targets, in precedence order:
 //
-//  1. spec.probe.endpointTargets on the ClusterHealthAutopilot CR — operator-
+//  1. spec.probe.endpointTargets on the AgenticSRE CR — operator-
 //     supplied for the current cluster.
 //  2. DiscoverIngressTargets at Run time — every Ingress host in the cluster
 //     is auto-probed (transparent, no config).

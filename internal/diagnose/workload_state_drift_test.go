@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package diagnose
@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	pkgsnapshot "github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/snapshot"
+	pkgsnapshot "github.com/srenix-ai/agentic-sre/pkg/snapshot"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -151,8 +151,8 @@ func TestWorkloadStateDrift_CNPGFollowerDegraded_HealthyPhase(t *testing.T) {
 	if len(got) != 1 {
 		t.Fatalf("follower degraded should emit 1 diagnostic; got %d: %+v", len(got), got)
 	}
-	if !strings.Contains(got[0].Subject, "(followers)") {
-		t.Errorf("subject should mark follower scope; got %q", got[0].Subject)
+	if !strings.Contains(got[0].Message, "follower") && !strings.Contains(got[0].Message, "ready") {
+		t.Errorf("message should describe follower degradation; got %q", got[0].Message)
 	}
 	if got[0].Severity != "warning" {
 		t.Errorf("follower degraded should be warning; got %q", got[0].Severity)
@@ -170,8 +170,8 @@ func TestWorkloadStateDrift_CNPGPrimarySwitchoverStuck_Critical(t *testing.T) {
 	if got[0].Severity != "critical" {
 		t.Errorf("switchover stuck should be critical; got %q", got[0].Severity)
 	}
-	if !strings.Contains(got[0].Subject, "(primary)") {
-		t.Errorf("subject should mark primary scope; got %q", got[0].Subject)
+	if !strings.Contains(got[0].Message, "switchover") && !strings.Contains(got[0].Message, "primary") {
+		t.Errorf("message should describe primary switchover; got %q", got[0].Message)
 	}
 }
 

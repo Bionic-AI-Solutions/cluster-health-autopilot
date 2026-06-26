@@ -14,16 +14,16 @@ Apply Fix buttons emitted.
 
 **Check**:
 ```sh
-kubectl -n cluster-health-autopilot get events --field-selector reason=AIEnrichmentFailed --sort-by=lastTimestamp | tail -5
+kubectl -n agentic-sre get events --field-selector reason=AIEnrichmentFailed --sort-by=lastTimestamp | tail -5
 ```
 
-**Remediation**: No action required from CHA's side. Deterministic
+**Remediation**: No action required from Srenix's side. Deterministic
 diagnostics continue to flow. Once the LLM endpoint returns, the next
 watcher cycle picks up enrichment without restart.
 
 If the LLM is permanently down, downshift to OSS behavior:
 ```sh
-helm upgrade cha cha/cluster-health-autopilot --reuse-values --set ai.enabled=false
+helm upgrade srenix srenix/agentic-sre --reuse-values --set ai.enabled=false
 ```
 
 ---
@@ -36,7 +36,7 @@ pages oncall; no new Apply Fix buttons emitted.
 **Check**:
 ```sh
 # Find the cause — look for 3+ recent action.failed events
-kubectl -n cluster-health-autopilot get events --field-selector reason=AIActionFailed --sort-by=lastTimestamp | tail -5
+kubectl -n agentic-sre get events --field-selector reason=AIActionFailed --sort-by=lastTimestamp | tail -5
 ```
 
 **Remediation**: Investigate the failures. Common causes:
@@ -46,7 +46,7 @@ kubectl -n cluster-health-autopilot get events --field-selector reason=AIActionF
 
 After diagnosing, manually reset:
 ```sh
-kubectl -n cluster-health-autopilot port-forward svc/cha-cluster-health-autopilot-approval-server 8443:8443
+kubectl -n agentic-sre port-forward svc/srenix-agentic-sre-approval-server 8443:8443
 curl -X POST -H "X-Forwarded-User: $YOU" http://localhost:8443/admin/reset
 ```
 
@@ -57,20 +57,18 @@ curl -X POST -H "X-Forwarded-User: $YOU" http://localhost:8443/admin/reset
 **Symptom**: A T3 runbook posted; first approver clicked; second
 approver not available.
 
-**Behavior**: After 60 min from the first approval, the runbook
-expires automatically. The next watcher cycle will generate a fresh
+**Behavior**: The runbook expires 90 minutes after creation (not after the first approval click). The next watcher cycle will generate a fresh
 runbook if the underlying diagnostic remains.
 
-**Remediation**: Update the `cha.io/approver` group to include
+**Remediation**: Update the `srenix.io/approver` group to include
 additional members:
 ```sh
-kubectl get rolebinding -n cluster-health-autopilot cha-approvers -o yaml | \
+kubectl get rolebinding -n agentic-sre srenix-approvers -o yaml | \
   yq '.subjects += [{kind: "User", name: "bob@example.com"}]' | \
   kubectl apply -f -
 ```
 
-If a specific runbook must be approved urgently (cannot wait 60 min
-for re-generation), the first approver can either:
+If a specific runbook must be approved urgently (cannot wait for re-generation), the first approver can either:
 1. Wait for a different second approver to come online, then click their slot
 2. Mark the diagnostic resolved manually via `kubectl annotate driftreport`
 
@@ -83,13 +81,13 @@ get `🤖` enrichment, others don't.
 
 **Check**:
 ```sh
-kubectl -n cluster-health-autopilot get events --field-selector reason=AIRateLimited \
-  -o json | jq '.items[].metadata.annotations."cha.bionicaisolutions.com/audit-details"' | tail -5
+kubectl -n agentic-sre get events --field-selector reason=AIRateLimited \
+  -o json | jq '.items[].metadata.annotations."srenix.ai/audit-details"' | tail -5
 ```
 
 **Remediation**: If sustained, raise the budget:
 ```sh
-helm upgrade cha cha/cluster-health-autopilot --reuse-values \
+helm upgrade srenix srenix/agentic-sre --reuse-values \
   --set ai.rateLimit.actionsPerHour=20
 ```
 
@@ -105,7 +103,7 @@ or similar. The LLM tried to smuggle a value past the validator.
 
 **Check**:
 ```sh
-kubectl -n cluster-health-autopilot get events --field-selector reason=AIProposalInvalid \
+kubectl -n agentic-sre get events --field-selector reason=AIProposalInvalid \
   -o json | jq '.items[].metadata.annotations'
 ```
 
@@ -113,13 +111,13 @@ kubectl -n cluster-health-autopilot get events --field-selector reason=AIProposa
 cluster impact. But this is a signal to:
 1. Audit the LLM endpoint logs for the matching `prompt_hash`
 2. Verify the LLM provider's data-retention policy if SaaS
-3. Consider tightening the system prompt (file a CHA-com support
+3. Consider tightening the system prompt (file a Srenix Enterprise support
    ticket with the prompt_hash so we can iterate)
 
 If the same source diagnostic keeps producing invalid proposals,
 add the analyzer's name to a temporary FixProposer exclusion list:
 ```sh
-helm upgrade cha cha/cluster-health-autopilot --reuse-values \
+helm upgrade srenix srenix/agentic-sre --reuse-values \
   --set 'ai.fixProposer.excludeSources={TLSSecretMismatch}'
 ```
 
@@ -127,15 +125,15 @@ helm upgrade cha cha/cluster-health-autopilot --reuse-values \
 
 ## Scenario 6 — Approval-server pod fails to start
 
-**Symptom**: `kubectl get pod -l cha.bionicaisolutions.com/role=approval-server`
+**Symptom**: `kubectl get pod -l srenix.ai/role=approval-server`
 shows ImagePullBackOff or CrashLoopBackOff.
 
 **Common causes**:
 - Image pull failure → check `imagePullSecrets`
 - Signing key Secret missing → re-run the pre-install hook:
   ```sh
-  kubectl -n cluster-health-autopilot delete job cha-cluster-health-autopilot-approval-keygen 2>/dev/null
-  helm upgrade cha cha/cluster-health-autopilot --reuse-values  # re-runs the hook
+  kubectl -n agentic-sre delete job srenix-agentic-sre-approval-keygen 2>/dev/null
+  helm upgrade srenix srenix/agentic-sre --reuse-values  # re-runs the hook
   ```
 - Listening port already bound → check container args; default is `:8443`
 
@@ -152,30 +150,30 @@ diagnostic for a postmortem.
 DriftReport CR or Slack thread directly):
 ```sh
 # What the investigator concluded on a specific report
-kubectl -n cluster-health-autopilot get driftreport <name> \
+kubectl -n agentic-sre get driftreport <name> \
   -o jsonpath='{.spec.investigation}' && echo
 
 # Cycle-wide view — how many findings carry investigation summaries
-kubectl -n cluster-health-autopilot get driftreports.cha.bionicaisolutions.com \
+kubectl -n agentic-sre get driftreports.srenix.ai \
   -o json | jq '[.items[] | select(.spec.investigation != "")] | length'
 ```
 
 **Check** (paid LLM-backed investigator, which emits audit events):
 ```sh
-kubectl -n cluster-health-autopilot get events --sort-by=lastTimestamp \
+kubectl -n agentic-sre get events --sort-by=lastTimestamp \
   | grep -E "AIInvestigator(Started|ToolCall|Completed|BudgetExceeded)"
 ```
 
 **Remediation — disable the investigator entirely**:
 ```sh
-kubectl -n cluster-health-autopilot set env deployment/cha-cluster-health-autopilot \
-  CHA_INVESTIGATOR=off
+kubectl -n agentic-sre set env deployment/srenix-agentic-sre \
+  SRENIX_INVESTIGATOR=off
 ```
 Restart picks up the new env. DriftReports continue to be emitted with
 `spec.investigation` empty; Slack/AM rendering drops the `🔬` block.
 
 **Remediation — override with the paid LLM-backed implementation**:
-This is automatic when CHA-com is installed and `ai.enabled=true`. The
+This is automatic when Srenix Enterprise is installed and `ai.enabled=true`. The
 paid binary's catalog runs after `catalog.RegisterOSS` and re-calls
 `RegisterInvestigator` to replace the rule-based one. No env-var change
 required; downshift via `ai.enabled=false` reverts to the rule-based
@@ -190,7 +188,7 @@ or without the `🔬` block.
 
 ## Scenario 8a — Firecrawl deep-RCA not enriching investigations
 
-**Context**: CHA-com v0.2.0-alpha.1 paid binary; `ai.enabled=true`; `--firecrawl-enabled`
+**Context**: Srenix Enterprise v0.2.0-alpha.1 paid binary; `ai.enabled=true`; `--firecrawl-enabled`
 defaults to `true` but is inert without the API key.
 
 **Symptom**: Investigation `🔬` blocks appear but contain no web citations or
@@ -200,34 +198,34 @@ external root-cause context; `ai.investigator.tool_call` events show no
 **Check**:
 ```sh
 # Confirm the key env is set on the aiwatch pod
-kubectl -n cluster-health-autopilot exec deploy/bionic-aiwatch -- \
+kubectl -n agentic-sre exec deploy/bionic-aiwatch -- \
   sh -c 'echo ${FIRECRAWL_API_KEY:0:4}...'
 
 # Check ESO sync
-kubectl -n cluster-health-autopilot get externalsecret cha-firecrawl-key
+kubectl -n agentic-sre get externalsecret srenix-firecrawl-key
 ```
 
 **Remediation — provision the ESO ExternalSecret**:
 ```yaml
 # Vault path: secret/data/shared/api-keys  key: firecrawl_api_key
-# Produces: K8s Secret cha-firecrawl-key  key: FIRECRAWL_API_KEY
+# Produces: K8s Secret srenix-firecrawl-key  key: FIRECRAWL_API_KEY
 apiVersion: external-secrets.io/v1beta1
 kind: ExternalSecret
 metadata:
-  name: cha-firecrawl-key
-  namespace: cluster-health-autopilot
+  name: srenix-firecrawl-key
+  namespace: agentic-sre
 spec:
   refreshInterval: 1h
   secretStoreRef: { name: vault-backend, kind: ClusterSecretStore }
-  target: { name: cha-firecrawl-key, creationPolicy: Owner }
+  target: { name: srenix-firecrawl-key, creationPolicy: Owner }
   data:
     - secretKey: FIRECRAWL_API_KEY
       remoteRef: { key: shared/api-keys, property: firecrawl_api_key }
 ```
 Then patch the aiwatch Deployment to mount the secret as an env var:
 ```sh
-kubectl -n cluster-health-autopilot set env deploy/bionic-aiwatch \
-  --from=secret/cha-firecrawl-key
+kubectl -n agentic-sre set env deploy/bionic-aiwatch \
+  --from=secret/srenix-firecrawl-key
 ```
 
 **Flags reference**:
@@ -253,19 +251,19 @@ Replayed fixes still pass the G6 precondition re-check.
 **Check**:
 ```sh
 # Look for replay events (rag_short_circuit=true in proposal details)
-kubectl -n cluster-health-autopilot get events \
+kubectl -n agentic-sre get events \
   --field-selector reason=AIProposalCreated -o json | \
-  jq '.items[] | select(.metadata.annotations."cha.bionicaisolutions.com/audit-details"
+  jq '.items[] | select(.metadata.annotations."srenix.ai/audit-details"
       | contains("rag_short_circuit"))'
 ```
 
 **Remediation** — lower the threshold or disable via the operator CR `spec.ai.extraArgs`:
 
-CHA-com flags are passed through the `ClusterHealthAutopilot` CR, not Helm values.
+Srenix Enterprise flags are passed through the `AgenticSRE` CR, not Helm values.
 Edit the CR directly:
 
 ```sh
-kubectl edit clusterhealthautopilot bionic -n cluster-health-autopilot
+kubectl edit agenticsre bionic -n agentic-sre
 ```
 
 Then adjust `spec.ai.extraArgs`. Examples:
@@ -287,8 +285,8 @@ spec:
 Save and exit; the operator will roll out a new aiwatch pod with the updated flags.
 Confirm the new flag is active:
 ```sh
-kubectl -n cluster-health-autopilot exec deploy/bionic-aiwatch -- \
-  cha-com --help 2>&1 | grep rag-short-circuit
+kubectl -n agentic-sre exec deploy/bionic-aiwatch -- \
+  srenix-enterprise --help 2>&1 | grep rag-short-circuit
 ```
 
 ---

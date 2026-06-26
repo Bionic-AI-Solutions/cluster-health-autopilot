@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package fix
@@ -220,7 +220,7 @@ func TestStuckJobs_ProtectedNamespace(t *testing.T) {
 }
 
 // suspendedCronJob is the parent CronJob marked spec.suspend=true. An
-// operator deliberately froze it; CHA must not restart the cycle by
+// operator deliberately froze it; Srenix must not restart the cycle by
 // deleting the broken Job.
 const suspendedCronJob = `{
   "apiVersion": "batch/v1", "kind": "CronJob",
@@ -239,7 +239,7 @@ const activeCronJob = `{
 
 // argoManagedCronJob — same CronJob, but reconciled by ArgoCD. Deleting
 // the child Job would prompt a respawn whose template Argo controls; the
-// Argo-vs-CHA fight loop the GitOps guard exists to prevent.
+// Argo-vs-Srenix fight loop the GitOps guard exists to prevent.
 const argoManagedCronJob = `{
   "apiVersion": "batch/v1", "kind": "CronJob",
   "metadata": {

@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package gcp
@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	pkggcp "github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/cloud/gcp"
+	pkggcp "github.com/srenix-ai/agentic-sre/pkg/cloud/gcp"
 )
 
 // --- LoadBalancerBackends ---
@@ -38,7 +38,7 @@ func TestLB_ZeroHealthy_Critical(t *testing.T) {
 	}
 }
 
-// CHA-com RCA join contract (ai/cloudcontext): the 0-healthy message
+// Srenix Enterprise RCA join contract (ai/cloudcontext): the 0-healthy message
 // carries a " (lb: <forwarding-rule IP or name>)" suffix. See
 // internal/cloud/contract_test.go.
 func TestLB_ZeroHealthyMessageCarriesForwardingRuleJoinKey(t *testing.T) {
@@ -57,7 +57,7 @@ func TestLB_ZeroHealthyMessageCarriesForwardingRuleJoinKey(t *testing.T) {
 }
 
 // No forwarding rule mapped → fall back to the backend-service name as
-// the join value (per the CHA-com contract).
+// the join value (per the Srenix Enterprise contract).
 func TestLB_ZeroHealthyMessageFallsBackToBackendServiceName(t *testing.T) {
 	got := LoadBalancerBackends{}.Run(context.Background(), &fakeSource{
 		gcp: &fakeGCP{project: "p", backends: []pkggcp.BackendService{

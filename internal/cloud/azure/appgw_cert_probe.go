@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package azure
@@ -8,9 +8,9 @@ import (
 	"fmt"
 	"time"
 
-	intcloud "github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/cloud"
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/cloud"
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/probe"
+	intcloud "github.com/srenix-ai/agentic-sre/internal/cloud"
+	"github.com/srenix-ai/agentic-sre/pkg/cloud"
+	"github.com/srenix-ai/agentic-sre/pkg/probe"
 )
 
 // AppGatewayBackends flags Application Gateway backend pools with no
@@ -47,7 +47,7 @@ func (AppGatewayBackends) Run(ctx context.Context, src cloud.Source) probe.Resul
 		subject := fmt.Sprintf("azure-appgw/%s/%s/%s", azClient.SubscriptionID(), p.Gateway, p.PoolName)
 		switch {
 		case p.HealthyCount == 0 && (p.UnhealthyCount > 0 || p.TotalCount > 0):
-			// The "(lb: <AppGW public hostname>)" suffix is the CHA-com
+			// The "(lb: <AppGW public hostname>)" suffix is the Srenix Enterprise
 			// RCA join key; gateways without a listener hostname fall
 			// back to the gateway name — see internal/cloud/joinkeys.go.
 			// contract: internal/cloud/contract_test.go
@@ -114,7 +114,7 @@ func (c Certificates) Run(ctx context.Context, src cloud.Source) probe.Result {
 	t := now()
 	for _, cert := range certs {
 		subject := fmt.Sprintf("azure-cert/%s/%s/%s", azClient.SubscriptionID(), cert.ResourceGroup, cert.Name)
-		// The "(domains: d1,d2)" suffix is the CHA-com RCA join key
+		// The "(domains: d1,d2)" suffix is the Srenix Enterprise RCA join key
 		// (omitted when no domains are known) — see
 		// internal/cloud/joinkeys.go.
 		// contract: internal/cloud/contract_test.go

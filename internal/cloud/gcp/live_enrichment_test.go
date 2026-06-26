@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package gcp
@@ -7,9 +7,10 @@ import (
 	"testing"
 
 	compute "google.golang.org/api/compute/v1"
+	iam "google.golang.org/api/iam/v1"
 )
 
-// forwardingRuleIndex feeds the CHA-com "(lb: ...)" join key — backend
+// forwardingRuleIndex feeds the Srenix Enterprise "(lb: ...)" join key — backend
 // service name → forwarding-rule IP (preferred) or name.
 //
 // Error-injection: when ForwardingRules.AggregatedList errors,
@@ -69,5 +70,56 @@ func TestForwardingRuleIndex_SkipsEntriesWithNoUsableValue(t *testing.T) {
 	})
 	if _, ok := idx["web"]; ok {
 		t.Errorf("entry with no usable join value must be skipped; got %v", idx)
+	}
+}
+
+// hasWorkloadIdentityBinding drives the live OAuth2Bound signal: true
+// only when a roles/iam.workloadIdentityUser binding names a KSA member
+// (serviceAccount:PROJECT.svc.id.goog[NS/KSA]).
+func TestHasWorkloadIdentityBinding(t *testing.T) {
+	cases := []struct {
+		name string
+		pol  *iam.Policy
+		want bool
+	}{
+		{"nil policy", nil, false},
+		{"no bindings", &iam.Policy{}, false},
+		{
+			"WI binding with KSA member",
+			&iam.Policy{Bindings: []*iam.Binding{{
+				Role:    "roles/iam.workloadIdentityUser",
+				Members: []string{"serviceAccount:my-project.svc.id.goog[ns/ksa]"},
+			}}},
+			true,
+		},
+		{
+			"WI role but plain SA member (not a real WI binding)",
+			&iam.Policy{Bindings: []*iam.Binding{{
+				Role:    "roles/iam.workloadIdentityUser",
+				Members: []string{"serviceAccount:other@p.iam.gserviceaccount.com"},
+			}}},
+			false,
+		},
+		{
+			"KSA member but different role",
+			&iam.Policy{Bindings: []*iam.Binding{{
+				Role:    "roles/iam.serviceAccountTokenCreator",
+				Members: []string{"serviceAccount:my-project.svc.id.goog[ns/ksa]"},
+			}}},
+			false,
+		},
+		{
+			"nil binding entry tolerated",
+			&iam.Policy{Bindings: []*iam.Binding{nil, {
+				Role:    "roles/iam.workloadIdentityUser",
+				Members: []string{"serviceAccount:my-project.svc.id.goog[ns/ksa]"},
+			}}},
+			true,
+		},
+	}
+	for _, c := range cases {
+		if got := hasWorkloadIdentityBinding(c.pol); got != c.want {
+			t.Errorf("%s: hasWorkloadIdentityBinding=%v want %v", c.name, got, c.want)
+		}
 	}
 }

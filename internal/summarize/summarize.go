@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 // Package summarize reads anonymized JSONL run records from the runs/
@@ -21,7 +21,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/anonymize"
+	"github.com/srenix-ai/agentic-sre/internal/anonymize"
 )
 
 // Stats holds aggregate per-run metrics derived from a RunRecord.
@@ -127,7 +127,7 @@ func FromDir(dir string) (*Report, error) {
 func (r *Report) Render(w io.Writer) {
 	ew := &errWriter{w: w}
 	now := time.Now().UTC().Format("2006-01-02 15:04 UTC")
-	ew.printf("# Cluster Health Autopilot — Run Summary\n\n")
+	ew.printf("# Agentic SRE — Run Summary\n\n")
 	ew.printf("_Auto-generated %s · %d run(s) · %s → %s_\n\n",
 		now, r.RunCount, r.FirstDate, r.LastDate)
 

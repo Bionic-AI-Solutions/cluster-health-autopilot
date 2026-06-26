@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package diagnose
@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/snapshot"
+	"github.com/srenix-ai/agentic-sre/internal/snapshot"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 
@@ -38,7 +38,7 @@ import (
 //   - Redis Sentinel / Patroni replication-lag signals
 //
 // Reduced scope (deliberately):
-//   - The CHA-com paid catalog has StatefulSetReplicaPressure which
+//   - The Srenix Enterprise paid catalog has StatefulSetReplicaPressure which
 //     covers PVC-bind-lag + replica-degraded for StatefulSets in
 //     general. This OSS analyzer covers the *ordinal-zero stuck* case
 //     specifically — that one falls through StatefulSetReplicaPressure
@@ -132,7 +132,7 @@ func (w WorkloadStateDrift) checkCNPGClusters(ctx context.Context, src snapshot.
 		if desired > 0 && ready < desired && phase != "" && strings.Contains(strings.ToLower(phase), "healthy") {
 			out = append(out, Diagnostic{
 				Source:   "WorkloadStateDrift",
-				Subject:  subject + " (followers)",
+				Subject:  subject,
 				Severity: "warning",
 				Message: fmt.Sprintf(
 					"CNPG cluster %s/%s reports phase=Healthy but only %d/%d instances ready",
@@ -152,7 +152,7 @@ func (w WorkloadStateDrift) checkCNPGClusters(ctx context.Context, src snapshot.
 		if primary != "" && targetPrimary != "" && primary != targetPrimary {
 			out = append(out, Diagnostic{
 				Source:   "WorkloadStateDrift",
-				Subject:  subject + " (primary)",
+				Subject:  subject,
 				Severity: "critical",
 				Message: fmt.Sprintf(
 					"CNPG cluster %s/%s primary switchover stuck: currentPrimary=%q, targetPrimary=%q",

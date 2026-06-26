@@ -1,9 +1,9 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 // Package resolution persists the outcome of every remediation attempt as
 // an append-only ResolutionRecord CR. It is the durable system-of-record
-// that the RAG memory layer (see CHA-com docs/design/2026-05-ai-
+// that the RAG memory layer (see Srenix Enterprise docs/design/2026-05-ai-
 // remediation-rag-plan.md) embeds and retrieves: "this fix was applied to
 // this kind of finding and it worked / didn't". Both the OSS deterministic
 // fixers and the commercial AI proposers write through this recorder.
@@ -16,7 +16,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/snapshot"
+	"github.com/srenix-ai/agentic-sre/internal/snapshot"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 
@@ -97,14 +97,14 @@ func (rec Recorder) Record(ctx context.Context, mut snapshot.Mutator, r Record) 
 
 	cr := unstructured.Unstructured{
 		Object: map[string]any{
-			"apiVersion": "cha.bionicaisolutions.com/v1alpha1",
+			"apiVersion": "srenix.ai/v1alpha1",
 			"kind":       "ResolutionRecord",
 			"metadata": map[string]any{
 				"name": name,
 				"labels": map[string]any{
-					"cha.bionicaisolutions.com/fingerprint": r.Fingerprint,
-					"cha.bionicaisolutions.com/verified":    string(r.Verified),
-					"cha.bionicaisolutions.com/delivery":    string(r.Delivery),
+					"srenix.ai/fingerprint": r.Fingerprint,
+					"srenix.ai/verified":    string(r.Verified),
+					"srenix.ai/delivery":    string(r.Delivery),
 				},
 			},
 			"spec": map[string]any{

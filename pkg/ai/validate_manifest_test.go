@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package ai
@@ -14,7 +14,7 @@ import (
 const validNetworkPolicy = `apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: cha-proposed-allow-intracluster
+  name: srenix-proposed-allow-intracluster
   namespace: app
 spec:
   podSelector: {}

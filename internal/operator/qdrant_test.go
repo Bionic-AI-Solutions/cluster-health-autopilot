@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package operator
@@ -7,7 +7,7 @@ import (
 	"context"
 	"testing"
 
-	chav1alpha1 "github.com/Bionic-AI-Solutions/cluster-health-autopilot/api/v1alpha1"
+	chav1alpha1 "github.com/srenix-ai/agentic-sre/api/v1alpha1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -19,7 +19,7 @@ import (
 
 // memCR returns a CR with AI + memory both enabled. embeddings.model
 // is required when memory is on; everything else takes defaults.
-func memCR() *chav1alpha1.ClusterHealthAutopilot {
+func memCR() *chav1alpha1.AgenticSRE {
 	cr := aiCR()
 	cr.Spec.AI.Memory = &chav1alpha1.AIMemorySpec{
 		Enabled: true,
@@ -57,8 +57,8 @@ func TestBuildQdrantStatefulSet_BasicShape(t *testing.T) {
 	if ss.Spec.Replicas == nil || *ss.Spec.Replicas != 1 {
 		t.Errorf("replicas=%v want 1", ss.Spec.Replicas)
 	}
-	if ss.Labels["cha.bionicaisolutions.com/role"] != "rag" {
-		t.Errorf("role label=%q want rag", ss.Labels["cha.bionicaisolutions.com/role"])
+	if ss.Labels["srenix.ai/role"] != "rag" {
+		t.Errorf("role label=%q want rag", ss.Labels["srenix.ai/role"])
 	}
 }
 
@@ -189,8 +189,8 @@ func TestBuildQdrantService_BasicShape(t *testing.T) {
 	if svc.Spec.Type != corev1.ServiceTypeClusterIP {
 		t.Errorf("type=%v want ClusterIP", svc.Spec.Type)
 	}
-	if svc.Spec.Selector["cha.bionicaisolutions.com/role"] != "rag" {
-		t.Errorf("selector role=%q want rag", svc.Spec.Selector["cha.bionicaisolutions.com/role"])
+	if svc.Spec.Selector["srenix.ai/role"] != "rag" {
+		t.Errorf("selector role=%q want rag", svc.Spec.Selector["srenix.ai/role"])
 	}
 	wantPorts := map[string]int32{"http": 6333, "grpc": 6334}
 	got := map[string]int32{}
@@ -221,13 +221,13 @@ func TestReconcile_MemoryEnabled_CreatesStatefulSetAndService(t *testing.T) {
 
 	var ss appsv1.StatefulSet
 	if err := c.Get(context.Background(),
-		types.NamespacedName{Namespace: "cha-system", Name: "bionic-rag"},
+		types.NamespacedName{Namespace: "srenix-system", Name: "bionic-rag"},
 		&ss); err != nil {
 		t.Errorf("Qdrant StatefulSet not created: %v", err)
 	}
 	var svc corev1.Service
 	if err := c.Get(context.Background(),
-		types.NamespacedName{Namespace: "cha-system", Name: "bionic-rag"},
+		types.NamespacedName{Namespace: "srenix-system", Name: "bionic-rag"},
 		&svc); err != nil {
 		t.Errorf("Qdrant Service not created: %v", err)
 	}
@@ -241,7 +241,7 @@ func TestReconcile_MemoryDisabled_NoStatefulSet(t *testing.T) {
 
 	var ss appsv1.StatefulSet
 	err := c.Get(context.Background(),
-		types.NamespacedName{Namespace: "cha-system", Name: "bionic-rag"},
+		types.NamespacedName{Namespace: "srenix-system", Name: "bionic-rag"},
 		&ss)
 	if !apierrors.IsNotFound(err) {
 		t.Errorf("expected NotFound for memory-off StatefulSet; got err=%v", err)
@@ -255,9 +255,9 @@ func TestReconcile_MemoryDisabledAfterCreate_DeletesStatefulSetAndService(t *tes
 	reconcileOnce(t, r, cr)
 
 	// Flip memory off.
-	var stored chav1alpha1.ClusterHealthAutopilot
+	var stored chav1alpha1.AgenticSRE
 	_ = c.Get(context.Background(),
-		types.NamespacedName{Namespace: "cha-system", Name: "bionic"},
+		types.NamespacedName{Namespace: "srenix-system", Name: "bionic"},
 		&stored)
 	stored.Spec.AI.Memory.Enabled = false
 	stored.Generation = 2
@@ -268,14 +268,14 @@ func TestReconcile_MemoryDisabledAfterCreate_DeletesStatefulSetAndService(t *tes
 
 	var ss appsv1.StatefulSet
 	err := c.Get(context.Background(),
-		types.NamespacedName{Namespace: "cha-system", Name: "bionic-rag"},
+		types.NamespacedName{Namespace: "srenix-system", Name: "bionic-rag"},
 		&ss)
 	if !apierrors.IsNotFound(err) {
 		t.Errorf("StatefulSet not deleted after memory disable; got err=%v", err)
 	}
 	var svc corev1.Service
 	err = c.Get(context.Background(),
-		types.NamespacedName{Namespace: "cha-system", Name: "bionic-rag"},
+		types.NamespacedName{Namespace: "srenix-system", Name: "bionic-rag"},
 		&svc)
 	if !apierrors.IsNotFound(err) {
 		t.Errorf("Service not deleted after memory disable; got err=%v", err)
@@ -318,7 +318,7 @@ func TestReconcile_QdrantReady_FlipsConditionTrue(t *testing.T) {
 	// Simulate StatefulSet readiness.
 	var ss appsv1.StatefulSet
 	if err := c.Get(context.Background(),
-		types.NamespacedName{Namespace: "cha-system", Name: "bionic-rag"},
+		types.NamespacedName{Namespace: "srenix-system", Name: "bionic-rag"},
 		&ss); err != nil {
 		t.Fatalf("get ss: %v", err)
 	}
@@ -331,7 +331,7 @@ func TestReconcile_QdrantReady_FlipsConditionTrue(t *testing.T) {
 	// but we want both flips visible for clarity).
 	var aw appsv1.Deployment
 	_ = c.Get(context.Background(),
-		types.NamespacedName{Namespace: "cha-system", Name: "bionic-aiwatch"},
+		types.NamespacedName{Namespace: "srenix-system", Name: "bionic-aiwatch"},
 		&aw)
 	aw.Status.AvailableReplicas = 1
 	_ = c.Status().Update(context.Background(), &aw)
@@ -370,7 +370,7 @@ func TestReconcile_QdrantChildren_HaveControllerOwnerRef(t *testing.T) {
 
 	var ss appsv1.StatefulSet
 	_ = c.Get(context.Background(),
-		types.NamespacedName{Namespace: "cha-system", Name: "bionic-rag"},
+		types.NamespacedName{Namespace: "srenix-system", Name: "bionic-rag"},
 		&ss)
 	if len(ss.OwnerReferences) == 0 || ss.OwnerReferences[0].Name != "bionic" {
 		t.Errorf("StatefulSet missing controller ownerRef; got %+v", ss.OwnerReferences)
@@ -378,7 +378,7 @@ func TestReconcile_QdrantChildren_HaveControllerOwnerRef(t *testing.T) {
 
 	var svc corev1.Service
 	_ = c.Get(context.Background(),
-		types.NamespacedName{Namespace: "cha-system", Name: "bionic-rag"},
+		types.NamespacedName{Namespace: "srenix-system", Name: "bionic-rag"},
 		&svc)
 	if len(svc.OwnerReferences) == 0 || svc.OwnerReferences[0].Name != "bionic" {
 		t.Errorf("Service missing controller ownerRef; got %+v", svc.OwnerReferences)

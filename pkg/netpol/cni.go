@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 // Package netpol contains the OSS-side NetworkPolicy proposer plumbing
@@ -14,16 +14,16 @@
 //     allow rules derived from observed Service / Ingress shape.
 //
 // The proposer never APPLIES anything. It emits a Proposal that
-// cha-com aiwatch wraps into an ApprovalProposal CR and surfaces in
+// srenix-enterprise aiwatch wraps into an ApprovalProposal CR and surfaces in
 // Slack with the v1.10.4 Approve/Deny pair. Click → apply path is
-// owned by the approval-server (cha-com).
+// owned by the approval-server (srenix-enterprise).
 package netpol
 
 import (
 	"context"
 	"strings"
 
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/snapshot"
+	"github.com/srenix-ai/agentic-sre/internal/snapshot"
 )
 
 // CNIDetection summarizes which CNI the cluster runs and whether

@@ -1,0 +1,30 @@
+apiVersion: v2
+name: agentic-sre
+description: |
+  Self-healing operational layer for Kubernetes clusters: detect → fix →
+  re-verify → report, on a schedule, without dashboards or pagers.
+
+type: application
+version: 0.1.0-alpha.1   # Chart version — pre-launch SemVer 0.x with -alpha.N pre-releases.
+appVersion: "0.1.0-alpha.1"  # Application version — matches the srenix binary tag.
+
+kubeVersion: ">=1.27.0-0"
+
+home: https://github.com/srenix-ai/agentic-sre
+sources:
+  - https://github.com/srenix-ai/agentic-sre
+
+maintainers:
+  - name: salilkadam
+    email: security@srenix.ai
+
+keywords:
+  - kubernetes
+  - operations
+  - sre
+  - self-healing
+  - monitoring
+
+annotations:
+  category: Infrastructure
+  licenses: Apache-2.0

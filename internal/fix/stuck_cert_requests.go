@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package fix
@@ -7,7 +7,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/snapshot"
+	"github.com/srenix-ai/agentic-sre/internal/snapshot"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 
@@ -37,7 +37,7 @@ const (
 //   - cert-manager immediately recreates the deleted CR — this is idempotent.
 //
 // OWASP K8s Top-10 respected: K08 (Secrets Management Failures / TLS) —
-// deleting a terminally-failed request lets cert-manager retry issuance; CHA
+// deleting a terminally-failed request lets cert-manager retry issuance; Srenix
 // never writes the TLS Secret and cannot downgrade a live cert. See
 // docs/OWASP_MAPPING.md and internal/fix/owasp_posture_test.go.
 type StuckCertificateRequests struct{}

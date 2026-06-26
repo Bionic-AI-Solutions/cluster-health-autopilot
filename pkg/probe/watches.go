@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package probe
@@ -13,7 +13,7 @@ import "k8s.io/apimachinery/pkg/runtime/schema"
 // Phase 1: declarations are recorded but the watcher still runs every
 // probe on every debounced trigger (matches pre-M7 semantics). The
 // declarations are immediately useful for documentation and for the
-// `cha catalog` subcommand to render an accurate "what does this
+// `srenix catalog` subcommand to render an accurate "what does this
 // probe watch?" column.
 //
 // Phase 2 (separate PR, future release): the watcher's dispatch loop

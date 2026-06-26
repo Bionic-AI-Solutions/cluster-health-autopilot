@@ -1,6 +1,6 @@
 # kustomization.yaml — the non-Helm half of the playground bundle.
 #
-# The CHA watcher is installed with Helm (cha-values.yaml); everything else
+# The Srenix watcher is installed with Helm (srenix-values.yaml); everything else
 # (the isolated namespace + guardrails, the drift injector, the viewer) is plain
 # YAML applied with kustomize:
 #

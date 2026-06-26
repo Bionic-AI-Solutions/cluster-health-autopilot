@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package diagnose
@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	pkgsnapshot "github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/snapshot"
+	pkgsnapshot "github.com/srenix-ai/agentic-sre/pkg/snapshot"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )
@@ -201,7 +201,7 @@ func TestSecurityDrift_PodWithMutableTag_InfoOnTrustedRegistry(t *testing.T) {
 	// v1.14.0: trusted-upstream registries (ghcr.io, quay.io, gcr.io,
 	// registry.k8s.io, plus canonical docker.io official images) get
 	// severity=info instead of warning. Operator can override via
-	// CHA_DIGEST_PIN_UNTRUSTED_SEVERITY env.
+	// SRENIX_DIGEST_PIN_UNTRUSTED_SEVERITY env.
 	src := secureBaseline()
 	src.byResource["pods"] = []unstructured.Unstructured{
 		makePodWithContainers("app", "x-1", map[string]string{
@@ -353,9 +353,9 @@ func TestSecurityDrift_DigestPinRemediation_SubstitutesObservedDigest(t *testing
 	src.byResource["pods"] = []unstructured.Unstructured{
 		makePodWithContainersAndStatus(
 			"app", "x-1",
-			map[string]string{"main": "docker4zerocool/cha-com:1.10.0"},
+			map[string]string{"main": "docker4zerocool/srenix-enterprise:1.10.0"},
 			// kubelet's standard imageID shape: docker-pullable://<repo>@sha256:<hex>
-			map[string]string{"main": "docker-pullable://docker4zerocool/cha-com@sha256:abc123def456789012345678901234567890abcd"},
+			map[string]string{"main": "docker-pullable://docker4zerocool/srenix-enterprise@sha256:abc123def456789012345678901234567890abcd"},
 		),
 	}
 	got := SecurityDrift{}.Run(context.Background(), src)
@@ -379,7 +379,7 @@ func TestSecurityDrift_DigestPinRemediation_SubstitutesObservedDigest(t *testing
 		t.Errorf("remediation must strip the docker-pullable:// prefix from imageID; got: %s", rem)
 	}
 	// And the original image:tag must appear so operators see what to replace.
-	if !strings.Contains(rem, "docker4zerocool/cha-com:1.10.0") {
+	if !strings.Contains(rem, "docker4zerocool/srenix-enterprise:1.10.0") {
 		t.Errorf("remediation should name the original tag-pinned reference; got: %s", rem)
 	}
 }
@@ -390,11 +390,11 @@ func TestSecurityDrift_DigestPinRemediation_MultipleContainers_SubstitutesAll(t 
 		makePodWithContainersAndStatus(
 			"app", "x-1",
 			map[string]string{
-				"main":    "docker4zerocool/cha-com:1.10.0",
+				"main":    "docker4zerocool/srenix-enterprise:1.10.0",
 				"sidecar": "docker4zerocool/sidecar:0.9",
 			},
 			map[string]string{
-				"main":    "docker4zerocool/cha-com@sha256:1111111111111111111111111111111111111111111111111111111111111111",
+				"main":    "docker4zerocool/srenix-enterprise@sha256:1111111111111111111111111111111111111111111111111111111111111111",
 				"sidecar": "docker4zerocool/sidecar@sha256:2222222222222222222222222222222222222222222222222222222222222222",
 			},
 		),
@@ -418,7 +418,7 @@ func TestSecurityDrift_DigestPinRemediation_NoStatus_FallsBackWithoutLeakingPlac
 	src := secureBaseline()
 	src.byResource["pods"] = []unstructured.Unstructured{
 		makePodWithContainers("app", "x-1", map[string]string{
-			"main": "docker4zerocool/cha-com:1.10.0",
+			"main": "docker4zerocool/srenix-enterprise:1.10.0",
 		}),
 	}
 	got := SecurityDrift{}.Run(context.Background(), src)
@@ -433,7 +433,7 @@ func TestSecurityDrift_DigestPinRemediation_NoStatus_FallsBackWithoutLeakingPlac
 	}
 	// Should reference the actual image to make crane/skopeo invocation
 	// directly copy-pasteable.
-	if !strings.Contains(rem, "docker4zerocool/cha-com:1.10.0") {
+	if !strings.Contains(rem, "docker4zerocool/srenix-enterprise:1.10.0") {
 		t.Errorf("fallback remediation should name the actual image; got: %s", rem)
 	}
 }

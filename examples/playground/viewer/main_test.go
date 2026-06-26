@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package main
@@ -20,7 +20,7 @@ func TestRenderEscapesXSS(t *testing.T) {
 		Total:     1,
 		Refreshed: "now",
 		Rows: []row{{
-			Subject:  "Deployment/cha-playground/<img src=x>",
+			Subject:  "Deployment/srenix-playground/<img src=x>",
 			Severity: "critical",
 			Source:   "CrashLoopBackOff",
 			Message:  `<script>alert('xss')</script>`,
@@ -48,7 +48,7 @@ func TestRenderEscapesXSS(t *testing.T) {
 func TestToRow(t *testing.T) {
 	u := &unstructured.Unstructured{Object: map[string]interface{}{
 		"spec": map[string]interface{}{
-			"subject":  "Secret/cha-playground/playground-config/ABSENT_KEY",
+			"subject":  "Secret/srenix-playground/playground-config/ABSENT_KEY",
 			"severity": "warning",
 			"source":   "SecretKeyMissing",
 			"message":  "couldn't find key ABSENT_KEY",

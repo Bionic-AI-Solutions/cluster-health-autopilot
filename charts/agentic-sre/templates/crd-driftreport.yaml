@@ -1,0 +1,244 @@
+{{- if .Values.driftReport.enabled }}
+# DriftReport CRD — kubectl-queryable diagnostic objects.
+#
+# Each cron tick upserts one DriftReport per active diagnostic
+# (probes findings, analyzer diagnostics, fixer skip-reasons). The CR
+# accumulates `firstObserved` / `lastObserved` so an SRE can:
+#
+#   kubectl get driftreports -A
+#   kubectl describe driftreport -n <ns> <subject-hash>
+#
+# CRs whose subject no longer appears in the latest run are deleted
+# (see internal/report/driftreport.go for the reconcile semantics).
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: driftreports.srenix.ai
+  labels:
+    {{- include "srenix.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/resource-policy": keep
+spec:
+  group: srenix.ai
+  scope: Cluster
+  names:
+    kind: DriftReport
+    plural: driftreports
+    singular: driftreport
+    shortNames:
+      - drift
+      - drifts
+    categories:
+      - srenix
+      - cluster-health
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          required: ["spec"]
+          properties:
+            spec:
+              type: object
+              required: ["subject", "severity", "source", "message"]
+              properties:
+                subject:
+                  type: string
+                  description: |
+                    Stable identity for de-duplication across cron ticks.
+                    Examples: "Secret/mcp/openproject-secrets/openproject-url",
+                    "ExternalSecret/mail/mail-service-api-key",
+                    "Service:LiveKit-SIP".
+                  maxLength: 253
+                severity:
+                  type: string
+                  enum: ["info", "warning", "critical"]
+                source:
+                  type: string
+                  description: |
+                    Producer of the report. One of: probe, analyzer-name,
+                    fixer-name. e.g. "Postgres", "SecretKeyMissing",
+                    "ProactiveSecretKeyCheck", "StaleErrorPods".
+                  maxLength: 64
+                message:
+                  type: string
+                  description: |
+                    Human-readable description, identical to what would
+                    have appeared in Slack. Includes the suggested
+                    remediation.
+                  maxLength: 4096
+                remediation:
+                  type: string
+                  description: |
+                    Optional kubectl-ready hint (a one-liner the operator
+                    can paste). Probes set this; analyzers usually embed
+                    the hint into `message` instead.
+                  maxLength: 1024
+                investigation:
+                  type: string
+                  description: |
+                    Layer-2 investigator summary attached when a registered
+                    pkg/ai.Investigator (OSS rule-based or paid LLM) produces
+                    a root-cause narrative for this finding. Surfaced as a
+                    🔬 block in Slack and Alertmanager payloads.
+                  maxLength: 1024
+                category:
+                  type: string
+                  description: |
+                    Logical bucket: "probe", "analyzer", "fixer-action",
+                    "fixer-skipped". Useful for kubectl filtering.
+                  enum: ["probe", "analyzer", "fixer-action", "fixer-skipped"]
+                resourceRef:
+                  type: object
+                  description: |
+                    The Kubernetes resource the report is about, when
+                    identifiable. Allows `kubectl get drifts -l ...`.
+                  properties:
+                    apiVersion:
+                      type: string
+                      maxLength: 64
+                    kind:
+                      type: string
+                      maxLength: 64
+                    namespace:
+                      type: string
+                      maxLength: 253
+                    name:
+                      type: string
+                      maxLength: 253
+                    cloud:
+                      type: object
+                      description: |
+                        Set when this drift is about a cloud-provider
+                        resource (AWS RDS, GCP Cloud SQL, Azure SQL,
+                        etc.) — populated by pkg/cloud probes. Mutually
+                        exclusive with the K8s fields above (a drift
+                        targets either a K8s object OR a cloud resource,
+                        not both).
+                      properties:
+                        provider:
+                          type: string
+                          description: aws | gcp | azure
+                          enum: ["aws", "gcp", "azure"]
+                        region:
+                          type: string
+                          description: |
+                            Cloud region or location (e.g. "us-east-1",
+                            "us-central1", "eastus"). Empty for global
+                            resources (IAM, KMS).
+                          maxLength: 64
+                        service:
+                          type: string
+                          description: |
+                            Cloud service identifier (e.g. "rds", "ebs",
+                            "eks", "iam", "alb", "acm", "kms", "s3",
+                            "vpc"; "cloudsql", "gke", "lb"; "sql",
+                            "aks", "appgw", "keyvault").
+                          maxLength: 64
+                        id:
+                          type: string
+                          description: |
+                            Cloud-provider resource identifier. Format
+                            varies by provider: AWS uses ARN or short
+                            id, GCP uses project/zone/name, Azure uses
+                            /subscriptions/.../resourceGroups/...
+                          maxLength: 512
+            status:
+              type: object
+              properties:
+                firstObserved:
+                  type: string
+                  format: date-time
+                lastObserved:
+                  type: string
+                  format: date-time
+                observationCount:
+                  type: integer
+                  minimum: 1
+                runID:
+                  type: string
+                  description: ID of the most recent srenix run that observed this drift.
+                  maxLength: 64
+                ticket:
+                  type: object
+                  description: |
+                    Reference to the external issue-tracker ticket Srenix filed for
+                    this unfixable diagnostic. Populated by pkg/ticketing sinks
+                    (OpenProject in OSS; Jira / ServiceNow in Srenix Enterprise).
+                    Presence means a ticket already exists — Srenix will not
+                    open another one on subsequent cycles.
+                  properties:
+                    provider:
+                      type: string
+                      description: |
+                        Sink identifier. One of: "openproject", "jira",
+                        "servicenow".
+                      maxLength: 32
+                    key:
+                      type: string
+                      description: |
+                        Provider-native ticket key (e.g. "WP-1287",
+                        "OPS-42", "INC0012345").
+                      maxLength: 64
+                    url:
+                      type: string
+                      description: |
+                        Canonical URL an operator clicks through to view
+                        the ticket in the provider UI.
+                      maxLength: 1024
+                    openedAt:
+                      type: string
+                      format: date-time
+                      description: |
+                        Timestamp when Srenix first filed this ticket.
+                        Stable across subsequent cycles.
+                    severity:
+                      type: string
+                      description: |
+                        Severity stamped on the ticket at open / last comment.
+                        Lets Srenix detect a severity transition (M2) and comment
+                        the change to the existing ticket.
+                      maxLength: 32
+                    resolved:
+                      type: boolean
+                      description: |
+                        True once Srenix auto-closed this ticket because the
+                        finding cleared (M2 resolve-on-clear). Idempotency
+                        guard: Srenix never re-resolves an already-resolved ticket.
+                        Cleared back to false if the finding recurs.
+                    resolvedAt:
+                      type: string
+                      format: date-time
+                      description: |
+                        Timestamp Srenix resolved this ticket on clear (M2).
+                    lastCommentedAt:
+                      type: string
+                      format: date-time
+                      description: |
+                        Timestamp of the most recent recurrence / severity
+                        comment Srenix posted. Drives the commentInterval debounce
+                        (M2) so a flapping finding can't spam the tracker.
+      additionalPrinterColumns:
+        - name: Severity
+          type: string
+          jsonPath: .spec.severity
+        - name: Source
+          type: string
+          jsonPath: .spec.source
+        - name: Subject
+          type: string
+          jsonPath: .spec.subject
+        - name: Last Seen
+          type: date
+          jsonPath: .status.lastObserved
+        - name: Count
+          type: integer
+          jsonPath: .status.observationCount
+        - name: Ticket
+          type: string
+          jsonPath: .status.ticket.key
+      subresources:
+        status: {}
+{{- end }}

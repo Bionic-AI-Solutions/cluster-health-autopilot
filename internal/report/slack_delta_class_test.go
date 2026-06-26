@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package report
@@ -7,14 +7,14 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/fix"
+	"github.com/srenix-ai/agentic-sre/pkg/fix"
 )
 
 func TestFormatSlackDelta_ClassButtons_AllPresent(t *testing.T) {
 	d := DeltaDiag{
-		Subject:         "Pod/prod/cha-com-xyz",
+		Subject:         "Pod/prod/srenix-enterprise-xyz",
 		Severity:        "warning",
-		Message:         "Pod prod/cha-com mounts container image(s) without digest pin",
+		Message:         "Pod prod/srenix-enterprise mounts container image(s) without digest pin",
 		IsNewThisCycle:  true,
 		ApprovalURL:     "https://approve.example.com/approve?token=A",
 		ApproveClassURL: "https://approve.example.com/approve-class?token=B",

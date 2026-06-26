@@ -1,4 +1,4 @@
-# golangci-lint configuration — Cluster Health Autopilot
+# golangci-lint configuration — Agentic SRE
 # https://golangci-lint.run/usage/configuration/
 version: "2"
 

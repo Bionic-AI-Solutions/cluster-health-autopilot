@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package azure
@@ -7,9 +7,11 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strconv"
+	"strings"
 
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/cloud"
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/probe"
+	"github.com/srenix-ai/agentic-sre/pkg/cloud"
+	"github.com/srenix-ai/agentic-sre/pkg/probe"
 )
 
 // AKSControlPlane flags the configured AKS cluster (env
@@ -74,8 +76,13 @@ func (AKSControlPlane) Run(ctx context.Context, src cloud.Source) probe.Result {
 		})
 	}
 
+	detail := fmt.Sprintf("AKS cluster %q in %s", c.Name, c.Location)
+	if c.KubernetesVersion != "" {
+		detail = fmt.Sprintf("AKS cluster %q in %s (version: %s)", c.Name, c.Location, c.KubernetesVersion)
+	}
+
 	return probe.Result{
-		Component: probe.ComponentResult{Component: aksControlPlaneName, Status: rollupStatus(findings), Detail: fmt.Sprintf("AKS cluster %q in %s", c.Name, c.Location)},
+		Component: probe.ComponentResult{Component: aksControlPlaneName, Status: rollupStatus(findings), Detail: detail},
 		Findings:  findings,
 	}
 }
@@ -128,10 +135,64 @@ func (AKSNodePools) Run(ctx context.Context, src cloud.Source) probe.Result {
 				Message:   fmt.Sprintf("AKS node pool %q provisioningState=%s (not Succeeded)", p.Name, p.ProvisioningState),
 			})
 		}
+
+		// Version drift: flag when node pool version skews more than
+		// 1 minor version behind the control plane (or is newer, which
+		// is impossible but defensive).
+		if p.Version != "" && p.ClusterVersion != "" {
+			skew := aksMinorVersionSkew(p.ClusterVersion, p.Version)
+			if skew > 1 || aksMinorVersionNewer(p.Version, p.ClusterVersion) {
+				findings = append(findings, probe.Finding{
+					Component:   subject,
+					Severity:    probe.SeverityWarning,
+					Message:     fmt.Sprintf("AKS node pool %q runs %s but control plane is %s (version skew)", p.Name, p.Version, p.ClusterVersion),
+					Remediation: fmt.Sprintf("az aks nodepool upgrade --cluster-name %s -n %s --subscription %s --kubernetes-version %s", clusterName, p.Name, azClient.SubscriptionID(), p.ClusterVersion),
+				})
+			}
+		}
 	}
 
 	return probe.Result{
 		Component: probe.ComponentResult{Component: aksNodePoolsName, Status: rollupStatus(findings), Detail: fmt.Sprintf("%d node pool(s) in cluster %q", len(pools), clusterName)},
 		Findings:  findings,
 	}
+}
+
+// aksMinorVersionSkew returns the absolute minor-version difference
+// between two Kubernetes version strings. 0 on parse failure.
+func aksMinorVersionSkew(v1, v2 string) int {
+	m1 := aksParseMinor(v1)
+	m2 := aksParseMinor(v2)
+	if m1 < 0 || m2 < 0 {
+		return 0
+	}
+	d := m1 - m2
+	if d < 0 {
+		d = -d
+	}
+	return d
+}
+
+// aksMinorVersionNewer reports whether vA has a higher minor version than vB.
+func aksMinorVersionNewer(vA, vB string) bool {
+	mA := aksParseMinor(vA)
+	mB := aksParseMinor(vB)
+	if mA < 0 || mB < 0 {
+		return false
+	}
+	return mA > mB
+}
+
+// aksParseMinor extracts the Kubernetes minor version from a string
+// like "1.30" or "1.30.2". Returns -1 on parse failure.
+func aksParseMinor(v string) int {
+	parts := strings.SplitN(v, ".", 3)
+	if len(parts) < 2 {
+		return -1
+	}
+	n, err := strconv.Atoi(parts[1])
+	if err != nil {
+		return -1
+	}
+	return n
 }

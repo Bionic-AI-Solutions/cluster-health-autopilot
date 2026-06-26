@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package diagnose
@@ -9,7 +9,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/snapshot"
+	"github.com/srenix-ai/agentic-sre/internal/snapshot"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )
@@ -52,8 +52,8 @@ import (
 //     Operators rarely want a wildcard verb in a user-managed role.
 //
 //   - **ConfigMap-based allowlist extension** — the built-in allowlist
-//     can be extended at runtime by a ConfigMap named `cha-rbac-allowlist`
-//     in the install namespace (POD_NAMESPACE or "cluster-health-autopilot").
+//     can be extended at runtime by a ConfigMap named `srenix-rbac-allowlist`
+//     in the install namespace (POD_NAMESPACE or "agentic-sre").
 //     Keys: allowNamespaces, allowRolePrefixes, allowRoleNames (comma/newline
 //     separated). See Feature 1 comment in Run() for full details.
 //
@@ -205,20 +205,20 @@ func isSystemRBACWithExtra(name, namespace string, extra rbacAllowlist) bool {
 	return false
 }
 
-// installNamespace returns the namespace CHA is running in.
-// Reads POD_NAMESPACE env var; falls back to "cluster-health-autopilot".
+// installNamespace returns the namespace Srenix is running in.
+// Reads POD_NAMESPACE env var; falls back to "agentic-sre".
 func installNamespace() string {
 	if ns := os.Getenv("POD_NAMESPACE"); ns != "" {
 		return ns
 	}
-	return "cluster-health-autopilot"
+	return "agentic-sre"
 }
 
 // gvrConfigMap is the GVR for core/v1 ConfigMap objects, used to load
-// the cha-rbac-allowlist ConfigMap at Run time.
+// the srenix-rbac-allowlist ConfigMap at Run time.
 var gvrConfigMap = schema.GroupVersionResource{Group: "", Version: "v1", Resource: "configmaps"}
 
-// loadRBACAllowlist attempts a best-effort read of the `cha-rbac-allowlist`
+// loadRBACAllowlist attempts a best-effort read of the `srenix-rbac-allowlist`
 // ConfigMap from the install namespace. Absent/unreadable/empty → returns
 // a zero-value rbacAllowlist (built-in baseline only). No errors are returned;
 // callers treat the result as purely additive to the built-in lists.
@@ -229,7 +229,7 @@ var gvrConfigMap = schema.GroupVersionResource{Group: "", Version: "v1", Resourc
 //   - allowRoleNames    — extra exact role names to suppress
 func loadRBACAllowlist(ctx context.Context, src snapshot.Source) rbacAllowlist {
 	ns := installNamespace()
-	obj, err := src.Get(ctx, gvrConfigMap, ns, "cha-rbac-allowlist")
+	obj, err := src.Get(ctx, gvrConfigMap, ns, "srenix-rbac-allowlist")
 	if err != nil || obj == nil {
 		return rbacAllowlist{}
 	}
@@ -272,7 +272,7 @@ func loadRBACAllowlist(ctx context.Context, src snapshot.Source) rbacAllowlist {
 // Diagnostic per drift signal.
 //
 // Feature 1 — Configurable allowlist via ConfigMap: on each Run, we
-// best-effort read the `cha-rbac-allowlist` ConfigMap from the install
+// best-effort read the `srenix-rbac-allowlist` ConfigMap from the install
 // namespace and merge its entries with the built-in baseline for this
 // run only. The built-in package-level vars are never mutated.
 //
@@ -320,7 +320,7 @@ func (r RBACDrift) Run(ctx context.Context, src snapshot.Source) []Diagnostic {
 			Message:  msg,
 			Remediation: "These are RBAC wildcard/unbound-SA findings on known system/operator components, " +
 				"suppressed to reduce noise. To extend or shrink the allowlist, create or edit the " +
-				"`cha-rbac-allowlist` ConfigMap in the CHA install namespace " +
+				"`srenix-rbac-allowlist` ConfigMap in the Srenix install namespace " +
 				"(keys: allowNamespaces / allowRolePrefixes / allowRoleNames, comma- or newline-separated).",
 		})
 	}

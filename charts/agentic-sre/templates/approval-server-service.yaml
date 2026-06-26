@@ -1,0 +1,20 @@
+{{- if ((.Values.approval).enabled) }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "srenix.fullname" . }}-approval-server
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "srenix.labels" . | nindent 4 }}
+    srenix.ai/role: approval-server
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 8443
+      targetPort: http
+      protocol: TCP
+  selector:
+    {{- include "srenix.selectorLabels" . | nindent 4 }}
+    srenix.ai/role: approval-server
+{{- end }}

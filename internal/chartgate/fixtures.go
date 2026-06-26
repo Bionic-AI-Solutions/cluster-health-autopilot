@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package chartgate
@@ -15,7 +15,7 @@ import (
 // optional subtree populated; the bundle-smoke gate maintains it).
 //
 // Centralized here so every parity gate that loads the fixture
-// (cmd/cha/operatorflags_test.go and friends) resolves it through ONE
+// (cmd/srenix/operatorflags_test.go and friends) resolves it through ONE
 // locator: if bundle/tests ever moves, the gates fail loudly with this
 // message instead of each test silently breaking on its own relative
 // path.

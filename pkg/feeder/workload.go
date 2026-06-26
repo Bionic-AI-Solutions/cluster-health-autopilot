@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 // Package feeder houses the snapshot-driven RAG entry writers — components
@@ -26,8 +26,8 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/rag"
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/snapshot"
+	"github.com/srenix-ai/agentic-sre/pkg/rag"
+	"github.com/srenix-ai/agentic-sre/pkg/snapshot"
 )
 
 // GVRs the feeder needs. Defined locally so pkg/feeder doesn't depend
@@ -86,7 +86,7 @@ var systemNamespaces = map[string]struct{}{
 // across restarts.
 //
 // Fail-open: a single workload's parse failure does not abort the sweep.
-// The contract matches the cha-com CloudflareFeeder: best-effort
+// The contract matches the srenix-enterprise CloudflareFeeder: best-effort
 // observation, never block the watcher.
 type WorkloadFeeder struct {
 	Source    snapshot.Source
@@ -520,8 +520,8 @@ func detectOwner(obj *unstructured.Unstructured) *ownerInfo {
 			ReleaseName:      ref.Name,
 			ReleaseNamespace: obj.GetNamespace(),
 			// Synthesize chart name from the CR Kind in lowercase.
-			// E.g. ClusterHealthAutopilot/bionic → owner_chart =
-			// "clusterhealthautopilot-bionic" so the digest-pin
+			// E.g. AgenticSRE/bionic → owner_chart =
+			// "agenticsre-bionic" so the digest-pin
 			// proposer can pick a per-CR sub-path in the deploy
 			// repo (and operators can opt-in per-CR via the
 			// repo-map config).
@@ -532,7 +532,7 @@ func detectOwner(obj *unstructured.Unstructured) *ownerInfo {
 }
 
 // splitAPIVersion returns (group, version) for an apiVersion string.
-// "apps/v1" → ("apps","v1"); "v1" → ("","v1"); "cha.bionicaisolutions.com/v1alpha1" → ("cha.bionicaisolutions.com","v1alpha1").
+// "apps/v1" → ("apps","v1"); "v1" → ("","v1"); "srenix.ai/v1alpha1" → ("srenix.ai","v1alpha1").
 func splitAPIVersion(av string) (string, string, error) {
 	if i := strings.Index(av, "/"); i > 0 {
 		return av[:i], av[i+1:], nil

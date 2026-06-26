@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package diagnose
@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/snapshot"
+	"github.com/srenix-ai/agentic-sre/internal/snapshot"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )
@@ -160,7 +160,7 @@ func (g GitOpsDrift) checkArgoApplications(ctx context.Context, src snapshot.Sou
 			}
 			out = append(out, Diagnostic{
 				Source:   "GitOpsDrift",
-				Subject:  subject + " (health)",
+				Subject:  subject,
 				Severity: severity,
 				Message: fmt.Sprintf(
 					"Argo Application %s/%s health=%s (last reconciled %s ago)",
@@ -168,7 +168,7 @@ func (g GitOpsDrift) checkArgoApplications(ctx context.Context, src snapshot.Sou
 				Remediation: fmt.Sprintf(
 					"Argo's health controller is reporting non-Healthy after a successful sync. "+
 						"Most common cause: workload-level CrashLoopBackOff / image-pull / probe failure. "+
-						"`kubectl get pods -n %s -l app.kubernetes.io/instance=%s` and re-run cha diagnose.",
+						"`kubectl get pods -n %s -l app.kubernetes.io/instance=%s` and re-run srenix diagnose.",
 					ns, name),
 			})
 		}

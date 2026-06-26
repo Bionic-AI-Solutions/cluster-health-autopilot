@@ -35,7 +35,7 @@ jobs:
           cache: true
 
       # helm is required by the chart-args↔binary-flags parity gates
-      # (cmd/cha + cmd/cha-operator chartflags_test.go, P3.1) and the
+      # (cmd/srenix + cmd/srenix-operator chartflags_test.go, P3.1) and the
       # chart-toggle drift gate (internal/chartgate, P1.8) — they shell
       # out to `helm template`. Without helm on PATH those tests t.Skip
       # locally, so they MUST have helm here or the gate never runs.
@@ -50,10 +50,10 @@ jobs:
         run: go vet ./...
 
       - name: go build
-        run: go build -trimpath -o bin/cha ./cmd/cha
+        run: go build -trimpath -o bin/srenix ./cmd/srenix
 
-      - name: cha version
-        run: ./bin/cha version
+      - name: srenix version
+        run: ./bin/srenix version
 
       - name: go test
         run: go test -race -count=1 -coverprofile=coverage.out ./...
@@ -135,17 +135,17 @@ jobs:
         run: helm plugin install https://github.com/helm-unittest/helm-unittest --version v1.0.3
 
       - name: helm lint
-        run: helm lint charts/cluster-health-autopilot
+        run: helm lint charts/agentic-sre
 
       - name: helm unittest
-        run: helm unittest charts/cluster-health-autopilot
+        run: helm unittest charts/agentic-sre
 
       - name: helm template smoke (default values)
-        run: helm template foo charts/cluster-health-autopilot > /tmp/rendered.yaml && wc -l /tmp/rendered.yaml
+        run: helm template foo charts/agentic-sre > /tmp/rendered.yaml && wc -l /tmp/rendered.yaml
 
       - name: helm template smoke (watcher + remediation + leader election)
         run: |
-          helm template foo charts/cluster-health-autopilot \
+          helm template foo charts/agentic-sre \
             --set watcher.enabled=true \
             --set remediation.enabled=true \
             --set watcher.leaderElection.enabled=true \

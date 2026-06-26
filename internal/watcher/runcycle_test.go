@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package watcher
@@ -17,18 +17,18 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/diagnose"
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/fix"
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/report"
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/snapshot"
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/registry"
+	"github.com/srenix-ai/agentic-sre/internal/diagnose"
+	"github.com/srenix-ai/agentic-sre/internal/fix"
+	"github.com/srenix-ai/agentic-sre/internal/report"
+	"github.com/srenix-ai/agentic-sre/internal/snapshot"
+	"github.com/srenix-ai/agentic-sre/pkg/registry"
 )
 
 // ---- runCycle end-to-end tests -------------------------------------------
 //
 // runCycle is the trickiest state machine in the repo: it diffs pre-fix vs
 // post-fix cluster state, dedups via the seen map, and routes posts to the
-// Alerts ("CHA acted") vs Critical ("human needed") channels. These tests
+// Alerts ("Srenix acted") vs Critical ("human needed") channels. These tests
 // drive the REAL runCycle through scripted analyzers/fixers and observe its
 // externally visible effects: Slack webhook posts (captured by httptest
 // servers) and the seen-map state. No refactor of runCycle was needed —
@@ -161,7 +161,7 @@ func TestRunCycle(t *testing.T) {
 		cycles         int
 
 		wantCriticalPosts int      // posts to the Critical ("human needed") channel
-		wantAlertsPosts   int      // posts to the Alerts ("CHA acted") channel
+		wantAlertsPosts   int      // posts to the Alerts ("Srenix acted") channel
 		wantSeenSubjects  []string // exact seen-map keys after the last cycle
 		// substring that must appear in the captured channel bodies
 		wantCriticalContains string
@@ -192,7 +192,7 @@ func TestRunCycle(t *testing.T) {
 			// (see the preFix comment in runCycle): the Slack diff uses
 			// the PRE-fix state so the just-fixed issue still appears in
 			// the alert — routed to the Alerts channel because it's
-			// absent from postFixSubjects ("CHA acted"); NOT to the
+			// absent from postFixSubjects ("Srenix acted"); NOT to the
 			// Critical channel. The seen map is updated from the
 			// POST-fix state so the subject does not linger, and the
 			// follow-up cycle emits no spurious "resolved" post.

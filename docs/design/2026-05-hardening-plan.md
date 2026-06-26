@@ -1,4 +1,4 @@
-# CHA Hardening Plan — TDD-driven  ✅ COMPLETED v1.6.0
+# Srenix Hardening Plan — TDD-driven  ✅ COMPLETED v1.6.0
 
 **Status:** ✅ CLOSED 2026-05-25. All Sprints 0–4 shipped in OSS v1.6.0 (deployed to development cluster) and now on `origin/main` as of v1.6.2. Sprint 5 (operator port to controller-runtime) was intentionally deferred to v1.7+.
 **Scope:** Closed 22/23 punch-list items from the 2026-05-22 adversarial review. The 23rd item — full M2–M7 trigger expansion — remains on the roadmap (see [2026-05-trigger-expansion-roadmap.md](2026-05-trigger-expansion-roadmap.md)).
@@ -75,12 +75,12 @@ Pure docs/manifest patches. Zero risk. Get this out of the way first so the publ
 | 0.3 | Rewrite "Container image: kubectl + bash + jq + curl" to reflect Go-binary-on-distroless reality | [README.md:120](../../README.md#L120) | Matches [Dockerfile](../../Dockerfile) |
 | 0.4 | Update "two ClusterRoles" → "three (reader, remediator, driftreport)" | [README.md:119](../../README.md#L119) | Matches `charts/.../templates/clusterrole-*.yaml` |
 | 0.5 | Add an "AWS cloud probes" subsection to README (list the 10 in [catalog/cloud.go](../../catalog/cloud.go)) | [README.md](../../README.md), `--awsEnabled` Helm value | A user reading the README discovers AWS coverage exists |
-| 0.6 | Reconcile VaultPathMissing OSS/paid status — code is OSS; either move it to CHA-com or update docs | [AI_TIERS.md:66](../AI_TIERS.md#L66), [CHA_OVERVIEW.md:94](../CHA_OVERVIEW.md#L94), [FAILURE_MODES.md:78](../FAILURE_MODES.md#L78) | Single consistent claim across all three docs |
+| 0.6 | Reconcile VaultPathMissing OSS/paid status — code is OSS; either move it to Srenix Enterprise or update docs | [AI_TIERS.md:66](../AI_TIERS.md#L66), [SRENIX_OVERVIEW.md:94](../SRENIX_OVERVIEW.md#L94), [FAILURE_MODES.md:78](../FAILURE_MODES.md#L78) | Single consistent claim across all three docs |
 | 0.7 | Add `[See docs/READINESS.md for pilot-vs-production limits]` to README near the install section | [README.md](../../README.md) | First-time reader finds the honesty doc |
-| 0.8 | Delete the 3 PDFs from git; add them to a `cha-website/assets/` or `release-artifacts/` repo if they're still distributed | `docs/*.pdf` | `git ls-files docs/ \| grep .pdf` returns nothing |
+| 0.8 | Delete the 3 PDFs from git; add them to a `srenix-website/assets/` or `release-artifacts/` repo if they're still distributed | `docs/*.pdf` | `git ls-files docs/ \| grep .pdf` returns nothing |
 | 0.9 | Write missing [docs/AI_COST_MODEL.md](../AI_COST_MODEL.md) — token counts × prices × per-incident call count, including investigation-cost amplification factor | new file | Operators can validate budget before enabling Layer-2 |
 | 0.10 | Fix off-by-one in FAILURE_MODES.md intro ("seven OSS analyzers" → "eight") | [FAILURE_MODES.md:78](../FAILURE_MODES.md#L78) | Count matches the analyzer list below it |
-| 0.11 | Document the published-Helm-chart-version discrepancy: either republish at the v1.5.2 line OR set `version` back to 0.9.5 if that's the released cut | [Chart.yaml](../../charts/cluster-health-autopilot/Chart.yaml) | `helm pull` from the public repo matches `Chart.yaml` |
+| 0.11 | Document the published-Helm-chart-version discrepancy: either republish at the v1.5.2 line OR set `version` back to 0.9.5 if that's the released cut | [Chart.yaml](../../charts/agentic-sre/Chart.yaml) | `helm pull` from the public repo matches `Chart.yaml` |
 
 ---
 
@@ -181,11 +181,11 @@ func TestStuckCertRequests_SkipsWhenCertManagerUnhealthy(t *testing.T) {
 
 | Change | File |
 |---|---|
-| Add `spec.activeDeadlineSeconds: 120` to both CronJob templates | [cronjob-diagnose.yaml](../../charts/cluster-health-autopilot/templates/cronjob-diagnose.yaml), [cronjob-remediate.yaml](../../charts/cluster-health-autopilot/templates/cronjob-remediate.yaml) |
+| Add `spec.activeDeadlineSeconds: 120` to both CronJob templates | [cronjob-diagnose.yaml](../../charts/agentic-sre/templates/cronjob-diagnose.yaml), [cronjob-remediate.yaml](../../charts/agentic-sre/templates/cronjob-remediate.yaml) |
 | Add explicit `spec.backoffLimit: 1` | same |
-| Expose both as Helm values with the above as defaults | [values.yaml](../../charts/cluster-health-autopilot/values.yaml) |
+| Expose both as Helm values with the above as defaults | [values.yaml](../../charts/agentic-sre/values.yaml) |
 
-**Test:** `helm template` snapshot test in `charts/cluster-health-autopilot/tests/` using [helm-unittest](https://github.com/helm-unittest/helm-unittest).
+**Test:** `helm template` snapshot test in `charts/agentic-sre/tests/` using [helm-unittest](https://github.com/helm-unittest/helm-unittest).
 
 ---
 
@@ -264,7 +264,7 @@ If etcd is external (stacked masters with no in-cluster pods), the probe degrade
 **Red — `internal/probe/services_test.go`:**
 ```go
 func TestServiceTargets_FromHelmValue(t *testing.T) {
-    // Set CHA_CRITICAL_SERVICES env to "ns1/app=foo;ns2/app=bar"
+    // Set SRENIX_CRITICAL_SERVICES env to "ns1/app=foo;ns2/app=bar"
     // → Services probe targets only those, ignores the hardcoded default
 }
 func TestServiceTargets_DefaultsWhenUnset(t *testing.T) {
@@ -273,9 +273,9 @@ func TestServiceTargets_DefaultsWhenUnset(t *testing.T) {
 ```
 
 **Green:**
-- Parse `CHA_CRITICAL_SERVICES` env in [services.go:144](../../internal/probe/services.go#L144)
+- Parse `SRENIX_CRITICAL_SERVICES` env in [services.go:144](../../internal/probe/services.go#L144)
 - Add `criticalWorkloads:` array Helm value, wire to env
-- **Decision:** the existing 32-entry hardcoded list moves to `examples/values.bionic-cluster.yaml` as Salil's reference config; the OSS default is **empty + auto-discovery from `cha.bionicaisolutions.com/probe-critical: "true"` annotation** on Deployments/StatefulSets.
+- **Decision:** the existing 32-entry hardcoded list moves to `examples/values.bionic-cluster.yaml` as Salil's reference config; the OSS default is **empty + auto-discovery from `srenix.ai/probe-critical: "true"` annotation** on Deployments/StatefulSets.
 
 ### 2.7 Failed-mount probe
 
@@ -285,7 +285,7 @@ func TestServiceTargets_DefaultsWhenUnset(t *testing.T) {
 
 ## Sprint 3 — AI / paid-tier safety (1 week, TDD)
 
-All work in [CHA-com](../../../CHA-com).
+All work in [Srenix Enterprise](../../../Srenix Enterprise).
 
 ### 3.1 Patch payload semantic validation
 
@@ -345,12 +345,12 @@ func TestRedactEvents_SecretLikeValuesScrubbed(t *testing.T) {
 
 ### 3.5 Compile-time Environment interface assertion
 
-**Red:** Add to CHA-com `ai/environment_impl.go`:
+**Red:** Add to Srenix Enterprise `ai/environment_impl.go`:
 ```go
 var _ pkg_ai.Environment = (*Impl)(nil)
 ```
 
-If CHA-com drifts from the OSS interface, the build fails. This is a structural test, not a runtime test.
+If Srenix Enterprise drifts from the OSS interface, the build fails. This is a structural test, not a runtime test.
 
 ### 3.6 Approval audit-trail tamper-evidence
 
@@ -395,7 +395,7 @@ func TestWatcher_GracefulShutdown(t *testing.T) {
 
 ### 4.2 Ticketing config upfront validation
 
-**Red — `cmd/cha/main_test.go`:**
+**Red — `cmd/srenix/main_test.go`:**
 ```go
 func TestBuildTicketingConfig_OpenProjectRequiresProject(t *testing.T) {
     // --ticketing-provider=openproject without --ticketing-project
@@ -403,7 +403,7 @@ func TestBuildTicketingConfig_OpenProjectRequiresProject(t *testing.T) {
 }
 ```
 
-**Green:** Validate required-flag combinations in [cmd/cha/main.go:689](../../cmd/cha/main.go) before returning the config.
+**Green:** Validate required-flag combinations in [cmd/srenix/main.go:689](../../cmd/srenix/main.go) before returning the config.
 
 ### 4.3 Leader election (Option A — decided 2026-05-22)
 
@@ -424,19 +424,19 @@ func TestLeader_GracefulReleaseOnShutdown(t *testing.T) {
     // SIGTERM → leader releases lease cleanly (no 30s wait for new leader)
 }
 func TestLeader_DisabledByFlag(t *testing.T) {
-    // CHA_LEADER_ELECTION=off → runs watcher loop directly, no lease created
+    // SRENIX_LEADER_ELECTION=off → runs watcher loop directly, no lease created
 }
 ```
 
 **Green:**
-- New file `internal/watcher/leader.go` with the `LeaderElector` setup. Lease name: `cha-watcher`. Namespace: deployment's own namespace (downward-API).
+- New file `internal/watcher/leader.go` with the `LeaderElector` setup. Lease name: `srenix-watcher`. Namespace: deployment's own namespace (downward-API).
 - LeaseDuration: 30s. RenewDeadline: 20s. RetryPeriod: 5s. (Standard controller-manager defaults.)
 - Wrap `Watcher.Run(ctx)` so that the existing loop runs only inside `OnStartedLeading`.
 - Add `--leader-election-namespace` flag (defaults to pod's namespace).
-- Add `CHA_LEADER_ELECTION` env (default `on`, `off` for single-pod dev).
+- Add `SRENIX_LEADER_ELECTION` env (default `on`, `off` for single-pod dev).
 
 **Chart changes:**
-- Add `coordination.k8s.io/leases: [get,list,watch,create,update,patch]` to [clusterrole-remediator.yaml](../../charts/cluster-health-autopilot/templates/clusterrole-remediator.yaml). Scope tight — `resourceNames: ["cha-watcher"]` if possible.
+- Add `coordination.k8s.io/leases: [get,list,watch,create,update,patch]` to [clusterrole-remediator.yaml](../../charts/agentic-sre/templates/clusterrole-remediator.yaml). Scope tight — `resourceNames: ["srenix-watcher"]` if possible.
 - Add Helm value `watcher.leaderElection.enabled: true` (default).
 - Add `PodDisruptionBudget` with `maxUnavailable: 1` — explicit eviction permission during node drains.
 - Document that `replicas: 2` is now the recommended HA default; bump chart default.
@@ -448,12 +448,12 @@ func TestLeader_DisabledByFlag(t *testing.T) {
 ### 4.4 Publish images to `ghcr.io/bionic-ai-solutions`
 
 - Add GitHub Actions workflow `.github/workflows/release.yml` that pushes to GHCR on tag
-- Update [values.yaml](../../charts/cluster-health-autopilot/values.yaml) defaults: `image.repository: ghcr.io/bionic-ai-solutions/cluster-health-autopilot`
+- Update [values.yaml](../../charts/agentic-sre/values.yaml) defaults: `image.repository: ghcr.io/srenix-ai/agentic-sre`
 - Keep `docker4zerocool/*` as a mirror, not the default
 
-### 4.5 Wire a dummy CHA-com paid analyzer
+### 4.5 Wire a dummy Srenix Enterprise paid analyzer
 
-**Red — `CHA-com/catalog/paid_test.go`:**
+**Red — `Srenix Enterprise/catalog/paid_test.go`:**
 ```go
 func TestPaidCatalog_DummyAnalyzerRegistered(t *testing.T) {
     // After Register(), registry.Analyzers should include "VaultPathDriftPro"
@@ -498,7 +498,7 @@ Land alongside Sprint 0:
 - [ ] `.github/workflows/test.yml` — `go test ./... -race -cover` on every PR
 - [ ] `.github/workflows/lint.yml` — `golangci-lint` with `errcheck`, `gosec`, `staticcheck`
 - [ ] Coverage badge in README
-- [ ] `helm lint charts/cluster-health-autopilot/` in CI
+- [ ] `helm lint charts/agentic-sre/` in CI
 - [ ] `helm unittest` for chart templates (after Sprint 1.6)
 - [ ] Codecov or coveralls integration
 - [ ] Pre-merge gate: no PR merges if any package coverage drops > 2%
@@ -512,7 +512,7 @@ Land alongside Sprint 0:
 | Watcher refactor (4.1) introduces regression | High | TDD-first; keep behavioral fixture from a real run as integration test |
 | Leader election deferral causes prod incident | Med | Sprint 4.3 explicit `replicas: 1` constraint + Pod Disruption Budget |
 | Sprint 2 probes generate alert noise | Med | All new probes start at `Warning`, not `Critical`; promote after 1 week pilot |
-| CHA-com patch validator over-restricts and breaks legitimate fixes | Low | Allow-list per `ActionKind` reviewed by 2 engineers; emergency env override `CHA_AI_PATCH_VALIDATION=permissive` |
+| Srenix Enterprise patch validator over-restricts and breaks legitimate fixes | Low | Allow-list per `ActionKind` reviewed by 2 engineers; emergency env override `SRENIX_AI_PATCH_VALIDATION=permissive` |
 
 ---
 

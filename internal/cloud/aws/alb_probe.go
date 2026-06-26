@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package aws
@@ -7,9 +7,9 @@ import (
 	"context"
 	"fmt"
 
-	intcloud "github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/cloud"
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/cloud"
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/probe"
+	intcloud "github.com/srenix-ai/agentic-sre/internal/cloud"
+	"github.com/srenix-ai/agentic-sre/pkg/cloud"
+	"github.com/srenix-ai/agentic-sre/pkg/probe"
 )
 
 // ALBTargetHealth flags target groups with zero healthy targets
@@ -40,7 +40,7 @@ func (ALBTargetHealth) Run(ctx context.Context, src cloud.Source) probe.Result {
 		if tg.HealthyCount == 0 && tg.UnhealthyCount > 0 {
 			findings = append(findings, probe.Finding{
 				Component: subject, Severity: probe.SeverityCritical,
-				// The "(lb: <LB DNS name>)" suffix is the CHA-com RCA
+				// The "(lb: <LB DNS name>)" suffix is the Srenix Enterprise RCA
 				// join key (omitted when the LB is unresolved) — see
 				// internal/cloud/joinkeys.go.
 				// contract: internal/cloud/contract_test.go

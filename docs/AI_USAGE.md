@@ -1,8 +1,8 @@
-# AI in Cluster Health Autopilot
+# AI in Agentic SRE
 
-The OSS `cha` binary keeps **LLMs off the hot path**. This is a positioning
+The OSS `srenix` binary keeps **LLMs off the hot path**. This is a positioning
 commitment, not a transient state. LLM-driven enrichment, proposal, and
-runbook generation ship in the **commercial CHA-com binary** as an opt-in
+runbook generation ship in the **commercial Srenix Enterprise binary** as an opt-in
 layered tier system.
 
 As of v1.5, the OSS engine ships one *deterministic* read-only agent —
@@ -11,7 +11,7 @@ matches critical findings and runs a fixed set of read-only follow-up
 probes (DNS / HTTP / TLS / describe / events). It is auditable line by
 line, registered through the same `pkg/ai.Investigator` interface the
 paid LLM-backed implementation uses, and replaceable by the paid binary
-when CHA-com is installed. The OSS and paid implementations share the
+when Srenix Enterprise is installed. The OSS and paid implementations share the
 same closed `Environment` action surface, so the read-only safety
 property holds either way.
 
@@ -20,7 +20,7 @@ on top of it.
 
 This document explains:
 1. What stays LLM-free in OSS, forever (including the rule-based investigator)
-2. What LLMs add on top in CHA-com, and how it's gated
+2. What LLMs add on top in Srenix Enterprise, and how it's gated
 3. Why we built it this way
 
 ---
@@ -34,7 +34,7 @@ This document explains:
 | 4 default + 1 opt-in fixer (`StaleErrorPods`, `StuckJobsWithBadSecretRef`, `StuckRSPods`, `StuckCertificateRequests`; opt-in: `TLSSecretMismatch`) | Pattern-match conditions → call API verbs from a closed whitelist. The opt-in TLS fixer JSON-patches Ingress `spec.tls[].secretName`; skips GitOps-managed Ingresses (ArgoCD / Flux / Helm) and protected namespaces. | [`internal/fix/`](../internal/fix/) |
 | Layer-2 Investigator (rule-based, v1.5+) | Pattern-match critical Findings / Diagnostics → run a closed set of read-only tools (DNS lookup, HTTP probe, TLS inspect, describe, events) → attach a `🔬` summary and structured observations to the alert and DriftReport CR. No LLM, no new RBAC. | [`internal/investigator/rules.go`](../internal/investigator/rules.go) |
 | Watcher event loop | Kubernetes watch + 10s debounce + full probe/analyze cycle + fingerprint dedup. Investigation runs **after** post-fix re-diagnose so fixers can resolve issues before they are investigated. | [`internal/watcher/`](../internal/watcher/) |
-| Three-channel Slack routing | Subject-prefix dispatch — post-fix CHA-acted set → `#ceph-alerts`, unfixed → `#ceph-critical`, daily digest → `#healthinfo` | [`internal/report/routing.go`](../internal/report/routing.go) |
+| Three-channel Slack routing | Subject-prefix dispatch — post-fix Srenix-acted set → `#ceph-alerts`, unfixed → `#ceph-critical`, daily digest → `#healthinfo` | [`internal/report/routing.go`](../internal/report/routing.go) |
 | Alertmanager hub integration | POST `/api/v2/alerts` every cycle; AM handles dedup, silencing, fan-out | [`internal/report/alertmanager.go`](../internal/report/alertmanager.go) |
 | Daily digest | Reads DriftReport CR history; classifies new/persistent/auto-fixed | [`internal/report/daily.go`](../internal/report/daily.go) |
 | JWT signing primitives | Ed25519 (EdDSA) via crypto/ed25519; minimal deps | [`pkg/ai/jwt.go`](../pkg/ai/jwt.go) |
@@ -43,28 +43,28 @@ Same input → same diagnosis, every time, **auditable from source**. An
 SRE can read the entire fix list and the investigator rules in an
 afternoon.
 
-**Even when CHA-com is installed**, the OSS engine code paths are
-unchanged. If `ai.enabled=false` (the default), CHA-com behaves
-identically to the OSS `cha` binary at the LLM boundary: no LLM calls,
+**Even when Srenix Enterprise is installed**, the OSS engine code paths are
+unchanged. If `ai.enabled=false` (the default), Srenix Enterprise behaves
+identically to the OSS `srenix` binary at the LLM boundary: no LLM calls,
 no `🤖` enrichment, no Apply Fix buttons, no `ai.*` audit events. The
-rule-based investigator still runs (it's part of OSS), and CHA-com can
+rule-based investigator still runs (it's part of OSS), and Srenix Enterprise can
 override it with an LLM-backed implementation via the same
 `Registry.RegisterInvestigator` hook — but the OSS path is the default
 and the override is opt-in.
 
 ---
 
-## 2. CHA-com adds LLM tiers on top of the OSS engine
+## 2. Srenix Enterprise adds LLM tiers on top of the OSS engine
 
 Each tier is documented in [AI_TIERS.md](AI_TIERS.md). Quick overview:
 
 | Tier | What it adds | What it does **NOT** add |
 |---|---|---|
 | **T0 Narration** | LLM-generated 2–4 sentence root-cause narrative under each diagnostic | Any mutation capability. Tier 0 is read-only enrichment. |
-| **L2 Investigator (LLM-backed deep-RCA, v0.2.0-alpha.1)** | Replaces the OSS rule-based investigator with an LLM that picks read-only cluster tools dynamically from the same closed `Environment` enum, synthesizes a client-redacted Firecrawl web query for external documentation search, persists the root-cause analysis to the `cha_investigations` Qdrant collection, and forwards the RCA to every AI tier (T0–T3) via a `<root_cause>` prompt block. | Any new cluster tool, any mutation capability, any new RBAC. Firecrawl is opt-in (key env must be set); the cluster tool surface is unchanged. |
+| **L2 Investigator (LLM-backed deep-RCA, v0.2.0-alpha.1)** | Replaces the OSS rule-based investigator with an LLM that picks read-only cluster tools dynamically from the same closed `Environment` enum, synthesizes a client-redacted Firecrawl web query for external documentation search, persists the root-cause analysis to the `srenix_investigations` Qdrant collection, and forwards the RCA to every AI tier (T0–T3) via a `<root_cause>` prompt block. | Any new cluster tool, any mutation capability, any new RBAC. Firecrawl is opt-in (key env must be set); the cluster tool surface is unchanged. |
 | **T1 Single fix** | One-click signed URLs that apply an existing OSS fixer to a specific target | New verbs, new RBAC, autonomous execution |
 | **T2 Multi-step plan** | Sequential multi-action plans with per-step approval | Bypass of step-by-step approval; plans cannot self-modify |
-| **T3 Vault runbook** | Generated `vault kv patch` runbook + dual-approval recording | CHA-com NEVER writes to Vault. Runbook is human-run. |
+| **T3 Vault runbook** | Generated `vault kv patch` runbook + dual-approval recording | Srenix Enterprise NEVER writes to Vault. Runbook is human-run. |
 
 **Core safety invariant**: AI **proposes**, humans **approve**,
 deterministic Go code **executes**. The OSS engine's Mutator interface
@@ -77,7 +77,7 @@ LLM proposal → structured-output validator (closed enum)
             → approval-server verify (signature + expiry + one-time-use + OIDC identity)
             → admission policy re-check (protected NS)
             → OPA/Gatekeeper independently re-validates (defense in depth)
-            → snapshot.Mutator call (same code path as `cha remediate --live`)
+            → snapshot.Mutator call (same code path as `srenix remediate --live`)
             → 60s post-apply verification
             → full audit-trail event chain
 ```
@@ -96,7 +96,7 @@ human is in the loop*.
 | LLM with autonomous mutation | LLM08 — Excessive Agency | Recommendation-only at every tier; human one-click approval; admission re-check; OPA/Gatekeeper third gate |
 | Crafted prompts in event messages | LLM01 — Prompt Injection | All untrusted text wrapped in `<observed_data>` blocks; ScrubInjection() strips known patterns before LLM input; structured-output schema rejects free-form action requests |
 | Free-form output executed as commands | LLM02 — Insecure Output Handling | JSON schema validator; closed-enum `action_kind`; protected-namespace re-check before mutation |
-| LLM sees raw cluster state | LLM06 — Sensitive Information Disclosure | `RedactDiagnostic()` SHA-256-hashes namespace/name; redacts IPs/UIDs/hostnames; Secret bytes never sent (CHA never reads them anyway) |
+| LLM sees raw cluster state | LLM06 — Sensitive Information Disclosure | `RedactDiagnostic()` SHA-256-hashes namespace/name; redacts IPs/UIDs/hostnames; Secret bytes never sent (Srenix never reads them anyway) |
 | SaaS LLM as default | OSS positioning + GDPR | Default `--ai-endpoint` is operator-supplied (BYOM); SaaS (OpenAI/Anthropic) requires explicit `--ai-allow-saas` opt-in with audit-logged acknowledgment |
 
 Full mapping in [THREAT_MODEL_AI.md](THREAT_MODEL_AI.md).
@@ -108,10 +108,10 @@ decides what to do, executes it, and reports after the fact. This
 violates LLM08 and OWASP's repeated guidance to gate any agency
 behind explicit human authorization.
 
-CHA-com's tiers explicitly refuse this shape. Even T3 (the most
+Srenix Enterprise's tiers explicitly refuse this shape. Even T3 (the most
 powerful tier) is recommendation-only: it generates a runbook that
 two distinct humans approve and then run themselves with values
-neither CHA-com nor the LLM ever see.
+neither Srenix Enterprise nor the LLM ever see.
 
 ### Customer privacy posture
 
@@ -120,7 +120,7 @@ neither CHA-com nor the LLM ever see.
 | Diagnostic struct | yes | YES (redacted) |
 | K8s event messages | yes (in analyzers) | **Scrubbed via `pkg/ai.RedactEvents` (Sprint 3.4) — identifiers + secret-shaped substrings (AWS keys, Vault hvs.*, JWTs, GitHub PATs, Slack tokens) replaced with `[REDACTED]` before the Layer-2 investigator sees them.** The same redaction now applies to `Diagnostic.Message` so analyzers that copy event text into Findings can't leak secrets through that path either. For Firecrawl: a second LLM synthesizes a generic search query from the already-redacted message; `RedactDiagnostic`/`RedactEventMessage` are the backstop. |
 | Pod logs | no | **NO** |
-| Secret bytes | no (CHA never reads) | **NO** |
+| Secret bytes | no (Srenix never reads) | **NO** |
 | Secret key NAMES | yes | YES (already in Diagnostic message) |
 | Vault values | no | **NO** |
 | Vault key NAMES | yes (via VaultPathMissing) | YES |
@@ -128,12 +128,12 @@ neither CHA-com nor the LLM ever see.
 | Image SHAs | yes | YES |
 | Internal hostnames | yes | **REDACTED** |
 
-The redactor lives in CHA-com (`ai/redactor.go`). Unit tests assert
+The redactor lives in Srenix Enterprise (`ai/redactor.go`). Unit tests assert
 no raw identifier leaks into constructed prompts.
 
 ---
 
-## New flags in v0.2.0-alpha.1 (CHA-com)
+## New flags in v0.2.0-alpha.1 (Srenix Enterprise)
 
 | Flag | Default | Notes |
 |---|---|---|
@@ -147,7 +147,7 @@ no raw identifier leaks into constructed prompts.
 **ESO setup for the Firecrawl API key** (Vault → ESO → env):
 ```
 Vault:  secret/data/shared/api-keys   key: firecrawl_api_key
-ESO:    ExternalSecret cha-firecrawl-key  (ns: cluster-health-autopilot)
+ESO:    ExternalSecret srenix-firecrawl-key  (ns: agentic-sre)
         target Secret key: FIRECRAWL_API_KEY
 ```
 See [AI_OPERATOR_RUNBOOK.md §Scenario 8a](AI_OPERATOR_RUNBOOK.md) for the
@@ -159,7 +159,7 @@ full ExternalSecret manifest and Deployment patch.
 
 The rule-based Layer-2 investigator ships in OSS today. It pattern-
 matches failures and runs a fixed set of read-only tools; the LLM
-versions of the same interface live in CHA-com. Three additional
+versions of the same interface live in Srenix Enterprise. Three additional
 places LLMs could plausibly land in OSS `v2+`, *none of which are in
 the hot path of the in-cluster install*:
 
@@ -168,9 +168,9 @@ the hot path of the in-cluster install*:
    propose new fixer signatures. The signatures themselves still ship
    as deterministic Go. The LLM is in our lab, not the customer cluster.
 
-2. **Optional `cha narrate` subcommand**: Same shape as T0 above, but
+2. **Optional `srenix narrate` subcommand**: Same shape as T0 above, but
    shipped to OSS as a CLI tool that hits an LLM on demand against
-   a static `cha diagnose --format json` output. Customer chooses
+   a static `srenix diagnose --format json` output. Customer chooses
    whether to enable it; never in the cron path.
 
 3. **Triage prioritization in the Fleet Console (the SaaS)**: When

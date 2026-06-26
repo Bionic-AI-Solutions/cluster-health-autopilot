@@ -1,0 +1,68 @@
+{{- if and (.Values.ai).enabled (.Values.ai.metrics).addr (.Values.ai.metrics.prometheusRule).enabled }}
+# Phase 2.G.4 — PrometheusRule canary alerts for Srenix.
+#
+# Three canaries scoped to the aiwatch's srenix_* metrics. Each fires
+# only on conditions an operator would want to investigate
+# immediately — no FYIs, no chatter.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: {{ include "srenix.fullname" . }}-aiwatch
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "srenix.labels" . | nindent 4 }}
+    {{- with (.Values.ai.metrics.prometheusRule).labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  groups:
+    - name: srenix-aiwatch
+      interval: 1m
+      rules:
+        - alert: ChaWatcherStuck
+          # srenix_cycle_total should increase every interval. Flat for
+          # 5 minutes ⇒ the watcher pod is alive but the loop is
+          # wedged (LLM call hung, kube-api timeout, etc).
+          expr: increase(srenix_cycle_total[5m]) == 0
+          for: 5m
+          labels:
+            severity: warning
+            srenix_component: aiwatch
+          annotations:
+            summary: "Srenix aiwatch cycle counter is flat ({{`{{`}} $labels.namespace {{`}}`}})"
+            description: "srenix_cycle_total has not increased for 5 minutes. The watcher may be stuck on an LLM call, kube-api request, or RAG store query. Check pod logs."
+
+        - alert: ChaBreakerOpen
+          # Autonomy circuit breaker open for 10 minutes ⇒ multiple
+          # auto-apply failures or post-apply-verifier rejects in a
+          # row. Investigate the underlying analyzer / fixer.
+          expr: max(srenix_breaker_open) == 1
+          for: 10m
+          labels:
+            severity: warning
+            srenix_component: autonomy
+          annotations:
+            summary: "Srenix autonomy circuit breaker open for ≥10m"
+            description: "srenix_breaker_open=1 means multiple auto-applies failed verification. Auto-apply is suspended until reset. Inspect ai.action.auto_apply_failed audit events."
+
+        - alert: ChaAutonomyRejectionSpike
+          # LLM proposer's defense-in-depth gate (ActionKind outside
+          # the closed enum) fires occasionally on prompt drift. A
+          # sustained spike (>50% of attempts for 30m) ⇒ the LLM is
+          # confidently producing unsafe output. Likely model
+          # change / prompt-injection attempt — pull rate down or
+          # check the upstream model registry.
+          expr: |
+            (
+              sum(rate(srenix_llm_proposer_total{outcome="rejected"}[10m]))
+              /
+              sum(rate(srenix_llm_proposer_total[10m]))
+            ) > 0.5
+          for: 30m
+          labels:
+            severity: critical
+            srenix_component: llm-proposer
+          annotations:
+            summary: "LLM proposer rejection rate >50% for ≥30m"
+            description: "srenix_llm_proposer_total{outcome=rejected} dominates attempts. The LLM is repeatedly proposing actions outside the closed ActionKind enum. Inspect ai.llm_proposer.unknown_kind audit events; consider rolling back the model or disabling --llm-proposer until investigated."
+{{- end }}

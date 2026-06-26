@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Prevent CHA from emitting pod-health findings (CrashLoopBackOff, Pending, FailedMounts, ETCD, Services) for pods that already have `metadata.deletionTimestamp` set (Terminating), eliminating the "already resolved" false-positive noise during rollouts.
+**Goal:** Prevent Srenix from emitting pod-health findings (CrashLoopBackOff, Pending, FailedMounts, ETCD, Services) for pods that already have `metadata.deletionTimestamp` set (Terminating), eliminating the "already resolved" false-positive noise during rollouts.
 
 **Architecture:** Add a single shared helper `isTerminating(pod unstructured.Unstructured) bool` to `internal/probe/nodes.go` (the existing helper file), then add one `continue` guard at the top of the pod-iterating loop in each affected probe. The Services probe guard goes on the individual pod loop (not the outer target loop). No severity or logic changes; only Terminating pods are skipped.
 
@@ -10,7 +10,7 @@
 
 ## Global Constraints
 
-- OSS repo only: `/home/skadam/CHA/cluster-health-autopilot`
+- OSS repo only: `/home/skadam/Srenix/agentic-sre`
 - Branch: `fix/skip-terminating-pods` off `main` (HEAD = `36e3654`)
 - One commit total; commit trailer: `Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>`
 - Never skip git hooks (`--no-verify` forbidden)
@@ -32,7 +32,7 @@
 - [ ] **Step 1: Create the feature branch**
 
 ```bash
-cd /home/skadam/CHA/cluster-health-autopilot
+cd /home/skadam/Srenix/agentic-sre
 git checkout -b fix/skip-terminating-pods
 ```
 
@@ -40,7 +40,7 @@ Expected output: `Switched to a new branch 'fix/skip-terminating-pods'`
 
 - [ ] **Step 2: Add `isTerminating` helper to `internal/probe/nodes.go`**
 
-Open `/home/skadam/CHA/cluster-health-autopilot/internal/probe/nodes.go`. After the closing `}` of `getSliceField` (currently the last function, ending at line 110), append:
+Open `/home/skadam/Srenix/agentic-sre/internal/probe/nodes.go`. After the closing `}` of `getSliceField` (currently the last function, ending at line 110), append:
 
 ```go
 // isTerminating returns true when the pod has a non-nil deletionTimestamp,
@@ -60,7 +60,7 @@ import (
     "context"
     "fmt"
 
-    "github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/snapshot"
+    "github.com/srenix-ai/agentic-sre/internal/snapshot"
 )
 ```
 
@@ -71,7 +71,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/snapshot"
+	"github.com/srenix-ai/agentic-sre/internal/snapshot"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 ```
@@ -79,7 +79,7 @@ import (
 - [ ] **Step 3: Verify it compiles**
 
 ```bash
-cd /home/skadam/CHA/cluster-health-autopilot && go build ./internal/probe/...
+cd /home/skadam/Srenix/agentic-sre && go build ./internal/probe/...
 ```
 
 Expected: no output, exit code 0.
@@ -97,7 +97,7 @@ Expected: no output, exit code 0.
 
 - [ ] **Step 1: Write the failing test**
 
-Add to the bottom of `/home/skadam/CHA/cluster-health-autopilot/internal/probe/crashloop_test.go`:
+Add to the bottom of `/home/skadam/Srenix/agentic-sre/internal/probe/crashloop_test.go`:
 
 ```go
 // podTerminatingCrashLoop is a pod with deletionTimestamp set AND
@@ -141,14 +141,14 @@ func TestCrashLoop_NonTerminatingCrashLoopStillFlagged(t *testing.T) {
 - [ ] **Step 2: Run to confirm tests fail**
 
 ```bash
-cd /home/skadam/CHA/cluster-health-autopilot && go test ./internal/probe/ -run 'TestCrashLoop_Terminating' -v
+cd /home/skadam/Srenix/agentic-sre && go test ./internal/probe/ -run 'TestCrashLoop_Terminating' -v
 ```
 
 Expected: `FAIL` — `TestCrashLoop_TerminatingPodSkipped` fails because the probe currently flags the pod.
 
 - [ ] **Step 3: Add the guard in `crashloop.go`**
 
-In `/home/skadam/CHA/cluster-health-autopilot/internal/probe/crashloop.go`, inside the `for _, pod := range pods.Items {` loop (currently line 57), add the guard as the FIRST statement before any other checks:
+In `/home/skadam/Srenix/agentic-sre/internal/probe/crashloop.go`, inside the `for _, pod := range pods.Items {` loop (currently line 57), add the guard as the FIRST statement before any other checks:
 
 ```go
 	for _, pod := range pods.Items {
@@ -165,7 +165,7 @@ In `/home/skadam/CHA/cluster-health-autopilot/internal/probe/crashloop.go`, insi
 - [ ] **Step 4: Run the tests to confirm they pass**
 
 ```bash
-cd /home/skadam/CHA/cluster-health-autopilot && go test ./internal/probe/ -run 'TestCrashLoop' -v
+cd /home/skadam/Srenix/agentic-sre && go test ./internal/probe/ -run 'TestCrashLoop' -v
 ```
 
 Expected: all `TestCrashLoop_*` pass including the two new ones.
@@ -183,7 +183,7 @@ Expected: all `TestCrashLoop_*` pass including the two new ones.
 
 - [ ] **Step 1: Write the failing test**
 
-Add to the bottom of `/home/skadam/CHA/cluster-health-autopilot/internal/probe/pending_pods_test.go`:
+Add to the bottom of `/home/skadam/Srenix/agentic-sre/internal/probe/pending_pods_test.go`:
 
 ```go
 // podTerminatingPending is a Pending pod with PodScheduled=False AND a
@@ -229,14 +229,14 @@ func TestPendingPods_NonTerminatingPendingStillFlagged(t *testing.T) {
 - [ ] **Step 2: Run to confirm tests fail**
 
 ```bash
-cd /home/skadam/CHA/cluster-health-autopilot && go test ./internal/probe/ -run 'TestPendingPods_Terminating' -v
+cd /home/skadam/Srenix/agentic-sre && go test ./internal/probe/ -run 'TestPendingPods_Terminating' -v
 ```
 
 Expected: `FAIL` — `TestPendingPods_TerminatingPodSkipped` fails.
 
 - [ ] **Step 3: Add the guard in `pending_pods.go`**
 
-In `/home/skadam/CHA/cluster-health-autopilot/internal/probe/pending_pods.go`, inside the `for _, pod := range pods.Items {` loop (currently line 66), add the guard as the FIRST statement:
+In `/home/skadam/Srenix/agentic-sre/internal/probe/pending_pods.go`, inside the `for _, pod := range pods.Items {` loop (currently line 66), add the guard as the FIRST statement:
 
 ```go
 	for _, pod := range pods.Items {
@@ -250,7 +250,7 @@ In `/home/skadam/CHA/cluster-health-autopilot/internal/probe/pending_pods.go`, i
 - [ ] **Step 4: Run to confirm tests pass**
 
 ```bash
-cd /home/skadam/CHA/cluster-health-autopilot && go test ./internal/probe/ -run 'TestPendingPods' -v
+cd /home/skadam/Srenix/agentic-sre && go test ./internal/probe/ -run 'TestPendingPods' -v
 ```
 
 Expected: all `TestPendingPods_*` pass.
@@ -268,11 +268,11 @@ Expected: all `TestPendingPods_*` pass.
 
 - [ ] **Step 1: Read the existing test fixture pattern**
 
-Open `/home/skadam/CHA/cluster-health-autopilot/internal/probe/failed_mounts_test.go` to see existing test constants and the `loadProbeSrc` usage. Specifically note how events.json fixtures are structured alongside pods.json.
+Open `/home/skadam/Srenix/agentic-sre/internal/probe/failed_mounts_test.go` to see existing test constants and the `loadProbeSrc` usage. Specifically note how events.json fixtures are structured alongside pods.json.
 
 - [ ] **Step 2: Write the failing test**
 
-Add to the bottom of `/home/skadam/CHA/cluster-health-autopilot/internal/probe/failed_mounts_test.go`:
+Add to the bottom of `/home/skadam/Srenix/agentic-sre/internal/probe/failed_mounts_test.go`:
 
 ```go
 // podTerminatingContainerCreating has deletionTimestamp set, is Pending/ContainerCreating,
@@ -321,14 +321,14 @@ func TestFailedMounts_TerminatingPodSkipped(t *testing.T) {
 - [ ] **Step 3: Run to confirm test fails**
 
 ```bash
-cd /home/skadam/CHA/cluster-health-autopilot && go test ./internal/probe/ -run 'TestFailedMounts_Terminating' -v
+cd /home/skadam/Srenix/agentic-sre && go test ./internal/probe/ -run 'TestFailedMounts_Terminating' -v
 ```
 
 Expected: `FAIL`.
 
 - [ ] **Step 4: Add the guard in `failed_mounts.go`**
 
-In `/home/skadam/CHA/cluster-health-autopilot/internal/probe/failed_mounts.go`, inside the `for _, pod := range pods.Items {` loop (currently line 94), add the guard as the FIRST statement:
+In `/home/skadam/Srenix/agentic-sre/internal/probe/failed_mounts.go`, inside the `for _, pod := range pods.Items {` loop (currently line 94), add the guard as the FIRST statement:
 
 ```go
 	for _, pod := range pods.Items {
@@ -342,7 +342,7 @@ In `/home/skadam/CHA/cluster-health-autopilot/internal/probe/failed_mounts.go`, 
 - [ ] **Step 5: Run to confirm tests pass**
 
 ```bash
-cd /home/skadam/CHA/cluster-health-autopilot && go test ./internal/probe/ -run 'TestFailedMounts' -v
+cd /home/skadam/Srenix/agentic-sre && go test ./internal/probe/ -run 'TestFailedMounts' -v
 ```
 
 Expected: all `TestFailedMounts_*` pass.
@@ -363,15 +363,15 @@ Note: The `Services` probe iterates pods by label selector for each target. A Te
 - [ ] **Step 1: Check if services_test.go exists**
 
 ```bash
-ls /home/skadam/CHA/cluster-health-autopilot/internal/probe/services_test.go 2>/dev/null && echo EXISTS || echo MISSING
+ls /home/skadam/Srenix/agentic-sre/internal/probe/services_test.go 2>/dev/null && echo EXISTS || echo MISSING
 ```
 
 - [ ] **Step 2: Write the failing test**
 
-If `services_test.go` does not exist, create `/home/skadam/CHA/cluster-health-autopilot/internal/probe/services_test.go` with the full file content below. If it exists, append the two new test functions.
+If `services_test.go` does not exist, create `/home/skadam/Srenix/agentic-sre/internal/probe/services_test.go` with the full file content below. If it exists, append the two new test functions.
 
 ```go
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package probe
@@ -446,14 +446,14 @@ func TestServices_NonTerminatingNotReadyPodStillFlagged(t *testing.T) {
 - [ ] **Step 3: Run to confirm tests fail**
 
 ```bash
-cd /home/skadam/CHA/cluster-health-autopilot && go test ./internal/probe/ -run 'TestServices_Terminating' -v
+cd /home/skadam/Srenix/agentic-sre && go test ./internal/probe/ -run 'TestServices_Terminating' -v
 ```
 
 Expected: `FAIL` — `TestServices_TerminatingPodNotCountedAsNotReady` fails.
 
 - [ ] **Step 4: Add the guard in `services.go`**
 
-In `/home/skadam/CHA/cluster-health-autopilot/internal/probe/services.go`, inside the `for _, pod := range list.Items {` loop (currently line 64), add the guard as the FIRST statement. The guard skips the pod from both the `matched` and `ready` counts:
+In `/home/skadam/Srenix/agentic-sre/internal/probe/services.go`, inside the `for _, pod := range list.Items {` loop (currently line 64), add the guard as the FIRST statement. The guard skips the pod from both the `matched` and `ready` counts:
 
 ```go
 		for _, pod := range list.Items {
@@ -469,7 +469,7 @@ In `/home/skadam/CHA/cluster-health-autopilot/internal/probe/services.go`, insid
 - [ ] **Step 5: Run to confirm tests pass**
 
 ```bash
-cd /home/skadam/CHA/cluster-health-autopilot && go test ./internal/probe/ -run 'TestServices' -v
+cd /home/skadam/Srenix/agentic-sre && go test ./internal/probe/ -run 'TestServices' -v
 ```
 
 Expected: all service tests pass.
@@ -489,11 +489,11 @@ Note: The ETCD probe only looks at pods named `etcd-*` or labelled `component=et
 
 - [ ] **Step 1: Read the existing test file**
 
-Open `/home/skadam/CHA/cluster-health-autopilot/internal/probe/etcd_test.go` to understand existing fixture constants.
+Open `/home/skadam/Srenix/agentic-sre/internal/probe/etcd_test.go` to understand existing fixture constants.
 
 - [ ] **Step 2: Write the failing test**
 
-Add to the bottom of `/home/skadam/CHA/cluster-health-autopilot/internal/probe/etcd_test.go`:
+Add to the bottom of `/home/skadam/Srenix/agentic-sre/internal/probe/etcd_test.go`:
 
 ```go
 // podsEtcdTerminating has one terminating etcd pod (not-ready, 2 restarts).
@@ -530,14 +530,14 @@ func TestETCD_TerminatingPodSkipped(t *testing.T) {
 - [ ] **Step 3: Run to confirm test fails**
 
 ```bash
-cd /home/skadam/CHA/cluster-health-autopilot && go test ./internal/probe/ -run 'TestETCD_Terminating' -v
+cd /home/skadam/Srenix/agentic-sre && go test ./internal/probe/ -run 'TestETCD_Terminating' -v
 ```
 
 Expected: `FAIL` — currently produces CRITICAL.
 
 - [ ] **Step 4: Add the guard in `etcd.go`**
 
-In `/home/skadam/CHA/cluster-health-autopilot/internal/probe/etcd.go`, inside the `for _, pod := range pods.Items {` loop (currently line 59), add the guard as the FIRST statement:
+In `/home/skadam/Srenix/agentic-sre/internal/probe/etcd.go`, inside the `for _, pod := range pods.Items {` loop (currently line 59), add the guard as the FIRST statement:
 
 ```go
 	for _, pod := range pods.Items {
@@ -552,7 +552,7 @@ In `/home/skadam/CHA/cluster-health-autopilot/internal/probe/etcd.go`, inside th
 - [ ] **Step 5: Run to confirm tests pass**
 
 ```bash
-cd /home/skadam/CHA/cluster-health-autopilot && go test ./internal/probe/ -run 'TestETCD' -v
+cd /home/skadam/Srenix/agentic-sre && go test ./internal/probe/ -run 'TestETCD' -v
 ```
 
 Expected: all `TestETCD_*` pass.
@@ -568,15 +568,15 @@ Expected: all `TestETCD_*` pass.
 - [ ] **Step 1: Run full internal test suite**
 
 ```bash
-cd /home/skadam/CHA/cluster-health-autopilot && go test ./internal/... -v 2>&1 | tail -20
+cd /home/skadam/Srenix/agentic-sre && go test ./internal/... -v 2>&1 | tail -20
 ```
 
-Expected: `ok github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/probe` and any other internal packages also `ok`. Zero `FAIL` lines.
+Expected: `ok github.com/srenix-ai/agentic-sre/internal/probe` and any other internal packages also `ok`. Zero `FAIL` lines.
 
 - [ ] **Step 2: Run full build**
 
 ```bash
-cd /home/skadam/CHA/cluster-health-autopilot && go build ./...
+cd /home/skadam/Srenix/agentic-sre && go build ./...
 ```
 
 Expected: no output, exit code 0.
@@ -584,14 +584,14 @@ Expected: no output, exit code 0.
 - [ ] **Step 3: Run golangci-lint**
 
 ```bash
-cd /home/skadam/CHA/cluster-health-autopilot && golangci-lint run ./internal/... 2>&1
+cd /home/skadam/Srenix/agentic-sre && golangci-lint run ./internal/... 2>&1
 ```
 
 Expected: no issues reported (exit code 0).
 
 - [ ] **Step 4: Write the git-internal report**
 
-Create `/home/skadam/CHA/cluster-health-autopilot/.git/sdd-skip-terminating-report.md` with this content (fill in the actual commit SHA once you commit in Task 8):
+Create `/home/skadam/Srenix/agentic-sre/.git/sdd-skip-terminating-report.md` with this content (fill in the actual commit SHA once you commit in Task 8):
 
 ```markdown
 # skip-terminating-pods — Implementation Report
@@ -635,7 +635,7 @@ All tests were written before the guard was added and verified FAIL, then PASS a
 - [ ] **Step 5: Verify the report file was written**
 
 ```bash
-ls -la /home/skadam/CHA/cluster-health-autopilot/.git/sdd-skip-terminating-report.md
+ls -la /home/skadam/Srenix/agentic-sre/.git/sdd-skip-terminating-report.md
 ```
 
 Expected: file exists with non-zero size.
@@ -649,7 +649,7 @@ Expected: file exists with non-zero size.
 - [ ] **Step 1: Stage all changed files**
 
 ```bash
-cd /home/skadam/CHA/cluster-health-autopilot
+cd /home/skadam/Srenix/agentic-sre
 git add internal/probe/nodes.go \
         internal/probe/crashloop.go \
         internal/probe/crashloop_test.go \
@@ -667,7 +667,7 @@ git add internal/probe/nodes.go \
 - [ ] **Step 2: Verify staged files**
 
 ```bash
-cd /home/skadam/CHA/cluster-health-autopilot && git diff --cached --name-only
+cd /home/skadam/Srenix/agentic-sre && git diff --cached --name-only
 ```
 
 Expected: the 12 files listed above.
@@ -675,7 +675,7 @@ Expected: the 12 files listed above.
 - [ ] **Step 3: Commit**
 
 ```bash
-cd /home/skadam/CHA/cluster-health-autopilot && git commit -m "$(cat <<'EOF'
+cd /home/skadam/Srenix/agentic-sre && git commit -m "$(cat <<'EOF'
 fix(probe): skip Terminating pods in pod-health probes
 
 Pods with metadata.deletionTimestamp set are intentionally being deleted;
@@ -695,7 +695,7 @@ EOF
 - [ ] **Step 4: Verify commit**
 
 ```bash
-cd /home/skadam/CHA/cluster-health-autopilot && git log --oneline -2
+cd /home/skadam/Srenix/agentic-sre && git log --oneline -2
 ```
 
 Expected: the new commit is HEAD, previous is `36e3654`.
@@ -703,7 +703,7 @@ Expected: the new commit is HEAD, previous is `36e3654`.
 - [ ] **Step 5: Run the full test suite one final time to confirm green HEAD**
 
 ```bash
-cd /home/skadam/CHA/cluster-health-autopilot && go test ./internal/... 2>&1 | grep -E 'ok|FAIL|---'
+cd /home/skadam/Srenix/agentic-sre && go test ./internal/... 2>&1 | grep -E 'ok|FAIL|---'
 ```
 
 Expected: all `ok ...` lines, zero `FAIL` lines.

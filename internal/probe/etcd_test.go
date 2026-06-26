@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package probe
@@ -95,13 +95,21 @@ func TestETCD_MemberNotReady_Critical(t *testing.T) {
 }
 
 func TestETCD_MemberRestarting_Critical(t *testing.T) {
+	// The test fixture has restartCount=7 but Ready=True — a post-maintenance
+	// restart. This should now be WARNING (member is up) not CRITICAL.
 	src := loadProbeSrc(t, map[string]string{"pods.json": etcdMemberRestarting})
 	r := ETCD{}.Run(context.Background(), src)
-	if r.Component.Status != "CRITICAL" {
-		t.Errorf("restartCount > 0 on etcd must be CRITICAL, got %q", r.Component.Status)
+	if r.Component.Status != "WARNING" {
+		t.Errorf("restartCount > 0 on a Ready etcd member must be WARNING (not CRITICAL), got %q", r.Component.Status)
 	}
 	if !strings.Contains(r.Component.Detail, "etcd-cp-01") || !strings.Contains(r.Component.Detail, "7") {
 		t.Errorf("detail must name the restart count: %q", r.Component.Detail)
+	}
+	// Verify no CRITICAL finding — the member is Ready; this is post-maintenance level.
+	for _, f := range r.Findings {
+		if f.Severity == SeverityCritical {
+			t.Errorf("Ready member with restarts must not produce a CRITICAL finding; got %q", f.Message)
+		}
 	}
 }
 

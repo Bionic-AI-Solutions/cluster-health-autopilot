@@ -1,4 +1,4 @@
-# Releasing Cluster Health Autopilot
+# Releasing Agentic SRE
 
 Per-checkin verification runs **locally**. GitHub Actions spends CI minutes
 only on release tags and on-demand dispatch — there is no per-PR CI gate.
@@ -13,7 +13,7 @@ make verify          # == bash scripts/verify-local.sh
 ```
 
 `make verify` mirrors `.github/workflows/ci.yml` exactly: `go mod verify`,
-`go vet ./...`, `go build`, `cha version`, `go test -race -count=1`,
+`go vet ./...`, `go build`, `srenix version`, `go test -race -count=1`,
 `golangci-lint run`, the CHANGELOG lint + tag-check (+ its selftest), and
 `helm lint` / `helm unittest` / `helm template` smoke. It fails fast on the
 first failing step and prints a PASS banner at the end.
@@ -22,7 +22,7 @@ first failing step and prints a PASS banner at the end.
 
 1. Update `CHANGELOG.md` — add a new `## [0.X.Y-alpha.N] — DATE` section at the
    top (directly under `## [Unreleased]`).
-2. Bump `charts/cluster-health-autopilot/Chart.yaml` `version` **and**
+2. Bump `charts/agentic-sre/Chart.yaml` `version` **and**
    `appVersion` to `0.X.Y-alpha.N`.
 3. Run `make verify` one last time.
 4. Tag and push:
@@ -38,7 +38,7 @@ The tag push triggers:
   version is injected from the tag, not hardcoded).
 - **`bundle-smoke.yml`** — OLM-on-kind validation of the operator bundle.
 - **`helm-publish.yml`** — packages the chart and publishes it to the Helm
-  repo at <https://bionic-ai-solutions.github.io/cluster-health-autopilot/>.
+  repo at <https://srenix-ai.github.io/agentic-sre/>.
 
 ## 3. Versioning policy
 

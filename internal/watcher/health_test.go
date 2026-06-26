@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package watcher
@@ -53,7 +53,7 @@ func TestHealthListenAddr_DefaultsTo8081(t *testing.T) {
 // REGRESSION — production 1.26.0 upgrade incident (O11).
 //
 // PR #186 introduced the always-on :8081 health server but started it
-// INSIDE Watcher.Run, which `cha watch` wraps in RunWithLeader — so the
+// INSIDE Watcher.Run, which `srenix watch` wraps in RunWithLeader — so the
 // listener only came up inside OnStartedLeading, AFTER the lease was
 // acquired. A standby (non-leader) pod served nothing: the liveness
 // probe added by the same PR got `connection refused` and kubelet
@@ -64,14 +64,14 @@ func TestHealthListenAddr_DefaultsTo8081(t *testing.T) {
 //
 // This test pins the fix: the health server must serve /healthz 200
 // BEFORE and WITHOUT lease acquisition. It starts the health server
-// the way cmd/cha does (StartHealthServer before RunWithLeader), with
+// the way cmd/srenix does (StartHealthServer before RunWithLeader), with
 // the lease already held by another identity so this candidate stays
 // standby, and asserts /healthz answers 200 while the body (the watch
 // loop) has never run.
 func TestStartHealthServer_Serves200WhileStandby_NotLeader(t *testing.T) {
 	const (
 		ns        = "test-ns"
-		leaseName = "test-cha-standby"
+		leaseName = "test-srenix-standby"
 		holder    = "other-pod-the-leader"
 	)
 	// Lease held by someone else, renewed "now", valid for 5 minutes —
@@ -93,7 +93,7 @@ func TestStartHealthServer_Serves200WhileStandby_NotLeader(t *testing.T) {
 
 	w := New(nil, nil, nil, Config{HealthListen: "127.0.0.1:0"})
 
-	// 1) Health server starts BEFORE leader election — mirrors cmd/cha.
+	// 1) Health server starts BEFORE leader election — mirrors cmd/srenix.
 	if err := w.StartHealthServer(ctx); err != nil {
 		t.Fatalf("StartHealthServer: %v", err)
 	}

@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package watcher
@@ -8,7 +8,7 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/diagnose"
+	"github.com/srenix-ai/agentic-sre/pkg/diagnose"
 )
 
 // enrichDiagnostics walks diagnostics and, when the registry has an

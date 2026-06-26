@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package ticketing
@@ -12,7 +12,7 @@ func TestFingerprintStable(t *testing.T) {
 	if a != b {
 		t.Fatalf("fingerprint not stable: %q != %q", a, b)
 	}
-	if len(a) != len("cha-")+16 {
+	if len(a) != len("srenix-")+16 {
 		t.Fatalf("unexpected fingerprint length: %q", a)
 	}
 }

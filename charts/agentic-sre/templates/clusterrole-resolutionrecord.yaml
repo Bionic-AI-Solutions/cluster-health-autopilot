@@ -1,0 +1,37 @@
+{{- if (.Values.resolutionRecord).enabled }}
+# ResolutionRecord ClusterRole.
+#
+# Create: the recorder appends a CR per verified remediation outcome.
+# Get/List/Watch: the RAG memory layer reads records to (re-)build the
+# vector index. Status patch: the RAG layer stamps embeddedAt/vectorId
+# after embedding. No delete — records are append-only (retention is
+# handled out-of-band).
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "srenix.fullname" . }}-resolutionrecord
+  labels:
+    {{- include "srenix.labels" . | nindent 4 }}
+rules:
+  - apiGroups: ["srenix.ai"]
+    resources: ["resolutionrecords"]
+    verbs: ["create", "get", "list", "watch"]
+  - apiGroups: ["srenix.ai"]
+    resources: ["resolutionrecords/status"]
+    verbs: ["update", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "srenix.fullname" . }}-resolutionrecord
+  labels:
+    {{- include "srenix.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "srenix.fullname" . }}-resolutionrecord
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "srenix.serviceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+{{- end }}

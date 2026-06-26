@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package v1alpha1
@@ -17,21 +17,21 @@ func TestAISpec_DeepCopy_AllFields(t *testing.T) {
 		AllowSaaS:         false,
 		LLMFixerMatcher:   true,
 		AuditLog:          "-",
-		ApprovalServerURL: "https://cha-approve.example",
+		ApprovalServerURL: "https://srenix-approve.example",
 		Image: &ImageSpec{
-			Repository:  "docker4zerocool/cha-com",
+			Repository:  "docker4zerocool/srenix-enterprise",
 			Tag:         "v1.9.3",
 			PullPolicy:  "IfNotPresent",
 			PullSecrets: []string{"dockerhub"},
 		},
 		APIKey: &AIAPIKeySpec{
-			SecretName: "cha-ai-key",
+			SecretName: "srenix-ai-key",
 			SecretKey:  "API_KEY",
 			EnvName:    "AI_API_KEY",
 			Header:     "X-API-Key",
 		},
 		T3: &AIT3Spec{
-			VaultAllowedPrefixes: []string{"secret/data/cha-recovery/"},
+			VaultAllowedPrefixes: []string{"secret/data/srenix-recovery/"},
 		},
 		Memory: &AIMemorySpec{
 			Enabled:    true,
@@ -87,8 +87,8 @@ func TestAISpec_DeepCopy_Nil(t *testing.T) {
 	}
 }
 
-func TestClusterHealthAutopilotSpec_DeepCopy_IncludesAI(t *testing.T) {
-	src := &ClusterHealthAutopilotSpec{
+func TestAgenticSRESpec_DeepCopy_IncludesAI(t *testing.T) {
+	src := &AgenticSRESpec{
 		Image: ImageSpec{Repository: "a", Tag: "b"},
 		AI:    &AISpec{Enabled: true, Tier: "t1"},
 	}
@@ -102,8 +102,8 @@ func TestClusterHealthAutopilotSpec_DeepCopy_IncludesAI(t *testing.T) {
 	}
 }
 
-func TestClusterHealthAutopilotSpec_DeepCopy_ProtectedNamespacesExtra(t *testing.T) {
-	src := &ClusterHealthAutopilotSpec{
+func TestAgenticSRESpec_DeepCopy_ProtectedNamespacesExtra(t *testing.T) {
+	src := &AgenticSRESpec{
 		Image:                    ImageSpec{Repository: "a", Tag: "b"},
 		ProtectedNamespacesExtra: []string{"prod-payments", "tenant-a"},
 	}

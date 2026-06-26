@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package report
@@ -15,10 +15,10 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/diagnose"
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/fix"
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/probe"
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/snapshot"
+	"github.com/srenix-ai/agentic-sre/internal/diagnose"
+	"github.com/srenix-ai/agentic-sre/internal/fix"
+	"github.com/srenix-ai/agentic-sre/internal/probe"
+	"github.com/srenix-ai/agentic-sre/internal/snapshot"
 )
 
 // fakeMutator records calls and lets the test inspect the create/patch/delete diff.
@@ -81,7 +81,7 @@ func (f *fakeSrc) Mode() snapshot.Mode { return snapshot.ModeLive }
 func driftCR(subject string) unstructured.Unstructured {
 	return unstructured.Unstructured{
 		Object: map[string]any{
-			"apiVersion": "cha.bionicaisolutions.com/v1alpha1",
+			"apiVersion": "srenix.ai/v1alpha1",
 			"kind":       "DriftReport",
 			"metadata":   map[string]any{"name": nameForSubject(subject)},
 			"spec":       map[string]any{"subject": subject},

@@ -1,4 +1,4 @@
-# CHA Final Adversarial Review — v1.6.0
+# Srenix Final Adversarial Review — v1.6.0
 
 **Date:** 2026-05-25
 **Tag:** v1.6.0
@@ -19,7 +19,7 @@ and lists what's deferred to the Sprint 5 operator port.
 | Test count (`internal/fix/`) | 36 | **57** |
 | Test count (`internal/probe/`) | 0 net-new probes had tests | **70** (incl. 6 new probes) |
 | Test count (`internal/watcher/`) | 2 | **31** (+8 leader election) |
-| Test count (CHA-com paid binary) | 32 | **94** |
+| Test count (Srenix Enterprise paid binary) | 32 | **94** |
 | Probes shipped | 6 | **12** |
 | Helm chart version (published) | 1.5.2 | **1.6.0** |
 | Cluster deployment status | v1.6.0-rc4 | **v1.6.0 running, lease acquired** |
@@ -27,7 +27,7 @@ and lists what's deferred to the Sprint 5 operator port.
 
 The cluster the project was built on is running v1.6.0 with all
 12 probes firing cleanly, the leader election lease acquired by the
-sole watcher pod (`cluster-health-autopilot/cha-watcher`), and the
+sole watcher pod (`agentic-sre/srenix-watcher`), and the
 new ETCD probe correctly reporting "blind probe" for the k3s
 sqlite-based control plane rather than false-greening.
 
@@ -43,20 +43,20 @@ sqlite-based control plane rather than false-greening.
 | **4** | Helm chart version mismatch (code 1.5.2, advertised 0.9.5) (Critical) | ✅ **Closed** | Chart and binary now tagged v1.6.0; gh-pages index already serves v1.5.2 and will serve v1.6.0 on next `helm-publish` run. |
 | **5** | M1–M7 trigger-expansion roadmap ~0% implemented (Critical) | 🟡 **Partial — 6 of 7 probes shipped** | Sprint 2 shipped NodePressure, DaemonSets, PendingPods, CrashLoopBackOff, ETCD, FailedMounts — the high-impact subset. **Kong/HPA/ArgoCD/Velero** probes from the M2+ milestones remain in the trigger-expansion roadmap doc; tracked for v1.7+. |
 | **6** | Critical probe gaps: node-pressure, kube-system DaemonSets, Pending pods, ETCD, CRI (Critical) | ✅ **Closed** | All five now ship as separate probes in `internal/probe/`. Container-runtime health is partially covered by the existing Nodes probe + DaemonSet probe (CRI failure surfaces as Ready=False on the affected node, which the existing probes catch). |
-| **7** | 32-entry "critical workloads" list hardcoded to Salil's cluster (High) | ✅ **Closed** | [`internal/probe/targets_config.go`](../../internal/probe/targets_config.go) adds `TargetsFromEnv` (parses `CHA_CRITICAL_SERVICES`) and `TargetsFromAnnotation` (auto-discovers via `cha.bionicaisolutions.com/probe-critical: "true"`). Compiled-in defaults remain for backward compat; `CHA_CRITICAL_SERVICES_REPLACE=true` swaps them out entirely. 11 tests. |
-| **8** | LLM patch payload accepted without semantic field validation (High) | ✅ **Closed** | [`CHA-com/ai/approval/patch_validator.go`](../../../CHA-com/ai/approval/patch_validator.go) — closed-path allow-list per ActionKind. `ActionPatchDeployment` permits exactly `spec.template.metadata.annotations.kubectl.kubernetes.io/restartedAt` and nothing else. Rejects replicas=0, selector mutation, image rewrites, oversized payloads, oversized annotation values. 10 tests. Wired into MutatorExecutor. |
-| **9** | Investigation-cost DoS — rate limiter doesn't gate Layer-2 (High) | ✅ **Closed** | [`CHA-com/ai/rate_limit.go`](../../../CHA-com/ai/rate_limit.go) — new `TakeInvestigation(class)` with per-diagnostic-class bucket (default 10/hour) independent of the proposal budget. 4 tests. |
+| **7** | 32-entry "critical workloads" list hardcoded to Salil's cluster (High) | ✅ **Closed** | [`internal/probe/targets_config.go`](../../internal/probe/targets_config.go) adds `TargetsFromEnv` (parses `SRENIX_CRITICAL_SERVICES`) and `TargetsFromAnnotation` (auto-discovers via `srenix.ai/probe-critical: "true"`). Compiled-in defaults remain for backward compat; `SRENIX_CRITICAL_SERVICES_REPLACE=true` swaps them out entirely. 11 tests. |
+| **8** | LLM patch payload accepted without semantic field validation (High) | ✅ **Closed** | [`Srenix Enterprise/ai/approval/patch_validator.go`](../../../Srenix Enterprise/ai/approval/patch_validator.go) — closed-path allow-list per ActionKind. `ActionPatchDeployment` permits exactly `spec.template.metadata.annotations.kubectl.kubernetes.io/restartedAt` and nothing else. Rejects replicas=0, selector mutation, image rewrites, oversized payloads, oversized annotation values. 10 tests. Wired into MutatorExecutor. |
+| **9** | Investigation-cost DoS — rate limiter doesn't gate Layer-2 (High) | ✅ **Closed** | [`Srenix Enterprise/ai/rate_limit.go`](../../../Srenix Enterprise/ai/rate_limit.go) — new `TakeInvestigation(class)` with per-diagnostic-class bucket (default 10/hour) independent of the proposal budget. 4 tests. |
 | **10** | `ContainsSecretLike` not applied to `Environment.GetEvents()` (High) | ✅ **Closed** | [`pkg/ai/redact.go`](../../pkg/ai/redact.go) — new `RedactEventMessage` + `RedactEvents`. Wired into `internal/investigator.LiveEnvironment.GetEvents` so events reach the LLM scrubbed of AWS keys / Vault tokens / JWTs / PATs / Slack tokens / IPs. 7 tests. |
-| **11** | Default chart pulls from personal `docker4zerocool/*` Docker Hub (High) | ✅ **Closed** | Chart default switched to `ghcr.io/bionic-ai-solutions/cluster-health-autopilot`. GoReleaser already mirrors to docker4zerocool on every tag. |
+| **11** | Default chart pulls from personal `docker4zerocool/*` Docker Hub (High) | ✅ **Closed** | Chart default switched to `ghcr.io/srenix-ai/agentic-sre`. GoReleaser already mirrors to docker4zerocool on every tag. |
 | **12** | Watcher has zero tests (677 LOC, no leader election) (High) | ✅ **Closed** | 12 new pure-logic tests for `fingerprint`/`buildCurrentState`/`diff`/`updateSeen`. Plus 8 leader-election tests using the client-go fake clientset. Watcher test count: 2 → 31. |
 | **13** | 10 AWS cloud probes ship but README doesn't mention them (Medium) | ✅ **Closed (Sprint 0)** | README now documents all 10 probes + the AWS opt-in flow. |
-| **14** | VaultPathMissing in OSS but docs sell it as paid (Medium) | ✅ **Closed (Sprint 0)** | README + CHA_OVERVIEW + FAILURE_MODES reconciled: source is OSS, the paid CHA Enterprise binary auto-wires the Vault client. |
+| **14** | VaultPathMissing in OSS but docs sell it as paid (Medium) | ✅ **Closed (Sprint 0)** | README + SRENIX_OVERVIEW + FAILURE_MODES reconciled: source is OSS, the paid Srenix Enterprise binary auto-wires the Vault client. |
 | **15** | LICENSE-VERIFIED-LIBRARY.md placeholder still in README (Medium) | ✅ **Closed (Sprint 0)** | [`LICENSE-VERIFIED-LIBRARY.md`](../../LICENSE-VERIFIED-LIBRARY.md) drafted (flagged as pending legal review at the top). |
 | **16** | CronJobs missing `activeDeadlineSeconds`, explicit `backoffLimit` (Medium) | ✅ **Closed** | Both CronJob templates now declare `backoffLimit: 1` and `activeDeadlineSeconds: 120` as defaults (configurable via Helm values). |
 | **17** | Chart claims "two ClusterRoles"; ships three (Medium) | ✅ **Closed (Sprint 0)** | README architecture section corrected. Also added a fourth (namespace-scoped) Role in Sprint 4.3 for the leader-election Lease. |
 | **18** | StuckJobsWithBadSecretRef doesn't honor `CronJob.spec.suspend` (Medium) | ✅ **Closed** | [`internal/fix/stuck_jobs.go`](../../internal/fix/stuck_jobs.go) now fetches the parent CronJob and refuses on `spec.suspend=true` OR `GitOpsReason != ""`. 2 new tests + 4 existing tests tightened. |
-| **19** | CHA-com `catalog/paid.go` is empty — paid integration path untested (Medium) | ✅ **Closed** | [`CHA-com/catalog/paid_analyzer_boundary.go`](../../../CHA-com/catalog/paid_analyzer_boundary.go) registers `PaidBoundaryAnalyzer` — a no-op Analyzer whose compile-time assertion `var _ diagnose.Analyzer = PaidBoundaryAnalyzer{}` fails CI if the OSS interface drifts. 3 boundary tests. |
-| **20** | `--ticketing-provider=openproject` without project flag fails at runtime not init (Medium) | ✅ **Closed** | [`cmd/cha/main.go::validateTicketingOpts`](../../cmd/cha/main.go) fails fast on missing `--ticketing-mcp-url` or `--ticketing-project`. API-key requirement intentionally dropped after the live cluster surfaced that in-cluster MCP traffic bypasses Kong key-auth (architectural decision documented in the validator's doc comment). 6 tests. |
+| **19** | Srenix Enterprise `catalog/paid.go` is empty — paid integration path untested (Medium) | ✅ **Closed** | [`Srenix Enterprise/catalog/paid_analyzer_boundary.go`](../../../Srenix Enterprise/catalog/paid_analyzer_boundary.go) registers `PaidBoundaryAnalyzer` — a no-op Analyzer whose compile-time assertion `var _ diagnose.Analyzer = PaidBoundaryAnalyzer{}` fails CI if the OSS interface drifts. 3 boundary tests. |
+| **20** | `--ticketing-provider=openproject` without project flag fails at runtime not init (Medium) | ✅ **Closed** | [`cmd/srenix/main.go::validateTicketingOpts`](../../cmd/srenix/main.go) fails fast on missing `--ticketing-mcp-url` or `--ticketing-project`. API-key requirement intentionally dropped after the live cluster surfaced that in-cluster MCP traffic bypasses Kong key-auth (architectural decision documented in the validator's doc comment). 6 tests. |
 | **21** | `docs/AI_COST_MODEL.md` referenced but missing (Medium) | ✅ **Closed (Sprint 0)** | Existing AI_COST_MODEL.md was extended with a new "Failure-mode amplification" section covering the cost-DoS pathway, worst-case multipliers, and operator checklist. |
 | **22** | 3× PDFs committed to git (no diff, duplicate Markdown) (Low) | ✅ **Closed (Sprint 0)** | Already gitignored at `.gitignore:25-26`; the adversarial reviewer false-flagged this one. |
 | **23** | Rate-limiter cold-start burst on approval-server restart (Low) | ✅ **Closed** | New buckets initialize at 0 tokens by default; operators can opt back into burst behavior via `RateLimitConfig.ColdStartFull: true`. 3 tests. |
@@ -68,8 +68,8 @@ sqlite-based control plane rather than false-greening.
 ## What the live deployment verified
 
 ```
-$ kubectl exec -n cluster-health-autopilot deploy/cha-cluster-health-autopilot-watcher \
-    -- /usr/local/bin/cha diagnose --live
+$ kubectl exec -n agentic-sre deploy/srenix-agentic-sre-watcher \
+    -- /usr/local/bin/srenix diagnose --live
 
 • Ceph Storage:    🟢 HEALTHY  1 cluster(s): rook-ceph@rook-ceph OK (12.1% used)
 • Cluster Nodes:   🟢 HEALTHY  All 6 nodes ready
@@ -85,15 +85,15 @@ $ kubectl exec -n cluster-health-autopilot deploy/cha-cluster-health-autopilot-w
 • Failed Mounts:   🟢 HEALTHY  No pods stuck on volume mount     ← Sprint 2.6
 
 Diagnostics (1):
-  🔎 Certificate cha-website/asre-baisoln-com-tls not Ready
+  🔎 Certificate srenix-website/asre-baisoln-com-tls not Ready
 ```
 
 **Watcher startup:**
 
 ```
-watcher: leaderelection.go:258  Attempting to acquire leader lease... lock="cluster-health-autopilot/cha-watcher"
-watcher: leaderelection.go:272  Successfully acquired lease lock="cluster-health-autopilot/cha-watcher"
-watcher: acquired lease cluster-health-autopilot/cha-watcher as "cha-cluster-health-autopilot-watcher-69fffb958b-78s6z"
+watcher: leaderelection.go:258  Attempting to acquire leader lease... lock="agentic-sre/srenix-watcher"
+watcher: leaderelection.go:272  Successfully acquired lease lock="agentic-sre/srenix-watcher"
+watcher: acquired lease agentic-sre/srenix-watcher as "srenix-agentic-sre-watcher-69fffb958b-78s6z"
 watcher: pre-populated seen map with 1 DriftReports
 watcher: initial diagnose cycle
 watcher: driftreports: 1 created, 1 updated, 0 deleted
@@ -177,7 +177,7 @@ Documented for the next iteration; explicitly NOT in scope for v1.6.0.
 - **TODO #4:** Real legal review of [`LICENSE-VERIFIED-LIBRARY.md`](../../LICENSE-VERIFIED-LIBRARY.md)
   before the first paid subscription closes
 - **TODO #5:** Wire `RedactEvents` / `RedactEventMessage` into the
-  enrichment + fix-proposer paths in CHA-com (currently only the
+  enrichment + fix-proposer paths in Srenix Enterprise (currently only the
   Layer-2 investigator uses scrubbed events)
 
 ### Items the original review identified that proved to be false positives
@@ -192,7 +192,7 @@ Documented so future reviewers don't re-flag them:
 
 ## Where the code lives
 
-| Sprint | OSS commits | CHA-com commits | Live tag |
+| Sprint | OSS commits | Srenix Enterprise commits | Live tag |
 |---|---|---|---|
 | **Sprint 0 — docs truth-up** | 2e0e5b4 | n/a | docs only |
 | **Sprint 1 — fixer safety** | 41d00fb..e9d2637 (13 commits, RED+GREEN pairs) | n/a | code only |
@@ -201,15 +201,15 @@ Documented so future reviewers don't re-flag them:
 | **Sprint 4 — operability + leader election** | a647b02 + aeefa30 (live-cluster fix) | 9ba7153 | v1.6.0 |
 
 Branch: `feat/cloud-probes` on
-https://github.com/Bionic-AI-Solutions/cluster-health-autopilot
+https://github.com/srenix-ai/agentic-sre
 
 Tag: `v1.6.0` (created 2026-05-25)
 
 Cluster running: image
-`docker4zerocool/cluster-health-autopilot:v1.6.0-aeefa30` (the SHA
+`docker4zerocool/agentic-sre:v1.6.0-aeefa30` (the SHA
 suffix is a workaround for the mutable-tag issue; real v1.6.0 image is
 identical content). The GoReleaser pipeline will publish a proper
-multi-arch manifest at `ghcr.io/bionic-ai-solutions/cluster-health-autopilot:1.6.0`
+multi-arch manifest at `ghcr.io/srenix-ai/agentic-sre:1.6.0`
 when the tag push triggers the release workflow.
 
 ---
@@ -226,5 +226,5 @@ plane), and the rule-based investigator continuing to attach summaries
 to Findings without LLM cost.
 
 The remaining gap (M2+ probes for Kong/HPA/ArgoCD/Velero) is a
-roadmap-class item, not a credibility-class item: CHA can now go in
+roadmap-class item, not a credibility-class item: Srenix can now go in
 front of CTOs and the documentation will match the code.

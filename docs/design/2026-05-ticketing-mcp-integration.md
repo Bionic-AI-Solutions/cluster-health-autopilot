@@ -1,4 +1,4 @@
-# CHA Ticketing Integration via MCP
+# Srenix Ticketing Integration via MCP
 
 > **STATUS: 🚧 PARTIAL — M1 + M2 (OpenProject lifecycle) SHIPPED; M3/M4 NOT started.**
 > _(P6.5 M2 ship, 2026-06-11)_
@@ -6,8 +6,8 @@
 > - **M1 — MCP-driven OpenProject sink for unfixable items: ✅ SHIPPED.** Landed via PR #59 (`ea63875 feat(ticketing): MCP-driven OpenProject sink for unfixable items (M1)`). Operator wiring (`TicketingSpec` on CR → watcher `--ticketing-*` flags) shipped Phase 1.D (PR #167, v1.20.0); chart values shape aligned in PR #170 (v1.20.1); in-cluster MCP bypasses Kong (no API-key requirement, `aeefa30`).
 > - **M2 — resolve-on-clear + debounced comment-on-recurrence: ✅ SHIPPED (P6.5).** Tickets now auto-close when the finding clears, and a recurring / severity-changed finding comments on the EXISTING ticket (debounced by `ticketing.commentInterval`, default `1h`) instead of opening a new one.
 >   - **Resolve-on-clear**: the watcher detects cleared subjects (seen last cycle, absent now — computed independently of the Slack `postOnResolved` setting) and calls `report.RouteResolves` **before** `Reconcile` deletes the DriftReport CR (the only point at which the persisted `TicketRef` on `status.ticket` is still readable). Default ON via `ticketing.resolveOnClear`.
->   - **Idempotency**: a resolved ticket is stamped `status.ticket.resolved=true` + `resolvedAt`; CHA never re-resolves it. A recurrence clears the flag so the next clear resolves it again.
->   - **After-interval recurrence decision**: CHA does **not** open a fresh ticket; it reuses the existing one and comments. Per-flap ticket fragmentation would scatter the operator's investigation history; one ticket per finding keeps context together.
+>   - **Idempotency**: a resolved ticket is stamped `status.ticket.resolved=true` + `resolvedAt`; Srenix never re-resolves it. A recurrence clears the flag so the next clear resolves it again.
+>   - **After-interval recurrence decision**: Srenix does **not** open a fresh ticket; it reuses the existing one and comments. Per-flap ticket fragmentation would scatter the operator's investigation history; one ticket per finding keeps context together.
 >   - **Severity-transition comment**: a still-open ticketed finding that changes severity gets a transition comment (debounced like recurrence). Severity is stamped on `status.ticket.severity` at open / last comment so the next transition is detectable.
 >   - New `status.ticket` fields: `severity`, `resolved`, `resolvedAt`, `lastCommentedAt`. New knobs: `ticketing.resolveOnClear` (CRD `spec.ticketing.resolveOnClear`, default ON), `ticketing.commentInterval` (CRD `spec.ticketing.commentInterval`, default `1h`).
 > - **M3 — Jira sink (paid): ❌ NOT started.** Now tracked as **P6.3**.
@@ -20,11 +20,11 @@
 **Status:** Draft
 **Author:** skadam
 **Date:** 2026-05-22
-**Target releases:** OSS v1.7 (M1–M2), CHA-com (M3–M4)
+**Target releases:** OSS v1.7 (M1–M2), Srenix Enterprise (M3–M4)
 
 ## 1. Summary
 
-When CHA's detect → remediate → re-probe loop identifies an issue that
+When Srenix's detect → remediate → re-probe loop identifies an issue that
 **cannot be auto-fixed** — no whitelisted fixer, fixer failed, or
 re-probe is still red — open a ticket in the team's issue tracker via an
 **MCP server** so the item enters a durable human-intervention queue.
@@ -64,7 +64,7 @@ part of the registry — they're configured per sink in the
 ### 2.3 No existing MCP usage
 
 `grep` for `mcp`, `fastmcp`, `Model Context Protocol` across both repos
-returns only test-fixture pod names. CHA is producer-only today.
+returns only test-fixture pod names. Srenix is producer-only today.
 
 ## 3. Confirmed prerequisites
 
@@ -81,7 +81,7 @@ returns only test-fixture pod names. CHA is producer-only today.
 | Backing OpenProject | `openproject.openproject.svc:8080` |
 | Secret | `mcp/mcp-openproject-secrets` (keys: `openproject-url`, `openproject-api-key`) |
 
-CHA pods will reach the MCP server **in-cluster** at
+Srenix pods will reach the MCP server **in-cluster** at
 `mcp-openproject-server.mcp.svc:8006` over its `/sse` transport,
 bypassing Kong key-auth (matches the existing `kong-auth-pattern`
 feedback: internal traffic uses ClusterIP, not the gateway).
@@ -98,7 +98,7 @@ import (
     "context"
     "time"
 
-    "github.com/bionic-ai-solutions/cluster-health-autopilot/pkg/diagnose"
+    "github.com/bionic-ai-solutions/agentic-sre/pkg/diagnose"
 )
 
 type Ticket struct {
@@ -109,7 +109,7 @@ type Ticket struct {
     Body        string             // markdown — diagnostic + runbook + cluster + ts
     Severity    diagnose.Severity  // Critical | Warning | Info
     Labels      []string
-    Source      string             // "cha"
+    Source      string             // "srenix"
     Cluster     string
     OpenedAt    time.Time
 }
@@ -143,19 +143,19 @@ type Sink interface {
 Use `github.com/mark3labs/mcp-go` (mature community Go MCP SDK). The
 OpenProject implementation is a thin wrapper that:
 
-1. Establishes one long-lived SSE session per CHA process to
+1. Establishes one long-lived SSE session per Srenix process to
    `http://mcp-openproject-server.mcp.svc:8006/sse`.
 2. Discovers tools at startup; logs a warning if the expected toolset
    is missing.
 3. Calls MCP `tools/call` for each `Upsert`/`Resolve`/`Comment` op.
-4. Maps CHA semantics → OpenProject work-package fields:
+4. Maps Srenix semantics → OpenProject work-package fields:
    - `Title` → `subject`
    - `Body` → `description` (markdown)
    - `Severity` → `priority` (configurable map)
-   - `Labels` → `customField:cha-labels` (or native tags if supported)
-   - `Fingerprint` → `customField:cha-fingerprint` (queryable for dedup)
+   - `Labels` → `customField:srenix-labels` (or native tags if supported)
+   - `Fingerprint` → `customField:srenix-fingerprint` (queryable for dedup)
 
-**Sidecar alternative rejected:** CHA already speaks HTTP natively to
+**Sidecar alternative rejected:** Srenix already speaks HTTP natively to
 Slack and Alertmanager. Adding a Python/Node bridge pod doubles the
 failure surface for no benefit. The Go MCP SDK is sufficient.
 
@@ -169,7 +169,7 @@ status:
   ticket:
     provider: openproject
     key: WP-1287
-    url: https://openproject.bionicaisolutions.com/work_packages/1287
+    url: https://openproject.srenix.ai/work_packages/1287
     fingerprint: sha256:abc...
     openedAt: 2026-05-22T08:00:00Z
     lastCommentedAt: 2026-05-22T16:00:00Z
@@ -177,14 +177,14 @@ status:
 
 **Flow:**
 
-1. Unfixable diagnostic on cycle N → CHA reads `DriftReport.status.ticket`.
+1. Unfixable diagnostic on cycle N → Srenix reads `DriftReport.status.ticket`.
 2. If absent → call `Upsert()` → store the returned `TicketRef` on
    status.
 3. If present and N+1 cycle still unfixable → call `Comment()` only if
    the severity or message materially changed (debounce: not more than
    1 comment per `commentInterval`, default 6h).
 4. When DriftReport is about to be auto-deleted (drift cleared) → call
-   `Resolve(ref, "drift cleared by CHA")` first.
+   `Resolve(ref, "drift cleared by Srenix")` first.
 
 This is the same upsert-by-subject pattern DriftReport already uses;
 ticketing just borrows the existing fingerprint.
@@ -220,13 +220,13 @@ for _, d := range toResolve {
 
 **Failure posture:** ticket failures NEVER abort the cycle. Matches the
 existing Slack/Alertmanager posture — observability for the operator,
-not a circuit breaker for CHA itself.
+not a circuit breaker for Srenix itself.
 
 ### 4.5 Severity → priority mapping
 
 Defaults — overridable via `values.yaml`:
 
-| CHA severity | OpenProject priority | Jira priority | ServiceNow priority |
+| Srenix severity | OpenProject priority | Jira priority | ServiceNow priority |
 |---|---|---|---|
 | `Critical` | `Immediate` | `Highest` | `1 - Critical` |
 | `Warning`  | `High`      | `High`    | `2 - High`     |
@@ -234,7 +234,7 @@ Defaults — overridable via `values.yaml`:
 
 ### 4.6 Helm chart surface
 
-Extend `charts/cluster-health-autopilot/values.yaml`:
+Extend `charts/agentic-sre/values.yaml`:
 
 ```yaml
 ticketing:
@@ -245,13 +245,13 @@ ticketing:
     transport: sse                # sse | streamable-http
     auth:
       enabled: false              # in-cluster: skip Kong key-auth
-      secretName: cha-ticketing-mcp
+      secretName: srenix-ticketing-mcp
       secretKey: api-key          # ESO-managed when enabled
   routing:
     projectId: 1                  # OpenProject project ID
     workPackageType: "Task"
     defaultAssignee: ""
-    labels: ["cha", "auto-filed"]
+    labels: ["srenix", "auto-filed"]
     severityPriority:
       Critical: Immediate
       Warning: High
@@ -265,7 +265,7 @@ ticketing:
 
 The `auth.enabled: false` default reflects in-cluster traffic
 (`mcp-openproject-server.mcp.svc` bypasses Kong, no key needed). Set
-`true` only when pointing CHA at the external `mcp.baisoln.com`
+`true` only when pointing Srenix at the external `mcp.baisoln.com`
 endpoint.
 
 ### 4.7 Secrets — Vault → ESO → K8s
@@ -274,11 +274,11 @@ Per the project hard rule (`never-hardcode-secrets`): when external auth
 is enabled, the API key flows:
 
 ```
-Vault: secret/cha/ticketing/mcp-api-key
-  ↓ ExternalSecret (mcp namespace or cha namespace)
-K8s Secret: cha-ticketing-mcp
+Vault: secret/srenix/ticketing/mcp-api-key
+  ↓ ExternalSecret (mcp namespace or srenix namespace)
+K8s Secret: srenix-ticketing-mcp
   ↓ env var
-CHA pod: TICKETING_MCP_API_KEY
+Srenix pod: TICKETING_MCP_API_KEY
 ```
 
 No hardcoded keys, no `--no-verify`, no shortcuts.
@@ -287,13 +287,13 @@ No hardcoded keys, no `--no-verify`, no shortcuts.
 
 | Component | Tier | Repo |
 |---|---|---|
-| `pkg/ticketing/` interface | **OSS** | cluster-health-autopilot |
-| OpenProject MCP impl | **OSS** | cluster-health-autopilot |
-| DriftReport status.ticket extension | **OSS** | cluster-health-autopilot |
-| Helm values + wiring | **OSS** | cluster-health-autopilot |
-| Jira MCP impl | **Paid** | CHA-com |
-| ServiceNow MCP impl | **Paid** | CHA-com |
-| Multi-sink routing (e.g. Ceph → SN, Kong → Jira) | **Paid** | CHA-com |
+| `pkg/ticketing/` interface | **OSS** | agentic-sre |
+| OpenProject MCP impl | **OSS** | agentic-sre |
+| DriftReport status.ticket extension | **OSS** | agentic-sre |
+| Helm values + wiring | **OSS** | agentic-sre |
+| Jira MCP impl | **Paid** | Srenix Enterprise |
+| ServiceNow MCP impl | **Paid** | Srenix Enterprise |
+| Multi-sink routing (e.g. Ceph → SN, Kong → Jira) | **Paid** | Srenix Enterprise |
 
 Rationale: matches existing precedent — Slack/Alertmanager/DriftReport
 sinks ship in OSS because basic escalation is table-stakes for a
@@ -338,9 +338,9 @@ ref, and re-running the cycle produces no duplicate.
   predate ticketing being enabled).
 
 **Acceptance:** end-to-end demo: induce drift, ticket opens; clear
-drift, ticket closes with comment "drift cleared by CHA on <ts>".
+drift, ticket closes with comment "drift cleared by Srenix on <ts>".
 
-### M3 — Jira MCP (CHA-com)
+### M3 — Jira MCP (Srenix Enterprise)
 
 - `pkg/ticketing/jira/` MCP-backed implementation (paid binary)
 - Jira-specific fields: epic links, components, fixVersion
@@ -350,7 +350,7 @@ drift, ticket closes with comment "drift cleared by CHA on <ts>".
 
 **Acceptance:** same E2E story as M1 against a Jira sandbox project.
 
-### M4 — ServiceNow + multi-sink routing (CHA-com)
+### M4 — ServiceNow + multi-sink routing (Srenix Enterprise)
 
 - `pkg/ticketing/servicenow/` MCP implementation
 - Routing rules engine: match diagnostic subject/labels → sink
@@ -360,7 +360,7 @@ drift, ticket closes with comment "drift cleared by CHA on <ts>".
 - Fits the v2.0 trigger-expansion roadmap window (more triggers → more
   reason to route by domain)
 
-**Acceptance:** a single CHA install with all three sinks configured
+**Acceptance:** a single Srenix install with all three sinks configured
 routes synthetic test diagnostics to the correct backend based on
 labels.
 
@@ -375,7 +375,7 @@ labels.
 3. **Backoff on persistent MCP failure.** If the MCP server is down for
    N cycles, do we keep logging errors or open a circuit breaker?
    Proposal: simple per-cycle log; no breaker until M2.
-4. **PII / sensitive payloads.** CHA diagnostic bodies sometimes
+4. **PII / sensitive payloads.** Srenix diagnostic bodies sometimes
    include namespace names and resource names that could be sensitive.
    Add a `bodyRedactRegex` knob in M2 if any consumer asks.
 
@@ -387,7 +387,7 @@ labels.
   diagnostic subject.
 - **MCP protocol drift** — the OpenProject MCP image is your own
   (`docker4zerocool/mcp-servers-openproject:latest`); pin a digest in
-  the CHA values doc and bump deliberately.
+  the Srenix values doc and bump deliberately.
 - **External Kong dependency** — only relevant if a downstream operator
   configures the external endpoint. Default config is in-cluster.
 
@@ -407,7 +407,7 @@ labels.
 
 - Approval workflows (already covered by the paid approval-server +
   T1/T2/T3 AI tiers).
-- Two-way sync (ticket-status → CHA action). Tickets are write-mostly;
-  CHA owns resolution.
+- Two-way sync (ticket-status → Srenix action). Tickets are write-mostly;
+  Srenix owns resolution.
 - Migration of existing DriftReports to tickets retroactively. M2
   backfill handles only items still active at upgrade time.

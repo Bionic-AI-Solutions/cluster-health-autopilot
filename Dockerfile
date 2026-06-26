@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.7
 #
-# Multi-stage build for the `cha` binary.
+# Multi-stage build for the `srenix` binary.
 # - builder: Go 1.26 toolchain, full source tree, compiles a static binary.
 # - runtime: distroless/static — no shell, no package manager, ~2 MB layer
 #            on top of the binary. Smallest reasonable attack surface.
@@ -32,24 +32,24 @@ ENV CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH}
 RUN go build \
     -trimpath \
     -ldflags="-s -w -X main.version=${VERSION} -X main.commit=${COMMIT}" \
-    -o /out/cha \
-    ./cmd/cha
-# cha-operator — controller-runtime manager (v1.8 Phase 1b). Same
+    -o /out/srenix \
+    ./cmd/srenix
+# srenix-operator — controller-runtime manager (v1.8 Phase 1b). Same
 # image hosts both binaries so chart installs don't need a second
 # imagePullSecret; the operator Deployment overrides the command.
 RUN go build \
     -trimpath \
     -ldflags="-s -w -X main.version=${VERSION} -X main.commit=${COMMIT}" \
-    -o /out/cha-operator \
-    ./cmd/cha-operator
+    -o /out/srenix-operator \
+    ./cmd/srenix-operator
 
 # ---- runtime ----
 FROM gcr.io/distroless/static:nonroot
-COPY --from=builder /out/cha /usr/local/bin/cha
-COPY --from=builder /out/cha-operator /cha-operator
+COPY --from=builder /out/srenix /usr/local/bin/srenix
+COPY --from=builder /out/srenix-operator /srenix-operator
 # Numeric UID matches distroless's `nonroot` user (65532). MUST stay
 # numeric — kubelet's `runAsNonRoot: true` admission rejects images
 # whose USER directive is a non-numeric name, since it can't verify
 # the resolved UID is non-zero without running the image.
 USER 65532:65532
-ENTRYPOINT ["/usr/local/bin/cha"]
+ENTRYPOINT ["/usr/local/bin/srenix"]

@@ -1,13 +1,13 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
-// Package watcher implements cha watch --live: a long-running event-driven
+// Package watcher implements srenix watch --live: a long-running event-driven
 // diagnose loop.
 //
 // Kubernetes watches fire for every relevant resource type (pods, events,
 // secrets, externalsecrets, certificates, deployments, replicasets, jobs,
 // cronjobs, …). A short debounce window collapses burst events before
-// re-running the full probe+analyzer stack — identical to cha diagnose --live.
+// re-running the full probe+analyzer stack — identical to srenix diagnose --live.
 //
 // Slack and DriftReport outputs are fingerprint-deduplicated:
 //   - A post fires only when a diagnostic is new, its severity/message changed,
@@ -33,18 +33,19 @@ import (
 
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	kwwatch "k8s.io/apimachinery/pkg/watch"
+	"k8s.io/client-go/kubernetes"
 
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/diagnose"
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/fix"
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/probe"
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/report"
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/server/webhook"
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/snapshot"
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/trigger/prom"
-	pkgai "github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/ai"
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/cloud"
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/registry"
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/silence"
+	"github.com/srenix-ai/agentic-sre/internal/diagnose"
+	"github.com/srenix-ai/agentic-sre/internal/fix"
+	"github.com/srenix-ai/agentic-sre/internal/probe"
+	"github.com/srenix-ai/agentic-sre/internal/report"
+	"github.com/srenix-ai/agentic-sre/internal/server/webhook"
+	"github.com/srenix-ai/agentic-sre/internal/snapshot"
+	"github.com/srenix-ai/agentic-sre/internal/trigger/prom"
+	pkgai "github.com/srenix-ai/agentic-sre/pkg/ai"
+	"github.com/srenix-ai/agentic-sre/pkg/cloud"
+	"github.com/srenix-ai/agentic-sre/pkg/registry"
+	"github.com/srenix-ai/agentic-sre/pkg/silence"
 )
 
 // Config controls all tunable watcher behaviours.
@@ -58,7 +59,7 @@ type Config struct {
 	ResyncPeriod time.Duration
 
 	// SlackChannels holds the two event-driven webhook URLs.
-	//   Alerts   → #ceph-alerts:   CHA acted (fixers ran and resolved issues)
+	//   Alerts   → #ceph-alerts:   Srenix acted (fixers ran and resolved issues)
 	//   Critical → #ceph-critical: human action required (unfixable / still active)
 	// Either may be empty — posts are silently skipped for empty strings.
 	// When AlertmanagerURL is set, Alertmanager handles routing and these are
@@ -79,18 +80,18 @@ type Config struct {
 
 	// AlertmanagerURL is the base URL of the Alertmanager API
 	// (e.g. "http://alertmanager.pg.svc.cluster.local:9093").
-	// When set, CHA posts the full active-issue state each cycle as Prometheus
+	// When set, Srenix posts the full active-issue state each cycle as Prometheus
 	// alerts. Alertmanager handles dedup, grouping, silencing, and routing to
 	// all configured receivers (Slack, PagerDuty, Teams, email, …).
 	// The TTL for each posted alert is set to 2× ResyncPeriod + 1 minute buffer
-	// so alerts auto-resolve if CHA stops refreshing them.
+	// so alerts auto-resolve if Srenix stops refreshing them.
 	AlertmanagerURL string
 	// ClusterName is stamped as the `cluster` label on every Alertmanager alert.
 	// Defaults to "cluster" when empty.
 	ClusterName string
 
 	// ApprovalBaseURL is the external base URL of the approval-server
-	// (e.g. https://cha-approve.example.com). When set together with a
+	// (e.g. https://srenix-approve.example.com). When set together with a
 	// registered FixProposer and Signer, the watcher emits Apply Fix
 	// links pointing at <base>/approve?token=<JWT>. When empty, no
 	// approval URLs are emitted regardless of registered AI components.
@@ -108,7 +109,7 @@ type Config struct {
 	WriteDriftReports bool
 
 	// Ticketing wires an optional issue-tracker sink (OpenProject via MCP
-	// in OSS; Jira / ServiceNow in CHA-com). When Sink is nil the
+	// in OSS; Jira / ServiceNow in Srenix Enterprise). When Sink is nil the
 	// ticketing path is a no-op and the watcher behaves exactly as
 	// before. Ticketing runs after DriftReport reconcile so the resulting
 	// TicketRef can be persisted onto status.ticket.
@@ -117,7 +118,7 @@ type Config struct {
 	// CloudSource is the optional multi-provider cloud-API source
 	// (AWS / GCP / Azure). When nil the cloud-probe path is a complete
 	// no-op and the watcher behaves exactly as before. Set via
-	// `--ticketing-provider` style CLI factory in cmd/cha (look for
+	// `--ticketing-provider` style CLI factory in cmd/srenix (look for
 	// buildCloudSource).
 	CloudSource cloud.Source
 
@@ -127,6 +128,12 @@ type Config struct {
 	// Default 10 minutes when zero. Set via `--cloud-cadence` CLI flag
 	// or `cloud.cadence` Helm value.
 	CloudCadence time.Duration
+
+	// KubeClientset is the typed Kubernetes client used by the Layer-2
+	// investigator to stream pod logs (Environment.Logs). When nil the
+	// investigator still runs but cannot read container logs — it falls back
+	// to describe + events only. Set from cmd/srenix via snapshot.BuildKubeClientset.
+	KubeClientset kubernetes.Interface
 
 	// RunRemediation runs fixers after each diagnose cycle and re-diagnoses
 	// post-fix to report accurate state.
@@ -141,6 +148,22 @@ type Config struct {
 	// finding. Default false — operators opt in once they're comfortable
 	// the suppression doesn't hide real signal.
 	NoChangeSlackDigest bool
+
+	// ApprovalDwellDuration is how long a finding must continuously be
+	// present before the watcher attaches Approve/Deny buttons to its
+	// Slack message. During the dwell window the finding appears in Slack
+	// (for visibility) but without action buttons — operators see the
+	// issue without being asked to act until it's clear it won't self-resolve.
+	//
+	// Findings that clear before the dwell expires never generate an
+	// approval request, eliminating the "already resolved" Slack flood
+	// seen when many findings are transient. Self-resolved findings are
+	// reported normally via PostOnResolved.
+	//
+	// Zero disables the dwell gate: approval URLs attach immediately on
+	// the first cycle (legacy behaviour). Recommended: 5m for most
+	// clusters. Set via --approval-dwell or approval.dwellDuration Helm value.
+	ApprovalDwellDuration time.Duration
 
 	// PromTriggerURL is the Alertmanager base URL used by the M5 class-C
 	// trigger source. When set, the watcher spawns a goroutine that polls
@@ -157,7 +180,7 @@ type Config struct {
 	// PromTriggerAlertFilter, when non-empty, limits which alerts fire
 	// the trigger (case-insensitive alertname match). Empty = ANY firing
 	// alert triggers. Useful when the cluster has high-volume alerts
-	// (e.g. node_exporter scraping issues) that shouldn't churn CHA.
+	// (e.g. node_exporter scraping issues) that shouldn't churn Srenix.
 	PromTriggerAlertFilter []string
 
 	// WebhookListen is the listen address for the M6 class-E trigger
@@ -190,7 +213,7 @@ type Config struct {
 const defaultHealthListen = ":8081"
 
 // watchedGVRs is the set of resource types that trigger a diagnose cycle on change.
-// This mirrors the CaptureGVRs set used by `cha snapshot capture` plus Secrets.
+// This mirrors the CaptureGVRs set used by `srenix snapshot capture` plus Secrets.
 var watchedGVRs = []schema.GroupVersionResource{
 	snapshot.GVRPod,
 	snapshot.GVRNode,
@@ -231,9 +254,14 @@ var watchedGVRs = []schema.GroupVersionResource{
 
 // seenEntry tracks the last-known fingerprint and Slack-post timestamp for one subject.
 type seenEntry struct {
-	fp          string
-	lastPosted  time.Time
-	subject     string
+	fp         string
+	lastPosted time.Time
+	// firstSeen is the wall-clock time of the first cycle this subject appeared.
+	// Used by the approval-dwell gate: Approve/Deny URLs are withheld until
+	// now-firstSeen >= Config.ApprovalDwellDuration, so transient findings
+	// never produce approval requests.
+	firstSeen time.Time
+	subject   string
 	severity    string
 	message     string
 	remediation string
@@ -304,7 +332,7 @@ type Watcher struct {
 
 	// healthOnce + healthLn back the always-on health server. The
 	// server is started at most once per Watcher (StartHealthServer is
-	// idempotent: cmd/cha starts it BEFORE leader election so standby
+	// idempotent: cmd/srenix starts it BEFORE leader election so standby
 	// pods serve /healthz, and Run calls it again defensively for
 	// direct callers). healthLn holds the bound listener so tests can
 	// discover the ephemeral port. Guarded by healthMu.
@@ -372,7 +400,7 @@ func (w *Watcher) healthHandler() http.Handler {
 // probe target exists the moment this returns. It is idempotent;
 // only the first call binds. The server shuts down when ctx ends.
 //
-// REGRESSION GUARD (O11, production 1.26.0 upgrade incident): cmd/cha
+// REGRESSION GUARD (O11, production 1.26.0 upgrade incident): cmd/srenix
 // MUST call this BEFORE RunWithLeader. PR #186 originally started this
 // server inside Run — which only executes after the leader lease is
 // acquired — so standby pods served nothing, the liveness probe got
@@ -515,7 +543,7 @@ func (w *Watcher) Run(ctx context.Context) error {
 		}()
 	}
 
-	// Always-on health server. cmd/cha starts it BEFORE leader election
+	// Always-on health server. cmd/srenix starts it BEFORE leader election
 	// (so standby pods serve /healthz — see StartHealthServer's O11
 	// regression note); this call is an idempotent no-op there, and the
 	// real start for direct Run callers (leader election disabled).
@@ -694,8 +722,13 @@ func (w *Watcher) runCycle(ctx context.Context) {
 	// Same applies to diagnostic-side investigation/enrichment, which is
 	// re-applied to the post-fix diagnostics here.
 	probeResults = w.investigateProbeResults(ctx, probeResults)
+	// Investigate diagnostics every cycle (not only when remediation is on) so
+	// analyzer findings — CronJobStuck, FailingExternalSecrets, etc. — carry a
+	// root cause in the alert instead of a kubectl recipe. The rule-based
+	// investigator returns instantly for findings it has no rule for, so this
+	// only spends time on the handful that match.
+	diagnostics = w.investigateDiagnostics(ctx, diagnostics)
 	if w.cfg.RunRemediation && w.mut != nil {
-		diagnostics = w.investigateDiagnostics(ctx, diagnostics)
 		diagnostics = w.enrichDiagnostics(ctx, diagnostics)
 	}
 
@@ -753,8 +786,11 @@ func (w *Watcher) runCycle(ctx context.Context) {
 	toResolveDiags := make([]report.ResolvedDiag, 0, len(toResolve))
 	for _, e := range toResolve {
 		toResolveDiags = append(toResolveDiags, report.ResolvedDiag{
-			Subject: e.subject,
-			Message: e.message,
+			Subject:       e.subject,
+			Message:       e.message,
+			Severity:      report.NormalizeSeverity(e.severity, e.source),
+			Remediation:   e.remediation,
+			Investigation: e.investigation,
 		})
 	}
 
@@ -776,6 +812,13 @@ func (w *Watcher) runCycle(ctx context.Context) {
 			// unlike the diff's toResolve, which is gated on PostOnResolved.
 			if w.cfg.Ticketing.Sink != nil && len(clearedSubjects) > 0 {
 				report.RouteResolves(ctx, w.cfg.Ticketing, w.lv, mut, clearedSubjects, time.Now())
+			}
+
+			// Retire tickets now below the severity floor (e.g. after the
+			// floor was tightened to critical). Runs before Reconcile so the
+			// TicketRef on status.ticket is still readable. No-op once drained.
+			if w.cfg.Ticketing.Sink != nil {
+				report.RouteTicketCleanup(ctx, w.cfg.Ticketing, w.lv, mut, time.Now())
 			}
 
 			entries := report.AssembleEntries(probeResults, diagnostics, fixResults)
@@ -833,6 +876,30 @@ func (w *Watcher) runDiagnose(ctx context.Context) ([]probe.Result, []diagnose.D
 			diags = silence.Filter(diags, sil, now)
 			if dropped := before - len(diags); dropped > 0 {
 				log.Printf("watcher: silenced %d/%d diagnostics this cycle", dropped, before)
+			}
+			// Also apply the silence filter to probe results — without this,
+			// probe findings (Nodes, Ceph, PVCs, Endpoints) bypass Silence CRs
+			// entirely because silence.Filter only processes []diagnose.Diagnostic.
+			probeDropped := 0
+			for i := range results {
+				kept := results[i].Findings[:0:0]
+				for _, f := range results[i].Findings {
+					d := diagnose.Diagnostic{
+						Source:   results[i].Component.Component,
+						Subject:  "Probe/" + results[i].Component.Component + "/" + f.Component,
+						Severity: string(f.Severity),
+						Message:  f.Message,
+					}
+					if !silence.MatchesAny(sil, d, now) {
+						kept = append(kept, f)
+					} else {
+						probeDropped++
+					}
+				}
+				results[i].Findings = kept
+			}
+			if probeDropped > 0 {
+				log.Printf("watcher: silenced %d probe finding(s) this cycle", probeDropped)
 			}
 		} else {
 			log.Printf("watcher: silence list failed (filtering skipped this cycle): %v", err)
@@ -941,9 +1008,12 @@ func buildCurrentState(results []probe.Result, diags []diagnose.Diagnostic) map[
 // field additions automatically reach every destination.
 func seenEntryToDeltaDiag(e *seenEntry) report.DeltaDiag {
 	return report.DeltaDiag{
-		Subject:             e.subject,
-		Source:              e.source,
-		Severity:            e.severity,
+		Subject: e.subject,
+		Source:  e.source,
+		// Canonical model: severity is normalized HERE, once, so every delivery
+		// adapter (Slack, ticketing) sees a clean info|warning|critical value
+		// and never re-derives it.
+		Severity:            report.NormalizeSeverity(e.severity, e.source),
 		Message:             e.message,
 		Remediation:         e.remediation,
 		Investigation:       e.investigation,
@@ -958,15 +1028,48 @@ func seenEntryToDeltaDiag(e *seenEntry) report.DeltaDiag {
 	}
 }
 
+// firstSeenFor returns the firstSeen timestamp from w.seen for subject, or
+// zero if the subject has no history. Called by attachApprovalURLs, which
+// runs without w.mu held, so this acquires the lock itself.
+func (w *Watcher) firstSeenFor(subject string) time.Time {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if e, ok := w.seen[subject]; ok {
+		return e.firstSeen
+	}
+	return time.Time{}
+}
+
 // attachApprovalURLs walks state and fills approvalURL from the watcher's
 // pendingURLs map for any seenEntry whose ProposedActionID is set.
 // Called between buildCurrentState and the Slack/AM emission so that the
 // rendered DeltaDiag carries the URL.
+//
+// Also stamps firstSeen on each entry (carried forward from history, or set
+// to now for brand-new findings) and gates approval URL attachment behind
+// Config.ApprovalDwellDuration: findings younger than the dwell window appear
+// in Slack without Approve/Deny buttons so transient findings self-resolve
+// without ever entering the human approval queue.
 func (w *Watcher) attachApprovalURLs(state map[string]*seenEntry) {
+	now := w.nowOrDefault()
+	dwell := w.cfg.ApprovalDwellDuration
+
 	for _, e := range state {
+		// Propagate firstSeen: carry forward the original timestamp from
+		// w.seen, or stamp now for findings appearing for the first time.
+		if prev := w.firstSeenFor(e.subject); !prev.IsZero() {
+			e.firstSeen = prev
+		} else {
+			e.firstSeen = now
+		}
+
 		if e.proposedActionID != "" {
-			if url := w.approvalURLFor(e.proposedActionID); url != "" {
-				e.approvalURL = url
+			// Gate: only attach Approve/Deny once the finding has persisted
+			// through the dwell window. Zero dwell = attach immediately (legacy).
+			if dwell <= 0 || now.Sub(e.firstSeen) >= dwell {
+				if url := w.approvalURLFor(e.proposedActionID); url != "" {
+					e.approvalURL = url
+				}
 			}
 		}
 		w.attachSilenceLinks(e)
@@ -1140,9 +1243,24 @@ func (w *Watcher) loadSeenFromDriftReports(ctx context.Context) {
 				}
 			}
 		}
+		// Restore firstSeen from the DriftReport's creation timestamp so that
+		// the dwell gate correctly treats pre-existing findings as already past
+		// the dwell window after a pod restart.
+		firstSeen := time.Time{}
+		if metadata, _ := obj["metadata"].(map[string]interface{}); metadata != nil {
+			if ct, _ := metadata["creationTimestamp"].(string); ct != "" {
+				if t, err := time.Parse(time.RFC3339, ct); err == nil {
+					firstSeen = t
+				}
+			}
+		}
+		if firstSeen.IsZero() {
+			firstSeen = lastPosted // fall back so dwell is still considered passed
+		}
 		w.seen[subject] = &seenEntry{
 			fp:          fingerprint(subject, severity, message),
 			lastPosted:  lastPosted,
+			firstSeen:   firstSeen,
 			subject:     subject,
 			severity:    severity,
 			message:     message,

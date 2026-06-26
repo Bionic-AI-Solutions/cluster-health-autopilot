@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package fix
@@ -20,7 +20,7 @@ import (
 )
 
 // This file is the OWASP Kubernetes Top-10 posture-non-regression guard
-// (Task G2). It is the TESTED form of the invariant that CHA's autofixers
+// (Task G2). It is the TESTED form of the invariant that Srenix's autofixers
 // never weaken the cluster's security posture.
 //
 // For every fixer, it runs the fixer against a fixture that drives it to
@@ -33,7 +33,7 @@ import (
 //   - downgrades/removes a TLS secret reference                  (OWASP K08)
 //   - deletes a resource in a protected namespace               (re-asserted)
 //
-// Most CHA fixers only delete a stuck Pod/Job/failed-cert-request or patch a
+// Most Srenix fixers only delete a stuck Pod/Job/failed-cert-request or patch a
 // restartedAt annotation / a TLS secretName to the CORRECT secret, so these
 // assertions PASS today. The value is forward-looking: a FUTURE fixer cannot
 // introduce a posture regression without this test going red.

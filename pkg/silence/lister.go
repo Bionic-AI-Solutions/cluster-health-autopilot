@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package silence
@@ -8,7 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	chav1alpha1 "github.com/Bionic-AI-Solutions/cluster-health-autopilot/api/v1alpha1"
+	chav1alpha1 "github.com/srenix-ai/agentic-sre/api/v1alpha1"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -31,7 +31,7 @@ var silenceGVR = schema.GroupVersionResource{
 
 // K8sLister is the production Lister, backed by a dynamic client. It
 // lists Silences across ALL namespaces — operators may create them
-// wherever the affected workload lives, and CHA reads them all.
+// wherever the affected workload lives, and Srenix reads them all.
 //
 // Designed to be cheap: one paginated List per call, no informer or
 // cache. The watcher invokes it once per cycle (typically 10s+), so

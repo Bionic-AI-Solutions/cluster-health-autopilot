@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package aws
@@ -22,6 +22,12 @@ type DBInstance struct {
 	Endpoint           string    `json:"endpoint,omitempty"`
 	ARN                string    `json:"arn,omitempty"`
 	CreatedAt          time.Time `json:"createdAt,omitempty"`
+	// BackupRetentionPeriod is the number of days automated backups are
+	// retained. 0 = automated backups disabled.
+	BackupRetentionPeriod int `json:"backupRetentionPeriod,omitempty"`
+	// ReadReplicaSourceDBInstanceIdentifier is non-empty when this
+	// instance is a read replica; empty for primary instances.
+	ReadReplicaSourceDBInstanceIdentifier string `json:"readReplicaSourceDBInstanceIdentifier,omitempty"`
 }
 
 // Volume is the narrow projection of an EBS volume. State values:
@@ -92,7 +98,7 @@ type ALBTargetGroup struct {
 	// resolved via elbv2.DescribeLoadBalancers). Optional: empty when
 	// the TG is unattached or the LB could not be resolved (including
 	// snapshot files captured before this field existed) — the probe
-	// then omits the "(lb: ...)" message join key CHA-com's RCA
+	// then omits the "(lb: ...)" message join key Srenix Enterprise's RCA
 	// matchers parse.
 	LoadBalancerDNS string `json:"loadBalancerDNS,omitempty"`
 }
@@ -140,4 +146,16 @@ type VPCSubnet struct {
 	CIDRBlock                 string `json:"cidrBlock,omitempty"`
 	AvailabilityZone          string `json:"availabilityZone,omitempty"`
 	AvailableIPv4AddressCount int32  `json:"availableIPv4AddressCount"`
+}
+
+// EKSAddon is the narrow projection of an EKS managed add-on.
+// Status values: CREATING, ACTIVE, UPDATE_FAILED, DELETING, DELETE_FAILED,
+// DEGRADED, CREATE_FAILED.
+type EKSAddon struct {
+	ClusterName       string `json:"clusterName"`
+	AddonName         string `json:"addonName"`
+	Status            string `json:"status"`
+	AddonVersion      string `json:"addonVersion,omitempty"`      // currently installed version
+	MarketplaceVersion string `json:"marketplaceVersion,omitempty"` // latest available version
+	ARN               string `json:"arn,omitempty"`
 }

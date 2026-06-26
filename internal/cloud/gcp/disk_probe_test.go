@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package gcp
@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	pkggcp "github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/cloud/gcp"
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/probe"
+	pkggcp "github.com/srenix-ai/agentic-sre/pkg/cloud/gcp"
+	"github.com/srenix-ai/agentic-sre/pkg/probe"
 )
 
 func runDisks(disks ...pkggcp.PersistentDisk) probe.Result {

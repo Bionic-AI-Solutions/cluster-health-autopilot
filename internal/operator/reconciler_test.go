@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package operator
@@ -7,7 +7,7 @@ import (
 	"context"
 	"testing"
 
-	chav1alpha1 "github.com/Bionic-AI-Solutions/cluster-health-autopilot/api/v1alpha1"
+	chav1alpha1 "github.com/srenix-ai/agentic-sre/api/v1alpha1"
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -40,23 +40,23 @@ func newReconciler(t *testing.T, initObjects ...client.Object) (*Reconciler, cli
 	c := fake.NewClientBuilder().
 		WithScheme(s).
 		WithObjects(initObjects...).
-		WithStatusSubresource(&chav1alpha1.ClusterHealthAutopilot{}).
+		WithStatusSubresource(&chav1alpha1.AgenticSRE{}).
 		Build()
 	return &Reconciler{Client: c, Scheme: s}, c
 }
 
 // fullCR returns a CR with watcher + diagnose enabled and minimal
 // image config — the happy-path shape.
-func fullCR() *chav1alpha1.ClusterHealthAutopilot {
-	return &chav1alpha1.ClusterHealthAutopilot{
+func fullCR() *chav1alpha1.AgenticSRE {
+	return &chav1alpha1.AgenticSRE{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:       "bionic",
-			Namespace:  "cha-system",
+			Namespace:  "srenix-system",
 			Generation: 1,
 		},
-		Spec: chav1alpha1.ClusterHealthAutopilotSpec{
+		Spec: chav1alpha1.AgenticSRESpec{
 			Image: chav1alpha1.ImageSpec{
-				Repository: "docker4zerocool/cluster-health-autopilot",
+				Repository: "docker4zerocool/agentic-sre",
 				Tag:        "1.8.0",
 			},
 			Watcher:  &chav1alpha1.WatcherSpec{Enabled: true},
@@ -65,7 +65,7 @@ func fullCR() *chav1alpha1.ClusterHealthAutopilot {
 	}
 }
 
-func reconcileOnce(t *testing.T, r *Reconciler, cr *chav1alpha1.ClusterHealthAutopilot) {
+func reconcileOnce(t *testing.T, r *Reconciler, cr *chav1alpha1.AgenticSRE) {
 	t.Helper()
 	if _, err := r.Reconcile(context.Background(), ctrl.Request{
 		NamespacedName: types.NamespacedName{Name: cr.Name, Namespace: cr.Namespace},
@@ -84,7 +84,7 @@ func TestReconcile_CreatesAllSubresources(t *testing.T) {
 	// ServiceAccount.
 	var sa corev1.ServiceAccount
 	if err := c.Get(context.Background(),
-		types.NamespacedName{Namespace: "cha-system", Name: "bionic-sa"},
+		types.NamespacedName{Namespace: "srenix-system", Name: "bionic-sa"},
 		&sa); err != nil {
 		t.Errorf("SA not created: %v", err)
 	}
@@ -92,7 +92,7 @@ func TestReconcile_CreatesAllSubresources(t *testing.T) {
 	// Watcher Deployment.
 	var dep appsv1.Deployment
 	if err := c.Get(context.Background(),
-		types.NamespacedName{Namespace: "cha-system", Name: "bionic-watcher"},
+		types.NamespacedName{Namespace: "srenix-system", Name: "bionic-watcher"},
 		&dep); err != nil {
 		t.Errorf("watcher Deployment not created: %v", err)
 	}
@@ -100,7 +100,7 @@ func TestReconcile_CreatesAllSubresources(t *testing.T) {
 	// Diagnose CronJob.
 	var cj batchv1.CronJob
 	if err := c.Get(context.Background(),
-		types.NamespacedName{Namespace: "cha-system", Name: "bionic-diagnose"},
+		types.NamespacedName{Namespace: "srenix-system", Name: "bionic-diagnose"},
 		&cj); err != nil {
 		t.Errorf("diagnose CronJob not created: %v", err)
 	}
@@ -115,7 +115,7 @@ func TestReconcile_SetsControllerOwnerRefOnChildren(t *testing.T) {
 
 	var dep appsv1.Deployment
 	if err := c.Get(context.Background(),
-		types.NamespacedName{Namespace: "cha-system", Name: "bionic-watcher"},
+		types.NamespacedName{Namespace: "srenix-system", Name: "bionic-watcher"},
 		&dep); err != nil {
 		t.Fatalf("get deployment: %v", err)
 	}
@@ -123,8 +123,8 @@ func TestReconcile_SetsControllerOwnerRefOnChildren(t *testing.T) {
 		t.Fatalf("watcher Deployment has no owner refs")
 	}
 	owner := dep.OwnerReferences[0]
-	if owner.Kind != "ClusterHealthAutopilot" || owner.Name != "bionic" {
-		t.Errorf("owner=%+v; want Kind=ClusterHealthAutopilot Name=bionic", owner)
+	if owner.Kind != "AgenticSRE" || owner.Name != "bionic" {
+		t.Errorf("owner=%+v; want Kind=AgenticSRE Name=bionic", owner)
 	}
 	if owner.Controller == nil || !*owner.Controller {
 		t.Errorf("controller flag not set; got %+v", owner)
@@ -138,9 +138,9 @@ func TestReconcile_SetsReadyAndWatcherRunningConditions(t *testing.T) {
 	r, c := newReconciler(t, cr)
 	reconcileOnce(t, r, cr)
 
-	var got chav1alpha1.ClusterHealthAutopilot
+	var got chav1alpha1.AgenticSRE
 	if err := c.Get(context.Background(),
-		types.NamespacedName{Namespace: "cha-system", Name: "bionic"},
+		types.NamespacedName{Namespace: "srenix-system", Name: "bionic"},
 		&got); err != nil {
 		t.Fatalf("get cr: %v", err)
 	}
@@ -178,7 +178,7 @@ func TestReconcile_WatcherDeploymentAvailable_ReportsRunningTrue(t *testing.T) {
 	// Simulate the deployment going Ready.
 	var dep appsv1.Deployment
 	if err := c.Get(context.Background(),
-		types.NamespacedName{Namespace: "cha-system", Name: "bionic-watcher"},
+		types.NamespacedName{Namespace: "srenix-system", Name: "bionic-watcher"},
 		&dep); err != nil {
 		t.Fatalf("get deployment: %v", err)
 	}
@@ -190,9 +190,9 @@ func TestReconcile_WatcherDeploymentAvailable_ReportsRunningTrue(t *testing.T) {
 	// Reconcile again — status should flip.
 	reconcileOnce(t, r, cr)
 
-	var got chav1alpha1.ClusterHealthAutopilot
+	var got chav1alpha1.AgenticSRE
 	_ = c.Get(context.Background(),
-		types.NamespacedName{Namespace: "cha-system", Name: "bionic"},
+		types.NamespacedName{Namespace: "srenix-system", Name: "bionic"},
 		&got)
 	for _, c := range got.Status.Conditions {
 		if c.Type == chav1alpha1.ConditionWatcherRunning {
@@ -215,7 +215,7 @@ func TestReconcile_WatcherDisabled_DoesNotCreateDeployment(t *testing.T) {
 
 	var dep appsv1.Deployment
 	err := c.Get(context.Background(),
-		types.NamespacedName{Namespace: "cha-system", Name: "bionic-watcher"},
+		types.NamespacedName{Namespace: "srenix-system", Name: "bionic-watcher"},
 		&dep)
 	if !apierrors.IsNotFound(err) {
 		t.Errorf("expected NotFound for disabled watcher Deployment; got err=%v dep=%+v", err, dep)
@@ -228,9 +228,9 @@ func TestReconcile_WatcherDisabledAfterCreate_DeletesDeployment(t *testing.T) {
 	reconcileOnce(t, r, cr) // creates the Deployment.
 
 	// Flip to disabled and reconcile again.
-	var stored chav1alpha1.ClusterHealthAutopilot
+	var stored chav1alpha1.AgenticSRE
 	_ = c.Get(context.Background(),
-		types.NamespacedName{Namespace: "cha-system", Name: "bionic"},
+		types.NamespacedName{Namespace: "srenix-system", Name: "bionic"},
 		&stored)
 	stored.Spec.Watcher.Enabled = false
 	stored.Generation = 2
@@ -241,7 +241,7 @@ func TestReconcile_WatcherDisabledAfterCreate_DeletesDeployment(t *testing.T) {
 
 	var dep appsv1.Deployment
 	err := c.Get(context.Background(),
-		types.NamespacedName{Namespace: "cha-system", Name: "bionic-watcher"},
+		types.NamespacedName{Namespace: "srenix-system", Name: "bionic-watcher"},
 		&dep)
 	if !apierrors.IsNotFound(err) {
 		t.Errorf("watcher Deployment not deleted after disable; got err=%v dep=%+v", err, dep)
@@ -256,9 +256,9 @@ func TestReconcile_EmptyImageTag_SetsReadyFalse(t *testing.T) {
 	r, c := newReconciler(t, cr)
 	reconcileOnce(t, r, cr)
 
-	var got chav1alpha1.ClusterHealthAutopilot
+	var got chav1alpha1.AgenticSRE
 	_ = c.Get(context.Background(),
-		types.NamespacedName{Namespace: "cha-system", Name: "bionic"},
+		types.NamespacedName{Namespace: "srenix-system", Name: "bionic"},
 		&got)
 	for _, c := range got.Status.Conditions {
 		if c.Type == chav1alpha1.ConditionReady {
@@ -279,7 +279,7 @@ func TestReconcile_EmptyImageTag_SetsReadyFalse(t *testing.T) {
 func TestReconcile_CRNotFound_NoError(t *testing.T) {
 	r, _ := newReconciler(t)
 	if _, err := r.Reconcile(context.Background(), ctrl.Request{
-		NamespacedName: types.NamespacedName{Name: "missing", Namespace: "cha-system"},
+		NamespacedName: types.NamespacedName{Name: "missing", Namespace: "srenix-system"},
 	}); err != nil {
 		t.Errorf("post-delete reconcile should be silent; got: %v", err)
 	}
@@ -293,9 +293,9 @@ func TestReconcile_UpdatesExistingDeploymentSpec(t *testing.T) {
 	reconcileOnce(t, r, cr) // create.
 
 	// Change replicas in the CR and reconcile.
-	var stored chav1alpha1.ClusterHealthAutopilot
+	var stored chav1alpha1.AgenticSRE
 	_ = c.Get(context.Background(),
-		types.NamespacedName{Namespace: "cha-system", Name: "bionic"},
+		types.NamespacedName{Namespace: "srenix-system", Name: "bionic"},
 		&stored)
 	stored.Spec.Watcher.Replicas = 3
 	stored.Generation = 2
@@ -306,7 +306,7 @@ func TestReconcile_UpdatesExistingDeploymentSpec(t *testing.T) {
 
 	var dep appsv1.Deployment
 	if err := c.Get(context.Background(),
-		types.NamespacedName{Namespace: "cha-system", Name: "bionic-watcher"},
+		types.NamespacedName{Namespace: "srenix-system", Name: "bionic-watcher"},
 		&dep); err != nil {
 		t.Fatalf("get dep: %v", err)
 	}
@@ -325,7 +325,7 @@ func TestReconcile_RemediateEnabled_CreatesCronJob(t *testing.T) {
 
 	var cj batchv1.CronJob
 	if err := c.Get(context.Background(),
-		types.NamespacedName{Namespace: "cha-system", Name: "bionic-remediate"},
+		types.NamespacedName{Namespace: "srenix-system", Name: "bionic-remediate"},
 		&cj); err != nil {
 		t.Errorf("remediate CronJob not created: %v", err)
 	}
@@ -335,16 +335,16 @@ func TestReconcile_RemediateEnabled_CreatesCronJob(t *testing.T) {
 
 func TestReconcile_ExplicitServiceAccountName_UsedByDeployment(t *testing.T) {
 	cr := fullCR()
-	cr.Spec.ServiceAccountName = "shared-cha-sa"
+	cr.Spec.ServiceAccountName = "shared-srenix-sa"
 	r, c := newReconciler(t, cr)
 	reconcileOnce(t, r, cr)
 
 	var dep appsv1.Deployment
 	_ = c.Get(context.Background(),
-		types.NamespacedName{Namespace: "cha-system", Name: "bionic-watcher"},
+		types.NamespacedName{Namespace: "srenix-system", Name: "bionic-watcher"},
 		&dep)
-	if dep.Spec.Template.Spec.ServiceAccountName != "shared-cha-sa" {
-		t.Errorf("SA on watcher pod=%q want shared-cha-sa", dep.Spec.Template.Spec.ServiceAccountName)
+	if dep.Spec.Template.Spec.ServiceAccountName != "shared-srenix-sa" {
+		t.Errorf("SA on watcher pod=%q want shared-srenix-sa", dep.Spec.Template.Spec.ServiceAccountName)
 	}
 }
 
@@ -353,15 +353,15 @@ func TestReconcile_ExplicitServiceAccountName_UsedByDeployment(t *testing.T) {
 // owner-ref onto a pre-existing SA and garbage-collect it on CR delete.
 func TestReconcile_ExplicitServiceAccountName_NotCreatedByOperator(t *testing.T) {
 	cr := fullCR()
-	cr.Spec.ServiceAccountName = "shared-cha-sa"
+	cr.Spec.ServiceAccountName = "shared-srenix-sa"
 	r, c := newReconciler(t, cr)
 	reconcileOnce(t, r, cr)
 
 	var sa corev1.ServiceAccount
 	err := c.Get(context.Background(),
-		types.NamespacedName{Namespace: "cha-system", Name: "shared-cha-sa"},
+		types.NamespacedName{Namespace: "srenix-system", Name: "shared-srenix-sa"},
 		&sa)
 	if err == nil {
-		t.Fatalf("operator must not create the BYO SA %q (it belongs to the caller)", "shared-cha-sa")
+		t.Fatalf("operator must not create the BYO SA %q (it belongs to the caller)", "shared-srenix-sa")
 	}
 }

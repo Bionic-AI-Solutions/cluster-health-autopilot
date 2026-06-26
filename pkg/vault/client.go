@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 // Package vault provides a minimal Vault KV-v2 read client used by
@@ -11,7 +11,7 @@
 //
 // Why a hand-rolled HTTP client instead of the official hashicorp/vault SDK?
 // The SDK pulls in retryablehttp, hashicorp/go-cleanhttp, and the hashicorp
-// logger surface, which roughly doubles the cha binary size. The KV v2 read
+// logger surface, which roughly doubles the srenix binary size. The KV v2 read
 // endpoint we need is two URL templates and a token header — simple enough
 // that the dependency tax is not worth paying for v0.2+. If a future probe
 // needs broader Vault surface (write, list children, lease management),

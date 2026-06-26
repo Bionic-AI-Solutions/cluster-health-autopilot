@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package aws
@@ -10,11 +10,11 @@ import (
 	"os"
 	"path/filepath"
 
-	pkgaws "github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/cloud/aws"
+	pkgaws "github.com/srenix-ai/agentic-sre/pkg/cloud/aws"
 )
 
 // SnapshotClient replays cloud-resource state captured to disk by
-// `cha snapshot capture --include-cloud`. Read-only by construction
+// `srenix snapshot capture --include-cloud`. Read-only by construction
 // — there is no mutation API.
 //
 // Captured layout (one file per resource type):
@@ -129,6 +129,22 @@ func (c *SnapshotClient) ListS3BucketPAB(_ context.Context) ([]pkgaws.S3BucketPA
 // DescribeSubnets satisfies pkg/cloud/aws.Client.
 func (c *SnapshotClient) DescribeSubnets(_ context.Context) ([]pkgaws.VPCSubnet, error) {
 	return readJSON[pkgaws.VPCSubnet](c.dir, "vpc-subnets.json")
+}
+
+// ListEKSAddons returns addons for the named cluster from
+// eks-addons.json.
+func (c *SnapshotClient) ListEKSAddons(_ context.Context, clusterName string) ([]pkgaws.EKSAddon, error) {
+	all, err := readJSON[pkgaws.EKSAddon](c.dir, "eks-addons.json")
+	if err != nil {
+		return nil, err
+	}
+	out := make([]pkgaws.EKSAddon, 0, len(all))
+	for _, a := range all {
+		if a.ClusterName == clusterName {
+			out = append(out, a)
+		}
+	}
+	return out, nil
 }
 
 // readJSON is a small generic helper so additional Describe* methods

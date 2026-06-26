@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package probe
@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/snapshot"
+	"github.com/srenix-ai/agentic-sre/internal/snapshot"
 )
 
 // Postgres ports probe_postgres from cluster-health-report.sh:106-166.
@@ -61,40 +61,79 @@ func (Postgres) Run(ctx context.Context, src snapshot.Source) Result {
 		return r
 	}
 
-	// --- Spilo / Patroni fallback ---
-	pods, err := src.List(ctx, snapshot.GVRPod, "pg")
+	// --- Spilo / Patroni fallback (cluster-wide) ---
+	//
+	// List across all namespaces so deployments outside the legacy "pg"
+	// namespace are detected. Group by cluster-name label to support
+	// multiple Spilo clusters.
+	pods, err := src.List(ctx, snapshot.GVRPod, "")
 	if err == nil {
-		var primary *map[string]any
-		replicas := 0
+		type spiloCluster struct {
+			ns       string
+			name     string
+			primary  *map[string]any
+			replicas int
+		}
+		clusters := map[string]*spiloCluster{}
 		for i := range pods.Items {
 			obj := pods.Items[i].Object
 			labels := pods.Items[i].GetLabels()
-			if labels["application"] != "spilo" || labels["cluster-name"] != "pg" {
+			if labels["application"] != "spilo" {
 				continue
+			}
+			clusterName := labels["cluster-name"]
+			if clusterName == "" {
+				continue
+			}
+			ns := pods.Items[i].GetNamespace()
+			key := ns + "/" + clusterName
+			if clusters[key] == nil {
+				clusters[key] = &spiloCluster{ns: ns, name: clusterName}
 			}
 			switch labels["spilo-role"] {
 			case "master":
 				p := obj
-				primary = &p
+				clusters[key].primary = &p
 			case "replica":
-				replicas++
+				clusters[key].replicas++
 			}
 		}
-		if primary != nil {
-			phase, _, _ := getStringField(*primary, "status", "phase")
-			if phase != "Running" {
-				r.Component.Status = "CRITICAL"
-				r.Component.Detail = "Spilo primary pod status: " + phase
-				r.Findings = append(r.Findings, Finding{
-					Component:   "PostgreSQL",
-					Severity:    SeverityCritical,
-					Message:     fmt.Sprintf("Primary pod not running (status: %s)", phase),
-					Remediation: "Check events: `kubectl describe pod -n pg -l spilo-role=master`",
-				})
-				return r
+		if len(clusters) > 0 {
+			unhealthy := 0
+			var details []string
+			for _, cl := range clusters {
+				if cl.primary == nil {
+					unhealthy++
+					details = append(details, fmt.Sprintf("%s@%s NO PRIMARY", cl.name, cl.ns))
+					r.Findings = append(r.Findings, Finding{
+						Component:   fmt.Sprintf("PostgreSQL (%s/%s)", cl.ns, cl.name),
+						Severity:    SeverityCritical,
+						Message:     fmt.Sprintf("Spilo cluster %s/%s has no primary pod", cl.ns, cl.name),
+						Remediation: fmt.Sprintf("Check events: `kubectl describe pod -n %s -l spilo-role=master,cluster-name=%s`", cl.ns, cl.name),
+					})
+					continue
+				}
+				phase, _, _ := getStringField(*cl.primary, "status", "phase")
+				if phase != "Running" {
+					unhealthy++
+					details = append(details, fmt.Sprintf("%s@%s UNHEALTHY (primary=%s)", cl.name, cl.ns, phase))
+					r.Findings = append(r.Findings, Finding{
+						Component:   fmt.Sprintf("PostgreSQL (%s/%s)", cl.ns, cl.name),
+						Severity:    SeverityCritical,
+						Message:     fmt.Sprintf("Spilo primary not running (%s/%s, status: %s)", cl.ns, cl.name, phase),
+						Remediation: fmt.Sprintf("Check events: `kubectl describe pod -n %s -l spilo-role=master,cluster-name=%s`", cl.ns, cl.name),
+					})
+					continue
+				}
+				details = append(details, fmt.Sprintf("%s@%s OK (%d replica(s))", cl.name, cl.ns, cl.replicas))
 			}
-			r.Component.Status = "HEALTHY"
-			r.Component.Detail = fmt.Sprintf("Spilo primary operational, %d replica(s)", replicas)
+			if unhealthy == 0 {
+				r.Component.Status = "HEALTHY"
+				r.Component.Detail = fmt.Sprintf("%d Spilo cluster(s): %s", len(clusters), strings.Join(details, "; "))
+			} else {
+				r.Component.Status = "CRITICAL"
+				r.Component.Detail = fmt.Sprintf("%d/%d Spilo cluster(s) unhealthy: %s", unhealthy, len(clusters), strings.Join(details, "; "))
+			}
 			return r
 		}
 	}

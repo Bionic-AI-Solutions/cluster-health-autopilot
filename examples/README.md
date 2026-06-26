@@ -2,7 +2,7 @@
 
 ## `sample-cluster/`
 
-A hand-crafted JSON snapshot you can run `cha diagnose --snapshot` against without a Kubernetes cluster. Used as the README's "30-second demo" — install `cha`, point it at this directory, see the output.
+A hand-crafted JSON snapshot you can run `srenix diagnose --snapshot` against without a Kubernetes cluster. Used as the README's "30-second demo" — install `srenix`, point it at this directory, see the output.
 
 The fixture is intentionally small (~6 KB) and shaped like a realistic small-team cluster:
 
@@ -20,8 +20,8 @@ The fixture is intentionally small (~6 KB) and shaped like a realistic small-tea
 ### Running the demo
 
 ```sh
-$ cha diagnose --snapshot examples/sample-cluster
-Cluster Health Autopilot — diagnose (snapshot mode)
+$ srenix diagnose --snapshot examples/sample-cluster
+Agentic SRE — diagnose (snapshot mode)
 ============================================================
 
 • Ceph Storage: 🟢 HEALTHY
@@ -62,7 +62,7 @@ The three diagnostics demonstrate the two analyzers working in concert:
 ### JSON output
 
 ```sh
-cha diagnose --snapshot examples/sample-cluster --format json
+srenix diagnose --snapshot examples/sample-cluster --format json
 ```
 
 Same data as a structured object suitable for piping into a fleet console or a custom alerting integration. See [`json-output.md`](./json-output.md) *(coming soon)* for the schema.
@@ -77,11 +77,11 @@ These will land alongside their corresponding fixer ports.
 
 ## Notes on shape compatibility
 
-Every JSON file is the exact output of `kubectl get <resource> -o json` (a `kind: <Resource>List` document with an `items` array). The same shape is produced by `cha snapshot capture --out`, so a captured snapshot from a real cluster drops in here verbatim:
+Every JSON file is the exact output of `kubectl get <resource> -o json` (a `kind: <Resource>List` document with an `items` array). The same shape is produced by `srenix snapshot capture --out`, so a captured snapshot from a real cluster drops in here verbatim:
 
 ```sh
-cha snapshot capture --out my-cluster
-cha diagnose --snapshot my-cluster
+srenix snapshot capture --out my-cluster
+srenix diagnose --snapshot my-cluster
 ```
 
 This round-trip — capture → diagnose — is the headline product feature. No install, no RBAC, no write permissions, no external service. The only thing you give us is a snapshot file you already have permission to take.

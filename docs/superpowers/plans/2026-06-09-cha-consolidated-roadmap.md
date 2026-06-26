@@ -1,17 +1,17 @@
-# CHA Consolidated Roadmap
+# Srenix Consolidated Roadmap
 
 **Last updated:** 2026-06-11 (P4.2 roadmap reconciliation added)
 
 This document supersedes the per-phase plans for forward planning purposes —
-the per-phase docs (`2026-06-04-cha-phase-0-and-1.md` through
-`2026-06-09-cha-phase-3-master.md`) remain as historical records of what was
+the per-phase docs (`2026-06-04-srenix-phase-0-and-1.md` through
+`2026-06-09-srenix-phase-3-master.md`) remain as historical records of what was
 designed and shipped.
 
 ---
 
 ## ✅ Shipped (live on production cluster as of 2026-06-09)
 
-### OSS (`cluster-health-autopilot`) — running v1.22.2
+### OSS (`agentic-sre`) — running v1.22.2
 
 | Phase | What | Tag |
 |---|---|---|
@@ -29,7 +29,7 @@ designed and shipped.
 | Phase 3.E | `OOMKillRecurrence`, `PVOrphan`, `CronJobStuck` analyzers | v1.22.0 |
 | Phase 3.E fixes | `GVRPV` capture + `persistentvolumes` RBAC | v1.22.1, v1.22.2 |
 
-### CHA-com (`cha-com`) — running v1.18.0
+### Srenix Enterprise (`srenix-enterprise`) — running v1.18.0
 
 | Phase | What | Tag |
 |---|---|---|
@@ -38,13 +38,13 @@ designed and shipped.
 | Phase 2.B-H | Approve+remember class + confidence + LLM proposer + lease elector + Prometheus + attestation | v1.16.0 |
 | Phase 3.B | `Forge.MergePullRequest` + `AutoMergeGate` interface + concrete gate | v1.17.0 |
 | Phase 3.C | `TargetHistoryRetriever` + `<target_history>` prompt block | v1.18.0 |
-| Phase 3.F | `cha-com audit-bundle` subcommand | v1.18.0 |
+| Phase 3.F | `srenix-enterprise audit-bundle` subcommand | v1.18.0 |
 
 ### Live cluster smoke (2026-06-09)
 
 - HA aiwatch: 2 replicas, lease-elected leader, failover ~20s
-- `/metrics` + `/healthz` endpoints serving 8 `cha_*` metric families
-- Attestation: 64-byte Ed25519 priv mounted at `/etc/cha/attestation/`
+- `/metrics` + `/healthz` endpoints serving 8 `srenix_*` metric families
+- Attestation: 64-byte Ed25519 priv mounted at `/etc/srenix/attestation/`
 - DigestPinAttestation chart wiring honored by operator
 - CronJobStuck firing on `bionic-diagnose` / `bionic-remediate` /
   `kube-system/namespace-cleanup*` (never-succeeded) + suspended
@@ -64,7 +64,7 @@ nil → `DigestPinProposer.AutoMerge` is nil → auto-merge never fires.
 
 **What's needed:**
 
-- In `cmd/cha-com/digest_pin_wiring.go`, when `d.autoMerge == true`:
+- In `cmd/srenix-enterprise/digest_pin_wiring.go`, when `d.autoMerge == true`:
   - Look up the breaker (already constructed in autonomy wiring)
   - Look up the policies retriever (already constructed)
   - Look up the classHistory retriever (already constructed)
@@ -76,7 +76,7 @@ nil → `DigestPinProposer.AutoMerge` is nil → auto-merge never fires.
 **Tests:** 1 wiring test asserting the gate is constructed when the flag
 is on + all deps are present; nil otherwise.
 
-**Release:** `cha-com:1.19.0`.
+**Release:** `srenix-enterprise:1.19.0`.
 
 ---
 
@@ -97,18 +97,18 @@ These come from `docs/design/2026-05-trigger-expansion-roadmap.md`. **M1–M6 sh
 **RBAC philosophy carried through M1-M7:** each new GVR is gated by a
 Helm `watcher.gvrs.<kind>=true` value defaulting to true ONLY where the
 GVR is broadly safe (no enterprise-only CRDs). Each new probe gets a
-`CHA_PROBE_<NAME>=off` env-var opt-out, matching the analyzer pattern.
+`SRENIX_PROBE_<NAME>=off` env-var opt-out, matching the analyzer pattern.
 
 ---
 
 ## 🧭 Roadmap reconciliation (P4.2, 2026-06-11)
 
 Three roadmaps had been diverging:
-- **(a)** `CHA-com/docs/competitive/roadmap.md` — competitive-informed H1/H2/H3 strategy (Datadog connector, knowledge graph, public benchmark, FedRAMP pack, per-tenant RBAC, multi-account federation, etc.).
+- **(a)** `Srenix Enterprise/docs/competitive/roadmap.md` — competitive-informed H1/H2/H3 strategy (Datadog connector, knowledge graph, public benchmark, FedRAMP pack, per-tenant RBAC, multi-account federation, etc.).
 - **(b)** this engineering-only consolidated roadmap.
-- **(c)** the website roadmap — now **generated from CHANGELOGs**; left as-is (source of truth = the changelogs this repo + CHA-com ship).
+- **(c)** the website roadmap — now **generated from CHANGELOGs**; left as-is (source of truth = the changelogs this repo + Srenix Enterprise ship).
 
-**This doc (b) is now the single forward plan.** `CHA-com/docs/competitive/roadmap.md` (a) is to be marked **SUPERSEDED** with a pointer here (see "CHA-com doc action" note at the bottom of this section). Below, every competitive-roadmap H2/H3 item is dispositioned KEEP (with a milestone/quarter) or DROP (with reason). Items the in-flight remediation (Phase **P6**, 2026-06) is actively building are marked **IN PROGRESS** so they are not lost.
+**This doc (b) is now the single forward plan.** `Srenix Enterprise/docs/competitive/roadmap.md` (a) is to be marked **SUPERSEDED** with a pointer here (see "Srenix Enterprise doc action" note at the bottom of this section). Below, every competitive-roadmap H2/H3 item is dispositioned KEEP (with a milestone/quarter) or DROP (with reason). Items the in-flight remediation (Phase **P6**, 2026-06) is actively building are marked **IN PROGRESS** so they are not lost.
 
 ### Disposition of competitive-roadmap (a) items
 
@@ -118,7 +118,7 @@ Three roadmaps had been diverging:
 | Lightweight knowledge graph (H2) — in-memory K8s+cloud topology, no Neo4j | **KEEP** | Q4 2026; feeds LLM tiers richer context (compounds with cluster-knowledge RAG) |
 | Public benchmark (H2) — "MTTR with remediation" + "% incidents resolved without human page" | **KEEP** | Q3 2026 (strategic, in forward plan below) — sets eval terms in our favor |
 | FedRAMP / sovereign pack (H2) — SBOM, signed images, air-gap, no-egress proof | **KEEP, split** — the SBOM + cosign-signed-images slice is **IN PROGRESS (Phase P6)**; the full FedRAMP evidence package + SOC2 track is Q3/Q4 strategic |
-| Per-tenant RBAC (H3) — namespace-scoped CHA instances, tenant isolation | **KEEP** | Q4 2026+; prerequisite for multi-tenant SaaS (currently "not formally planned" below) |
+| Per-tenant RBAC (H3) — namespace-scoped Srenix instances, tenant isolation | **KEEP** | Q4 2026+; prerequisite for multi-tenant SaaS (currently "not formally planned" below) |
 | Multi-account / multi-subscription / multi-project cloud federation (H3) | **KEEP** | Q4 2026+ (cloud-probe v2); the single-account caveat is real but ICP-gated |
 | Multi-cluster federation (H3) — ArgoCD ApplicationSet + cross-cluster DriftReport hub | **KEEP as Federation MVP — IN PROGRESS (Phase P6)**; full hub aggregation Q4. Substrate ready (`pkg/rag.Entry.ClusterID`), see Parked §3.A |
 | Hosted playground / sandbox (H1) — kind + synthetic drift + LocalStack cloud sub-account | **KEEP as Hosted playground — IN PROGRESS (Phase P6)** |
@@ -130,7 +130,7 @@ Three roadmaps had been diverging:
 | Tighten security claims / "Security" top-nav page (H1) | **KEEP** — GTM/docs track, not engineering; folds into the SOC2/FedRAMP evidence narrative |
 | "Deliberately NOT do" items (RCA-accuracy benchmark vs CloudOpsBench, etc.) | **DROP (by design)** — unchanged; we do not chase Tracer's integrity-gate benchmark |
 
-> **CHA-com doc action (not edited in this OSS commit):** mark `CHA-com/docs/competitive/roadmap.md` as **SUPERSEDED**, add a header pointer to this consolidated roadmap, and note that forward planning now lives here while the competitive *analysis* (wedges, honest assessment) remains a historical strategy record.
+> **Srenix Enterprise doc action (not edited in this OSS commit):** mark `Srenix Enterprise/docs/competitive/roadmap.md` as **SUPERSEDED**, add a header pointer to this consolidated roadmap, and note that forward planning now lives here while the competitive *analysis* (wedges, honest assessment) remains a historical strategy record.
 
 ---
 
@@ -152,7 +152,7 @@ Honest list of what is actually open — verified against git/CHANGELOG/code on 
 - **Federation MVP** — cross-cluster DriftReport aggregation (competitive H3 first slice).
 
 ### Operator / packaging
-- **Phase 3.B production wiring** — construct `digestPinAutoMergeGate` at runtime (Outstanding §1 above; ~1h; cha-com:1.19.0).
+- **Phase 3.B production wiring** — construct `digestPinAutoMergeGate` at runtime (Outstanding §1 above; ~1h; srenix-enterprise:1.19.0).
 - **OLM / OperatorHub publish** — the OLM bundle + bundle-smoke shipped (Phase 1c); the public **OperatorHub.io submission** is not yet done.
 - **Trigger-expansion M7** — operator-mode leftovers → OSS v2.0.0.
 
@@ -182,7 +182,7 @@ the contract"). Carried forward — no UI work planned.
 
 ## 🌐 Out of code scope (product/GTM)
 
-Per `project_cha_gtm` memory:
+Per `project_srenix_gtm` memory:
 
 - Day 60: paid landing page
 - Days 14-90: anonymized run-log collection
@@ -195,8 +195,8 @@ No engineering work; product/marketing track.
 
 ## 🔮 Not formally planned
 
-- Multi-tenant CHA-com SaaS (one binary, N customer clusters)
-- Slack-native onboarding (slash commands to manage CHA from Slack)
-- Cloud-hosted CHA SaaS offering
+- Multi-tenant Srenix Enterprise SaaS (one binary, N customer clusters)
+- Slack-native onboarding (slash commands to manage Srenix from Slack)
+- Cloud-hosted Srenix SaaS offering
 
 These would each need their own master plan before execution.

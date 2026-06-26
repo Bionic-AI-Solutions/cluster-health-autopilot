@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package azure
@@ -8,9 +8,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/cloud"
-	pkgazure "github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/cloud/azure"
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/probe"
+	"github.com/srenix-ai/agentic-sre/pkg/cloud"
+	pkgazure "github.com/srenix-ai/agentic-sre/pkg/cloud/azure"
+	"github.com/srenix-ai/agentic-sre/pkg/probe"
 )
 
 // Disks reports drift on Azure Managed Disk resources:

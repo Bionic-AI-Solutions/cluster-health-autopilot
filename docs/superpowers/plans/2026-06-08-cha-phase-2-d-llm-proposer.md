@@ -2,7 +2,7 @@
 
 **Status:** active — starts 2026-06-08 in local-only mode (no `git push` until credit return).
 
-**Parent:** [2026-06-07-cha-phase-2-master.md](2026-06-07-cha-phase-2-master.md)
+**Parent:** [2026-06-07-srenix-phase-2-master.md](2026-06-07-srenix-phase-2-master.md)
 
 **Branch:** `phase2b/approve-remember-class` (stacking on the 2.B+2.C branch; will split into its own when the 2.B parts get pushed).
 
@@ -52,7 +52,7 @@ Phase 2.D: when no deterministic proposer matches, fall back to an LLM proposer 
 - [ ] Implement, pass
 
 ### 2.D.6 — Wire into `proposeFixes` as the final fallback
-- [ ] In `cmd/cha-com/ai_wiring.go::proposeFixes`: after FixProposer + DigestPin + VaultRunbook all return nil, AND the diagnostic has no ProposedPolicyYAML, invoke LLMProposer
+- [ ] In `cmd/srenix-enterprise/ai_wiring.go::proposeFixes`: after FixProposer + DigestPin + VaultRunbook all return nil, AND the diagnostic has no ProposedPolicyYAML, invoke LLMProposer
 - [ ] Build the URL minter + class URLs + autonomy hook the same way as FixProposer-derived actions
 - [ ] Failing test: a diagnostic that none of the deterministic proposers match gets an LLM proposal in the proposalRecord
 - [ ] Implement, pass
@@ -66,7 +66,7 @@ Phase 2.D: when no deterministic proposer matches, fall back to an LLM proposer 
 - [ ] Build-tag `integration`
 
 ### 2.D.9 — Local build + cluster verify
-- [ ] cha-com:1.15.2-dev1 image; CR patch; click an LLM-generated Approve URL on a real Slack post; verify action applied + recorded
+- [ ] srenix-enterprise:1.15.2-dev1 image; CR patch; click an LLM-generated Approve URL on a real Slack post; verify action applied + recorded
 
 ### 2.D.10 — Doc + CHANGELOG entry
 

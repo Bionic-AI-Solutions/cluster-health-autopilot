@@ -1,7 +1,7 @@
-# CHA Demo Guide
+# Srenix Demo Guide
 
 **Cluster:** test-cluster1 (ap-south-1, EKS)  
-**CHA version:** 0.9.2 (watcher with pre-fix Slack diff fix)  
+**Srenix version:** 0.9.2 (watcher with pre-fix Slack diff fix)  
 **Slack channel:** #aws-alerts
 
 ---
@@ -36,15 +36,15 @@ kubectl --context "$KUBE_CONTEXT" get nodes
 > which is the **local k3s cluster** on this machine — not the AWS cluster. Always set
 > `KUBE_CONTEXT` explicitly for the demo.
 
-### Step 2 — Verify CHA is running
+### Step 2 — Verify Srenix is running
 
 ```bash
-kubectl --context "$KUBE_CONTEXT" get pods -n cha
-# Expected: cha-watcher-... Running  (with --remedy flag)
+kubectl --context "$KUBE_CONTEXT" get pods -n srenix
+# Expected: srenix-watcher-... Running  (with --remedy flag)
 ```
 
 ### Step 3 — Open Slack #aws-alerts in browser
-Webhook is stored in Vault at `secret/t6-apps/cha/config` → `aws_slack_webhook`
+Webhook is stored in Vault at `secret/t6-apps/srenix/config` → `aws_slack_webhook`
 
 ### Step 4 — Make scripts executable (one-time)
 ```bash
@@ -97,7 +97,7 @@ KUBE_CONTEXT="$KUBE_CONTEXT" bash demo/fix-scripts/fix-failing-externalsecret.sh
 ### 4. Stuck CronJob Auto-Fix
 ```bash
 KUBE_CONTEXT="$KUBE_CONTEXT" bash demo/simulate/04-stuck-job-bad-secret.sh demo-app
-# CHA: detects frozen Job → deletes it → CronJob unblocks
+# Srenix: detects frozen Job → deletes it → CronJob unblocks
 ```
 
 ### 5. ImagePull Auth Failure
@@ -119,7 +119,7 @@ KUBE_CONTEXT="$KUBE_CONTEXT" bash demo/simulate/06-cleanup-all.sh demo-app
 ## Key Talking Points
 
 ### "Why not just use Prometheus/PagerDuty?"
-CHA doesn't alert on metrics thresholds — it reads Kubernetes object state and event text. It knows *which deployment* caused the failure, *which ExternalSecret* is broken, and *which Vault property* is missing. That context is in the Slack message, not in a generic alert that pages someone at 2am.
+Srenix doesn't alert on metrics thresholds — it reads Kubernetes object state and event text. It knows *which deployment* caused the failure, *which ExternalSecret* is broken, and *which Vault property* is missing. That context is in the Slack message, not in a generic alert that pages someone at 2am.
 
 ### "What makes it safe to auto-fix?"
 Four whitelisted fixers, all with explicit safety gates:
@@ -129,7 +129,7 @@ Four whitelisted fixers, all with explicit safety gates:
 - **StuckRSPods**: triggers a rollout restart — same as `kubectl rollout restart`. Never if the root cause is a missing Secret key.
 
 ### "What about false positives?"
-CHA uses fingerprint deduplication (`SHA-256(subject|severity|message)`) — a second pass with the same diagnostic won't re-post to Slack. On pod restart, DriftReports pre-populate the dedup state so there's no Slack flood after rollouts.
+Srenix uses fingerprint deduplication (`SHA-256(subject|severity|message)`) — a second pass with the same diagnostic won't re-post to Slack. On pod restart, DriftReports pre-populate the dedup state so there's no Slack flood after rollouts.
 
 ### "Does it need cluster-admin?"
 No. Two ClusterRoles:
@@ -185,10 +185,10 @@ demo/
 ├── CAPABILITIES.md                    ← full capabilities reference with sample output
 ├── run-demo.sh                        ← master demo script (scripted walkthrough)
 ├── simulate/
-│   ├── 01-stale-error-pods.sh         ← auto-fixed by CHA
+│   ├── 01-stale-error-pods.sh         ← auto-fixed by Srenix
 │   ├── 02-missing-secret-key.sh       ← reported; manual fix required
 │   ├── 03-failing-externalsecret.sh   ← reported; manual fix required
-│   ├── 04-stuck-job-bad-secret.sh     ← auto-fixed by CHA
+│   ├── 04-stuck-job-bad-secret.sh     ← auto-fixed by Srenix
 │   ├── 05-image-pull-auth-failure.sh  ← reported; manual fix required
 │   └── 06-cleanup-all.sh              ← reset cluster after demo
 └── fix-scripts/

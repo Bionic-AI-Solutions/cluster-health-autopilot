@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Copyright 2026 Cluster Health Autopilot contributors
+# Copyright 2026 Agentic SRE contributors
 # SPDX-License-Identifier: Apache-2.0
 #
 # Fixture tests for changelog-tag-check.sh — positive fixtures must

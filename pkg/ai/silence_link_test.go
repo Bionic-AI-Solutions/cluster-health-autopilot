@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package ai
@@ -18,7 +18,7 @@ func TestMintSilenceLinks_WellFormed(t *testing.T) {
 		ShortDur: 24 * time.Hour,
 		LongDur:  2160 * time.Hour, // 90d
 	}
-	links, err := MintSilenceLinks(priv, "kid-1", "https://cha-approve.example.com", req, now)
+	links, err := MintSilenceLinks(priv, "kid-1", "https://srenix-approve.example.com", req, now)
 	if err != nil {
 		t.Fatal(err)
 	}

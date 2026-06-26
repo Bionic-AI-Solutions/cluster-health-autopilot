@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package azure
@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	pkgazure "github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/cloud/azure"
+	pkgazure "github.com/srenix-ai/agentic-sre/pkg/cloud/azure"
 )
 
 // --- AppGatewayBackends ---
@@ -38,7 +38,7 @@ func TestAppGW_ZeroHealthy_Critical(t *testing.T) {
 	}
 }
 
-// CHA-com RCA join contract (ai/cloudcontext): the 0-healthy message
+// Srenix Enterprise RCA join contract (ai/cloudcontext): the 0-healthy message
 // carries a " (lb: <AppGW public hostname>)" suffix, falling back to
 // the AppGW name. See internal/cloud/contract_test.go.
 func TestAppGW_ZeroHealthyMessageCarriesHostnameJoinKey(t *testing.T) {
@@ -57,7 +57,7 @@ func TestAppGW_ZeroHealthyMessageCarriesHostnameJoinKey(t *testing.T) {
 }
 
 // No frontend hostname in the fetched config → fall back to the AppGW
-// name as the join value (per the CHA-com contract).
+// name as the join value (per the Srenix Enterprise contract).
 func TestAppGW_ZeroHealthyMessageFallsBackToGatewayName(t *testing.T) {
 	got := AppGatewayBackends{}.Run(context.Background(), &fakeSource{
 		azure: &fakeAzure{subscription: "s", appgw: []pkgazure.AppGatewayBackend{
@@ -147,7 +147,7 @@ func TestAzureCert_NearExpiry_Warning(t *testing.T) {
 	}
 }
 
-// CHA-com RCA join contract (ai/cloudcontext): cert findings carry a
+// Srenix Enterprise RCA join contract (ai/cloudcontext): cert findings carry a
 // " (domains: <d1>,<d2>)" suffix when SANs/CN are known. See
 // internal/cloud/contract_test.go.
 func TestAzureCert_NotIssuedMessageCarriesDomainsJoinKey(t *testing.T) {

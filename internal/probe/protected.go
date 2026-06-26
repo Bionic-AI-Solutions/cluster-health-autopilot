@@ -1,9 +1,9 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package probe
 
-import "github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/ai"
+import "github.com/srenix-ai/agentic-sre/pkg/ai"
 
 // probeProtectedNamespaces mirrors the canonical no-touch list in
 // internal/fix/protected.go. Kept in sync by convention; consolidation
@@ -26,7 +26,7 @@ var probeProtectedNamespaces = map[string]struct{}{
 
 // IsProtectedNamespace reports whether the given namespace contains
 // platform-critical workloads — the compiled-in floor above plus any
-// operator-appended extras (CHA_PROTECTED_NAMESPACES_EXTRA, shared via
+// operator-appended extras (SRENIX_PROTECTED_NAMESPACES_EXTRA, shared via
 // pkg/ai with the fixer guard and the AI-action validator). Used by
 // probes to escalate severity: a namespace important enough to be
 // no-touch on the act side is important enough to be always-critical

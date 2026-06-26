@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package fix
@@ -6,7 +6,7 @@ package fix
 import (
 	"testing"
 
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/ai"
+	"github.com/srenix-ai/agentic-sre/pkg/ai"
 )
 
 // fixerFloor pins the compiled-in no-touch floor consumed by every
@@ -40,7 +40,7 @@ func TestIsProtectedNamespace_Floor(t *testing.T) {
 
 // TestIsProtectedNamespace_ExtensionVisibleToFixerGuard — the fixer
 // guard honors the same append-only extension the AI validator reads
-// (CHA_PROTECTED_NAMESPACES_EXTRA / ai.SetExtraProtectedNamespaces),
+// (SRENIX_PROTECTED_NAMESPACES_EXTRA / ai.SetExtraProtectedNamespaces),
 // so one knob protects a namespace on BOTH act-side surfaces.
 func TestIsProtectedNamespace_ExtensionVisibleToFixerGuard(t *testing.T) {
 	ai.SetExtraProtectedNamespaces("prod-payments")

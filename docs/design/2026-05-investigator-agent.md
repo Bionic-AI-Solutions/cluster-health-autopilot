@@ -4,7 +4,7 @@
 
 Status: **✅ Shipped** in OSS v1.5.0 (PR #55). The investigator interface, harness, 6-tool action space (DNS / HTTP / TLS / `kubectl describe` / `kubectl logs` / `kubectl events`), safety guardrails (prompt-injection scrubbing, hard deadline, token budget, RBAC narrowing, `pkg/ai/redact` Kubernetes-Event scrubber), and watcher-post-probe wiring are all live. Helm config surface (`ai.investigator.*`) ships with the chart; audit trail events emit under `ai.investigation.*`.
 
-Live in cluster as of v1.5.2; T0 Enricher / T1 Fix Proposer / T2 Planner / T3 Vault Runbook shipped subsequently in CHA-com v1.1.0–v1.4.0 and verified end-to-end on 2026-05-27.
+Live in cluster as of v1.5.2; T0 Enricher / T1 Fix Proposer / T2 Planner / T3 Vault Runbook shipped subsequently in Srenix Enterprise v1.1.0–v1.4.0 and verified end-to-end on 2026-05-27.
 
 Original design (pre-implementation) preserved below for context.
 
@@ -12,11 +12,11 @@ Original design (pre-implementation) preserved below for context.
 
 Status (original): **Draft / pre-implementation**
 Tracked: planned for v1.5 or later
-Sibling of: T0 Enricher, T1 Fix Proposer (CHA-com)
+Sibling of: T0 Enricher, T1 Fix Proposer (Srenix Enterprise)
 
 ## Problem
 
-CHA's probes produce one bit of information per cycle: pass or fail, with a
+Srenix's probes produce one bit of information per cycle: pass or fail, with a
 short error string. When a probe fails — say `https://comfy.baisoln.com:
 context deadline exceeded` — the operator gets enough to know *something*
 broke but not enough to triage. They have to manually run `dig`, `curl -v`,
@@ -106,7 +106,7 @@ tool given prior observations; the harness enforces the budget.
 | Sensitive data in narrative | Pre-output scrubber (existing audit-trail scrubber: base64≥40, hex≥32) |
 | Cost runaway | Per-cluster `investigations/hour` rate limit + token bucket; soft-fail to "no investigation attached" on exceedence |
 
-## How it composes with existing CHA tiers
+## How it composes with existing Srenix tiers
 
 ```
                       ┌──────────────────────────────────────┐
@@ -126,7 +126,7 @@ tool given prior observations; the harness enforces the budget.
                                      │
                        ┌─────────────▼─────────────┐
    Existing T0+       │  Enricher / FixProposer    │
-                       │  (mutation tier from CHA-com)│
+                       │  (mutation tier from Srenix Enterprise)│
                        └────────────────────────────┘
 ```
 
@@ -147,7 +147,7 @@ would also:
   for every conceivable shell command)
 - Be impossible to soft-fail safely
 
-The closed action enum is the wedge that lets CHA ship this and a customer
+The closed action enum is the wedge that lets Srenix ship this and a customer
 trust it. Same pattern the existing T1/T2 already use for mutation.
 
 ## Open questions

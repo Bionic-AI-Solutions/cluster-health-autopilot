@@ -1,10 +1,10 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package operator
 
 import (
-	chav1alpha1 "github.com/Bionic-AI-Solutions/cluster-health-autopilot/api/v1alpha1"
+	chav1alpha1 "github.com/srenix-ai/agentic-sre/api/v1alpha1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -33,22 +33,22 @@ import (
 // ReaderClusterRoleName is the cluster-scoped, shared reader role's
 // name. Single role per cluster regardless of how many CRs exist —
 // every binding points here.
-const ReaderClusterRoleName = "cha-operator-watcher-reader"
+const ReaderClusterRoleName = "srenix-operator-watcher-reader"
 
 // ManagedByCRLabel + ManagedByCRNamespaceLabel mark the per-CR
 // ClusterRoleBinding so the finalizer can find it without depending
 // on a fragile name pattern. Also a defense-in-depth signal: the
 // operator only ever deletes RBAC objects it labeled itself.
 const (
-	ManagedByCRLabel          = "cha.bionicaisolutions.com/managed-by-cr"
-	ManagedByCRNamespaceLabel = "cha.bionicaisolutions.com/cr-namespace"
+	ManagedByCRLabel          = "srenix.ai/managed-by-cr"
+	ManagedByCRNamespaceLabel = "srenix.ai/cr-namespace"
 )
 
 // ReaderClusterRoleBindingName returns the per-CR binding name. The
 // `<ns>-<name>` shape keeps the name globally unique across CRs in
 // any namespace and trivially derivable for the finalizer.
-func ReaderClusterRoleBindingName(cr *chav1alpha1.ClusterHealthAutopilot) string {
-	return "cha-operator-watcher-" + cr.Namespace + "-" + cr.Name
+func ReaderClusterRoleBindingName(cr *chav1alpha1.AgenticSRE) string {
+	return "srenix-operator-watcher-" + cr.Namespace + "-" + cr.Name
 }
 
 // BuildReaderClusterRole returns the shared cluster-scoped reader
@@ -62,8 +62,8 @@ func BuildReaderClusterRole() *rbacv1.ClusterRole {
 		ObjectMeta: metav1.ObjectMeta{
 			Name: ReaderClusterRoleName,
 			Labels: map[string]string{
-				"app.kubernetes.io/managed-by": "cha-operator",
-				"app.kubernetes.io/name":       "cluster-health-autopilot",
+				"app.kubernetes.io/managed-by": "srenix-operator",
+				"app.kubernetes.io/name":       "agentic-sre",
 				"app.kubernetes.io/component":  "reader",
 			},
 		},
@@ -75,13 +75,13 @@ func BuildReaderClusterRole() *rbacv1.ClusterRole {
 // the CR's ServiceAccount to the shared reader ClusterRole. The
 // binding labels carry the back-pointer the finalizer uses to find
 // + delete this binding when the CR is GC'd.
-func BuildReaderClusterRoleBinding(cr *chav1alpha1.ClusterHealthAutopilot) *rbacv1.ClusterRoleBinding {
+func BuildReaderClusterRoleBinding(cr *chav1alpha1.AgenticSRE) *rbacv1.ClusterRoleBinding {
 	return &rbacv1.ClusterRoleBinding{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: ReaderClusterRoleBindingName(cr),
 			Labels: map[string]string{
-				"app.kubernetes.io/managed-by": "cha-operator",
-				"app.kubernetes.io/name":       "cluster-health-autopilot",
+				"app.kubernetes.io/managed-by": "srenix-operator",
+				"app.kubernetes.io/name":       "agentic-sre",
 				"app.kubernetes.io/component":  "reader",
 				ManagedByCRLabel:               cr.Name,
 				ManagedByCRNamespaceLabel:      cr.Namespace,
@@ -120,6 +120,14 @@ func readerPolicyRules() []rbacv1.PolicyRule {
 			APIGroups: []string{""},
 			Resources: []string{"pods", "nodes", "persistentvolumeclaims", "persistentvolumes", "events", "namespaces", "services", "endpoints", "resourcequotas"},
 			Verbs:     []string{"get", "list", "watch"},
+		},
+		// pods/log — Layer-2 investigator reads container logs (current +
+		// --previous) to identify crash root causes. Subresource → own rule,
+		// "get" only. Kept in parity with the chart's clusterrole-reader.yaml.
+		{
+			APIGroups: []string{""},
+			Resources: []string{"pods/log"},
+			Verbs:     []string{"get"},
 		},
 		// DisruptionDrift (P1.2, v1.26.0) — PDB blocked-evictions signal.
 		// resourcequotas (saturated-quota signal) rides the core rule
@@ -247,7 +255,7 @@ func readerPolicyRules() []rbacv1.PolicyRule {
 			Resources: []string{"backups"},
 			Verbs:     []string{"get", "list", "watch"},
 		},
-		// CHA's own CRDs.
+		// Srenix's own CRDs.
 		//
 		// driftreports + resolutionrecords need full lifecycle verbs
 		// because the watcher both creates new instances each cycle
@@ -265,7 +273,7 @@ func readerPolicyRules() []rbacv1.PolicyRule {
 		// status.active / matchCount / lastMatchAt each cycle, so it
 		// gets update+patch on silences/status below.
 		{
-			APIGroups: []string{"cha.bionicaisolutions.com"},
+			APIGroups: []string{"srenix.ai"},
 			Resources: []string{"driftreports", "resolutionrecords"},
 			Verbs:     []string{"get", "list", "watch", "create", "update", "patch", "delete"},
 		},
@@ -277,12 +285,12 @@ func readerPolicyRules() []rbacv1.PolicyRule {
 			// driftreports/status" each cycle even after #139 fix
 			// added the parent driftreports verbs (v1.12.2 closes the
 			// status-subresource gap that v1.12.1 missed).
-			APIGroups: []string{"cha.bionicaisolutions.com"},
+			APIGroups: []string{"srenix.ai"},
 			Resources: []string{"driftreports/status", "resolutionrecords/status"},
 			Verbs:     []string{"update", "patch"},
 		},
 		{
-			APIGroups: []string{"cha.bionicaisolutions.com"},
+			APIGroups: []string{"srenix.ai"},
 			Resources: []string{"silences"},
 			Verbs:     []string{"get", "list", "watch"},
 		},
@@ -292,7 +300,7 @@ func readerPolicyRules() []rbacv1.PolicyRule {
 			// pkg/silence/status.go). Spec stays read-only above —
 			// status is the watcher's observation, spec is the SRE's
 			// intent. Mirrors the chart's clusterrole-silence.yaml.
-			APIGroups: []string{"cha.bionicaisolutions.com"},
+			APIGroups: []string{"srenix.ai"},
 			Resources: []string{"silences/status"},
 			Verbs:     []string{"update", "patch"},
 		},

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Manual fix: Missing Secret key
-# CHA reports this but cannot fix it — requires Vault + ESO update
+# Srenix reports this but cannot fix it — requires Vault + ESO update
 #
 # Usage: ./fix-missing-secret-key.sh <namespace> <secret-name> <key> <value>
 # Example: ./fix-missing-secret-key.sh demo-app database-credentials DB_PASSWORD 'mysecretpw'
@@ -62,7 +62,7 @@ $KUBECTL get secret "${SECRET_NAME}" -n "${NAMESPACE}" -o jsonpath='{.data}' 2>/
   $KUBECTL get secret "${SECRET_NAME}" -n "${NAMESPACE}" --no-headers
 
 echo ""
-echo "==> Done. CHA watcher will detect the recovery and post ✅ Resolved to Slack."
+echo "==> Done. Srenix watcher will detect the recovery and post ✅ Resolved to Slack."
 echo ""
 echo "NOTE: In production, the correct fix is:"
 echo "  1. Add the key to Vault:  vault kv patch secret/t6-apps/<app>/config ${KEY}=<value>"

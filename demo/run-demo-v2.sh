@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# CHA Comprehensive Demo — v2
+# Srenix Comprehensive Demo — v2
 #
 # A staged walkthrough that builds from zero to full autopilot on a live AWS EKS cluster.
 # Each section pauses for narration. Press ENTER to advance.
@@ -9,7 +9,7 @@
 #   bash demo/run-demo-v2.sh
 #
 # What this script does (and undoes at cleanup):
-#   - Progressively upgrades the CHA Helm release through 4 modes
+#   - Progressively upgrades the Srenix Helm release through 4 modes
 #   - Injects synthetic failures into the demo-app namespace
 #   - Removes all injected resources and restores original Helm values on exit
 
@@ -18,14 +18,14 @@ set -euo pipefail
 KUBECTL="kubectl${KUBE_CONTEXT:+ --context ${KUBE_CONTEXT}}"
 HELM="helm${KUBE_CONTEXT:+ --kube-context ${KUBE_CONTEXT}}"
 NAMESPACE="demo-app"
-RELEASE="cha-remote"
-CHA_NS="cha"
-DIAGNOSE_CJ="${RELEASE}-cluster-health-autopilot-diagnose"
-REMEDIATE_CJ="${RELEASE}-cluster-health-autopilot-remediate"
-WATCHER_DEPLOY="${RELEASE}-cluster-health-autopilot-watcher"
+RELEASE="srenix-remote"
+SRENIX_NS="srenix"
+DIAGNOSE_CJ="${RELEASE}-agentic-sre-diagnose"
+REMEDIATE_CJ="${RELEASE}-agentic-sre-remediate"
+WATCHER_DEPLOY="${RELEASE}-agentic-sre-watcher"
 DEMO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(dirname "${DEMO_DIR}")"
-SNAPSHOT_DIR="/tmp/cha-demo-snapshot"
+SNAPSHOT_DIR="/tmp/srenix-demo-snapshot"
 
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
 BLUE='\033[0;34m'; CYAN='\033[0;36m'; BOLD='\033[1m'; NC='\033[0m'
@@ -37,7 +37,7 @@ warn()    { echo -e "  ${YELLOW}⚠${NC}  $*"; }
 pause()   { echo ""; echo -e "${YELLOW}[PAUSE]${NC} $1"; echo -e "${YELLOW}Press ENTER to continue...${NC}"; read -r; }
 
 # ─── Cleanup trap — restores original Helm values on exit ─────────────────────
-ORIG_VALUES_FILE="/tmp/cha-demo-orig-values.yaml"
+ORIG_VALUES_FILE="/tmp/srenix-demo-orig-values.yaml"
 cleanup() {
   echo ""
   echo -e "${BOLD}Running cleanup...${NC}"
@@ -46,8 +46,8 @@ cleanup() {
   $KUBECTL delete namespace "${NAMESPACE}" --ignore-not-found 2>/dev/null || true
   if [[ -f "${ORIG_VALUES_FILE}" ]]; then
     echo "Restoring original Helm values..."
-    $HELM upgrade "${RELEASE}" "${REPO_DIR}/charts/cluster-health-autopilot" \
-      -n "${CHA_NS}" -f "${ORIG_VALUES_FILE}" --wait --timeout=120s 2>/dev/null || true
+    $HELM upgrade "${RELEASE}" "${REPO_DIR}/charts/agentic-sre" \
+      -n "${SRENIX_NS}" -f "${ORIG_VALUES_FILE}" --wait --timeout=120s 2>/dev/null || true
     rm -f "${ORIG_VALUES_FILE}"
   fi
   rm -rf "${SNAPSHOT_DIR}"
@@ -58,36 +58,36 @@ trap cleanup EXIT
 # ─── Helper: helm upgrade one step, wait for watcher rollout ──────────────────
 helm_upgrade() {
   local extra_args=("$@")
-  $HELM upgrade "${RELEASE}" "${REPO_DIR}/charts/cluster-health-autopilot" \
-    -n "${CHA_NS}" --reuse-values "${extra_args[@]}" --wait --timeout=120s
+  $HELM upgrade "${RELEASE}" "${REPO_DIR}/charts/agentic-sre" \
+    -n "${SRENIX_NS}" --reuse-values "${extra_args[@]}" --wait --timeout=120s
 }
 
 # ─── Helper: trigger an ad-hoc diagnose job and tail it ───────────────────────
 run_diagnose_now() {
-  local job="cha-demo-diag-$(date +%s | tail -c 5)"
-  $KUBECTL create job --from=cronjob/"${DIAGNOSE_CJ}" "${job}" -n "${CHA_NS}" 2>/dev/null || {
+  local job="srenix-demo-diag-$(date +%s | tail -c 5)"
+  $KUBECTL create job --from=cronjob/"${DIAGNOSE_CJ}" "${job}" -n "${SRENIX_NS}" 2>/dev/null || {
     warn "diagnose CronJob '${DIAGNOSE_CJ}' not found — skipping"
     return 0
   }
   echo "  Waiting for job/${job} to complete..."
-  $KUBECTL wait --for=condition=complete job/"${job}" -n "${CHA_NS}" --timeout=120s 2>/dev/null || true
-  $KUBECTL logs -n "${CHA_NS}" "job/${job}" 2>/dev/null || true
+  $KUBECTL wait --for=condition=complete job/"${job}" -n "${SRENIX_NS}" --timeout=120s 2>/dev/null || true
+  $KUBECTL logs -n "${SRENIX_NS}" "job/${job}" 2>/dev/null || true
 }
 
 # ─── Helper: trigger an ad-hoc remediate job and tail it ──────────────────────
 run_remediate_now() {
-  local job="cha-demo-rem-$(date +%s | tail -c 5)"
-  $KUBECTL create job --from=cronjob/"${REMEDIATE_CJ}" "${job}" -n "${CHA_NS}" 2>/dev/null || {
+  local job="srenix-demo-rem-$(date +%s | tail -c 5)"
+  $KUBECTL create job --from=cronjob/"${REMEDIATE_CJ}" "${job}" -n "${SRENIX_NS}" 2>/dev/null || {
     echo "  (remediate CronJob not enabled yet — skipping)"
     return 0
   }
   echo "  Waiting for job/${job} to complete..."
-  $KUBECTL wait --for=condition=complete job/"${job}" -n "${CHA_NS}" --timeout=120s 2>/dev/null || true
-  $KUBECTL logs -n "${CHA_NS}" "job/${job}" 2>/dev/null || true
+  $KUBECTL wait --for=condition=complete job/"${job}" -n "${SRENIX_NS}" --timeout=120s 2>/dev/null || true
+  $KUBECTL logs -n "${SRENIX_NS}" "job/${job}" 2>/dev/null || true
 }
 
 # ═══════════════════════════════════════════════════════════════════════════════
-header "CHA Demo v2 — Pre-flight"
+header "Srenix Demo v2 — Pre-flight"
 # ═══════════════════════════════════════════════════════════════════════════════
 
 section "1/3 — Cluster"
@@ -96,21 +96,21 @@ $KUBECTL cluster-info 2>/dev/null | head -2
 echo ""
 $KUBECTL get nodes --no-headers 2>/dev/null | awk '{printf "  %-40s %s\n", $1, $2}'
 
-section "2/3 — CHA Helm release"
-$HELM status "${RELEASE}" -n "${CHA_NS}" 2>/dev/null | grep -E "NAME|CHART|APP VERSION|STATUS|REVISION"
+section "2/3 — Srenix Helm release"
+$HELM status "${RELEASE}" -n "${SRENIX_NS}" 2>/dev/null | grep -E "NAME|CHART|APP VERSION|STATUS|REVISION"
 echo ""
 info "Saving current values for restore-on-exit..."
-$HELM get values "${RELEASE}" -n "${CHA_NS}" -o yaml > "${ORIG_VALUES_FILE}" 2>/dev/null
+$HELM get values "${RELEASE}" -n "${SRENIX_NS}" -o yaml > "${ORIG_VALUES_FILE}" 2>/dev/null
 
 section "3/3 — Slack webhook"
-WEBHOOK=$($KUBECTL get secret cha-slack -n "${CHA_NS}" \
+WEBHOOK=$($KUBECTL get secret srenix-slack -n "${SRENIX_NS}" \
   -o jsonpath='{.data.WEBHOOK_URL}' 2>/dev/null | base64 -d 2>/dev/null)
 if [[ -z "${WEBHOOK}" ]]; then
-  warn "cha-slack secret not found — Slack posts will not appear"
+  warn "srenix-slack secret not found — Slack posts will not appear"
 else
   RESP=$(curl -s -o /dev/null -w "%{http_code}" -X POST "${WEBHOOK}" \
     -H 'Content-Type: application/json' \
-    -d '{"text":"🚀 CHA Demo v2 starting — watch this channel for alerts"}' 2>/dev/null)
+    -d '{"text":"🚀 Srenix Demo v2 starting — watch this channel for alerts"}' 2>/dev/null)
   [[ "${RESP}" == "200" ]] && info "Slack webhook verified (200 OK) — check #aws-alerts" \
                             || warn "Slack returned HTTP ${RESP}"
 fi
@@ -118,12 +118,12 @@ fi
 pause "Pre-flight done. Open Slack #aws-alerts. Ready to start?"
 
 # ═══════════════════════════════════════════════════════════════════════════════
-header "Section 1 — Cluster Setup & CHA State"
+header "Section 1 — Cluster Setup & Srenix State"
 # ═══════════════════════════════════════════════════════════════════════════════
 
 cat <<'EOF'
 
-  CHA is installed via Helm on this AWS EKS cluster. Current state:
+  Srenix is installed via Helm on this AWS EKS cluster. Current state:
 
   ┌─────────────────────────────────────────────────────┐
   │  diagnose CronJob      → read-only probes daily      │
@@ -142,7 +142,7 @@ $KUBECTL get driftreports -A --no-headers 2>/dev/null | \
   echo "  (none — cluster is clean)"
 
 section "Active watcher pod"
-$KUBECTL get pods -n "${CHA_NS}" --no-headers 2>/dev/null | grep watcher || echo "  (not running)"
+$KUBECTL get pods -n "${SRENIX_NS}" --no-headers 2>/dev/null | grep watcher || echo "  (not running)"
 
 pause "Section 1 done. Ready for zero-trust offline snapshot mode?"
 
@@ -152,7 +152,7 @@ header "Section 2 — Zero-Trust: Offline Snapshot Mode"
 
 cat <<'EOF'
 
-  KEY POINT: CHA can diagnose any cluster with NO live access.
+  KEY POINT: Srenix can diagnose any cluster with NO live access.
   Capture YAML once, run anywhere — air-gapped, laptop, CI pipeline.
 
   Captures only: pods, nodes, PVCs, events, deployments, replicasets,
@@ -175,14 +175,14 @@ done
 echo ""
 info "Snapshot written. No live cluster access used beyond this point."
 
-section "Step B — Running cha diagnose --snapshot (zero trust)"
+section "Step B — Running srenix diagnose --snapshot (zero trust)"
 echo ""
 cd "${REPO_DIR}"
-go build -o /tmp/cha-demo-bin ./cmd/cha 2>/dev/null
-/tmp/cha-demo-bin diagnose --snapshot "${SNAPSHOT_DIR}" 2>/dev/null || true
+go build -o /tmp/srenix-demo-bin ./cmd/srenix 2>/dev/null
+/tmp/srenix-demo-bin diagnose --snapshot "${SNAPSHOT_DIR}" 2>/dev/null || true
 echo ""
 
-section "Analyzer catalog — what CHA looks for"
+section "Analyzer catalog — what Srenix looks for"
 cat <<'EOF'
   7 Analyzers (read-only, never mutate):
   ┌─────────────────────────────────┬────────────────────────────────────────────────────┐
@@ -242,7 +242,7 @@ cat <<'EOF'
   SCENARIO: Pods in Failed phase with restartPolicy=Never left behind after
   a failed init, batch job, or debug session. No controller will restart them.
 
-  CHA fixer: StaleErrorPods
+  Srenix fixer: StaleErrorPods
   Safety gate: pod phase=Failed AND no owner that would restart it.
 
   In DRY-RUN mode: reports "would delete" but does NOT delete.
@@ -270,7 +270,7 @@ header "Section 5 — Multiple Failures (dry-run remediation report)"
 cat <<'EOF'
 
   Now we inject the full set of failure types:
-  AUTO-FIXABLE (CHA will act when live):
+  AUTO-FIXABLE (Srenix will act when live):
     • Stale failed pods          → StaleErrorPods fixer
     • Stuck CronJob/Job          → StuckJobsWithBadSecretRef fixer
   REPORTED ONLY (human action required):
@@ -325,17 +325,17 @@ helm_upgrade \
   --set remediation.enabled=false
 
 section "Watcher rollout"
-$KUBECTL rollout status deploy/"${WATCHER_DEPLOY}" -n "${CHA_NS}" --timeout=90s 2>/dev/null
+$KUBECTL rollout status deploy/"${WATCHER_DEPLOY}" -n "${SRENIX_NS}" --timeout=90s 2>/dev/null
 echo ""
-$KUBECTL get pods -n "${CHA_NS}" --no-headers 2>/dev/null | grep watcher
+$KUBECTL get pods -n "${SRENIX_NS}" --no-headers 2>/dev/null | grep watcher
 
 echo ""
 info "Clearing any leftover DriftReports so the watcher starts with an empty seen-map..."
 $KUBECTL delete driftreports --all 2>/dev/null || true
 echo ""
 echo -e "  ${BOLD}Restarting watcher to trigger first-post of all active issues...${NC}"
-$KUBECTL rollout restart deploy/"${WATCHER_DEPLOY}" -n "${CHA_NS}" 2>/dev/null
-$KUBECTL rollout status deploy/"${WATCHER_DEPLOY}" -n "${CHA_NS}" --timeout=90s 2>/dev/null
+$KUBECTL rollout restart deploy/"${WATCHER_DEPLOY}" -n "${SRENIX_NS}" 2>/dev/null
+$KUBECTL rollout status deploy/"${WATCHER_DEPLOY}" -n "${SRENIX_NS}" --timeout=90s 2>/dev/null
 
 pause "Watch Slack — first Slack message with all active issues (🔔 Active Issues). Ready for live remediation?"
 
@@ -348,7 +348,7 @@ cat <<'EOF'
   AUTOPILOT MODE: watcher detects → fixers run → re-diagnose → Slack diff posted.
   The Slack message shows:
     🔴 Active Issues    — what was wrong before fix
-    🔧 Fixes Applied    — what CHA deleted/patched
+    🔧 Fixes Applied    — what Srenix deleted/patched
     ✅ Resolved (next cycle) — what is now clean
 
   Only whitelisted fixers run. Everything else stays reported-only.
@@ -361,7 +361,7 @@ helm_upgrade \
   --set "watcher.remedy.enabled=true" \
   --set "watcher.remedy.dryRun=false"
 
-$KUBECTL rollout status deploy/"${WATCHER_DEPLOY}" -n "${CHA_NS}" --timeout=90s 2>/dev/null
+$KUBECTL rollout status deploy/"${WATCHER_DEPLOY}" -n "${SRENIX_NS}" --timeout=90s 2>/dev/null
 
 echo ""
 info "Watcher now running in autopilot mode."
@@ -411,7 +411,7 @@ PODEOF
 info "Pod ${POD_NAME} created — exits immediately with code 1 → Failed"
 echo ""
 info "Watch the watcher log:"
-echo "    $KUBECTL logs -n ${CHA_NS} deploy/${WATCHER_DEPLOY} -f --tail=5"
+echo "    $KUBECTL logs -n ${SRENIX_NS} deploy/${WATCHER_DEPLOY} -f --tail=5"
 echo ""
 info "Watch Slack — you should see the alert + fix within ~30 seconds."
 
@@ -423,12 +423,12 @@ header "Section 9 — Non-Auto-Fixable Issues + Manual Fix Scripts"
 
 cat <<'EOF'
 
-  Three issues remain that CHA reports but cannot safely auto-fix:
+  Three issues remain that Srenix reports but cannot safely auto-fix:
     A. Missing Secret key (DB_PASSWORD)   → fix-missing-secret-key.sh
     B. Failing ExternalSecret             → fix-failing-externalsecret.sh
     C. ImagePull auth failure             → fix-image-pull-secret.sh
 
-  Each fix script simulates the operator action. After each fix, CHA's watcher
+  Each fix script simulates the operator action. After each fix, Srenix's watcher
   detects the recovery and posts ✅ Resolved to Slack within ~20s.
 
 EOF
@@ -436,8 +436,8 @@ EOF
 # ── Fix A: Missing Secret key ──────────────────────────────────────────────────
 section "Fix A — Missing Secret key (DB_PASSWORD)"
 echo ""
-echo -e "  ${BOLD}Why CHA doesn't auto-fix this:${NC}"
-echo "  In production: secrets come from Vault via ESO. CHA never writes secret values."
+echo -e "  ${BOLD}Why Srenix doesn't auto-fix this:${NC}"
+echo "  In production: secrets come from Vault via ESO. Srenix never writes secret values."
 echo "  The correct fix is: add the key to Vault → ESO auto-syncs → pod restarts."
 echo "  This script simulates the Vault+ESO outcome by patching the Secret directly."
 echo ""
@@ -454,8 +454,8 @@ pause "Press ENTER to continue to Fix B..."
 # ── Fix B: Failing ExternalSecret ─────────────────────────────────────────────
 section "Fix B — Failing ExternalSecret (broken Vault path)"
 echo ""
-echo -e "  ${BOLD}Why CHA doesn't auto-fix this:${NC}"
-echo "  The Vault path/property in the ESO spec is wrong. CHA can't rewrite the spec"
+echo -e "  ${BOLD}Why Srenix doesn't auto-fix this:${NC}"
+echo "  The Vault path/property in the ESO spec is wrong. Srenix can't rewrite the spec"
 echo "  without knowing the correct Vault path — that requires human/operator knowledge."
 echo "  Fix: correct the Vault data or fix the ESO spec, then force re-sync."
 echo ""
@@ -473,9 +473,9 @@ pause "Press ENTER to continue to Fix C..."
 # ── Fix C: ImagePull auth failure ─────────────────────────────────────────────
 section "Fix C — ImagePull auth failure"
 echo ""
-echo -e "  ${BOLD}Why CHA doesn't auto-fix this:${NC}"
+echo -e "  ${BOLD}Why Srenix doesn't auto-fix this:${NC}"
 echo "  Creating a registry credential requires knowing the username + password."
-echo "  CHA has read-only RBAC on secrets — it never writes auth material."
+echo "  Srenix has read-only RBAC on secrets — it never writes auth material."
 echo "  Fix: create the imagePullSecret and patch the pod or ServiceAccount."
 echo ""
 pause "Press ENTER to run fix-image-pull-secret.sh..."
@@ -510,12 +510,12 @@ $KUBECTL delete driftreports --all 2>/dev/null || true
 $KUBECTL delete namespace "${NAMESPACE}" --ignore-not-found 2>/dev/null || true
 
 section "Restoring original Helm values"
-$HELM upgrade "${RELEASE}" "${REPO_DIR}/charts/cluster-health-autopilot" \
-  -n "${CHA_NS}" -f "${ORIG_VALUES_FILE}" --wait --timeout=120s
+$HELM upgrade "${RELEASE}" "${REPO_DIR}/charts/agentic-sre" \
+  -n "${SRENIX_NS}" -f "${ORIG_VALUES_FILE}" --wait --timeout=120s
 rm -f "${ORIG_VALUES_FILE}"
 
 section "Final cluster state"
-$KUBECTL get pods -n "${CHA_NS}" --no-headers 2>/dev/null
+$KUBECTL get pods -n "${SRENIX_NS}" --no-headers 2>/dev/null
 echo ""
 $KUBECTL get driftreports -A --no-headers 2>/dev/null | wc -l | \
   xargs -I{} echo "  {} DriftReports active"
@@ -535,7 +535,7 @@ echo "  ✓ Full autopilot: detect → fix → Slack diff in <30s"
 echo "  ✓ Live new-issue detection within debounce window"
 echo "  ✓ Manual fix scripts close the loop on non-auto-fixable issues"
 echo ""
-echo "  Repo: https://github.com/Bionic-AI-Solutions/cluster-health-autopilot"
+echo "  Repo: https://github.com/srenix-ai/agentic-sre"
 echo "  Branch: demo/v2-comprehensive"
 echo ""
 

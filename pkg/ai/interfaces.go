@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package ai
@@ -6,7 +6,7 @@ package ai
 import (
 	"context"
 
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/diagnose"
+	"github.com/srenix-ai/agentic-sre/pkg/diagnose"
 )
 
 // Enricher takes a Diagnostic and produces a narrative addendum.
@@ -17,7 +17,7 @@ import (
 //     honor ctx cancellation.
 //   - SHOULD return (zero, nil) when the LLM call fails or the response
 //     fails validation — deterministic diagnostics must continue to flow.
-//   - Implementations live in the paid CHA-com binary. OSS users have
+//   - Implementations live in the paid Srenix Enterprise binary. OSS users have
 //     no Enricher registered; the watcher skips enrichment when none.
 type Enricher interface {
 	Name() string
@@ -35,7 +35,7 @@ type Enricher interface {
 //     namespace targets).
 //   - SHOULD return (nil, nil) when the diagnostic has no matching
 //     whitelisted fixer or the LLM produced no usable proposal.
-//   - Implementations live in the paid CHA-com binary.
+//   - Implementations live in the paid Srenix Enterprise binary.
 type FixProposer interface {
 	Name() string
 	Propose(ctx context.Context, d diagnose.Diagnostic) (*AIProposedAction, error)
@@ -50,7 +50,7 @@ type MultiStepPlanner interface {
 }
 
 // VaultRunbookProposer generates a Vault recovery runbook (T3). The
-// runbook is human-executed under dual approval; CHA never executes
+// runbook is human-executed under dual approval; Srenix never executes
 // Vault writes itself.
 type VaultRunbookProposer interface {
 	Name() string
@@ -127,7 +127,7 @@ type AuditEvent struct {
 	Tier Tier `json:"tier"`
 
 	// Actor identifies who initiated the event. For LLM calls and
-	// proposals this is "cha-com"; for approvals it is the OIDC identity.
+	// proposals this is "srenix-enterprise"; for approvals it is the OIDC identity.
 	Actor string `json:"actor"`
 
 	// Subject is the Diagnostic.Subject the event relates to. Empty

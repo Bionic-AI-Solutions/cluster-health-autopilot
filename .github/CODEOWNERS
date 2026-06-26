@@ -1,4 +1,4 @@
-# Cluster Health Autopilot — Code Owners
+# Agentic SRE — Code Owners
 #
 # Each line is a file pattern followed by one or more owners.
 # Owners are auto-requested as reviewers on PRs touching matching files.
@@ -9,7 +9,7 @@
 *                          @salilkadam
 
 # Future per-area examples (uncomment + edit when adding teammates):
-# /cmd/cha/                 @salilkadam @<engineer>
+# /cmd/srenix/                 @salilkadam @<engineer>
 # /internal/snapshot/       @salilkadam
 # /internal/probe/          @salilkadam
 # /internal/diagnose/       @salilkadam

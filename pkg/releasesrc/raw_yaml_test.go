@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package releasesrc_test
@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/releasesrc"
+	"github.com/srenix-ai/agentic-sre/pkg/releasesrc"
 )
 
 // Real-shape WordPress Deployment that storethesoup-k8s ships.

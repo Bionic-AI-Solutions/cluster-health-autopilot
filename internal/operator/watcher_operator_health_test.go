@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package operator
@@ -6,7 +6,7 @@ package operator
 import (
 	"testing"
 
-	chav1alpha1 "github.com/Bionic-AI-Solutions/cluster-health-autopilot/api/v1alpha1"
+	chav1alpha1 "github.com/srenix-ai/agentic-sre/api/v1alpha1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -14,9 +14,9 @@ import (
 // health port + liveness/readiness probes the Helm chart ships, so the
 // two deployment paths stay at parity (P1.9 follow-up).
 func TestBuildWatcherDeployment_HealthPortAndProbes(t *testing.T) {
-	cr := &chav1alpha1.ClusterHealthAutopilot{
-		ObjectMeta: metav1.ObjectMeta{Name: "cha", Namespace: "ops"},
-		Spec: chav1alpha1.ClusterHealthAutopilotSpec{
+	cr := &chav1alpha1.AgenticSRE{
+		ObjectMeta: metav1.ObjectMeta{Name: "srenix", Namespace: "ops"},
+		Spec: chav1alpha1.AgenticSRESpec{
 			Watcher: &chav1alpha1.WatcherSpec{Enabled: true},
 		},
 	}

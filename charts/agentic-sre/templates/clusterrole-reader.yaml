@@ -1,0 +1,168 @@
+{{- if .Values.rbac.create }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "srenix.readerName" . }}
+  labels:
+    {{- include "srenix.labels" . | nindent 4 }}
+rules:
+  # Core probe surface.
+  # watch verb added for srenix watch --live (watcher mode); get+list retained for CronJob mode.
+  # resourcequotas (P1.2, v1.26.0) — DisruptionDrift's saturated-quota
+  # signal; the analyzer was silently dead without the grant.
+  # services + endpoints (P1.3, v1.26.0) — TraefikRoutes lists Services
+  # cluster-wide and KongRoutes falls back to v1.Endpoints; the operator
+  # builder gained these in v1.10.3 (DNS-chain drift) but the chart never
+  # did, so chart installs emitted PROBE_FAILED noise every cycle on
+  # k3s/Traefik. TestReaderRBAC_ChartOperatorParity now pins the two
+  # surfaces together.
+  - apiGroups: [""]
+    resources: ["pods", "nodes", "persistentvolumeclaims", "persistentvolumes", "events", "namespaces", "services", "endpoints", "resourcequotas"]
+    verbs: ["get", "list", "watch"]
+  # pods/log — the Layer-2 investigator reads container logs (current +
+  # --previous) to identify crash root causes instead of punting a kubectl
+  # command to the operator. Subresource, so it needs its own rule; "get" only.
+  - apiGroups: [""]
+    resources: ["pods/log"]
+    verbs: ["get"]
+  # DisruptionDrift (P1.2, v1.26.0) — PDB blocked-evictions signal.
+  # Without this grant the analyzer's poddisruptionbudgets list returns
+  # `forbidden` and its soft-fail made it return nothing every cycle.
+  - apiGroups: ["policy"]
+    resources: ["poddisruptionbudgets"]
+    verbs: ["get", "list", "watch"]
+  # Secret reads — the ProactiveSecretKeyCheck analyzer needs to inspect the
+  # SET OF KEY NAMES on each Secret (not their byte values) to detect
+  # references-to-missing-keys before pods crash. The analyzer code only
+  # iterates `for k := range secret.Data` and never reads the values.
+  # See internal/diagnose/proactive_secret_key_check.go for the privacy
+  # contract; remove this rule if the analyzer is ever disabled.
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "list", "watch"]
+  # Workload owner-chain walkers (Pod → ReplicaSet → Deployment / Job / CronJob).
+  - apiGroups: ["apps"]
+    resources: ["deployments", "replicasets", "statefulsets", "daemonsets"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["batch"]
+    resources: ["jobs", "cronjobs"]
+    verbs: ["get", "list", "watch"]
+  # Schema-drift analyzers.
+  - apiGroups: ["external-secrets.io"]
+    resources: ["externalsecrets"]
+    verbs: ["get", "list", "watch"]
+  # SecretStore + ClusterSecretStore reads — VaultPathMissing filters
+  # ExternalSecrets to those whose backing store is Vault-backed, so the
+  # analyzer doesn't query Vault for AWS / GCP / etc. paths and emit
+  # phantom "missing path" diagnostics. Without these reads the filter
+  # degrades to v0.2 behavior (treat every ESO as Vault-backed).
+  - apiGroups: ["external-secrets.io"]
+    resources: ["secretstores", "clustersecretstores"]
+    verbs: ["get", "list", "watch"]
+  # cert-manager resources — CertExpiry analyzer (certificates) and
+  # StuckCertificateRequests fixer (certificaterequests + orders).
+  # Rules are no-ops when cert-manager is not installed.
+  - apiGroups: ["cert-manager.io"]
+    resources: ["certificates", "certificaterequests"]
+    verbs: ["get", "list", "watch"]
+  # GitOpsDrift analyzer (v1.7) — Argo CD + Flux Kustomization +
+  # Flux HelmRelease. Rules are no-ops when the CRDs aren't
+  # installed; the analyzer also gates on the env var
+  # SRENIX_ANALYZER_GITOPS_DRIFT=off via analyzers.gitopsDrift.enabled.
+  - apiGroups: ["argoproj.io"]
+    resources: ["applications"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["kustomize.toolkit.fluxcd.io"]
+    resources: ["kustomizations"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["helm.toolkit.fluxcd.io"]
+    resources: ["helmreleases"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["acme.cert-manager.io"]
+    resources: ["orders", "challenges"]
+    verbs: ["get", "list", "watch"]
+  # RBACDrift analyzer (v1.7) — walks Role/RoleBinding/ClusterRole/
+  # ClusterRoleBinding/ServiceAccount cluster-wide to detect wildcard
+  # verbs in user-defined roles + unbound ServiceAccounts mounted by
+  # Pods. Read-only by design.
+  - apiGroups: ["rbac.authorization.k8s.io"]
+    resources: ["roles", "rolebindings", "clusterroles", "clusterrolebindings"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["serviceaccounts"]
+    verbs: ["get", "list", "watch"]
+  # ConfigDrift analyzer (v1.8) — reads CustomResourceDefinitions
+  # cluster-wide to detect multi-storedVersions (storage migration
+  # pending). Deployments + ReplicaSets + Pods are already covered
+  # above for the rollout-stuck + checksum/config drift signals.
+  - apiGroups: ["apiextensions.k8s.io"]
+    resources: ["customresourcedefinitions"]
+    verbs: ["get", "list", "watch"]
+  # CapacityDrift analyzer (v1.8) — reads HorizontalPodAutoscalers
+  # (autoscaling/v2) cluster-wide for pinned-max / pinned-min /
+  # AbleToScale=False / FailedGetResourceMetric signals. PVC
+  # expansion-stuck reads PVCs (already covered above by the core
+  # probe rule).
+  - apiGroups: ["autoscaling"]
+    resources: ["horizontalpodautoscalers"]
+    verbs: ["get", "list", "watch"]
+  # IngressCoverage analyzer — reads all Ingress rules cluster-wide to detect
+  # hostnames that have no endpoint probe. SecurityDrift (v1.8) also reads
+  # NetworkPolicies for the netpol-coverage-gap signal. Read-only; no write
+  # verbs needed.
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["ingresses", "networkpolicies"]
+    verbs: ["get", "list", "watch"]
+  # M2 (v1.23.0+) — KongRoutes uses the canonical EndpointSlice API
+  # to verify backend readiness (preferred over the legacy v1.Endpoints
+  # path; falls back to v1.Endpoints when slices are unavailable). Same
+  # get/list/watch only; the probe never mutates.
+  - apiGroups: ["discovery.k8s.io"]
+    resources: ["endpointslices"]
+    verbs: ["get", "list", "watch"]
+  # v1.24.0 — KEDA ScaledObject. Watched by the M1-follow-up
+  # inform-loop addition; rule is a no-op when KEDA isn't installed.
+  - apiGroups: ["keda.sh"]
+    resources: ["scaledobjects"]
+    verbs: ["get", "list", "watch"]
+  # Database-operator probe (CloudNativePG).
+  - apiGroups: ["postgresql.cnpg.io"]
+    resources: ["clusters"]
+    verbs: ["get", "list", "watch"]
+  # Storage-cluster probe (rook-ceph).
+  - apiGroups: ["ceph.rook.io"]
+    resources: ["cephclusters"]
+    verbs: ["get", "list", "watch"]
+  # M2 probe-class CRD reads (v1.8). Each probe auto-skips when its
+  # CRD is absent, so these rules are no-ops on clusters that don't
+  # run Kong / Velero. (autoscaling HPA + argoproj.io Application
+  # reads are already granted above for CapacityDrift + GitOpsDrift.)
+  - apiGroups: ["configuration.konghq.com"]
+    resources: ["kongplugins"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["velero.io"]
+    resources: ["backups"]
+    verbs: ["get", "list", "watch"]
+{{- if .Values.driftReport.enabled }}
+  # DriftReport CRD — read existing CRs to compute the upsert diff each tick.
+  # watch added so watcher mode can seed its seen-map on startup.
+  - apiGroups: ["srenix.ai"]
+    resources: ["driftreports"]
+    verbs: ["get", "list", "watch"]
+{{- end }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "srenix.readerName" . }}
+  labels:
+    {{- include "srenix.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "srenix.readerName" . }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "srenix.serviceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+{{- end }}

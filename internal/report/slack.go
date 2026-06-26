@@ -1,7 +1,7 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
-// Package report renders cha output for transport to external destinations.
+// Package report renders srenix output for transport to external destinations.
 //
 // Slack is the first (and currently only) destination. Other webhooks
 // (Teams, PagerDuty, custom) can be added by mirroring the FormatSlack →
@@ -19,10 +19,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/diagnose"
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/fix"
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/probe"
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/ai"
+	"github.com/srenix-ai/agentic-sre/internal/diagnose"
+	"github.com/srenix-ai/agentic-sre/internal/fix"
+	"github.com/srenix-ai/agentic-sre/internal/probe"
+	"github.com/srenix-ai/agentic-sre/pkg/ai"
 )
 
 // SilenceLinkConfig carries everything FormatSlack needs to mint the
@@ -41,7 +41,7 @@ type SilenceLinkConfig struct {
 	// KeyID is stamped into the JWT header (kid). Default "default-1".
 	KeyID string
 	// BaseURL is the approval-server external base
-	// (e.g. https://cha-approve.example.com). Required (empty disables).
+	// (e.g. https://srenix-approve.example.com). Required (empty disables).
 	BaseURL string
 	// ShortDur is the subject-scoped "Silence 24h" window. Default 24h.
 	ShortDur time.Duration
@@ -83,7 +83,7 @@ type SlackAttachment struct {
 // FormatSlack renders the diagnose + remediate results into the same
 // section structure the in-cluster bash health-report.sh produces:
 //
-//	*Cluster Health Autopilot* — <date> <time> UTC
+//	*Agentic SRE* — <date> <time> UTC
 //	<emoji> *Overall Status: <state>*
 //
 //	*Component Status:*
@@ -117,7 +117,7 @@ func FormatSlackWithSilence(results []probe.Result, diagnostics []diagnose.Diagn
 	now := time.Now().UTC()
 
 	var b strings.Builder
-	fmt.Fprintf(&b, "*Cluster Health Autopilot* — %s\n", now.Format("2006-01-02 15:04:05 UTC"))
+	fmt.Fprintf(&b, "*Agentic SRE* — %s\n", now.Format("2006-01-02 15:04:05 UTC"))
 	fmt.Fprintf(&b, "%s *Overall Status: %s*\n\n", overall.emoji, overall.label)
 	fmt.Fprintf(&b, "%s\n\n", headline)
 
@@ -193,7 +193,7 @@ func FormatSlackWithSilence(results []probe.Result, diagnostics []diagnose.Diagn
 			if d.Investigation != "" {
 				fmt.Fprintf(&b, "  🔬 _%s_\n", d.Investigation)
 			}
-			// AI enrichment block — only rendered when CHA-com has populated
+			// AI enrichment block — only rendered when Srenix Enterprise has populated
 			// it. OSS-only deployments never see this branch fire.
 			if d.Enrichment != "" {
 				fmt.Fprintf(&b, "  🤖 _%s_\n", d.Enrichment)
@@ -201,7 +201,7 @@ func FormatSlackWithSilence(results []probe.Result, diagnostics []diagnose.Diagn
 		}
 	}
 
-	footer := "K8s Cluster Health Autopilot"
+	footer := "K8s Agentic SRE"
 	if autopilot {
 		footer += " (auto-remediation: ON)"
 	} else {

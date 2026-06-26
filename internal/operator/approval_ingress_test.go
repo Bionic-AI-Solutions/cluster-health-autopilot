@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package operator
@@ -7,7 +7,7 @@ import (
 	"context"
 	"testing"
 
-	chav1alpha1 "github.com/Bionic-AI-Solutions/cluster-health-autopilot/api/v1alpha1"
+	chav1alpha1 "github.com/srenix-ai/agentic-sre/api/v1alpha1"
 	networkingv1 "k8s.io/api/networking/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -18,11 +18,11 @@ import (
 
 // approvalIngressCR returns the happy-path CR with approval + ingress
 // both enabled and the required host set.
-func approvalIngressCR() *chav1alpha1.ClusterHealthAutopilot {
+func approvalIngressCR() *chav1alpha1.AgenticSRE {
 	cr := approvalCR()
 	cr.Spec.Approval.Ingress = &chav1alpha1.ApprovalIngressSpec{
 		Enabled: true,
-		Host:    "approve.cha.example.com",
+		Host:    "approve.srenix.example.com",
 	}
 	return cr
 }
@@ -63,8 +63,8 @@ func TestBuildApprovalServerIngress_BasicShape(t *testing.T) {
 	if len(ing.Spec.Rules) != 1 {
 		t.Fatalf("expected 1 rule; got %d", len(ing.Spec.Rules))
 	}
-	if ing.Spec.Rules[0].Host != "approve.cha.example.com" {
-		t.Errorf("host=%q want approve.cha.example.com", ing.Spec.Rules[0].Host)
+	if ing.Spec.Rules[0].Host != "approve.srenix.example.com" {
+		t.Errorf("host=%q want approve.srenix.example.com", ing.Spec.Rules[0].Host)
 	}
 	if ing.Spec.Rules[0].HTTP == nil || len(ing.Spec.Rules[0].HTTP.Paths) != 4 {
 		t.Fatalf("expected 4 paths (/approve + /deny + /silence + /healthz); got %+v", ing.Spec.Rules[0].HTTP)
@@ -125,8 +125,8 @@ func TestBuildApprovalServerIngress_TLSDefaultSecretName(t *testing.T) {
 		t.Errorf("default TLS secretName=%q want bionic-approval-server-tls",
 			ing.Spec.TLS[0].SecretName)
 	}
-	if len(ing.Spec.TLS[0].Hosts) != 1 || ing.Spec.TLS[0].Hosts[0] != "approve.cha.example.com" {
-		t.Errorf("TLS hosts=%v want [approve.cha.example.com]", ing.Spec.TLS[0].Hosts)
+	if len(ing.Spec.TLS[0].Hosts) != 1 || ing.Spec.TLS[0].Hosts[0] != "approve.srenix.example.com" {
+		t.Errorf("TLS hosts=%v want [approve.srenix.example.com]", ing.Spec.TLS[0].Hosts)
 	}
 }
 
@@ -161,7 +161,7 @@ func TestReconcile_ApprovalIngress_Created(t *testing.T) {
 
 	var ing networkingv1.Ingress
 	if err := c.Get(context.Background(),
-		types.NamespacedName{Namespace: "cha-system", Name: "bionic-approval-server"},
+		types.NamespacedName{Namespace: "srenix-system", Name: "bionic-approval-server"},
 		&ing); err != nil {
 		t.Errorf("approval Ingress not created: %v", err)
 	}
@@ -175,7 +175,7 @@ func TestReconcile_ApprovalIngress_DisabledNotCreated(t *testing.T) {
 
 	var ing networkingv1.Ingress
 	err := c.Get(context.Background(),
-		types.NamespacedName{Namespace: "cha-system", Name: "bionic-approval-server"},
+		types.NamespacedName{Namespace: "srenix-system", Name: "bionic-approval-server"},
 		&ing)
 	if !apierrors.IsNotFound(err) {
 		t.Errorf("ingress should not exist; got err=%v", err)
@@ -201,9 +201,9 @@ func TestReconcile_ApprovalIngress_DisabledAfterCreate_Deleted(t *testing.T) {
 	reconcileOnce(t, r, cr)
 
 	// Flip ingress off.
-	var stored chav1alpha1.ClusterHealthAutopilot
+	var stored chav1alpha1.AgenticSRE
 	_ = c.Get(context.Background(),
-		types.NamespacedName{Namespace: "cha-system", Name: "bionic"}, &stored)
+		types.NamespacedName{Namespace: "srenix-system", Name: "bionic"}, &stored)
 	stored.Spec.Approval.Ingress.Enabled = false
 	stored.Generation = 2
 	if err := c.Update(context.Background(), &stored); err != nil {
@@ -213,7 +213,7 @@ func TestReconcile_ApprovalIngress_DisabledAfterCreate_Deleted(t *testing.T) {
 
 	var ing networkingv1.Ingress
 	err := c.Get(context.Background(),
-		types.NamespacedName{Namespace: "cha-system", Name: "bionic-approval-server"},
+		types.NamespacedName{Namespace: "srenix-system", Name: "bionic-approval-server"},
 		&ing)
 	if !apierrors.IsNotFound(err) {
 		t.Errorf("ingress not deleted after disable; got err=%v", err)

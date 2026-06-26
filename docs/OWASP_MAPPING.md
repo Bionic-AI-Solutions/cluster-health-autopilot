@@ -1,6 +1,6 @@
 # OWASP Kubernetes Top-10 Mapping
 
-This document maps every CHA **fixer** (`internal/fix/*.go`) and every
+This document maps every Srenix **fixer** (`internal/fix/*.go`) and every
 security-relevant **analyzer / signal** (`internal/diagnose/*.go`) to the
 [OWASP Kubernetes Top-10](https://owasp.org/www-project-kubernetes-top-ten/)
 item(s) it relates to.
@@ -18,7 +18,7 @@ The distinction below is deliberate and load-bearing:
 
 - **Analyzers DETECT** an OWASP item: they are *observational only*. They
   surface a gap so an operator (or the paid AI/approval tier) can react.
-  **Detection is not enforcement.** CHA's OSS analyzers never apply a
+  **Detection is not enforcement.** Srenix's OSS analyzers never apply a
   NetworkPolicy, never relabel a namespace for Pod Security Standards, never
   rewrite an RBAC rule. The `NetworkPolicyProposer` emits ready-to-apply YAML
   but explicitly does **not** apply it.
@@ -50,7 +50,7 @@ the fixer cannot regress.
 | `StaleErrorPods` | `Delete` of a `Failed`-phase Pod that is Job-owned or has no controller owner | **K01** (config), **K07** (segmentation) | Deletes only stuck/orphan Pods; never edits a PodSpec, so it can't add `privileged`, `hostPath`, `hostNetwork`, or capabilities. Deletes are namespace-protected and never touch a NetworkPolicy. |
 | `StuckJobsWithBadSecretRef` | `Delete` of a frozen Job (bad Secret-key ref) whose parent CronJob still exists | **K01** (config), **K08** (secrets) | Deletes a frozen Job so the corrected CronJob template respawns; it never reads, writes, or weakens a Secret — it unblocks a *fixed* Secret reference. No PodSpec mutation. |
 | `StuckRSPods` | `Patch` (strategic-merge) adding `kubectl.kubernetes.io/restartedAt` to a Deployment template, iff the live Deployment revision has already rolled past the stuck ReplicaSet | **K01** (config) | The only field written is a restart-timestamp annotation — equivalent to `kubectl rollout restart`. It cannot introduce `privileged`/`hostPath`/`hostNetwork`/capabilities and explicitly refuses when the failure is a missing Secret key (a rollout would just reproduce it). |
-| `StuckCertificateRequests` | `Delete` of a terminally-failed cert-manager `CertificateRequest` / ACME `Order` | **K08** (secrets/TLS) | cert-manager immediately recreates the deleted CR and retries issuance; CHA never writes the resulting TLS Secret. Deleting a *failed* request cannot downgrade a live cert. Health-gated on the cert-manager controller being up. |
+| `StuckCertificateRequests` | `Delete` of a terminally-failed cert-manager `CertificateRequest` / ACME `Order` | **K08** (secrets/TLS) | cert-manager immediately recreates the deleted CR and retries issuance; Srenix never writes the resulting TLS Secret. Deleting a *failed* request cannot downgrade a live cert. Health-gated on the cert-manager controller being up. |
 | `TLSSecretMismatch` *(opt-in)* | `Patch` (JSONPatch) repointing an Ingress `spec.tls[].secretName` from a stale Secret to a healthy cert-manager-managed Secret for the **same** host | **K08** (secrets/TLS), **K01** (config) | Only ever repoints *to* a cert-manager Certificate that is `Ready=True` and whose `dnsNames` include the Ingress host — i.e. an **upgrade**, never a downgrade. High-confidence match required (stale secret expired/expiring + better managed cert exists). GitOps-protected. |
 
 ### Posture guard coverage
@@ -97,7 +97,7 @@ guard** — adding one without a posture-test entry breaks `go test ./...`.
   path for those classes runs through the paid AI/approval tier
   (`ApprovalProposal` CR + Slack Approve/Deny), which is human- or
   policy-gated — not an autofixer.
-- The five fixers above are the **entire** set of cluster-mutating actions CHA
+- The five fixers above are the **entire** set of cluster-mutating actions Srenix
   ships. They are narrow by design: delete a stuck Pod/Job/failed-cert-request,
   or patch a restart annotation / a TLS `secretName` to the correct value.
   None of them touches RBAC, NetworkPolicy, PodSpec security fields, or Secret

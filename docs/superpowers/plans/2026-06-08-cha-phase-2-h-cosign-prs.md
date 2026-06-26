@@ -2,17 +2,17 @@
 
 **Status:** active sub-plan; execution deferred to a focused supply-chain session.
 
-**Parent:** [2026-06-07-cha-phase-2-master.md](2026-06-07-cha-phase-2-master.md)
+**Parent:** [2026-06-07-srenix-phase-2-master.md](2026-06-07-srenix-phase-2-master.md)
 
 ---
 
 ## Goal
 
-The DigestPinProposer opens PRs that pin container images to observed digests. Today those PRs are auto-merged on click but the only authentication of "did CHA-com really propose this?" is the GitHub PAT.
+The DigestPinProposer opens PRs that pin container images to observed digests. Today those PRs are auto-merged on click but the only authentication of "did Srenix Enterprise really propose this?" is the GitHub PAT.
 
 Phase 2.H attaches a cosign signature to the proposed change so reviewers can:
-1. Verify the change came from CHA-com's signing identity (not someone with a stolen PAT)
-2. Verify the proposed digest matches what CHA-com OBSERVED at proposal time (not an MITM-rewritten value)
+1. Verify the change came from Srenix Enterprise's signing identity (not someone with a stolen PAT)
+2. Verify the proposed digest matches what Srenix Enterprise OBSERVED at proposal time (not an MITM-rewritten value)
 
 ## Anti-goals
 
@@ -25,8 +25,8 @@ Phase 2.H attaches a cosign signature to the proposed change so reviewers can:
 ### 2.H.1 — Cosign signing identity provisioning
 
 - Generate ECDSA-P256 keypair via `cosign generate-key-pair`
-- Private half → Vault at `secret/cha-com/cosign/key` (encrypted, ESO-synced to a K8s Secret)
-- Public half → checked into the CHA repo's `docs/security/cosign-public-key.pem` so reviewers can fetch it from the canonical source
+- Private half → Vault at `secret/srenix-enterprise/cosign/key` (encrypted, ESO-synced to a K8s Secret)
+- Public half → checked into the Srenix repo's `docs/security/cosign-public-key.pem` so reviewers can fetch it from the canonical source
 - Document in CHANGELOG + README how to verify
 
 ### 2.H.2 — Sign the proposed-digest payload at proposal time
@@ -34,7 +34,7 @@ Phase 2.H attaches a cosign signature to the proposed change so reviewers can:
 - In `ai/proposer/digest_pin.go::Propose` BEFORE the `Forge.UpdateFile` call:
   - Build a canonical "proposal manifest" JSON: `{action_id, repo, ref, file_path, before_digest, after_digest, observed_at}`
   - Sign with `cosign sign-blob` (key from Vault) → base64 signature string
-  - Include the signature + payload in the PR BODY as a `cha-cosign-attestation:` block (machine-parseable)
+  - Include the signature + payload in the PR BODY as a `srenix-cosign-attestation:` block (machine-parseable)
 
 ### 2.H.3 — Optional verify step in PR template
 
@@ -45,7 +45,7 @@ Phase 2.H attaches a cosign signature to the proposed change so reviewers can:
 
 Two options:
 - (A) Embed `sigstore/cosign/v2` Go library directly — no CLI dependency in the container
-- (B) Bundle the cosign binary in the cha-com Docker image — simpler but adds ~30MB
+- (B) Bundle the cosign binary in the srenix-enterprise Docker image — simpler but adds ~30MB
 
 Prefer (A) for image-size reasons.
 
@@ -55,11 +55,11 @@ When the signing key is unavailable (Vault outage, ESO not configured), DigestPi
 
 ### 2.H.6 — Field-travels integration test
 
-Mock a digest-pin proposal end-to-end. Verify the PR body contains a parseable `cha-cosign-attestation:` block + the signature verifies against the embedded public key.
+Mock a digest-pin proposal end-to-end. Verify the PR body contains a parseable `srenix-cosign-attestation:` block + the signature verifies against the embedded public key.
 
 ### 2.H.7 — Local build + cluster verify
 
-- Build cha-com with the cosign sigstore library
+- Build srenix-enterprise with the cosign sigstore library
 - Trigger a real digest-pin proposal
 - Verify the PR carries the attestation
 - Manually run `cosign verify-blob` to confirm it validates

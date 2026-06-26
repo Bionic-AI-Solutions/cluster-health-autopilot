@@ -1,8 +1,8 @@
 <!--
-Thanks for contributing to Cluster Health Autopilot. Fill in the summary and
+Thanks for contributing to Agentic SRE. Fill in the summary and
 tick the release-discipline checklist below. The checklist items encode the
 gates whose absence caused three same-week production regressions (v1.23.0
-unwired-but-default-on triggers, v1.24.0 CRD pruning, CHA-com v1.20.0 panic).
+unwired-but-default-on triggers, v1.24.0 CRD pruning, Srenix Enterprise v1.20.0 panic).
 -->
 
 ## Summary

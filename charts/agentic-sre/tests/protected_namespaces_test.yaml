@@ -1,0 +1,95 @@
+suite: protectedNamespaces.extra append-only extension (v1.26.0)
+templates:
+  - templates/watcher-deployment.yaml
+  - templates/cronjob-diagnose.yaml
+  - templates/cronjob-remediate.yaml
+  - templates/aiwatch-deployment.yaml
+  - templates/gatekeeper-constraint.yaml
+tests:
+  - it: no SRENIX_PROTECTED_NAMESPACES_EXTRA when extra is empty (default)
+    template: templates/watcher-deployment.yaml
+    set:
+      watcher.enabled: true
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SRENIX_PROTECTED_NAMESPACES_EXTRA
+          any: true
+
+  - it: watcher gets SRENIX_PROTECTED_NAMESPACES_EXTRA when extra is set
+    template: templates/watcher-deployment.yaml
+    set:
+      watcher.enabled: true
+      protectedNamespaces.extra:
+        - prod-payments
+        - tenant-a
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SRENIX_PROTECTED_NAMESPACES_EXTRA
+            value: "prod-payments,tenant-a"
+
+  - it: diagnose cronjob gets SRENIX_PROTECTED_NAMESPACES_EXTRA when extra is set
+    template: templates/cronjob-diagnose.yaml
+    set:
+      protectedNamespaces.extra:
+        - prod-payments
+    asserts:
+      - contains:
+          path: spec.jobTemplate.spec.template.spec.containers[0].env
+          content:
+            name: SRENIX_PROTECTED_NAMESPACES_EXTRA
+            value: "prod-payments"
+
+  - it: remediate cronjob gets SRENIX_PROTECTED_NAMESPACES_EXTRA when extra is set
+    template: templates/cronjob-remediate.yaml
+    set:
+      remediation.enabled: true
+      protectedNamespaces.extra:
+        - prod-payments
+    asserts:
+      - contains:
+          path: spec.jobTemplate.spec.template.spec.containers[0].env
+          content:
+            name: SRENIX_PROTECTED_NAMESPACES_EXTRA
+            value: "prod-payments"
+
+  - it: aiwatch deployment gets SRENIX_PROTECTED_NAMESPACES_EXTRA when extra is set
+    template: templates/aiwatch-deployment.yaml
+    set:
+      ai.enabled: true
+      ai.endpoint: "https://gpu-ai.example/v1"
+      ai.model: "qwen3.6-35b-a3b-fp8"
+      protectedNamespaces.extra:
+        - prod-payments
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SRENIX_PROTECTED_NAMESPACES_EXTRA
+            value: "prod-payments"
+
+  - it: gatekeeper constraint trims whitespace in extra entries
+    template: templates/gatekeeper-constraint.yaml
+    documentIndex: 1
+    set:
+      approval.enabled: true
+      gatekeeper.install: true
+      protectedNamespaces.extra:
+        - " prod-payments"
+        - "tenant-a "
+    asserts:
+      - contains:
+          path: spec.parameters.protectedNamespaces
+          content: "prod-payments"
+      - contains:
+          path: spec.parameters.protectedNamespaces
+          content: "tenant-a"
+      - notContains:
+          path: spec.parameters.protectedNamespaces
+          content: " prod-payments"
+      - notContains:
+          path: spec.parameters.protectedNamespaces
+          content: "tenant-a "

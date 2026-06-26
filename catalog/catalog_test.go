@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package catalog
@@ -6,7 +6,7 @@ package catalog
 import (
 	"testing"
 
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/registry"
+	"github.com/srenix-ai/agentic-sre/pkg/registry"
 )
 
 // probeNames returns the Name() set of all probes RegisterOSS registers
@@ -42,12 +42,12 @@ func analyzerNames(t *testing.T) map[string]bool {
 // are the documented public contract (CRITICAL_WORKLOADS maps to the
 // Critical Services probe by design).
 var baseProbeToggles = map[string]string{
-	"CHA_PROBE_CEPH":               "Ceph Storage",
-	"CHA_PROBE_NODES":              "Cluster Nodes",
-	"CHA_PROBE_POSTGRES":           "PostgreSQL",
-	"CHA_PROBE_PVCS":               "Storage Claims",
-	"CHA_PROBE_CRITICAL_WORKLOADS": "Critical Services",
-	"CHA_PROBE_ENDPOINTS":          "External Endpoints",
+	"SRENIX_PROBE_CEPH":               "Ceph Storage",
+	"SRENIX_PROBE_NODES":              "Cluster Nodes",
+	"SRENIX_PROBE_POSTGRES":           "PostgreSQL",
+	"SRENIX_PROBE_PVCS":               "Storage Claims",
+	"SRENIX_PROBE_CRITICAL_WORKLOADS": "Critical Services",
+	"SRENIX_PROBE_ENDPOINTS":          "External Endpoints",
 }
 
 // coreAnalyzerToggles maps each core-analyzer opt-out env var to the
@@ -55,13 +55,13 @@ var baseProbeToggles = map[string]string{
 // auth) are the product's core value — they MUST default ON; the env
 // gate exists only so the docs' "disable any analyzer" promise holds.
 var coreAnalyzerToggles = map[string]string{
-	"CHA_ANALYZER_SECRET_KEY_MISSING":         "SecretKeyMissing",
-	"CHA_ANALYZER_FAILING_EXTERNAL_SECRETS":   "FailingExternalSecrets",
-	"CHA_ANALYZER_PROACTIVE_SECRET_KEY_CHECK": "ProactiveSecretKeyCheck",
-	"CHA_ANALYZER_UNPROVISIONED_SECRET":       "UnprovisionedSecret",
-	"CHA_ANALYZER_IMAGE_PULL_AUTH":            "ImagePullAuth",
-	"CHA_ANALYZER_CERT_EXPIRY":                "CertExpiry",
-	"CHA_ANALYZER_TLS_SECRET_MISMATCH":        "TLSSecretMismatch",
+	"SRENIX_ANALYZER_SECRET_KEY_MISSING":         "SecretKeyMissing",
+	"SRENIX_ANALYZER_FAILING_EXTERNAL_SECRETS":   "FailingExternalSecrets",
+	"SRENIX_ANALYZER_PROACTIVE_SECRET_KEY_CHECK": "ProactiveSecretKeyCheck",
+	"SRENIX_ANALYZER_UNPROVISIONED_SECRET":       "UnprovisionedSecret",
+	"SRENIX_ANALYZER_IMAGE_PULL_AUTH":            "ImagePullAuth",
+	"SRENIX_ANALYZER_CERT_EXPIRY":                "CertExpiry",
+	"SRENIX_ANALYZER_TLS_SECRET_MISMATCH":        "TLSSecretMismatch",
 }
 
 func TestBaseProbes_RegisteredByDefault(t *testing.T) {
@@ -96,9 +96,9 @@ func TestBaseProbes_NonOffValuesKeepProbeOn(t *testing.T) {
 	// must leave the probe registered — matching the 15 pre-existing gates.
 	for _, v := range []string{"on", "true", "false", "OFF", "0"} {
 		t.Run(v, func(t *testing.T) {
-			t.Setenv("CHA_PROBE_CEPH", v)
+			t.Setenv("SRENIX_PROBE_CEPH", v)
 			if !probeNames(t)["Ceph Storage"] {
-				t.Errorf("CHA_PROBE_CEPH=%q must NOT disable the probe (only exactly \"off\" does)", v)
+				t.Errorf("SRENIX_PROBE_CEPH=%q must NOT disable the probe (only exactly \"off\" does)", v)
 			}
 		})
 	}
@@ -133,8 +133,8 @@ func TestCoreAnalyzers_SkippedWhenEnvOff(t *testing.T) {
 // TestExistingGatedProbes_StillToggle pins the pre-existing gate
 // behavior so a refactor of RegisterOSS cannot regress the original 15.
 func TestExistingGatedProbes_StillToggle(t *testing.T) {
-	t.Setenv("CHA_PROBE_GPU_NODES", "off")
+	t.Setenv("SRENIX_PROBE_GPU_NODES", "off")
 	if probeNames(t)["GPU Nodes"] {
-		t.Error("CHA_PROBE_GPU_NODES=off must skip the GPU Nodes probe")
+		t.Error("SRENIX_PROBE_GPU_NODES=off must skip the GPU Nodes probe")
 	}
 }

@@ -1,4 +1,4 @@
-# Cluster Health Autopilot — One-Page Brief
+# Agentic SRE — One-Page Brief
 
 *Self-healing operations for Kubernetes — detect, fix, re-verify, report.*
 
@@ -13,7 +13,7 @@ Every Kubernetes cluster accumulates a tail of silently-degraded state — a Sec
 **Zero-trust diagnose, no install, no RBAC, no write access.**
 
 ```sh
-cha diagnose --snapshot ./your-kubectl-export.json
+srenix diagnose --snapshot ./your-kubectl-export.json
 ```
 
 Names the exact Secret + missing key + consuming Deployment + owning ExternalSecret in one line. Run it on your laptop in 30 seconds. Nothing leaves your machine.
@@ -48,7 +48,7 @@ A **13 MB distroless container image**. Runs nonroot. Negligible footprint (<100
 |  | • Transient-recovery (follow-up probe succeeded) |
 |  | • ExternalSecret / Certificate / Secret deep-dive |
 
-**Alert routing**: Alertmanager-as-hub (recommended) — CHA posts active issues
+**Alert routing**: Alertmanager-as-hub (recommended) — Srenix posts active issues
 to `/api/v2/alerts` every cycle. AM handles dedup, silencing, and fan-out to
 all configured receivers. Fallback to direct three-channel Slack
 (`#ceph-alerts` / `#ceph-critical` / `#healthinfo`).
@@ -58,22 +58,22 @@ all configured receivers. Fallback to direct three-channel Slack
 Read role and Write role are **separate** ClusterRoles. The Write (remediator) role grants exactly:
 `pods/delete`, `jobs/delete`, `deployments/patch`, `certificaterequests/delete`, `orders/delete`. Never Secret/ConfigMap/CRD writes.
 
-Seven platform namespaces are always skipped — `kube-system`, `kube-public`, `kube-node-lease`, `rook-ceph`, `vault`, `external-secrets`, `cnpg-system`. Enforced both **in code** AND **by RBAC**. The fix list is the source code; an SRE can audit every action the tool will ever take in one afternoon.
+Nine platform namespaces are always skipped — `kube-system`, `kube-public`, `kube-node-lease`, `rook-ceph`, `vault`, `external-secrets`, `cnpg-system`, `calico-system`, `tigera-operator`. Enforced both **in code** AND **by RBAC**. The fix list is the source code; an SRE can audit every action the tool will ever take in one afternoon.
 
 ## Zero LLM in the hot path
 
 Every probe, analyzer, and fixer is deterministic Go. Same input → same diagnosis, every time, auditably. The OSS Layer-2 Investigator is rule-based (no LLM); each rule pattern-matches the failure mode and runs a closed-enum set of read-only tools (DNS / HTTP / TLS / Describe / Events). No LLM call on cluster data in OSS. No customer state leaves the cluster.
 
-The paid CHA-com binary adds AI tiers (T0–T3) and an optional LLM-backed Investigator, each gated by approval flows + audit + RBAC ceilings inherited from the OSS engine. AI is opt-in, never on the critical path. (See [docs/AI_USAGE.md](AI_USAGE.md) and [docs/AI_TIERS.md](AI_TIERS.md) for the full position.)
+The paid Srenix Enterprise binary adds AI tiers (T0–T3) and an optional LLM-backed Investigator, each gated by approval flows + audit + RBAC ceilings inherited from the OSS engine. AI is opt-in, never on the critical path. (See [docs/AI_USAGE.md](AI_USAGE.md) and [docs/AI_TIERS.md](AI_TIERS.md) for the full position.)
 
 ## Pricing (open-core)
 
 | Component | License | Tier |
 |---|---|---|
-| CLI engine + default catalog + Helm chart | Apache 2.0 | Free / OSS |
-| **Verified Signature Library** (curated, regression-tested patterns added monthly) | Commercial | Paid (per-cluster sub) |
-| **Hosted Fleet Console** (multi-cluster aggregation, history, SLO dashboards) | Commercial | SaaS |
-| **SOC 2 / private deployment / SLA support** | Commercial | Enterprise |
+| CLI engine + all probes + analyzers + fixers + 30 cloud probes + Helm chart + operator | Apache 2.0 | Free / OSS |
+| **Srenix Enterprise AI tiers** (T0 narration, T1 fix proposals, T2 multi-step plans, T3 Vault runbooks) + approval-server with signed click-to-fix URLs | Commercial | AI SRE (per-cluster/mo) |
+| **Srenix Enterprise Enterprise** — above + Jira/ServiceNow ticketing, multi-cluster federation, RAG memory, confidence-gated auto-merge, Loki/OTLP audit sinks | Commercial | Enterprise (per-cluster/mo) |
+| **Federal/Sovereign** — air-gap installer, SBOM + signed images, dedicated security eng, SLA | Commercial | Contact sales |
 
 ## Real-world validation
 

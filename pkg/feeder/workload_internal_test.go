@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package feeder
@@ -90,7 +90,7 @@ func TestPodWorkloadOwner(t *testing.T) {
 }
 
 func TestDetectOwner_OperatorManaged_v1_25_0(t *testing.T) {
-	// Deployment owned by ClusterHealthAutopilot CR (no Helm labels,
+	// Deployment owned by AgenticSRE CR (no Helm labels,
 	// no ArgoCD annotation) should produce owner_chart synthesized
 	// from the CR Kind + name.
 	ctrl := true
@@ -99,10 +99,10 @@ func TestDetectOwner_OperatorManaged_v1_25_0(t *testing.T) {
 		"kind":       "Deployment",
 		"metadata": map[string]interface{}{
 			"name":      "bionic-aiwatch",
-			"namespace": "cluster-health-autopilot",
+			"namespace": "agentic-sre",
 			"ownerReferences": []interface{}{map[string]interface{}{
-				"apiVersion": "cha.bionicaisolutions.com/v1alpha1",
-				"kind":       "ClusterHealthAutopilot",
+				"apiVersion": "srenix.ai/v1alpha1",
+				"kind":       "AgenticSRE",
 				"name":       "bionic",
 				"controller": ctrl,
 			}},
@@ -115,7 +115,7 @@ func TestDetectOwner_OperatorManaged_v1_25_0(t *testing.T) {
 	if o.Kind != "Operator" {
 		t.Errorf("Kind=%q want Operator", o.Kind)
 	}
-	if want := "clusterhealthautopilot-bionic"; o.ChartName != want {
+	if want := "agenticsre-bionic"; o.ChartName != want {
 		t.Errorf("ChartName=%q want %q", o.ChartName, want)
 	}
 	if o.ReleaseName != "bionic" {

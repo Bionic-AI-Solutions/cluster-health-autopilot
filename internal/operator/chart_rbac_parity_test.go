@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package operator
@@ -42,7 +42,7 @@ import (
 // roles bound to the same ServiceAccount while the operator unifies
 // them into the single reader role:
 //
-//   - cha.bionicaisolutions.com — chart splits read (reader role,
+//   - srenix.ai — chart splits read (reader role,
 //     gated on driftReport.enabled) vs write (clusterrole-driftreport
 //     .yaml, clusterrole-resolutionrecord.yaml, clusterrole-silence
 //     .yaml)
@@ -51,11 +51,11 @@ import (
 //
 // Everything else MUST match verb-for-verb in both directions.
 
-const readerChartPath = "../../charts/cluster-health-autopilot/templates/clusterrole-reader.yaml"
+const readerChartPath = "../../charts/agentic-sre/templates/clusterrole-reader.yaml"
 
 // parityExcludedGroups — see scope note above.
 var parityExcludedGroups = map[string]bool{
-	"cha.bionicaisolutions.com": true,
+	"srenix.ai": true,
 	"coordination.k8s.io":       true,
 }
 
@@ -119,7 +119,7 @@ func TestReaderRBAC_OLMBundleParity(t *testing.T) {
 // lines (metadata name/labels + the driftReport.enabled conditional);
 // stripping those lines leaves a parseable rules block. The
 // conditional driftreports rule survives the strip and is parsed —
-// fine, because cha.bionicaisolutions.com is excluded from the
+// fine, because srenix.ai is excluded from the
 // comparison scope anyway.
 func chartReaderRules(t *testing.T) []rbacv1.PolicyRule {
 	t.Helper()

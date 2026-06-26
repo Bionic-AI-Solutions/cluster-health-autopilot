@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package probe
@@ -8,23 +8,23 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/snapshot"
+	"github.com/srenix-ai/agentic-sre/internal/snapshot"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 
 // ProbeCriticalAnnotation marks a workload as critical for the Services probe.
 // Set on a Deployment / StatefulSet to opt-in to readiness probing without
-// editing CHA's compiled-in defaults.
+// editing Srenix's compiled-in defaults.
 //
 // Example:
 //
 //	metadata:
 //	  annotations:
-//	    cha.bionicaisolutions.com/probe-critical: "true"
-//	    cha.bionicaisolutions.com/probe-display: "Billing API"
+//	    srenix.ai/probe-critical: "true"
+//	    srenix.ai/probe-display: "Billing API"
 const (
-	ProbeCriticalAnnotation = "cha.bionicaisolutions.com/probe-critical"
-	ProbeDisplayAnnotation  = "cha.bionicaisolutions.com/probe-display"
+	ProbeCriticalAnnotation = "srenix.ai/probe-critical"
+	ProbeDisplayAnnotation  = "srenix.ai/probe-display"
 )
 
 // TargetsFromEnv parses a semicolon-separated list of "namespace/selector"
@@ -34,7 +34,7 @@ const (
 //
 // Example:
 //
-//	CHA_CRITICAL_SERVICES="prod/app=billing|Billing API;prod/app=auth"
+//	SRENIX_CRITICAL_SERVICES="prod/app=billing|Billing API;prod/app=auth"
 //
 // Selectors must currently be single-equals labels (Sprint 2 scope);
 // multi-label LabelSelector parsing is a follow-up.

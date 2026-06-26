@@ -5,9 +5,9 @@ name: Publish Helm Chart
 # GitHub Release for each chart version, and updates index.yaml on gh-pages.
 #
 # Helm repo URL (add once, use forever):
-#   helm repo add cha https://bionic-ai-solutions.github.io/cluster-health-autopilot
+#   helm repo add srenix https://srenix-ai.github.io/agentic-sre
 #   helm repo update
-#   helm install cha cha/cluster-health-autopilot ...
+#   helm install srenix srenix/agentic-sre ...
 
 on:
   workflow_dispatch: {}

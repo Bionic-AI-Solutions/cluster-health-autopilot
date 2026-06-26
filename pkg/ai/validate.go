@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package ai
@@ -15,7 +15,7 @@ import (
 // without importing the internal package.
 //
 // This map is the COMPILED-IN FLOOR, not the complete protected set:
-// operators may APPEND namespaces via CHA_PROTECTED_NAMESPACES_EXTRA
+// operators may APPEND namespaces via SRENIX_PROTECTED_NAMESPACES_EXTRA
 // (or SetExtraProtectedNamespaces) — see protected.go. Nothing can
 // remove an entry from this floor at runtime.
 var ProtectedNamespaces = map[string]struct{}{
@@ -26,11 +26,21 @@ var ProtectedNamespaces = map[string]struct{}{
 	"vault":            {},
 	"external-secrets": {},
 	"cnpg-system":      {},
+	// CNI namespaces — a default-deny NetworkPolicy in these namespaces
+	// can break node-to-node Calico dataplane traffic and the Tigera
+	// operator reconciliation loop, causing cluster-wide connectivity
+	// loss. Never propose policies here.
+	"calico-system":   {},
+	"tigera-operator": {},
+	// Srenix's own namespace — never auto-act on ourselves. Deleting the
+	// watcher/aiwatch/approval-server pods is self-disruption and a probe
+	// blip on a standby replica must not trigger a proposal to delete it.
+	"agentic-sre": {},
 }
 
 // IsProtectedNamespace reports whether ns is on the no-touch list —
 // the compiled-in floor PLUS any operator-appended extras
-// (CHA_PROTECTED_NAMESPACES_EXTRA / SetExtraProtectedNamespaces).
+// (SRENIX_PROTECTED_NAMESPACES_EXTRA / SetExtraProtectedNamespaces).
 // Mirrors fix.IsProtectedNamespace; the floor is duplicated to avoid a
 // cross-package dependency from the public ai package into
 // internal/fix, while the extras are shared (internal/fix consults
@@ -53,7 +63,9 @@ func IsProtectedNamespace(ns string) bool {
 //   - Target.Kind, Target.Namespace, Target.Name all non-empty
 //   - Target.Namespace must NOT be a protected namespace
 //   - Rollback.Description must be non-empty (no proposal without rollback)
-//   - PatchPayload must be empty unless ActionKind == ActionPatchDeployment
+//   - PatchPayload must be empty unless ActionKind is a patch verb
+//     (ActionPatchDeployment or ActionPatchProbe); ActionPatchProbe must
+//     carry a payload and target a Deployment/StatefulSet/DaemonSet
 //   - CreatedAt and ExpiresAt must be set; ExpiresAt > CreatedAt
 //   - Tier must be a valid AllowsProposals tier (T1/T2/T3)
 //
@@ -95,7 +107,7 @@ func (a *AIProposedAction) Validate() error {
 // ApplyManifest, pull-request URL shape for ProposePullRequest, the expiry
 // window, and the proposal-tier check.
 //
-// Intended caller: the CHA-com approval-server executor (ai/approval/executor.go
+// Intended caller: the Srenix Enterprise approval-server executor (ai/approval/executor.go
 // Execute), which validates the reconstructed proposal immediately before
 // applying the mutation.
 func (a *AIProposedAction) ValidateForExecution() error {
@@ -116,8 +128,27 @@ func (a *AIProposedAction) validateStructural() error {
 	if IsProtectedNamespace(a.Target.Namespace) {
 		return ErrProtectedNamespace
 	}
-	if len(a.PatchPayload) > 0 && a.ActionKind != ActionPatchDeployment {
+	// PatchPayload is permitted only for the patch verbs:
+	// ActionPatchDeployment (rollout-restart annotation) and
+	// ActionPatchProbe (probe-timing scalars). The Srenix Enterprise validator
+	// enforces the per-verb closed shape; here we only gate the pairing.
+	if len(a.PatchPayload) > 0 &&
+		a.ActionKind != ActionPatchDeployment &&
+		a.ActionKind != ActionPatchProbe {
 		return ErrInvalidActionKind
+	}
+	// ActionPatchProbe MUST carry a payload (the probe patch) and target a
+	// pod-template-bearing workload. The detailed shape/bounds check lives
+	// in the Srenix Enterprise approval validator; this is the structural floor.
+	if a.ActionKind == ActionPatchProbe {
+		if len(a.PatchPayload) == 0 {
+			return ErrInvalidActionKind
+		}
+		switch a.Target.Kind {
+		case "Deployment", "StatefulSet", "DaemonSet":
+		default:
+			return ErrInvalidActionKind
+		}
 	}
 	// v1.15.0: ManifestYAML must be paired with ActionApplyManifest, and
 	// when present must pass the safe-apply validator. Per the design,
@@ -132,7 +163,7 @@ func (a *AIProposedAction) validateStructural() error {
 		}
 	}
 	// v1.17.0: ActionProposePullRequest carries a URL the
-	// approval-server links the SRE to. The URL is opaque from CHA's
+	// approval-server links the SRE to. The URL is opaque from Srenix's
 	// point of view (we don't fetch it), but we MUST insist it's a
 	// well-formed HTTPS URL — a malformed value would render as a
 	// broken / phishing-shaped link in Slack.

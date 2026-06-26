@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 // Package aws is the AWS sub-client surface that cloud probes call.
@@ -69,4 +69,8 @@ type Client interface {
 
 	// DescribeSubnets lists all VPC subnets in the bound region.
 	DescribeSubnets(ctx context.Context) ([]VPCSubnet, error)
+
+	// ListEKSAddons lists all managed add-ons for the named cluster,
+	// including their version and status.
+	ListEKSAddons(ctx context.Context, clusterName string) ([]EKSAddon, error)
 }

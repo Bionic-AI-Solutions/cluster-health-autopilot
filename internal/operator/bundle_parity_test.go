@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package operator
@@ -12,12 +12,12 @@ import (
 
 	"sigs.k8s.io/yaml"
 
-	chav1alpha1 "github.com/Bionic-AI-Solutions/cluster-health-autopilot/api/v1alpha1"
+	chav1alpha1 "github.com/srenix-ai/agentic-sre/api/v1alpha1"
 )
 
 // Phase 1c bundle/chart parity guard.
 //
-// The OLM ClusterServiceVersion at bundle/manifests/cha.clusterservice
+// The OLM ClusterServiceVersion at bundle/manifests/srenix.clusterservice
 // version.yaml ships the operator's RBAC + Deployment install strategy.
 // The same install strategy is ALSO described in the helm chart at
 // charts/.../templates/operator-deployment.yaml. If the two drift,
@@ -31,10 +31,10 @@ import (
 // chart that wasn't copied to the CSV.
 
 const (
-	csvPath          = "../../bundle/manifests/cha.clusterserviceversion.yaml"
-	operatorTplPath  = "../../charts/cluster-health-autopilot/templates/operator-deployment.yaml"
+	csvPath          = "../../bundle/manifests/srenix.clusterserviceversion.yaml"
+	operatorTplPath  = "../../charts/agentic-sre/templates/operator-deployment.yaml"
 	bundleDockerfile = "../../bundle.Dockerfile"
-	chartTplDir      = "../../charts/cluster-health-autopilot/templates"
+	chartTplDir      = "../../charts/agentic-sre/templates"
 )
 
 func TestBundle_CSVIsValidYAML(t *testing.T) {
@@ -74,7 +74,7 @@ func TestBundle_CSVDeclaresAllShippedCRDs(t *testing.T) {
 	}
 
 	// Discover what CRD manifests ship in the bundle (by metadata.name).
-	entries, err := filepath.Glob(filepath.Dir(csvPath) + "/cha.bionicaisolutions.com_*.yaml")
+	entries, err := filepath.Glob(filepath.Dir(csvPath) + "/srenix.ai_*.yaml")
 	if err != nil {
 		t.Fatalf("glob CRD manifests: %v", err)
 	}
@@ -145,7 +145,7 @@ func TestBundle_CSVAndChartRBACInLockstep(t *testing.T) {
 func TestBundle_CRDSchemasMatchChart(t *testing.T) {
 	chartCRDs := loadChartCRDs(t)
 
-	bundleFiles, err := filepath.Glob(filepath.Dir(csvPath) + "/cha.bionicaisolutions.com_*.yaml")
+	bundleFiles, err := filepath.Glob(filepath.Dir(csvPath) + "/srenix.ai_*.yaml")
 	if err != nil {
 		t.Fatalf("glob bundle CRD manifests: %v", err)
 	}
@@ -276,7 +276,7 @@ func parseCRDDoc(t *testing.T, raw []byte, path string) crdDoc {
 
 // stripHelmTemplating drops every line carrying a {{ ... }} action.
 // The chart's CRD templates are static YAML apart from the install
-// conditional + the cha.labels include, so the remainder parses.
+// conditional + the srenix.labels include, so the remainder parses.
 func stripHelmTemplating(raw []byte) []byte {
 	var b strings.Builder
 	for _, line := range strings.Split(string(raw), "\n") {
@@ -345,9 +345,9 @@ func TestBundle_SampleCRsMatchGoTypes(t *testing.T) {
 		if err != nil {
 			t.Fatalf("read %s: %v", p, err)
 		}
-		var cr chav1alpha1.ClusterHealthAutopilot
+		var cr chav1alpha1.AgenticSRE
 		if err := yaml.UnmarshalStrict(raw, &cr); err != nil {
-			t.Errorf("sample CR %s does not strict-decode into v1alpha1.ClusterHealthAutopilot: %v", p, err)
+			t.Errorf("sample CR %s does not strict-decode into v1alpha1.AgenticSRE: %v", p, err)
 		}
 	}
 }
@@ -361,9 +361,9 @@ func TestBundle_SampleCRsMatchGoTypes(t *testing.T) {
 // here instead of silently shrinking the smoke's coverage.
 func TestBundle_FullSurfaceSampleCRCoversEverySpecPath(t *testing.T) {
 	chartCRDs := loadChartCRDs(t)
-	cha, ok := chartCRDs["clusterhealthautopilots.cha.bionicaisolutions.com"]
+	srenix, ok := chartCRDs["agenticsres.srenix.ai"]
 	if !ok {
-		t.Fatal("chart CRD for clusterhealthautopilots not found")
+		t.Fatal("chart CRD for agenticsres not found")
 	}
 
 	raw, err := os.ReadFile("../../bundle/tests/sample-cr-full.yaml")
@@ -377,7 +377,7 @@ func TestBundle_FullSurfaceSampleCRCoversEverySpecPath(t *testing.T) {
 	set := map[string]bool{}
 	collectInstancePaths(instance, "", set)
 
-	for _, v := range cha.crd.Spec.Versions {
+	for _, v := range srenix.crd.Spec.Versions {
 		schemaPaths := map[string]string{}
 		collectSchemaPaths(v.Schema.OpenAPIV3Schema, "", schemaPaths)
 		for _, path := range sortedKeys(schemaPaths) {

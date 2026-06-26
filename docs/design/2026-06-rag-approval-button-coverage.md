@@ -3,14 +3,14 @@
 > **STATUS: ✅ SHIPPED — OSS URL-minting + class-action buttons landed.**
 > _(P4.1 honest-header pass, 2026-06-11)_
 >
-> Shipped: the OSS watcher now mints approve/deny URLs itself (Phase 2d-δ-3 / Path B, PR #151), closing the root-cause gap this doc names (URLs were only minted in the cha-com aiwatch and never reached the OSS-written Slack/Alertmanager/OpenProject sinks). Approve/Deny + silence-snippet wired into the production critical path in v1.10.4 (PR #131). OSS Slack **class-action buttons** shipped Phase 2.B.6 (v1.21.0, commit d10cf12 / PR #174) — broadening button coverage beyond the original 5-value `ActionKind` whitelist to per-class actions. `ai.replicas` HA aiwatch + observability shipped alongside (v1.21.0).
+> Shipped: the OSS watcher now mints approve/deny URLs itself (Phase 2d-δ-3 / Path B, PR #151), closing the root-cause gap this doc names (URLs were only minted in the srenix-enterprise aiwatch and never reached the OSS-written Slack/Alertmanager/OpenProject sinks). Approve/Deny + silence-snippet wired into the production critical path in v1.10.4 (PR #131). OSS Slack **class-action buttons** shipped Phase 2.B.6 (v1.21.0, commit d10cf12 / PR #174) — broadening button coverage beyond the original 5-value `ActionKind` whitelist to per-class actions. `ai.replicas` HA aiwatch + observability shipped alongside (v1.21.0).
 >
 > No material design-vs-shipped scope-shrink. Body below is the original design, preserved for context.
 
 ---
 
 **Status:** Design draft
-**Tier:** Paid (cha-com aiwatch + approval-server)
+**Tier:** Paid (srenix-enterprise aiwatch + approval-server)
 **Author:** opened 2026-06-01
 **Companions:** [2026-06-rag-cluster-knowledge.md](2026-06-rag-cluster-knowledge.md), [2026-06-rag-networkpolicy-proposer.md](2026-06-rag-networkpolicy-proposer.md), [2026-06-rag-digest-pin-proposer.md](2026-06-rag-digest-pin-proposer.md)
 
@@ -18,7 +18,7 @@
 
 End-to-end test 2026-06-01:
 
-  - User clicks: the Slack messages from CHA's `FormatCriticalPayload` are sent (we verified the rendering renders the buttons correctly)
+  - User clicks: the Slack messages from Srenix's `FormatCriticalPayload` are sent (we verified the rendering renders the buttons correctly)
   - BUT no buttons appear in production Slack messages for any of the 200+ findings on the dev cluster
   - **Root cause:** the proposal pipeline only mints approval URLs for findings that produce a valid `pkgai.AIProposedAction`, which has a closed-schema `ActionKind` whitelist of just 5 values:
 
@@ -33,7 +33,7 @@ End-to-end test 2026-06-01:
   - The `LLMFixerMatcher` classifier prompt is also restricted to "one of: StaleErrorPods, StuckJobsWithBadSecretRef, StuckRSPods, StuckCertificateRequests, none."
   - For everything else (digest-pin warnings, NetworkPolicy gaps, RBAC findings, HPA structural, DNS-chain, pod-security labels, SA automount): the LLM returns "none" → no proposal → no URL → no buttons.
 
-OSS v1.12.0 added `Diagnostic.ProposedPolicyYAML` + `ProposedPolicyKind` fields so the OSS analyzers (e.g. `NetworkPolicyProposer`) could carry deterministic YAML to cha-com. **cha-com never wired the consumer side**. The bridge exists in OSS contract but not in code.
+OSS v1.12.0 added `Diagnostic.ProposedPolicyYAML` + `ProposedPolicyKind` fields so the OSS analyzers (e.g. `NetworkPolicyProposer`) could carry deterministic YAML to srenix-enterprise. **srenix-enterprise never wired the consumer side**. The bridge exists in OSS contract but not in code.
 
 The result: SREs see "Human Action Required" Slack messages with the silence snippet but no Approve/Deny buttons. The product appears half-built, but it's actually that the action-kind schema is narrower than the diagnostic surface.
 
@@ -73,7 +73,7 @@ type AIProposedAction struct {
 }
 ```
 
-Bridge in `cmd/cha-com/ai_wiring.go::proposeFixes`:
+Bridge in `cmd/srenix-enterprise/ai_wiring.go::proposeFixes`:
 
 ```go
 // BEFORE running the LLM matcher, check if the OSS analyzer already proposed:
@@ -115,10 +115,10 @@ if d.ProposedPolicyYAML != "" {
 
 ### Option B — Parallel `ApprovalRequest` CR-based flow
 
-Don't extend the closed schema; instead create a NEW CR type owned by cha-com:
+Don't extend the closed schema; instead create a NEW CR type owned by srenix-enterprise:
 
 ```yaml
-apiVersion: cha.bionicaisolutions.com/v1alpha1
+apiVersion: srenix.ai/v1alpha1
 kind: ApprovalRequest
 metadata:
   name: netpol-app-allow-from-kong
@@ -228,6 +228,6 @@ Extending to additional kinds happens per-PR with security review.
 
 ## Adjacent decisions captured
 
-- The OSS-side `Diagnostic.ProposedPolicyYAML` field (shipped in v1.12.0) is the right contract. The fix is the cha-com consumer, not the OSS producer.
+- The OSS-side `Diagnostic.ProposedPolicyYAML` field (shipped in v1.12.0) is the right contract. The fix is the srenix-enterprise consumer, not the OSS producer.
 - The narrow `AIProposedAction.ActionKind` whitelist was a deliberate security choice; Option A widens it but keeps the closed-schema discipline.
 - Today's outage (2026-06-01) is the canary case for why YAML proposals need a validator: a permissive NetworkPolicy stub broke production. The validator's job is to refuse YAML that would break workloads.

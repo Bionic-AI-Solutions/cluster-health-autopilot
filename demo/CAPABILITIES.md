@@ -1,4 +1,4 @@
-# Cluster Health Autopilot — Capabilities Reference
+# Agentic SRE — Capabilities Reference
 
 **Version:** 0.9.2 | **Date:** 2026-05-09 | **Cluster:** test-cluster1 (ap-south-1)
 
@@ -23,12 +23,12 @@ Kubernetes Cluster
   [DriftReport CRDs] + [Slack #aws-alerts]
 ```
 
-CHA runs a continuous detect → fix → re-verify → report loop.  
+Srenix runs a continuous detect → fix → re-verify → report loop.  
 In `--remedy` mode the watcher: **(1)** probes pre-fix, **(2)** runs fixers, **(3)** re-probes post-fix, **(4)** posts Slack with both the Active Issues context AND the "Fixes Applied" block.
 
 ---
 
-## What CHA Monitors
+## What Srenix Monitors
 
 ### Probes — Infrastructure Health
 
@@ -52,11 +52,11 @@ In `--remedy` mode the watcher: **(1)** probes pre-fix, **(2)** runs fixers, **(
 | **CertExpiry** | cert-manager Certificates that are: not Ready, expired, or expiring within 14 days | warning / critical | Partial* |
 | **VaultPathMissing** *(paid)* | ExternalSecrets referencing a Vault path that returns 404 — finds Vault-side gaps before ESO even tries | warning | No |
 
-*CertExpiry: CHA auto-fixes stuck CertificateRequests/Orders that block renewal, but cannot fix CA/issuer misconfiguration.
+*CertExpiry: Srenix auto-fixes stuck CertificateRequests/Orders that block renewal, but cannot fix CA/issuer misconfiguration.
 
 ---
 
-## What CHA Can Auto-Fix
+## What Srenix Can Auto-Fix
 
 | Fixer | Trigger Condition | Action | Safety Gates |
 |---|---|---|---|
@@ -70,7 +70,7 @@ In `--remedy` mode the watcher: **(1)** probes pre-fix, **(2)** runs fixers, **(
 
 ---
 
-## What CHA Reports But Cannot Auto-Fix
+## What Srenix Reports But Cannot Auto-Fix
 
 These require human intervention (Vault/git/infra change):
 
@@ -147,9 +147,9 @@ Message:     Node ip-192-168-85-233 reports MemoryPressure=True.
 
 ### Postgres Probe
 ```
-Component:   Postgres/cnpg/pg-cha-test
+Component:   Postgres/cnpg/pg-srenix-test
 Severity:    critical
-Message:     CloudNativePG cluster pg-cha-test: phase=Failing,
+Message:     CloudNativePG cluster pg-srenix-test: phase=Failing,
              reason: primary is not reachable, standby lag 47s
 ```
 
@@ -199,21 +199,21 @@ Message:     CloudNativePG cluster pg-cha-test: phase=Failing,
 
 | Mode | Command | Use Case |
 |---|---|---|
-| **Snapshot (zero-trust)** | `cha diagnose --snapshot ./cluster-snapshot/` | Offline analysis, no RBAC needed, share with vendor |
-| **Live diagnose** | `cha diagnose --live` | One-shot live check |
-| **Live watch** | `cha watch --live --slack-webhook $URL` | Continuous alerting |
-| **Autopilot** | `cha watch --live --remedy --slack-webhook $URL` | Full detect→fix→report loop |
-| **Dry-run** | `cha watch --live --remedy --dry-run` | Preview fix decisions without acting |
+| **Snapshot (zero-trust)** | `srenix diagnose --snapshot ./cluster-snapshot/` | Offline analysis, no RBAC needed, share with vendor |
+| **Live diagnose** | `srenix diagnose --live` | One-shot live check |
+| **Live watch** | `srenix watch --live --slack-webhook $URL` | Continuous alerting |
+| **Autopilot** | `srenix watch --live --remedy --slack-webhook $URL` | Full detect→fix→report loop |
+| **Dry-run** | `srenix watch --live --remedy --dry-run` | Preview fix decisions without acting |
 
 ---
 
 ## DriftReport CRDs
 
-CHA writes `driftreports.cha.bionic-ai-solutions.io` objects to the cluster — one per active diagnostic. These are queryable like any Kubernetes resource:
+Srenix writes `driftreports.srenix.bionic-ai-solutions.io` objects to the cluster — one per active diagnostic. These are queryable like any Kubernetes resource:
 
 ```bash
 kubectl get driftreports -A
 kubectl describe driftreport <name> -n <ns>
 ```
 
-On pod restart, CHA reads existing DriftReports to pre-populate its dedup state — no Slack flood after rollouts.
+On pod restart, Srenix reads existing DriftReports to pre-populate its dedup state — no Slack flood after rollouts.

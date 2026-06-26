@@ -1,7 +1,7 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
-// Package anonymize converts raw `cha diagnose --format json` output into
+// Package anonymize converts raw `srenix diagnose --format json` output into
 // anonymized JSONL records suitable for publishing in the public `runs/`
 // directory.
 //
@@ -27,11 +27,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/diagnose"
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/probe"
+	"github.com/srenix-ai/agentic-sre/internal/diagnose"
+	"github.com/srenix-ai/agentic-sre/internal/probe"
 )
 
-// RunInput is the JSON object emitted by `cha diagnose --format json`.
+// RunInput is the JSON object emitted by `srenix diagnose --format json`.
 type RunInput struct {
 	Version     string                `json:"version"`
 	Results     []probe.Result        `json:"results"`

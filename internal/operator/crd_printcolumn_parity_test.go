@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package operator
@@ -96,7 +96,7 @@ func TestCRD_PrinterColumnsChartBundleParity(t *testing.T) {
 		chartCols[d.Metadata.Name] = d
 	}
 
-	bundleFiles, err := filepath.Glob(filepath.Dir(csvPath) + "/cha.bionicaisolutions.com_*.yaml")
+	bundleFiles, err := filepath.Glob(filepath.Dir(csvPath) + "/srenix.ai_*.yaml")
 	if err != nil || len(bundleFiles) == 0 {
 		t.Fatalf("glob bundle CRD manifests: %v (%d files)", err, len(bundleFiles))
 	}
@@ -144,7 +144,7 @@ var markerSources = map[string]struct {
 	chartFile string
 }{
 	"../../api/v1alpha1/silence_types.go": {
-		crdName:   "silences.cha.bionicaisolutions.com",
+		crdName:   "silences.srenix.ai",
 		chartFile: "crd-silence.yaml",
 	},
 }
@@ -199,7 +199,7 @@ func TestCRD_NoDateColumnsOnFutureTimestamps(t *testing.T) {
 	if err != nil {
 		t.Fatalf("glob: %v", err)
 	}
-	more, err := filepath.Glob(filepath.Dir(csvPath) + "/cha.bionicaisolutions.com_*.yaml")
+	more, err := filepath.Glob(filepath.Dir(csvPath) + "/srenix.ai_*.yaml")
 	if err != nil {
 		t.Fatalf("glob: %v", err)
 	}

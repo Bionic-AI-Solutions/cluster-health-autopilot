@@ -1,0 +1,52 @@
+{{- if (.Values.silence).enabled }}
+# Silence ClusterRole.
+#
+# The watcher fetches active Silence CRs once per cycle to suppress
+# matched diagnostics. List/watch CLUSTER-WIDE so operators can create
+# silences in any namespace (typically alongside the affected workload)
+# and have Srenix honor them — same UX shape as Alertmanager silences.
+#
+# The SPEC is read-only: Srenix never creates, mutates, or deletes
+# Silence resources themselves; operators own their lifecycle
+# (kubectl create / delete / patch).
+#
+# The STATUS subresource is written by the watcher's status writer
+# (pkg/silence/status.go): each cycle it reconciles status.active
+# (until > now), status.matchCount (running total), and
+# status.lastMatchAt — backing the ACTIVE / MATCHED printer columns.
+# Runs unconditionally whenever silence.enabled; writes are
+# change-only (a Silence is patched only when its active flag flips
+# or it matched this cycle), and failures are soft — status is
+# observability, not control flow.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "srenix.fullname" . }}-silence
+  labels:
+    {{- include "srenix.labels" . | nindent 4 }}
+rules:
+  - apiGroups: ["srenix.ai"]
+    resources: ["silences"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["srenix.ai"]
+    resources: ["silences/status"]
+    # Used by the watcher's change-only status writer (see header):
+    # merge patches to /status for active / matchCount / lastMatchAt.
+    # Mirrors the operator builder (internal/operator/rbac_builders.go).
+    verbs: ["update", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "srenix.fullname" . }}-silence
+  labels:
+    {{- include "srenix.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "srenix.fullname" . }}-silence
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "srenix.serviceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+{{- end }}

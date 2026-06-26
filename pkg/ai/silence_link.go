@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package ai
@@ -54,7 +54,7 @@ type SilenceLinks struct {
 // link stays clickable for the lifetime of the silence it promises —
 // mirroring the approve-token policy of "link valid while the action it
 // proposes is still meaningful". priv/kid sign the tokens; baseURL is
-// the approval-server's external base (e.g. https://cha-approve.example).
+// the approval-server's external base (e.g. https://srenix-approve.example).
 //
 // Returns an error only for signing/URL failures; callers that lack a
 // signer or baseURL should simply not call this (the Slack renderer
@@ -74,8 +74,8 @@ func MintSilenceLinks(priv ed25519.PrivateKey, kid, baseURL string, req SilenceL
 	const clickBuffer = 7 * 24 * time.Hour
 
 	subjectClaims := SilenceTokenClaims{
-		Issuer:         "cha/approval-server",
-		Audience:       "cha/silence",
+		Issuer:         "srenix/approval-server",
+		Audience:       "srenix/silence",
 		JTI:            fmt.Sprintf("sil-subj-%s-%s-%d", sanitizeJTI(req.Source), sanitizeJTI(req.Subject), now.UnixNano()),
 		IssuedAt:       now.Unix(),
 		ExpiresAt:      now.Add(req.ShortDur + clickBuffer).Unix(),
@@ -86,8 +86,8 @@ func MintSilenceLinks(priv ed25519.PrivateKey, kid, baseURL string, req SilenceL
 		UntilUnix:      now.Add(req.ShortDur).Unix(),
 	}
 	classClaims := SilenceTokenClaims{
-		Issuer:         "cha/approval-server",
-		Audience:       "cha/silence",
+		Issuer:         "srenix/approval-server",
+		Audience:       "srenix/silence",
 		JTI:            fmt.Sprintf("sil-class-%s-%d", sanitizeJTI(req.Source), now.UnixNano()),
 		IssuedAt:       now.Unix(),
 		ExpiresAt:      now.Add(req.LongDur + clickBuffer).Unix(),

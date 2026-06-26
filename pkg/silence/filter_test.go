@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package silence
@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	chav1alpha1 "github.com/Bionic-AI-Solutions/cluster-health-autopilot/api/v1alpha1"
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/diagnose"
+	chav1alpha1 "github.com/srenix-ai/agentic-sre/api/v1alpha1"
+	"github.com/srenix-ai/agentic-sre/pkg/diagnose"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -182,8 +182,8 @@ func TestMatches_MessagePattern_Substring(t *testing.T) {
 	}
 	d := diagnose.Diagnostic{
 		Source:  "SecurityDrift",
-		Subject: "Pod/prod/cha-com-xyz",
-		Message: "Pod prod/cha-com mounts 1 container image(s) without digest pin: foo=bar:1.0",
+		Subject: "Pod/prod/srenix-enterprise-xyz",
+		Message: "Pod prod/srenix-enterprise mounts 1 container image(s) without digest pin: foo=bar:1.0",
 	}
 	if !Matches(s, d, time.Now()) {
 		t.Errorf("matching message should be silenced")

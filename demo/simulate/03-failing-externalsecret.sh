@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Simulate: Failing ExternalSecret (ESO Ready=False)
-# CHA reports: FailingExternalSecrets analyzer
-# CHA auto-fix: NONE — Vault data must be fixed first
+# Srenix reports: FailingExternalSecrets analyzer
+# Srenix auto-fix: NONE — Vault data must be fixed first
 # Manual fix:   demo/fix-scripts/fix-failing-externalsecret.sh
 #
 # Set KUBE_CONTEXT to target a specific cluster:
@@ -50,7 +50,7 @@ echo ""
 echo "    Watch ESO status:"
 echo "    ${KUBECTL} get externalsecret ${ESO_NAME} -n ${NAMESPACE} -w"
 echo ""
-echo "==> CHA FailingExternalSecrets analyzer will detect this on next cycle."
+echo "==> Srenix FailingExternalSecrets analyzer will detect this on next cycle."
 echo "    Check Slack #aws-alerts for: 'ExternalSecret ${ESO_NAME} is not Ready'"
 echo ""
 echo "    To fix: run demo/fix-scripts/fix-failing-externalsecret.sh ${NAMESPACE} ${ESO_NAME}"

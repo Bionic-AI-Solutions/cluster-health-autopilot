@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 // Package openproject implements the ticketing.Sink interface against
@@ -41,7 +41,7 @@ type MCPClient interface {
 //
 // This is intentionally minimal: enough to call tools/call and parse a
 // JSON response. It does NOT implement the full MCP handshake / SSE /
-// resource subscription surface — CHA only needs tool invocation.
+// resource subscription surface — Srenix only needs tool invocation.
 //
 // A future commit may swap this for github.com/mark3labs/mcp-go if we
 // need richer protocol support (resources, prompts, completions).

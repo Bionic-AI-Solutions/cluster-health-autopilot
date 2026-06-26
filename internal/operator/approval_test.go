@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package operator
@@ -8,7 +8,7 @@ import (
 	"encoding/base64"
 	"testing"
 
-	chav1alpha1 "github.com/Bionic-AI-Solutions/cluster-health-autopilot/api/v1alpha1"
+	chav1alpha1 "github.com/srenix-ai/agentic-sre/api/v1alpha1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
@@ -21,7 +21,7 @@ import (
 // Phase 2c-B — approval-server reconciliation tests.
 
 // approvalCR returns the happy-path CR with approval-server enabled.
-func approvalCR() *chav1alpha1.ClusterHealthAutopilot {
+func approvalCR() *chav1alpha1.AgenticSRE {
 	cr := fullCR()
 	cr.Spec.Approval = &chav1alpha1.ApprovalSpec{
 		Enabled: true,
@@ -91,9 +91,9 @@ func TestBuildApprovalServerDeployment_DefaultImage(t *testing.T) {
 	cr.Spec.Image.Tag = "1.9.4"
 	d := BuildApprovalServerDeployment(cr)
 	got := d.Spec.Template.Spec.Containers[0].Image
-	want := "docker4zerocool/cha-com:v1.9.4"
+	want := "docker4zerocool/srenix-enterprise:v1.9.4"
 	if got != want {
-		t.Errorf("default image=%q want %q (chart cha-com:v<OSS-tag> convention)", got, want)
+		t.Errorf("default image=%q want %q (chart srenix-enterprise:v<OSS-tag> convention)", got, want)
 	}
 }
 
@@ -104,8 +104,8 @@ func TestBuildApprovalServerDeployment_DefaultArgs(t *testing.T) {
 
 	mustContain(t, args, "approval-server")
 	mustContain(t, args, "--listen=:8443")
-	mustContain(t, args, "--signing-key-path=/etc/cha/keys/signing.key")
-	mustContain(t, args, "--audit-namespace=cha-system")
+	mustContain(t, args, "--signing-key-path=/etc/srenix/keys/signing.key")
+	mustContain(t, args, "--audit-namespace=srenix-system")
 
 	// inmemory store → no --store-* flags emitted.
 	for _, a := range args {
@@ -128,8 +128,8 @@ func TestBuildApprovalServerDeployment_ConfigMapStoreSwitchesToRollingUpdate(t *
 	}
 	args := d.Spec.Template.Spec.Containers[0].Args
 	mustContain(t, args, "--store-backend=configmap")
-	mustContain(t, args, "--store-replay-configmap=cha-approval-replay")
-	mustContain(t, args, "--store-runbook-configmap=cha-approval-runbooks")
+	mustContain(t, args, "--store-replay-configmap=srenix-approval-replay")
+	mustContain(t, args, "--store-runbook-configmap=srenix-approval-runbooks")
 }
 
 func TestBuildApprovalServerDeployment_SigningKeyVolume(t *testing.T) {
@@ -140,8 +140,8 @@ func TestBuildApprovalServerDeployment_SigningKeyVolume(t *testing.T) {
 		t.Fatalf("expected one signing-key Volume; got %+v", vols)
 	}
 	sv := vols[0].Secret
-	if sv == nil || sv.SecretName != "cha-approval-signing-key" {
-		t.Errorf("Volume secret=%+v want cha-approval-signing-key", sv)
+	if sv == nil || sv.SecretName != "srenix-approval-signing-key" {
+		t.Errorf("Volume secret=%+v want srenix-approval-signing-key", sv)
 	}
 	if len(sv.Items) != 2 {
 		t.Errorf("expected 2 keyed mounts (signing.key + signing.pub); got %d", len(sv.Items))
@@ -164,8 +164,8 @@ func TestBuildApprovalServerService_BasicShape(t *testing.T) {
 
 func TestBuildApprovalFixerClusterRole_HasRequiredVerbs(t *testing.T) {
 	role := BuildApprovalFixerClusterRole()
-	if role.Name != "cha-operator-approval-fixer" {
-		t.Errorf("role name=%q want cha-operator-approval-fixer", role.Name)
+	if role.Name != "srenix-operator-approval-fixer" {
+		t.Errorf("role name=%q want srenix-operator-approval-fixer", role.Name)
 	}
 	// Spot-check: pods/delete + deployments/patch are the two
 	// most-used fixer verbs.
@@ -183,10 +183,10 @@ func TestBuildApprovalFixerClusterRole_HasRequiredVerbs(t *testing.T) {
 func TestBuildApprovalFixerClusterRoleBinding_TargetsApprovalSA(t *testing.T) {
 	cr := approvalCR()
 	binding := BuildApprovalFixerClusterRoleBinding(cr)
-	if binding.Name != "cha-operator-approval-fixer-cha-system-bionic" {
-		t.Errorf("binding name=%q want cha-operator-approval-fixer-cha-system-bionic", binding.Name)
+	if binding.Name != "srenix-operator-approval-fixer-srenix-system-bionic" {
+		t.Errorf("binding name=%q want srenix-operator-approval-fixer-srenix-system-bionic", binding.Name)
 	}
-	if !bindingTargetsSA(binding, "bionic-approval-server", "cha-system") {
+	if !bindingTargetsSA(binding, "bionic-approval-server", "srenix-system") {
 		t.Errorf("binding does not target approval-server SA; got %+v", binding.Subjects)
 	}
 	if binding.Labels[ManagedByCRLabel] != cr.Name {
@@ -202,7 +202,7 @@ func TestBuildApprovalSigningReaderRole_ResourceNameScoped(t *testing.T) {
 	}
 	if len(role.Rules) != 1 ||
 		len(role.Rules[0].ResourceNames) != 1 ||
-		role.Rules[0].ResourceNames[0] != "cha-approval-signing-key" {
+		role.Rules[0].ResourceNames[0] != "srenix-approval-signing-key" {
 		t.Errorf("signing-reader Role not resourceName-scoped; got %+v", role.Rules)
 	}
 }
@@ -231,8 +231,8 @@ func TestGenerateSigningKeySecret_HasBothKeys(t *testing.T) {
 	if err != nil {
 		t.Fatalf("keygen: %v", err)
 	}
-	if s.Name != "cha-approval-signing-key" {
-		t.Errorf("Secret name=%q want cha-approval-signing-key", s.Name)
+	if s.Name != "srenix-approval-signing-key" {
+		t.Errorf("Secret name=%q want srenix-approval-signing-key", s.Name)
 	}
 	if len(s.Data["signing.key"]) == 0 || len(s.Data["signing.pub"]) == 0 {
 		t.Errorf("Secret missing signing.key or signing.pub; got keys=%v", keysOf(s.Data))
@@ -240,7 +240,7 @@ func TestGenerateSigningKeySecret_HasBothKeys(t *testing.T) {
 }
 
 // TestGenerateSigningKeySecret_RawBase64_NotPEM is a regression guard
-// for v1.10.0 → v1.10.1: cha-com (approval-server + aiwatch) loads the
+// for v1.10.0 → v1.10.1: srenix-enterprise (approval-server + aiwatch) loads the
 // signing key with base64.StdEncoding.DecodeString on the file content.
 // PEM-wrapped data (-----BEGIN PRIVATE KEY-----…) fails that decode at
 // byte 0 with "signing key not valid base64: illegal base64 data at
@@ -255,7 +255,7 @@ func TestGenerateSigningKeySecret_RawBase64_NotPEM(t *testing.T) {
 	for _, k := range []string{"signing.key", "signing.pub"} {
 		raw := s.Data[k]
 		if bytesHasPrefix(raw, []byte("-----BEGIN")) {
-			t.Errorf("%s is PEM-wrapped; cha-com expects raw base64. First bytes: %q", k, raw[:min(40, len(raw))])
+			t.Errorf("%s is PEM-wrapped; srenix-enterprise expects raw base64. First bytes: %q", k, raw[:min(40, len(raw))])
 		}
 		if _, err := base64Decode(raw); err != nil {
 			t.Errorf("%s is not valid base64: %v", k, err)
@@ -287,7 +287,7 @@ func TestReconcile_ApprovalEnabled_CreatesFullStack(t *testing.T) {
 	reconcileOnce(t, r, cr)
 	reconcileOnce(t, r, cr)
 
-	ns := "cha-system"
+	ns := "srenix-system"
 	name := "bionic-approval-server"
 
 	for _, want := range []struct {
@@ -321,7 +321,7 @@ func TestReconcile_ApprovalEnabled_CreatesFullStack(t *testing.T) {
 	}
 	var sec corev1.Secret
 	if err := c.Get(context.Background(),
-		types.NamespacedName{Namespace: ns, Name: "cha-approval-signing-key"}, &sec); err != nil {
+		types.NamespacedName{Namespace: ns, Name: "srenix-approval-signing-key"}, &sec); err != nil {
 		t.Errorf("signing-key Secret missing: %v", err)
 	}
 	if len(sec.Data["signing.key"]) == 0 {
@@ -348,7 +348,7 @@ func TestReconcile_ApprovalEnabled_StoresRBACOnlyForConfigMapBackend(t *testing.
 
 	var role rbacv1.Role
 	if err := c.Get(context.Background(),
-		types.NamespacedName{Namespace: "cha-system", Name: "bionic-approval-server-stores"},
+		types.NamespacedName{Namespace: "srenix-system", Name: "bionic-approval-server-stores"},
 		&role); err != nil {
 		t.Errorf("stores Role missing for configmap backend: %v", err)
 	}
@@ -362,7 +362,7 @@ func TestReconcile_ApprovalDisabled_NothingCreated(t *testing.T) {
 
 	var dep appsv1.Deployment
 	err := c.Get(context.Background(),
-		types.NamespacedName{Namespace: "cha-system", Name: "bionic-approval-server"},
+		types.NamespacedName{Namespace: "srenix-system", Name: "bionic-approval-server"},
 		&dep)
 	if !apierrors.IsNotFound(err) {
 		t.Errorf("approval-server Deployment should not exist when disabled; got err=%v", err)
@@ -375,9 +375,9 @@ func TestReconcile_ApprovalDisabledAfterCreate_DeletesAllChildren(t *testing.T) 
 	reconcileOnce(t, r, cr)
 	reconcileOnce(t, r, cr)
 
-	var stored chav1alpha1.ClusterHealthAutopilot
+	var stored chav1alpha1.AgenticSRE
 	_ = c.Get(context.Background(),
-		types.NamespacedName{Namespace: "cha-system", Name: "bionic"}, &stored)
+		types.NamespacedName{Namespace: "srenix-system", Name: "bionic"}, &stored)
 	stored.Spec.Approval.Enabled = false
 	stored.Generation = 2
 	if err := c.Update(context.Background(), &stored); err != nil {
@@ -391,10 +391,10 @@ func TestReconcile_ApprovalDisabledAfterCreate_DeletesAllChildren(t *testing.T) 
 		name string
 		ns   string
 	}{
-		{&appsv1.Deployment{}, "bionic-approval-server", "cha-system"},
-		{&corev1.Service{}, "bionic-approval-server", "cha-system"},
-		{&corev1.ServiceAccount{}, "bionic-approval-server", "cha-system"},
-		{&rbacv1.Role{}, "bionic-approval-server-signing-reader", "cha-system"},
+		{&appsv1.Deployment{}, "bionic-approval-server", "srenix-system"},
+		{&corev1.Service{}, "bionic-approval-server", "srenix-system"},
+		{&corev1.ServiceAccount{}, "bionic-approval-server", "srenix-system"},
+		{&rbacv1.Role{}, "bionic-approval-server-signing-reader", "srenix-system"},
 	} {
 		err := c.Get(context.Background(),
 			types.NamespacedName{Namespace: kind.ns, Name: kind.name}, kind.obj)
@@ -406,7 +406,7 @@ func TestReconcile_ApprovalDisabledAfterCreate_DeletesAllChildren(t *testing.T) 
 	// doesn't invalidate outstanding JWTs).
 	var sec corev1.Secret
 	if err := c.Get(context.Background(),
-		types.NamespacedName{Namespace: "cha-system", Name: "cha-approval-signing-key"},
+		types.NamespacedName{Namespace: "srenix-system", Name: "srenix-approval-signing-key"},
 		&sec); err != nil {
 		t.Errorf("signing-key Secret should be preserved across disable; got err=%v", err)
 	}
@@ -421,7 +421,7 @@ func TestReconcile_ApprovalReady_FlipsConditionTrue(t *testing.T) {
 	// Simulate Deployment Ready.
 	var dep appsv1.Deployment
 	_ = c.Get(context.Background(),
-		types.NamespacedName{Namespace: "cha-system", Name: "bionic-approval-server"},
+		types.NamespacedName{Namespace: "srenix-system", Name: "bionic-approval-server"},
 		&dep)
 	dep.Status.AvailableReplicas = 1
 	if err := c.Status().Update(context.Background(), &dep); err != nil {
@@ -478,7 +478,7 @@ func TestReconcile_ApprovalEnabled_SigningKeyUpdateIdempotentOnSecondReconcile(t
 	// The Secret should exist with labels matching CommonLabels.
 	var sec corev1.Secret
 	if err := c.Get(context.Background(),
-		types.NamespacedName{Namespace: "cha-system", Name: "cha-approval-signing-key"},
+		types.NamespacedName{Namespace: "srenix-system", Name: "srenix-approval-signing-key"},
 		&sec); err != nil {
 		t.Fatalf("signing-key Secret missing: %v", err)
 	}
@@ -489,7 +489,7 @@ func TestReconcile_ApprovalEnabled_SigningKeyUpdateIdempotentOnSecondReconcile(t
 
 	var sec2 corev1.Secret
 	_ = c.Get(context.Background(),
-		types.NamespacedName{Namespace: "cha-system", Name: "cha-approval-signing-key"},
+		types.NamespacedName{Namespace: "srenix-system", Name: "srenix-approval-signing-key"},
 		&sec2)
 	if sec2.ResourceVersion != rv1 {
 		t.Errorf("signing-key Secret resourceVersion changed after no-op reconcile (%s→%s): "+
@@ -523,7 +523,7 @@ func TestReconcile_ApprovalEnabled_SigningKeyIdempotent(t *testing.T) {
 
 	var first corev1.Secret
 	_ = c.Get(context.Background(),
-		types.NamespacedName{Namespace: "cha-system", Name: "cha-approval-signing-key"},
+		types.NamespacedName{Namespace: "srenix-system", Name: "srenix-approval-signing-key"},
 		&first)
 	firstKey := string(first.Data["signing.key"])
 
@@ -533,7 +533,7 @@ func TestReconcile_ApprovalEnabled_SigningKeyIdempotent(t *testing.T) {
 	}
 	var later corev1.Secret
 	_ = c.Get(context.Background(),
-		types.NamespacedName{Namespace: "cha-system", Name: "cha-approval-signing-key"},
+		types.NamespacedName{Namespace: "srenix-system", Name: "srenix-approval-signing-key"},
 		&later)
 	if string(later.Data["signing.key"]) != firstKey {
 		t.Error("signing-key Secret was regenerated across reconciles — outstanding JWTs broken")

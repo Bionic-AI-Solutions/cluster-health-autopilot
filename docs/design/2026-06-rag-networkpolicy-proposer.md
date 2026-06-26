@@ -3,26 +3,26 @@
 > **STATUS: ✅ SHIPPED — OSS proposer wire-up + CNI gating landed.**
 > _(P4.1 honest-header pass, 2026-06-11)_
 >
-> Shipped: the Phase 2d-β OSS proposer wire-up, CNI-gated + k3s-safe (PR #137); CNI detection hardened to recognize kube-router as a NetPol enforcer (v1.12.3, PR #142, after the 2026-06-01 dev-cluster outage); LoadBalancer-aware + kube-system-aware hardening (v1.13.0, PR #143). The OSS watcher mints Approve/Deny URLs so `ProposedPolicyYAML`-bearing diagnostics reach Slack/Alertmanager/OpenProject (Path B, PR #151 — closes the gap where NetworkPolicyProposer URLs were minted in the cha-com aiwatch but never reached user-facing sinks). The approval-server NetworkPolicy itself was also tightened to restrict ingress to the gateway ns (P2.6b-OSS).
+> Shipped: the Phase 2d-β OSS proposer wire-up, CNI-gated + k3s-safe (PR #137); CNI detection hardened to recognize kube-router as a NetPol enforcer (v1.12.3, PR #142, after the 2026-06-01 dev-cluster outage); LoadBalancer-aware + kube-system-aware hardening (v1.13.0, PR #143). The OSS watcher mints Approve/Deny URLs so `ProposedPolicyYAML`-bearing diagnostics reach Slack/Alertmanager/OpenProject (Path B, PR #151 — closes the gap where NetworkPolicyProposer URLs were minted in the srenix-enterprise aiwatch but never reached user-facing sinks). The approval-server NetworkPolicy itself was also tightened to restrict ingress to the gateway ns (P2.6b-OSS).
 >
 > No material design-vs-shipped scope-shrink. Body below is the original design, preserved for context.
 
 ---
 
 **Status:** Design draft
-**Tier:** Paid (CHA-com / AI tier, gated on `spec.ai.enabled`)
+**Tier:** Paid (Srenix Enterprise / AI tier, gated on `spec.ai.enabled`)
 **Author:** opened 2026-06-01
 **Parent:** [2026-06-rag-cluster-knowledge.md](2026-06-rag-cluster-knowledge.md)
 
 ## Why
 
-The CHA `RBACDrift`/`Namespace` analyzers flag namespaces without NetworkPolicies as a zero-trust gap — and they're right. But **fixing it manually doesn't scale**: each namespace needs its own analysis of what traffic to allow.
+The Srenix `RBACDrift`/`Namespace` analyzers flag namespaces without NetworkPolicies as a zero-trust gap — and they're right. But **fixing it manually doesn't scale**: each namespace needs its own analysis of what traffic to allow.
 
 Empirical hit on the dev cluster (2026-06-01):
 
   - 41 namespaces flagged
   - Spans single-pod scratch ns through 22-pod `mcp` ns with 19 Ingresses
-  - No single "default-deny + standard allows" template fits all of them — `mcp` needs allow rules for 19 distinct backend services, `default` needs almost nothing, `cluster-health-autopilot` needs `auth-proxy` egress, etc.
+  - No single "default-deny + standard allows" template fits all of them — `mcp` needs allow rules for 19 distinct backend services, `default` needs almost nothing, `agentic-sre` needs `auth-proxy` egress, etc.
 
 Doing this by hand means either (a) breaking traffic in production, or (b) spending hours per namespace. **This is exactly the work the AI tier should absorb.**
 
@@ -127,7 +127,7 @@ spec:
 
 - `default-deny` is **never** applied without a corresponding `allow` set. Proposer always pairs them in a single Kustomize.
 - Empty namespaces (0 pods) get `default-deny` only — when workloads land, the proposer re-runs and adds allows from observation.
-- The Slack/AM render reuses the v1.10.4 Approve/Deny path; the JTI is reused from cha-com #17.
+- The Slack/AM render reuses the v1.10.4 Approve/Deny path; the JTI is reused from srenix-enterprise #17.
 
 ## Open questions
 

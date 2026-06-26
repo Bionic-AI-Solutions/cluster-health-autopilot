@@ -1,8 +1,8 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 // Package operator hosts the pure-function builders that translate a
-// ClusterHealthAutopilot spec into the concrete Kubernetes manifests
+// AgenticSRE spec into the concrete Kubernetes manifests
 // the controller reconciles toward.
 //
 // Phase 1 ships the builders only. The controller-runtime Reconcile
@@ -21,8 +21,8 @@ import (
 	"fmt"
 	"strings"
 
-	chav1alpha1 "github.com/Bionic-AI-Solutions/cluster-health-autopilot/api/v1alpha1"
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/ai"
+	chav1alpha1 "github.com/srenix-ai/agentic-sre/api/v1alpha1"
+	"github.com/srenix-ai/agentic-sre/pkg/ai"
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -36,7 +36,7 @@ const (
 	// server-side-apply patches. Pinned so two replicas of the
 	// operator (HA via lease-based leader election) agree on
 	// ownership.
-	FieldManager = "cha-operator"
+	FieldManager = "srenix-operator"
 
 	// defaultWatcherDebounce / defaultWatcherResync mirror the
 	// existing Helm chart defaults — keeps the operator-managed
@@ -61,15 +61,15 @@ const (
 	defaultCloudflareSecretKey       = "token"
 	defaultWebhookServicePort  int32 = 8090
 
-	// AI / aiwatch defaults. Mirror the chart's `cha.aiArgs` helper —
-	// the same wire-format the cha-com binary already accepts under
+	// AI / aiwatch defaults. Mirror the chart's `srenix.aiArgs` helper —
+	// the same wire-format the srenix-enterprise binary already accepts under
 	// chart-managed installs. Any divergence between the chart and
 	// these defaults is a Phase 2 regression worth a test.
 	defaultAITier                  = "t0"
 	defaultAIInterval              = "60s"
 	defaultAIAPIKeyEnvName         = "AI_API_KEY"
 	defaultAIAPIKeySecretKey       = "API_KEY"
-	defaultAIImageRepo             = "docker4zerocool/cha-com"
+	defaultAIImageRepo             = "docker4zerocool/srenix-enterprise"
 	defaultAIMemoryTopK      int32 = 5
 
 	// Qdrant defaults — mirror the chart's rag-qdrant-statefulset.yaml.
@@ -82,7 +82,7 @@ const (
 	// roleLabelKey + roleLabelValue match the chart's labels so
 	// existing CronJob/Deployment selectors keep working when an
 	// install migrates from Helm to the operator.
-	roleLabelKey = "cha.bionicaisolutions.com/role"
+	roleLabelKey = "srenix.ai/role"
 )
 
 // ResourceNames are the canonical names the controller manages.
@@ -102,7 +102,7 @@ type ResourceNames struct {
 // NamesFor returns the canonical resource names derived from the CR
 // name. Pinned so renaming a CR is a forbidden operation (the
 // controller refuses).
-func NamesFor(cr *chav1alpha1.ClusterHealthAutopilot) ResourceNames {
+func NamesFor(cr *chav1alpha1.AgenticSRE) ResourceNames {
 	return ResourceNames{
 		ServiceAccount: cr.Name + "-sa",
 		Watcher:        cr.Name + "-watcher",
@@ -116,7 +116,7 @@ func NamesFor(cr *chav1alpha1.ClusterHealthAutopilot) ResourceNames {
 // ServiceAccountNameFor returns the SA the controller wires into
 // every workload. Honors the explicit spec.ServiceAccountName
 // override.
-func ServiceAccountNameFor(cr *chav1alpha1.ClusterHealthAutopilot) string {
+func ServiceAccountNameFor(cr *chav1alpha1.AgenticSRE) string {
 	if cr.Spec.ServiceAccountName != "" {
 		return cr.Spec.ServiceAccountName
 	}
@@ -125,9 +125,9 @@ func ServiceAccountNameFor(cr *chav1alpha1.ClusterHealthAutopilot) string {
 
 // CommonLabels are stamped on every controller-managed object so the
 // chart's label selectors continue to match.
-func CommonLabels(cr *chav1alpha1.ClusterHealthAutopilot, role string) map[string]string {
+func CommonLabels(cr *chav1alpha1.AgenticSRE, role string) map[string]string {
 	labels := map[string]string{
-		"app.kubernetes.io/name":       "cluster-health-autopilot",
+		"app.kubernetes.io/name":       "agentic-sre",
 		"app.kubernetes.io/instance":   cr.Name,
 		"app.kubernetes.io/managed-by": FieldManager,
 	}
@@ -158,21 +158,23 @@ func pullSecretRefs(names []string) []corev1.LocalObjectReference {
 }
 
 // pullPolicy returns the PullPolicy to stamp on the container.
-// Honors an explicit spec value; otherwise infers IfNotPresent for
-// semver tags and Always for mutable tags (latest / main / dev).
+//
+// Defaults to Always. A re-pushed tag must never be silently served from a
+// node's cache: IfNotPresent caused a multi-hour stale-image incident where a
+// rebuilt :1.26.3 kept running old code across a "successful" rollout. Always
+// guarantees the running image matches the registry for the tag. Operators who
+// pin genuinely-immutable tags or digests and want to avoid the per-restart
+// pull can set spec.image.pullPolicy: IfNotPresent (or ai/approval.image.
+// pullPolicy) explicitly.
 func pullPolicy(spec chav1alpha1.ImageSpec) corev1.PullPolicy {
 	if spec.PullPolicy != "" {
 		return corev1.PullPolicy(spec.PullPolicy)
 	}
-	switch spec.Tag {
-	case "latest", "main", "dev":
-		return corev1.PullAlways
-	}
-	return corev1.PullIfNotPresent
+	return corev1.PullAlways
 }
 
 // BuildServiceAccount returns the ServiceAccount the controller owns.
-func BuildServiceAccount(cr *chav1alpha1.ClusterHealthAutopilot) *corev1.ServiceAccount {
+func BuildServiceAccount(cr *chav1alpha1.AgenticSRE) *corev1.ServiceAccount {
 	names := NamesFor(cr)
 	if cr.Spec.ServiceAccountName != "" {
 		names.ServiceAccount = cr.Spec.ServiceAccountName
@@ -189,7 +191,7 @@ func BuildServiceAccount(cr *chav1alpha1.ClusterHealthAutopilot) *corev1.Service
 
 // BuildWatcherDeployment returns the watcher Deployment for the CR,
 // or nil when the watcher is disabled.
-func BuildWatcherDeployment(cr *chav1alpha1.ClusterHealthAutopilot) *appsv1.Deployment {
+func BuildWatcherDeployment(cr *chav1alpha1.AgenticSRE) *appsv1.Deployment {
 	if cr.Spec.Watcher == nil || !cr.Spec.Watcher.Enabled {
 		return nil
 	}
@@ -243,7 +245,7 @@ func BuildWatcherDeployment(cr *chav1alpha1.ClusterHealthAutopilot) *appsv1.Depl
 	// v1.16.0 — When the CR's AI tier has approvalServerUrl set, hand
 	// it to the watcher so the OSS binary itself can mint signed
 	// approve/deny URLs via the ManifestBridge FixProposer registered
-	// by cmd/cha/main.go. Before v1.16.0 only the aiwatch (cha-com)
+	// by cmd/srenix/main.go. Before v1.16.0 only the aiwatch (srenix-enterprise)
 	// pod minted URLs, but they never reached the watcher's Slack /
 	// Alertmanager / ticketing adapters — leaving the SRE without
 	// click-to-fix on otherwise-actionable findings.
@@ -252,7 +254,7 @@ func BuildWatcherDeployment(cr *chav1alpha1.ClusterHealthAutopilot) *appsv1.Depl
 	if cr.Spec.AI != nil && cr.Spec.AI.ApprovalServerURL != "" && cr.Spec.Approval != nil && cr.Spec.Approval.SigningKey != nil && cr.Spec.Approval.SigningKey.SecretName != "" {
 		args = append(args,
 			"--approval-server-url="+cr.Spec.AI.ApprovalServerURL,
-			"--signing-key-path=/etc/cha/keys/signing.key",
+			"--signing-key-path=/etc/srenix/keys/signing.key",
 		)
 		// One-click Silence link windows. Same signer + base URL; the
 		// watcher mints subject (short) + class (long) signed Silence
@@ -273,7 +275,7 @@ func BuildWatcherDeployment(cr *chav1alpha1.ClusterHealthAutopilot) *appsv1.Depl
 		}}
 		watcherVolumeMounts = []corev1.VolumeMount{{
 			Name:      "signing-key",
-			MountPath: "/etc/cha/keys",
+			MountPath: "/etc/srenix/keys",
 			ReadOnly:  true,
 		}}
 	}
@@ -322,7 +324,7 @@ func BuildWatcherDeployment(cr *chav1alpha1.ClusterHealthAutopilot) *appsv1.Depl
 
 // BuildDiagnoseCronJob returns the diagnose CronJob for the CR, or
 // nil when diagnose is disabled.
-func BuildDiagnoseCronJob(cr *chav1alpha1.ClusterHealthAutopilot) *batchv1.CronJob {
+func BuildDiagnoseCronJob(cr *chav1alpha1.AgenticSRE) *batchv1.CronJob {
 	if cr.Spec.Diagnose == nil || !cr.Spec.Diagnose.Enabled {
 		return nil
 	}
@@ -340,7 +342,7 @@ func BuildDiagnoseCronJob(cr *chav1alpha1.ClusterHealthAutopilot) *batchv1.CronJ
 
 // BuildRemediateCronJob returns the remediate CronJob for the CR, or
 // nil when remediate is disabled.
-func BuildRemediateCronJob(cr *chav1alpha1.ClusterHealthAutopilot) *batchv1.CronJob {
+func BuildRemediateCronJob(cr *chav1alpha1.AgenticSRE) *batchv1.CronJob {
 	if cr.Spec.Remediate == nil || !cr.Spec.Remediate.Enabled {
 		return nil
 	}
@@ -348,7 +350,7 @@ func BuildRemediateCronJob(cr *chav1alpha1.ClusterHealthAutopilot) *batchv1.Cron
 	if cr.Spec.Remediate.DryRun {
 		args = append(args, "--dry-run=true")
 	}
-	// No alerting flags/env: `cha remediate` registers only an optional
+	// No alerting flags/env: `srenix remediate` registers only an optional
 	// --slack-webhook (which the AlertingSpec has no field for), and the
 	// chart's cronjob-remediate.yaml renders none either.
 	// nil backoffLimit = RemediateSpec has no backoffLimit knob; the
@@ -362,13 +364,13 @@ func BuildRemediateCronJob(cr *chav1alpha1.ClusterHealthAutopilot) *batchv1.Cron
 // buildCronJobCommon factors the shared shape between diagnose and
 // remediate. Each caller supplies its own COMPLETE arg list and any
 // role-specific env (e.g. diagnose's SLACK_HEALTHINFO_URL) — this
-// function must never append flags itself: `cha diagnose` and
-// `cha remediate` register far fewer flags than `cha watch`, and a
+// function must never append flags itself: `srenix diagnose` and
+// `srenix remediate` register far fewer flags than `srenix watch`, and a
 // watch-only flag leaking in here made both CronJobs exit 1 with
 // "unknown flag" on every run (fixed v1.26.0; pinned by
-// cronjob_args_test.go + cmd/cha/operatorflags_test.go).
+// cronjob_args_test.go + cmd/srenix/operatorflags_test.go).
 func buildCronJobCommon(
-	cr *chav1alpha1.ClusterHealthAutopilot,
+	cr *chav1alpha1.AgenticSRE,
 	role, name, schedule string,
 	backoffLimit *int32, activeDeadline int64,
 	args []string, extraEnv []corev1.EnvVar,
@@ -521,8 +523,8 @@ func silenceDurationArgs(s *chav1alpha1.ApprovalSilenceSpec) []string {
 
 // alertingArgs renders the WATCH-ONLY alerting flags
 // (--alertmanager-url, --cluster-name, --slack-alerts,
-// --slack-critical) for the watcher Deployment. `cha diagnose` and
-// `cha remediate` register NONE of these — appending them to the
+// --slack-critical) for the watcher Deployment. `srenix diagnose` and
+// `srenix remediate` register NONE of these — appending them to the
 // CronJobs made every Job exit 1 with "unknown flag" (fixed v1.26.0);
 // the diagnose CronJob's only alerting flag is rendered by
 // diagnoseAlertingArgs below.
@@ -548,7 +550,7 @@ func alertingArgs(a *chav1alpha1.AlertingSpec) []string {
 	return out
 }
 
-// diagnoseAlertingArgs renders the single alerting flag `cha diagnose`
+// diagnoseAlertingArgs renders the single alerting flag `srenix diagnose`
 // accepts: --slack-healthinfo (the daily #healthinfo digest, which
 // also requires --format=daily). Mirrors the chart's
 // cronjob-diagnose.yaml.
@@ -565,7 +567,7 @@ func diagnoseAlertingArgs(a *chav1alpha1.AlertingSpec) []string {
 // healthinfoEnv provides only the SLACK_HEALTHINFO_URL env var that
 // diagnoseAlertingArgs' $(SLACK_HEALTHINFO_URL) expands — the diagnose
 // CronJob consumes no other alerting env (mirrors the chart's
-// cha.slackHealthinfoEnv helper).
+// srenix.slackHealthinfoEnv helper).
 func healthinfoEnv(a *chav1alpha1.AlertingSpec) []corev1.EnvVar {
 	if a == nil || a.Slack == nil {
 		return nil
@@ -579,7 +581,7 @@ func healthinfoEnv(a *chav1alpha1.AlertingSpec) []corev1.EnvVar {
 // alertingEnv builds the WATCHER's env var slice: the Slack webhook
 // URLs that alertingArgs() references as $(ENV_VAR). K8s expands
 // $(FOO) in container args from the container's env at pod-start time,
-// before the process exec. ONLY the two channels `cha watch` consumes
+// before the process exec. ONLY the two channels `srenix watch` consumes
 // (--slack-alerts / --slack-critical) belong here — SLACK_HEALTHINFO_URL
 // is diagnose-only (healthinfoEnv above). Until v1.26.0 this function
 // also injected SLACK_HEALTHINFO_URL onto the watcher: nothing in watch
@@ -664,6 +666,15 @@ func ticketingArgs(t *chav1alpha1.TicketingSpec) []string {
 	if t.CommentInterval != "" {
 		out = append(out, "--ticketing-comment-interval="+t.CommentInterval)
 	}
+	// MinSeverity floor. Default critical (human-action only): emit it
+	// explicitly when unset so an operator-managed watcher never reverts to
+	// ticketing every warning/info observation. Operators widen with
+	// "warning" / "info" in the CR.
+	minSev := t.MinSeverity
+	if minSev == "" {
+		minSev = "critical"
+	}
+	out = append(out, "--ticketing-min-severity="+minSev)
 	return out
 }
 
@@ -702,12 +713,12 @@ func intstrPtr(i int) *intstr.IntOrString {
 
 // --- AI / aiwatch (Phase 2) ---
 
-// aiImageRef returns the cha-com image reference. Defaults the repo to
-// docker4zerocool/cha-com and the tag to `v<OSS image tag>` — matching
-// the chart's convention where the cha-com image is tagged with a
+// aiImageRef returns the srenix-enterprise image reference. Defaults the repo to
+// docker4zerocool/srenix-enterprise and the tag to `v<OSS image tag>` — matching
+// the chart's convention where the srenix-enterprise image is tagged with a
 // leading "v" alongside the OSS image's bare semver. Override via
 // spec.ai.image.{repository,tag}.
-func aiImageRef(cr *chav1alpha1.ClusterHealthAutopilot) string {
+func aiImageRef(cr *chav1alpha1.AgenticSRE) string {
 	repo := defaultAIImageRepo
 	tag := "v" + cr.Spec.Image.Tag
 	if ai := cr.Spec.AI; ai != nil && ai.Image != nil {
@@ -724,7 +735,7 @@ func aiImageRef(cr *chav1alpha1.ClusterHealthAutopilot) string {
 // aiPullPolicy mirrors pullPolicy() but reads spec.ai.image.pullPolicy
 // when set; otherwise falls back to the default policy for the
 // resolved aiwatch tag.
-func aiPullPolicy(cr *chav1alpha1.ClusterHealthAutopilot) corev1.PullPolicy {
+func aiPullPolicy(cr *chav1alpha1.AgenticSRE) corev1.PullPolicy {
 	if ai := cr.Spec.AI; ai != nil && ai.Image != nil {
 		if ai.Image.PullPolicy != "" {
 			return corev1.PullPolicy(ai.Image.PullPolicy)
@@ -743,15 +754,15 @@ func aiPullPolicy(cr *chav1alpha1.ClusterHealthAutopilot) corev1.PullPolicy {
 
 // AIEnabled reports whether spec.ai opts into the aiwatch Deployment.
 // Pulls the nil-guard into one place so callers don't repeat it.
-func AIEnabled(cr *chav1alpha1.ClusterHealthAutopilot) bool {
+func AIEnabled(cr *chav1alpha1.AgenticSRE) bool {
 	return cr.Spec.AI != nil && cr.Spec.AI.Enabled
 }
 
-// aiArgs builds the `cha-com watch` CLI flags from spec.ai. Mirrors
-// the chart's `cha.aiArgs` helper one-for-one — same flag names, same
+// aiArgs builds the `srenix-enterprise watch` CLI flags from spec.ai. Mirrors
+// the chart's `srenix.aiArgs` helper one-for-one — same flag names, same
 // defaults, same skip-when-empty semantics. Order is stable so tests
 // can match against a known sequence.
-func aiArgs(cr *chav1alpha1.ClusterHealthAutopilot) []string {
+func aiArgs(cr *chav1alpha1.AgenticSRE) []string {
 	ai := cr.Spec.AI
 	tier := ai.Tier
 	if tier == "" {
@@ -820,7 +831,7 @@ func aiArgs(cr *chav1alpha1.ClusterHealthAutopilot) []string {
 		args = append(args, fmt.Sprintf("--memory-topk=%d", topK))
 	}
 	// Phase 2.F.6 — leader-election args when replicas > 1.
-	// Mirrors the chart's cha.aiArgs template gate. Single-replica
+	// Mirrors the chart's srenix.aiArgs template gate. Single-replica
 	// deploys (default) take the noop elector path in the binary.
 	if ai.Replicas > 1 {
 		names := NamesFor(cr)
@@ -831,7 +842,7 @@ func aiArgs(cr *chav1alpha1.ClusterHealthAutopilot) []string {
 		)
 	}
 	// Phase 2.H — DigestPin PR attestation args. Mirrors the chart's
-	// cha.aiArgs template gate. Mount path matches the chart's
+	// srenix.aiArgs template gate. Mount path matches the chart's
 	// attestation-key Volume.
 	if att := ai.DigestPinAttestation; att != nil && att.SecretName != "" {
 		secretKey := att.SecretKey
@@ -840,10 +851,10 @@ func aiArgs(cr *chav1alpha1.ClusterHealthAutopilot) []string {
 		}
 		kid := att.KeyID
 		if kid == "" {
-			kid = "cha-digest-pin"
+			kid = "srenix-digest-pin"
 		}
 		args = append(args,
-			"--digest-pin-attestation-key=/etc/cha/attestation/"+secretKey,
+			"--digest-pin-attestation-key=/etc/srenix/attestation/"+secretKey,
 			"--digest-pin-attestation-kid="+kid,
 		)
 	}
@@ -859,7 +870,7 @@ func aiArgs(cr *chav1alpha1.ClusterHealthAutopilot) []string {
 	}
 	// v1.18.0 — extraArgs escape hatch. Append AFTER typed args so a
 	// typed flag (e.g. --ai-tier) wins on duplicate keys (later args
-	// override earlier ones in pflag). Useful for cha-com flags the
+	// override earlier ones in pflag). Useful for srenix-enterprise flags the
 	// operator schema hasn't typed yet (e.g. --cloudflare-feeder,
 	// --rag-store-url, --digest-pin-*).
 	args = append(args, ai.ExtraArgs...)
@@ -868,8 +879,8 @@ func aiArgs(cr *chav1alpha1.ClusterHealthAutopilot) []string {
 
 // aiEnv builds the env var slice for the aiwatch container. Just the
 // downward-API pair plus the LLM API-key secret reference; everything
-// else flows via flags. Mirrors the chart's `cha.aiEnv`.
-func aiEnv(cr *chav1alpha1.ClusterHealthAutopilot) []corev1.EnvVar {
+// else flows via flags. Mirrors the chart's `srenix.aiEnv`.
+func aiEnv(cr *chav1alpha1.AgenticSRE) []corev1.EnvVar {
 	env := []corev1.EnvVar{
 		{
 			Name: "MY_POD_NAMESPACE",
@@ -903,7 +914,7 @@ func aiEnv(cr *chav1alpha1.ClusterHealthAutopilot) []corev1.EnvVar {
 			},
 		})
 	}
-	// v1.18.0 — extraEnv escape hatch. Used for cha-com env vars the
+	// v1.18.0 — extraEnv escape hatch. Used for srenix-enterprise env vars the
 	// operator schema doesn't model yet (e.g. GITHUB_PAT for the
 	// digest-pin proposer's forge calls, CLOUDFLARE_API_TOKEN for the
 	// zone-feeder). Validation enforces Value XOR ValueFrom at the
@@ -925,8 +936,8 @@ func aiEnv(cr *chav1alpha1.ClusterHealthAutopilot) []corev1.EnvVar {
 		}
 		env = append(env, v)
 	}
-	// CHA-com ticketing sinks (Jira / ServiceNow / route). These env vars
-	// are read by the cha-com aiwatch binary; the OSS operator only wires
+	// Srenix Enterprise ticketing sinks (Jira / ServiceNow / route). These env vars
+	// are read by the srenix-enterprise aiwatch binary; the OSS operator only wires
 	// them. Plain values inline; tokens/passwords via secretKeyRef ONLY.
 	env = append(env, ticketingProviderEnv(cr.Spec.Ticketing)...)
 	// Protected-namespace extension — the aiwatch links pkg/ai's
@@ -938,13 +949,13 @@ func aiEnv(cr *chav1alpha1.ClusterHealthAutopilot) []corev1.EnvVar {
 }
 
 // protectedNamespacesEnv renders spec.protectedNamespacesExtra as the
-// CHA_PROTECTED_NAMESPACES_EXTRA env var (comma-separated; trimmed,
+// SRENIX_PROTECTED_NAMESPACES_EXTRA env var (comma-separated; trimmed,
 // deduped, empties dropped — mirrors ai.ParseProtectedNamespacesExtra
 // on the consuming side). Returned on EVERY act-capable workload
 // (watcher, diagnose, remediate, aiwatch) so the fixer guard and the
 // AI validator extend the same append-only floor. Nil when the spec
 // has no usable entries — byte-identical legacy render.
-func protectedNamespacesEnv(cr *chav1alpha1.ClusterHealthAutopilot) []corev1.EnvVar {
+func protectedNamespacesEnv(cr *chav1alpha1.AgenticSRE) []corev1.EnvVar {
 	extras := ai.ParseProtectedNamespacesExtra(strings.Join(cr.Spec.ProtectedNamespacesExtra, ","))
 	if len(extras) == 0 {
 		return nil
@@ -955,7 +966,7 @@ func protectedNamespacesEnv(cr *chav1alpha1.ClusterHealthAutopilot) []corev1.Env
 	}}
 }
 
-// ticketingProviderEnv renders the CHA-com Jira / ServiceNow / route env
+// ticketingProviderEnv renders the Srenix Enterprise Jira / ServiceNow / route env
 // vars on the aiwatch container. Plain (non-secret) values become
 // `value:`; credentials (Jira token, ServiceNow password / bearer) become
 // `valueFrom.secretKeyRef` — the literal NEVER appears in the manifest.
@@ -985,38 +996,38 @@ func ticketingProviderEnv(t *chav1alpha1.TicketingSpec) []corev1.EnvVar {
 		}
 	}
 
-	plain("CHA_TICKETING_ROUTE", t.Route)
+	plain("SRENIX_TICKETING_ROUTE", t.Route)
 
 	if j := t.Jira; j != nil {
-		plain("CHA_JIRA_URL", j.URL)
-		plain("CHA_JIRA_PROJECT", j.Project)
-		plain("CHA_JIRA_EMAIL", j.Email)
-		plain("CHA_JIRA_ISSUE_TYPE", j.IssueType)
+		plain("SRENIX_JIRA_URL", j.URL)
+		plain("SRENIX_JIRA_PROJECT", j.Project)
+		plain("SRENIX_JIRA_EMAIL", j.Email)
+		plain("SRENIX_JIRA_ISSUE_TYPE", j.IssueType)
 		if p := j.Priority; p != nil {
-			plain("CHA_JIRA_PRIORITY_CRITICAL", p.Critical)
-			plain("CHA_JIRA_PRIORITY_WARNING", p.Warning)
-			plain("CHA_JIRA_PRIORITY_INFO", p.Info)
+			plain("SRENIX_JIRA_PRIORITY_CRITICAL", p.Critical)
+			plain("SRENIX_JIRA_PRIORITY_WARNING", p.Warning)
+			plain("SRENIX_JIRA_PRIORITY_INFO", p.Info)
 		}
-		plain("CHA_JIRA_WEB_URL_BASE", j.WebURLBase)
-		secret("CHA_JIRA_TOKEN", j.TokenSecret)
+		plain("SRENIX_JIRA_WEB_URL_BASE", j.WebURLBase)
+		secret("SRENIX_JIRA_TOKEN", j.TokenSecret)
 	}
 
 	if s := t.ServiceNow; s != nil {
-		plain("CHA_SERVICENOW_URL", s.URL)
-		plain("CHA_SERVICENOW_USER", s.User)
+		plain("SRENIX_SERVICENOW_URL", s.URL)
+		plain("SRENIX_SERVICENOW_USER", s.User)
 		if u := s.Urgency; u != nil {
-			plain("CHA_SERVICENOW_URGENCY_CRITICAL", u.Critical)
-			plain("CHA_SERVICENOW_URGENCY_WARNING", u.Warning)
-			plain("CHA_SERVICENOW_URGENCY_INFO", u.Info)
+			plain("SRENIX_SERVICENOW_URGENCY_CRITICAL", u.Critical)
+			plain("SRENIX_SERVICENOW_URGENCY_WARNING", u.Warning)
+			plain("SRENIX_SERVICENOW_URGENCY_INFO", u.Info)
 		}
 		if im := s.Impact; im != nil {
-			plain("CHA_SERVICENOW_IMPACT_CRITICAL", im.Critical)
-			plain("CHA_SERVICENOW_IMPACT_WARNING", im.Warning)
-			plain("CHA_SERVICENOW_IMPACT_INFO", im.Info)
+			plain("SRENIX_SERVICENOW_IMPACT_CRITICAL", im.Critical)
+			plain("SRENIX_SERVICENOW_IMPACT_WARNING", im.Warning)
+			plain("SRENIX_SERVICENOW_IMPACT_INFO", im.Info)
 		}
-		plain("CHA_SERVICENOW_WEB_URL_BASE", s.WebURLBase)
-		secret("CHA_SERVICENOW_PASSWORD", s.PasswordSecret)
-		secret("CHA_SERVICENOW_BEARER", s.BearerSecret)
+		plain("SRENIX_SERVICENOW_WEB_URL_BASE", s.WebURLBase)
+		secret("SRENIX_SERVICENOW_PASSWORD", s.PasswordSecret)
+		secret("SRENIX_SERVICENOW_BEARER", s.BearerSecret)
 	}
 
 	return env
@@ -1035,7 +1046,7 @@ func ticketingProviderEnv(t *chav1alpha1.TicketingSpec) []corev1.EnvVar {
 // Required fields surfaced by the validator: ai.endpoint, ai.model.
 // Empty memory.embeddings.model when memory.enabled is the only other
 // must-validate.
-func BuildAIWatchDeployment(cr *chav1alpha1.ClusterHealthAutopilot) *appsv1.Deployment {
+func BuildAIWatchDeployment(cr *chav1alpha1.AgenticSRE) *appsv1.Deployment {
 	if !AIEnabled(cr) {
 		return nil
 	}
@@ -1066,8 +1077,8 @@ func BuildAIWatchDeployment(cr *chav1alpha1.ClusterHealthAutopilot) *appsv1.Depl
 	// When the approval-server is enabled, the aiwatch needs the Ed25519
 	// signing key to mint click-to-fix JWT URLs. The chart mounts it
 	// conditionally under approval.enabled; mirror that here. Without this
-	// mount the cha-com binary crashes at startup with:
-	//   "--approval-server-url set but CHA_SIGNING_KEY_PATH is empty"
+	// mount the srenix-enterprise binary crashes at startup with:
+	//   "--approval-server-url set but SRENIX_SIGNING_KEY_PATH is empty"
 	if ApprovalEnabled(cr) {
 		secretName := ApprovalSigningKeySecretName(cr)
 		pod.Volumes = append(pod.Volumes, corev1.Volume{
@@ -1087,20 +1098,20 @@ func BuildAIWatchDeployment(cr *chav1alpha1.ClusterHealthAutopilot) *appsv1.Depl
 		})
 		c := &pod.Containers[0]
 		c.Env = append(c.Env, corev1.EnvVar{
-			Name:  "CHA_SIGNING_KEY_PATH",
-			Value: "/etc/cha/keys/signing.key",
+			Name:  "SRENIX_SIGNING_KEY_PATH",
+			Value: "/etc/srenix/keys/signing.key",
 		})
 		c.VolumeMounts = append(c.VolumeMounts, corev1.VolumeMount{
 			Name:      "signing-key",
-			MountPath: "/etc/cha/keys",
+			MountPath: "/etc/srenix/keys",
 			ReadOnly:  true,
 		})
 	}
 
 	// Phase 2.H — DigestPin attestation key mount. Independent of
 	// approval-server's signing key (different secrets, different
-	// mount paths). Mounts at /etc/cha/attestation to avoid
-	// colliding with /etc/cha/keys when both are enabled.
+	// mount paths). Mounts at /etc/srenix/attestation to avoid
+	// colliding with /etc/srenix/keys when both are enabled.
 	if att := cr.Spec.AI.DigestPinAttestation; att != nil && att.SecretName != "" {
 		secretKey := att.SecretKey
 		if secretKey == "" {
@@ -1120,7 +1131,7 @@ func BuildAIWatchDeployment(cr *chav1alpha1.ClusterHealthAutopilot) *appsv1.Depl
 		c := &pod.Containers[0]
 		c.VolumeMounts = append(c.VolumeMounts, corev1.VolumeMount{
 			Name:      "attestation-key",
-			MountPath: "/etc/cha/attestation",
+			MountPath: "/etc/srenix/attestation",
 			ReadOnly:  true,
 		})
 	}
@@ -1166,9 +1177,9 @@ func BuildAIWatchDeployment(cr *chav1alpha1.ClusterHealthAutopilot) *appsv1.Depl
 // Returns nil when metrics are disabled. Phase 3.D.
 //
 // Headless (clusterIP=None) so Prometheus pod-discovery sees per-pod
-// endpoints individually — `cha_cycle_total{leader="true"}` stays
+// endpoints individually — `srenix_cycle_total{leader="true"}` stays
 // distinguishable from the follower's idle counter.
-func BuildAIWatchMetricsService(cr *chav1alpha1.ClusterHealthAutopilot) *corev1.Service {
+func BuildAIWatchMetricsService(cr *chav1alpha1.AgenticSRE) *corev1.Service {
 	if !AIEnabled(cr) {
 		return nil
 	}
@@ -1210,7 +1221,7 @@ func BuildAIWatchMetricsService(cr *chav1alpha1.ClusterHealthAutopilot) *corev1.
 // falls back to the OSS image's pullSecrets (the chart-managed install
 // applies the same list to both images via .Values.image.pullSecrets,
 // so this keeps parity for callers that don't differentiate).
-func aiPullSecrets(cr *chav1alpha1.ClusterHealthAutopilot) []string {
+func aiPullSecrets(cr *chav1alpha1.AgenticSRE) []string {
 	if ai := cr.Spec.AI; ai != nil && ai.Image != nil && len(ai.Image.PullSecrets) > 0 {
 		return ai.Image.PullSecrets
 	}
@@ -1224,13 +1235,13 @@ func aiPullSecrets(cr *chav1alpha1.ClusterHealthAutopilot) []string {
 // aiwatch without memory (it falls back to in-process retrieval) and
 // you can stand up Qdrant without enabling AI (e.g. preheat the index
 // before a tier flip). Match the chart's behavior here exactly.
-func MemoryEnabled(cr *chav1alpha1.ClusterHealthAutopilot) bool {
+func MemoryEnabled(cr *chav1alpha1.AgenticSRE) bool {
 	return cr.Spec.AI != nil && cr.Spec.AI.Memory != nil && cr.Spec.AI.Memory.Enabled
 }
 
 // qdrantImageRef returns the "<repo>:<tag>" for the Qdrant container.
 // Defaults match the chart's rag-qdrant-statefulset.yaml.
-func qdrantImageRef(cr *chav1alpha1.ClusterHealthAutopilot) string {
+func qdrantImageRef(cr *chav1alpha1.AgenticSRE) string {
 	repo := defaultQdrantImageRepo
 	tag := defaultQdrantImageTag
 	if m := cr.Spec.AI.Memory; m != nil && m.Image != nil {
@@ -1246,7 +1257,7 @@ func qdrantImageRef(cr *chav1alpha1.ClusterHealthAutopilot) string {
 
 // qdrantPullPolicy mirrors aiPullPolicy. Defaults to IfNotPresent for
 // the qdrant/qdrant semver tag.
-func qdrantPullPolicy(cr *chav1alpha1.ClusterHealthAutopilot) corev1.PullPolicy {
+func qdrantPullPolicy(cr *chav1alpha1.AgenticSRE) corev1.PullPolicy {
 	if m := cr.Spec.AI.Memory; m != nil && m.Image != nil {
 		if m.Image.PullPolicy != "" {
 			return corev1.PullPolicy(m.Image.PullPolicy)
@@ -1262,7 +1273,7 @@ func qdrantPullPolicy(cr *chav1alpha1.ClusterHealthAutopilot) corev1.PullPolicy 
 // BuildQdrantService returns the ClusterIP Service the aiwatch reaches
 // the vector store on. Two ports (6333 REST + 6334 gRPC) — match the
 // chart. Returns nil when memory is disabled.
-func BuildQdrantService(cr *chav1alpha1.ClusterHealthAutopilot) *corev1.Service {
+func BuildQdrantService(cr *chav1alpha1.AgenticSRE) *corev1.Service {
 	if !MemoryEnabled(cr) {
 		return nil
 	}
@@ -1304,7 +1315,7 @@ func BuildQdrantService(cr *chav1alpha1.ClusterHealthAutopilot) *corev1.Service 
 // spec.{selector,serviceName,volumeClaimTemplates,podManagementPolicy}.
 // reconcileQdrant must only mutate spec.{replicas,template,
 // updateStrategy} on update.
-func BuildQdrantStatefulSet(cr *chav1alpha1.ClusterHealthAutopilot) *appsv1.StatefulSet {
+func BuildQdrantStatefulSet(cr *chav1alpha1.AgenticSRE) *appsv1.StatefulSet {
 	if !MemoryEnabled(cr) {
 		return nil
 	}
@@ -1410,7 +1421,7 @@ func BuildQdrantStatefulSet(cr *chav1alpha1.ClusterHealthAutopilot) *appsv1.Stat
 // qdrantPullSecrets honors spec.ai.memory.image.pullSecrets first, then
 // falls back to the OSS image's pullSecrets (chart pulls Qdrant from
 // the same registry as the OSS image in shared-secret installs).
-func qdrantPullSecrets(cr *chav1alpha1.ClusterHealthAutopilot) []string {
+func qdrantPullSecrets(cr *chav1alpha1.AgenticSRE) []string {
 	if m := cr.Spec.AI.Memory; m != nil && m.Image != nil && len(m.Image.PullSecrets) > 0 {
 		return m.Image.PullSecrets
 	}
@@ -1439,7 +1450,7 @@ func mustParseQuantity(s string) resource.Quantity {
 //
 // Both field groups were accepted by the CRD schema but consumed
 // nowhere in the operator: catalog.go wires the DNSChainDrift
-// analyzer's Cloudflare client only when CHA_CLOUDFLARE_TOKEN is set
+// analyzer's Cloudflare client only when SRENIX_CLOUDFLARE_TOKEN is set
 // at registration time (nothing supplied it on operator-managed
 // installs), and the class-E webhook receiver was reachable only by
 // pod IP because no Service and no containerPort were ever built.
@@ -1447,8 +1458,8 @@ func mustParseQuantity(s string) resource.Quantity {
 // externalDNSEnv injects the Cloudflare API token for the
 // DNSChainDrift analyzer. Always a secretKeyRef — the token value
 // never appears in the Deployment manifest. Mirrors the chart's
-// env-from-secret helper shape (_helpers.tpl `cha.slackAlertsEnv` /
-// `cha.aiEnv`).
+// env-from-secret helper shape (_helpers.tpl `srenix.slackAlertsEnv` /
+// `srenix.aiEnv`).
 func externalDNSEnv(e *chav1alpha1.ExternalDNSSpec) []corev1.EnvVar {
 	if e == nil || e.Cloudflare == nil || !e.Cloudflare.Enabled {
 		return nil
@@ -1461,7 +1472,7 @@ func externalDNSEnv(e *chav1alpha1.ExternalDNSSpec) []corev1.EnvVar {
 		return nil
 	}
 	return []corev1.EnvVar{
-		secretRefEnv("CHA_CLOUDFLARE_TOKEN", ref.Name, defaultCloudflareSecretKey, ref.Key),
+		secretRefEnv("SRENIX_CLOUDFLARE_TOKEN", ref.Name, defaultCloudflareSecretKey, ref.Key),
 	}
 }
 
@@ -1513,7 +1524,7 @@ func watcherContainerPorts(w *chav1alpha1.WatcherSpec) []corev1.ContainerPort {
 // always-on /healthz endpoint — parity with the chart's watcher
 // Deployment probe stanzas.
 //
-// O11 (1.26.1): /healthz is 200 in STANDBY too — the cha binary binds
+// O11 (1.26.1): /healthz is 200 in STANDBY too — the srenix binary binds
 // the health listener before leader election. Keep BOTH probes on it:
 // a leadership-gated readiness endpoint would deadlock this builder's
 // RollingUpdate maxUnavailable=0 strategy (the new standby pod could
@@ -1537,8 +1548,8 @@ func watcherHealthProbes() (*corev1.Probe, *corev1.Probe) {
 }
 
 // WebhookServiceNameFor is the canonical webhook Service name —
-// matches the chart's `{{ include "cha.fullname" . }}-webhook`.
-func WebhookServiceNameFor(cr *chav1alpha1.ClusterHealthAutopilot) string {
+// matches the chart's `{{ include "srenix.fullname" . }}-webhook`.
+func WebhookServiceNameFor(cr *chav1alpha1.AgenticSRE) string {
 	return cr.Name + "-webhook"
 }
 
@@ -1548,7 +1559,7 @@ func WebhookServiceNameFor(cr *chav1alpha1.ClusterHealthAutopilot) string {
 // only when BOTH webhook.listen is set AND serviceEnabled is true (a
 // Service with no receiver behind it would blackhole), selecting the
 // watcher pods, targetPort by the named `webhook` containerPort.
-func BuildWatcherWebhookService(cr *chav1alpha1.ClusterHealthAutopilot) *corev1.Service {
+func BuildWatcherWebhookService(cr *chav1alpha1.AgenticSRE) *corev1.Service {
 	if !webhookReceiverOn(cr.Spec.Watcher) {
 		return nil
 	}
@@ -1558,7 +1569,7 @@ func BuildWatcherWebhookService(cr *chav1alpha1.ClusterHealthAutopilot) *corev1.
 	}
 	// Inherit watcher labels for the selector; stamp a distinct role
 	// label on the Service itself (chart parity:
-	// cha.bionicaisolutions.com/role=watcher-webhook).
+	// srenix.ai/role=watcher-webhook).
 	selector := CommonLabels(cr, "watcher")
 	svcLabels := CommonLabels(cr, "watcher-webhook")
 	return &corev1.Service{

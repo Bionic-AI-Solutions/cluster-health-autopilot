@@ -1,7 +1,7 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
-// Package silence is the pure noise-suppression filter for CHA's watch
+// Package silence is the pure noise-suppression filter for Srenix's watch
 // loop. Given a slice of diagnostics + the active Silence CRs known to
 // the cluster, it drops the diagnostics matched by an unexpired silence.
 //
@@ -20,8 +20,8 @@ import (
 	"strings"
 	"time"
 
-	chav1alpha1 "github.com/Bionic-AI-Solutions/cluster-health-autopilot/api/v1alpha1"
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/diagnose"
+	chav1alpha1 "github.com/srenix-ai/agentic-sre/api/v1alpha1"
+	"github.com/srenix-ai/agentic-sre/pkg/diagnose"
 )
 
 // Matches reports whether the silence matches the diagnostic at time
@@ -79,6 +79,14 @@ func Filter(diags []diagnose.Diagnostic, silences []chav1alpha1.Silence, now tim
 		}
 	}
 	return out
+}
+
+// MatchesAny reports whether d is suppressed by any active silence.
+// Useful for callers that check one finding at a time (e.g. filtering
+// probe.Result findings, which have a different Go type from
+// diagnose.Diagnostic and must be projected by the caller).
+func MatchesAny(silences []chav1alpha1.Silence, d diagnose.Diagnostic, now time.Time) bool {
+	return anyMatch(silences, d, now)
 }
 
 func anyMatch(silences []chav1alpha1.Silence, d diagnose.Diagnostic, now time.Time) bool {

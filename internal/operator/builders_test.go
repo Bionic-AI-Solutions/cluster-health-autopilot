@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package operator
@@ -7,17 +7,17 @@ import (
 	"strings"
 	"testing"
 
-	chav1alpha1 "github.com/Bionic-AI-Solutions/cluster-health-autopilot/api/v1alpha1"
+	chav1alpha1 "github.com/srenix-ai/agentic-sre/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-func sampleCR() *chav1alpha1.ClusterHealthAutopilot {
-	return &chav1alpha1.ClusterHealthAutopilot{
-		ObjectMeta: metav1.ObjectMeta{Name: "bionic", Namespace: "cha-system"},
-		Spec: chav1alpha1.ClusterHealthAutopilotSpec{
+func sampleCR() *chav1alpha1.AgenticSRE {
+	return &chav1alpha1.AgenticSRE{
+		ObjectMeta: metav1.ObjectMeta{Name: "bionic", Namespace: "srenix-system"},
+		Spec: chav1alpha1.AgenticSRESpec{
 			Image: chav1alpha1.ImageSpec{
-				Repository: "docker4zerocool/cluster-health-autopilot",
+				Repository: "docker4zerocool/agentic-sre",
 				Tag:        "1.7.0",
 			},
 		},
@@ -32,8 +32,8 @@ func TestBuildServiceAccount_DefaultName(t *testing.T) {
 	if sa.Name != "bionic-sa" {
 		t.Errorf("SA name=%q want bionic-sa", sa.Name)
 	}
-	if sa.Namespace != "cha-system" {
-		t.Errorf("SA namespace=%q want cha-system", sa.Namespace)
+	if sa.Namespace != "srenix-system" {
+		t.Errorf("SA namespace=%q want srenix-system", sa.Namespace)
 	}
 	if sa.Labels["app.kubernetes.io/managed-by"] != FieldManager {
 		t.Errorf("managed-by label missing/wrong: %v", sa.Labels)
@@ -134,7 +134,7 @@ func TestBuildWatcherDeployment_AlertingArgs(t *testing.T) {
 			ClusterName: "bionic-cluster",
 		},
 		Slack: &chav1alpha1.SlackSpec{
-			Critical: &chav1alpha1.SlackChannelSpec{SecretName: "cha-critical"},
+			Critical: &chav1alpha1.SlackChannelSpec{SecretName: "srenix-critical"},
 		},
 	}
 	d := BuildWatcherDeployment(cr)
@@ -153,11 +153,11 @@ func TestBuildWatcherDeployment_ApprovalURLMintingWiring(t *testing.T) {
 	cr := sampleCR()
 	cr.Spec.Watcher = &chav1alpha1.WatcherSpec{Enabled: true}
 	cr.Spec.AI = &chav1alpha1.AISpec{
-		ApprovalServerURL: "https://cha-approve.example.com",
+		ApprovalServerURL: "https://srenix-approve.example.com",
 	}
 	cr.Spec.Approval = &chav1alpha1.ApprovalSpec{
 		SigningKey: &chav1alpha1.ApprovalSigningKeySpec{
-			SecretName: "cha-approval-signing-key",
+			SecretName: "srenix-approval-signing-key",
 		},
 	}
 	d := BuildWatcherDeployment(cr)
@@ -165,16 +165,16 @@ func TestBuildWatcherDeployment_ApprovalURLMintingWiring(t *testing.T) {
 		t.Fatal("watcher deploy must build")
 	}
 	args := d.Spec.Template.Spec.Containers[0].Args
-	mustContain(t, args, "--approval-server-url=https://cha-approve.example.com")
-	mustContain(t, args, "--signing-key-path=/etc/cha/keys/signing.key")
+	mustContain(t, args, "--approval-server-url=https://srenix-approve.example.com")
+	mustContain(t, args, "--signing-key-path=/etc/srenix/keys/signing.key")
 	// Volume + mount wired
 	vols := d.Spec.Template.Spec.Volumes
 	if len(vols) != 1 || vols[0].Name != "signing-key" || vols[0].Secret == nil ||
-		vols[0].Secret.SecretName != "cha-approval-signing-key" {
+		vols[0].Secret.SecretName != "srenix-approval-signing-key" {
 		t.Errorf("signing-key volume not wired correctly: %+v", vols)
 	}
 	mounts := d.Spec.Template.Spec.Containers[0].VolumeMounts
-	if len(mounts) != 1 || mounts[0].Name != "signing-key" || mounts[0].MountPath != "/etc/cha/keys" {
+	if len(mounts) != 1 || mounts[0].Name != "signing-key" || mounts[0].MountPath != "/etc/srenix/keys" {
 		t.Errorf("signing-key mount not wired correctly: %+v", mounts)
 	}
 }
@@ -185,9 +185,9 @@ func TestBuildWatcherDeployment_ApprovalURLMintingWiring(t *testing.T) {
 func TestBuildWatcherDeployment_SilenceDurationFlags(t *testing.T) {
 	cr := sampleCR()
 	cr.Spec.Watcher = &chav1alpha1.WatcherSpec{Enabled: true}
-	cr.Spec.AI = &chav1alpha1.AISpec{ApprovalServerURL: "https://cha-approve.example.com"}
+	cr.Spec.AI = &chav1alpha1.AISpec{ApprovalServerURL: "https://srenix-approve.example.com"}
 	cr.Spec.Approval = &chav1alpha1.ApprovalSpec{
-		SigningKey: &chav1alpha1.ApprovalSigningKeySpec{SecretName: "cha-approval-signing-key"},
+		SigningKey: &chav1alpha1.ApprovalSigningKeySpec{SecretName: "srenix-approval-signing-key"},
 		Silence:    &chav1alpha1.ApprovalSilenceSpec{ShortDuration: "12h", LongDuration: "720h"},
 	}
 	args := BuildWatcherDeployment(cr).Spec.Template.Spec.Containers[0].Args
@@ -201,9 +201,9 @@ func TestBuildWatcherDeployment_SilenceDurationFlags(t *testing.T) {
 func TestBuildWatcherDeployment_NoSilenceDurationFlagsByDefault(t *testing.T) {
 	cr := sampleCR()
 	cr.Spec.Watcher = &chav1alpha1.WatcherSpec{Enabled: true}
-	cr.Spec.AI = &chav1alpha1.AISpec{ApprovalServerURL: "https://cha-approve.example.com"}
+	cr.Spec.AI = &chav1alpha1.AISpec{ApprovalServerURL: "https://srenix-approve.example.com"}
 	cr.Spec.Approval = &chav1alpha1.ApprovalSpec{
-		SigningKey: &chav1alpha1.ApprovalSigningKeySpec{SecretName: "cha-approval-signing-key"},
+		SigningKey: &chav1alpha1.ApprovalSigningKeySpec{SecretName: "srenix-approval-signing-key"},
 	}
 	args := BuildWatcherDeployment(cr).Spec.Template.Spec.Containers[0].Args
 	for _, a := range args {
@@ -221,13 +221,13 @@ func TestBuildWatcherDeployment_NoApprovalSignerNoFlags(t *testing.T) {
 	cr := sampleCR()
 	cr.Spec.Watcher = &chav1alpha1.WatcherSpec{Enabled: true}
 	cr.Spec.AI = &chav1alpha1.AISpec{
-		ApprovalServerURL: "https://cha-approve.example.com",
+		ApprovalServerURL: "https://srenix-approve.example.com",
 	}
 	// no cr.Spec.Approval
 	d := BuildWatcherDeployment(cr)
 	args := d.Spec.Template.Spec.Containers[0].Args
 	for _, a := range args {
-		if a == "--approval-server-url=https://cha-approve.example.com" {
+		if a == "--approval-server-url=https://srenix-approve.example.com" {
 			t.Errorf("watcher should NOT get --approval-server-url when no signing key is configured; args=%v", args)
 		}
 	}
@@ -262,7 +262,7 @@ func TestBuildWatcherDeployment_TicketingArgsOpenProject(t *testing.T) {
 			Warning:  "74",
 			Info:     "73",
 		},
-		Labels:          []string{"cha", "auto-filed"},
+		Labels:          []string{"srenix", "auto-filed"},
 		DryRun:          true,
 		CommentInterval: "2h",
 	}
@@ -281,7 +281,7 @@ func TestBuildWatcherDeployment_TicketingArgsOpenProject(t *testing.T) {
 	mustContain(t, args, "--ticketing-priority-info=73")
 	mustContain(t, args, "--ticketing-web-url-prefix=https://op.zippio.ai")
 	// Labels are passed once per label (the underlying flag is StringSlice).
-	mustContain(t, args, "--ticketing-labels=cha")
+	mustContain(t, args, "--ticketing-labels=srenix")
 	mustContain(t, args, "--ticketing-labels=auto-filed")
 	// dryRun = true → flag emitted (the absence-by-default means a bool flag with no value).
 	mustContain(t, args, "--ticketing-dry-run")
@@ -339,7 +339,7 @@ func TestBuildWatcherDeployment_TicketingNoSpec_NoFlags(t *testing.T) {
 
 func TestBuildWatcherDeployment_TicketingAuthEnv(t *testing.T) {
 	// When Auth.Enabled + SecretName is set, the watcher container gets
-	// the TICKETING_MCP_API_KEY env var via secretKeyRef. The cha binary
+	// the TICKETING_MCP_API_KEY env var via secretKeyRef. The srenix binary
 	// reads that env at startup; the flag layer is unchanged.
 	cr := sampleCR()
 	cr.Spec.Watcher = &chav1alpha1.WatcherSpec{Enabled: true}
@@ -351,7 +351,7 @@ func TestBuildWatcherDeployment_TicketingAuthEnv(t *testing.T) {
 		TypeID:   "36",
 		Auth: &chav1alpha1.TicketingAuthSpec{
 			Enabled:    true,
-			SecretName: "cha-ticketing-mcp",
+			SecretName: "srenix-ticketing-mcp",
 			SecretKey:  "api-key",
 		},
 	}
@@ -365,8 +365,8 @@ func TestBuildWatcherDeployment_TicketingAuthEnv(t *testing.T) {
 				t.Errorf("TICKETING_MCP_API_KEY must use secretKeyRef, not literal value")
 				break
 			}
-			if e.ValueFrom.SecretKeyRef.Name != "cha-ticketing-mcp" {
-				t.Errorf("secretKeyRef.Name = %q, want cha-ticketing-mcp", e.ValueFrom.SecretKeyRef.Name)
+			if e.ValueFrom.SecretKeyRef.Name != "srenix-ticketing-mcp" {
+				t.Errorf("secretKeyRef.Name = %q, want srenix-ticketing-mcp", e.ValueFrom.SecretKeyRef.Name)
 			}
 			if e.ValueFrom.SecretKeyRef.Key != "api-key" {
 				t.Errorf("secretKeyRef.Key = %q, want api-key", e.ValueFrom.SecretKeyRef.Key)
@@ -481,12 +481,25 @@ func TestPullPolicy_MutableTagDefaultsAlways(t *testing.T) {
 	}
 }
 
-func TestPullPolicy_SemverTagDefaultsIfNotPresent(t *testing.T) {
+func TestPullPolicy_SemverTagDefaultsAlways(t *testing.T) {
+	// A re-pushed tag must never be served stale from a node's cache, so the
+	// default is Always even for semver tags. Operators opt into IfNotPresent
+	// explicitly for genuinely-immutable tags.
 	cr := sampleCR()
 	cr.Spec.Watcher = &chav1alpha1.WatcherSpec{Enabled: true}
 	d := BuildWatcherDeployment(cr)
+	if got := d.Spec.Template.Spec.Containers[0].ImagePullPolicy; got != corev1.PullAlways {
+		t.Errorf("semver tag pullPolicy=%v want Always (stale-cache safety)", got)
+	}
+}
+
+func TestPullPolicy_ExplicitIfNotPresentHonored(t *testing.T) {
+	cr := sampleCR()
+	cr.Spec.Image.PullPolicy = "IfNotPresent"
+	cr.Spec.Watcher = &chav1alpha1.WatcherSpec{Enabled: true}
+	d := BuildWatcherDeployment(cr)
 	if got := d.Spec.Template.Spec.Containers[0].ImagePullPolicy; got != corev1.PullIfNotPresent {
-		t.Errorf("semver tag pullPolicy=%v want IfNotPresent", got)
+		t.Errorf("explicit IfNotPresent not honored; got %v", got)
 	}
 }
 
@@ -522,11 +535,11 @@ func TestCommonLabels_AlwaysCarriesInstanceAndManagedBy(t *testing.T) {
 	if labels["app.kubernetes.io/instance"] != "bionic" {
 		t.Errorf("instance label=%q want bionic", labels["app.kubernetes.io/instance"])
 	}
-	if labels["app.kubernetes.io/managed-by"] != "cha-operator" {
-		t.Errorf("managed-by label=%q want cha-operator", labels["app.kubernetes.io/managed-by"])
+	if labels["app.kubernetes.io/managed-by"] != "srenix-operator" {
+		t.Errorf("managed-by label=%q want srenix-operator", labels["app.kubernetes.io/managed-by"])
 	}
-	if labels["cha.bionicaisolutions.com/role"] != "watcher" {
-		t.Errorf("role label=%q want watcher", labels["cha.bionicaisolutions.com/role"])
+	if labels["srenix.ai/role"] != "watcher" {
+		t.Errorf("role label=%q want watcher", labels["srenix.ai/role"])
 	}
 }
 

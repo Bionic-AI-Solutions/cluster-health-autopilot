@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package aws
@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	pkgaws "github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/cloud/aws"
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/probe"
+	pkgaws "github.com/srenix-ai/agentic-sre/pkg/cloud/aws"
+	"github.com/srenix-ai/agentic-sre/pkg/probe"
 )
 
 // (fakeAWS / fakeSource live in fake_test.go — shared across all probe tests.)
@@ -47,7 +47,7 @@ func TestRDS_HealthyOnAvailableLowStorage(t *testing.T) {
 	src := &fakeSource{aws: &fakeAWS{
 		region: "us-east-1",
 		instances: []pkgaws.DBInstance{
-			{Identifier: "happy-db", Engine: "postgres", Status: "available", StorageUsedPercent: 42, AllocatedStorageGB: 100},
+			{Identifier: "happy-db", Engine: "postgres", Status: "available", StorageUsedPercent: 42, AllocatedStorageGB: 100, MultiAZ: true, BackupRetentionPeriod: 7},
 		},
 	}}
 	r := (RDS{}).Run(context.Background(), src)
@@ -63,7 +63,7 @@ func TestRDS_StorageWarningTriggersDegraded(t *testing.T) {
 	src := &fakeSource{aws: &fakeAWS{
 		region: "us-east-1",
 		instances: []pkgaws.DBInstance{
-			{Identifier: "warm-db", Engine: "postgres", Status: "available", StorageUsedPercent: 82, AllocatedStorageGB: 100},
+			{Identifier: "warm-db", Engine: "postgres", Status: "available", StorageUsedPercent: 82, AllocatedStorageGB: 100, MultiAZ: true, BackupRetentionPeriod: 7},
 		},
 	}}
 	r := (RDS{}).Run(context.Background(), src)
@@ -82,7 +82,7 @@ func TestRDS_StorageCriticalTriggersCritical(t *testing.T) {
 	src := &fakeSource{aws: &fakeAWS{
 		region: "us-east-1",
 		instances: []pkgaws.DBInstance{
-			{Identifier: "hot-db", Engine: "postgres", Status: "available", StorageUsedPercent: 95, AllocatedStorageGB: 100},
+			{Identifier: "hot-db", Engine: "postgres", Status: "available", StorageUsedPercent: 95, AllocatedStorageGB: 100, MultiAZ: true, BackupRetentionPeriod: 7},
 		},
 	}}
 	r := (RDS{}).Run(context.Background(), src)
@@ -101,7 +101,7 @@ func TestRDS_StorageFullStatus(t *testing.T) {
 	src := &fakeSource{aws: &fakeAWS{
 		region: "us-east-1",
 		instances: []pkgaws.DBInstance{
-			{Identifier: "full-db", Engine: "postgres", Status: "storage-full", StorageUsedPercent: 100, AllocatedStorageGB: 100},
+			{Identifier: "full-db", Engine: "postgres", Status: "storage-full", StorageUsedPercent: 100, AllocatedStorageGB: 100, MultiAZ: true, BackupRetentionPeriod: 7},
 		},
 	}}
 	r := (RDS{}).Run(context.Background(), src)

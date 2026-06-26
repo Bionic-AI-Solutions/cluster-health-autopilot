@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package investigator
@@ -11,9 +11,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/ai"
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/diagnose"
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/probe"
+	"github.com/srenix-ai/agentic-sre/pkg/ai"
+	"github.com/srenix-ai/agentic-sre/pkg/diagnose"
+	"github.com/srenix-ai/agentic-sre/pkg/probe"
 )
 
 // RuleBased is the deterministic Investigator implementation that ships in
@@ -23,7 +23,7 @@ import (
 //
 // Rules are intentionally narrow: each one targets one well-known failure
 // pattern. Unmatched failures return an empty result so the original alert
-// surfaces unchanged. The LLM-backed Investigator (paid CHA-com) handles
+// surfaces unchanged. The LLM-backed Investigator (paid Srenix Enterprise) handles
 // the long tail.
 type RuleBased struct{}
 
@@ -60,6 +60,9 @@ func (RuleBased) investigateFinding(ctx context.Context, f probe.Finding, env ai
 	target := extractURL(msg)
 
 	switch {
+	case isCrashClass(low):
+		ns, pod := parsePodRef(msg)
+		return investigateCrash(ctx, ns, pod, msg, env)
 	case strings.Contains(low, "tls verification failed"):
 		return investigateTLS(ctx, target, env, msg)
 	case strings.Contains(low, "context deadline exceeded"),
@@ -227,6 +230,21 @@ func (RuleBased) investigateDiagnostic(ctx context.Context, d diagnose.Diagnosti
 	// Pattern: cert-expiry/<ns>/<name>
 	if strings.HasPrefix(subj, "cert-expiry/") {
 		return investigateCertExpiry(ctx, subj, env)
+	}
+	// Pattern: CronJob/<ns>/<name> (CronJobStuck) — read the failed Job pod's
+	// logs and report WHY it keeps failing instead of a kubectl recipe.
+	if strings.HasPrefix(subj, "CronJob/") {
+		ns, name := parseKindNsName(subj)
+		return investigateCronJob(ctx, ns, name, msg, env)
+	}
+	// Crash-class pod findings (FailedPods, log-pattern crashes): read the
+	// container logs and classify the cause rather than punting to the human.
+	if isCrashClass(strings.ToLower(msg)) {
+		ns, pod := parseKindNsName(subj) // structured "Pod/<ns>/<pod>" subject
+		if ns == "" {
+			ns, pod = parsePodRef(msg)
+		}
+		return investigateCrash(ctx, ns, pod, msg, env)
 	}
 	_ = src // reserved for future per-source heuristics
 	return ai.InvestigationResult{}, nil

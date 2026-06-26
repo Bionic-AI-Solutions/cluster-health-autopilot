@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Simulate: Missing Secret Key (CreateContainerConfigError)
-# CHA reports: SecretKeyMissing analyzer
-# CHA auto-fix: NONE — requires Vault/ESO update
+# Srenix reports: SecretKeyMissing analyzer
+# Srenix auto-fix: NONE — requires Vault/ESO update
 # Manual fix:   demo/fix-scripts/fix-missing-secret-key.sh
 #
 # Set KUBE_CONTEXT to target a specific cluster:
@@ -67,7 +67,7 @@ echo "==> Waiting for pod to reach CreateContainerConfigError..."
 sleep 8
 $KUBECTL get pods -n "${NAMESPACE}" -l app="${DEPLOYMENT}" --no-headers
 echo ""
-echo "==> CHA SecretKeyMissing analyzer will detect this within ~10-30s."
+echo "==> Srenix SecretKeyMissing analyzer will detect this within ~10-30s."
 echo "    Check Slack #aws-alerts for: 'Secret missing key DB_PASSWORD'"
 echo ""
 echo "    To watch pod events:"

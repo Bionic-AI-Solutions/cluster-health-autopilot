@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Manual fix: PVC stuck in Pending state
-# CHA reports this (PVC probe) but cannot fix it — storage provisioner issue
+# Srenix reports this (PVC probe) but cannot fix it — storage provisioner issue
 #
 # Usage: ./fix-pvc-stuck-pending.sh <namespace> <pvc-name>
 # Example: ./fix-pvc-stuck-pending.sh demo-app data-volume

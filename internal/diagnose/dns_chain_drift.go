@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package diagnose
@@ -10,7 +10,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/snapshot"
+	"github.com/srenix-ai/agentic-sre/internal/snapshot"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 
@@ -96,7 +96,7 @@ type DNSChainDrift struct {
 
 	// OptOutAnno is the Ingress annotation key whose value, when set to
 	// "true" (case-insensitive), suppresses all hosts from that Ingress.
-	// Defaults to "cha.bionicaisolutions.com/probe-disable".
+	// Defaults to "srenix.ai/probe-disable".
 	OptOutAnno string
 }
 
@@ -109,7 +109,7 @@ func (DNSChainDrift) Name() string { return "DNSChainDrift" }
 func (a DNSChainDrift) Run(ctx context.Context, src snapshot.Source) []Diagnostic {
 	optOut := a.OptOutAnno
 	if optOut == "" {
-		optOut = "cha.bionicaisolutions.com/probe-disable"
+		optOut = "srenix.ai/probe-disable"
 	}
 
 	// ── Step 1: collect all Ingress hosts and build the host→backend map ──────
@@ -429,7 +429,7 @@ func (a DNSChainDrift) Run(ctx context.Context, src snapshot.Source) []Diagnosti
 			Source:   "DNSChainDrift",
 			Message: fmt.Sprintf(
 				"Cloudflare credentials not configured; external DNS hop not checked for %d host(s). "+
-					"Set `CHA_CLOUDFLARE_API_TOKEN` (and optionally `CHA_CLOUDFLARE_ZONE_ID`) "+
+					"Set `SRENIX_CLOUDFLARE_API_TOKEN` (and optionally `SRENIX_CLOUDFLARE_ZONE_ID`) "+
 					"to enable the full DNS-chain analysis including the Cloudflare layer.",
 				cfMissingHosts,
 			),
@@ -656,7 +656,7 @@ func checkCFLayer(host string, cfRecords map[string][]DNSRecord, lbIP, k8sSummar
 		),
 		Remediation: fmt.Sprintf(
 			"Update the Cloudflare record for `%s` to point at `%s`, "+
-				"or update `expectedTargets` in the CHA config if the current target is intentional.\n"+
+				"or update `expectedTargets` in the Srenix config if the current target is intentional.\n"+
 				"File to update: `deploy/lib/dns.sh`.",
 			host, lbIP,
 		),

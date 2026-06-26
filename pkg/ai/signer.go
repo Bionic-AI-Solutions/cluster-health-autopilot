@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package ai
@@ -63,8 +63,8 @@ func (s *SignerImpl) Sign(p AIProposedAction) (string, error) {
 		return "", errors.New("ai: proposal missing ExpiresAt")
 	}
 	claims := TokenClaims{
-		Issuer:      "cha/approval-server",
-		Audience:    "cha/executor",
+		Issuer:      "srenix/approval-server",
+		Audience:    "srenix/executor",
 		Subject:     p.ActionID,
 		JTI:         p.ActionID,
 		IssuedAt:    time.Now().Unix(),
@@ -98,8 +98,8 @@ func (s *SignerImpl) SignRunbookApproval(r VaultRunbook, slot int) (string, erro
 	}
 	jti := fmt.Sprintf("%s-slot%d", r.RunbookID, slot)
 	claims := TokenClaims{
-		Issuer:       "cha/approval-server",
-		Audience:     "cha/executor",
+		Issuer:       "srenix/approval-server",
+		Audience:     "srenix/executor",
 		Subject:      r.RunbookID,
 		JTI:          jti,
 		IssuedAt:     now.Unix(),
@@ -114,12 +114,12 @@ func (s *SignerImpl) SignRunbookApproval(r VaultRunbook, slot int) (string, erro
 
 // EnvSigningKeyPath is the env var the watcher / approval-server reads
 // to find the signing key on disk.
-const EnvSigningKeyPath = "CHA_SIGNING_KEY_PATH"
+const EnvSigningKeyPath = "SRENIX_SIGNING_KEY_PATH"
 
 // DefaultSigningKeyPath is the conventional mount path for the signing
 // key Secret. Deployments project the key here as a base64-encoded file
 // in a tmpfs volume.
-const DefaultSigningKeyPath = "/etc/cha/keys/signing.key"
+const DefaultSigningKeyPath = "/etc/srenix/keys/signing.key"
 
 // ErrSigningKeyMissing indicates the signing key file does not exist
 // at the configured path. Callers should fall back to URL-less behavior
@@ -127,7 +127,7 @@ const DefaultSigningKeyPath = "/etc/cha/keys/signing.key"
 var ErrSigningKeyMissing = errors.New("ai: signing key file not found")
 
 // LoadSigningKey reads the Ed25519 signing key from `path`. When `path`
-// is empty, falls back to `$CHA_SIGNING_KEY_PATH`, then to
+// is empty, falls back to `$SRENIX_SIGNING_KEY_PATH`, then to
 // DefaultSigningKeyPath. The key file is base64-encoded raw bytes (no
 // PEM wrapping — minimizes deps).
 //

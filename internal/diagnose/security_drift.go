@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package diagnose
@@ -10,14 +10,14 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/snapshot"
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/netpol"
+	"github.com/srenix-ai/agentic-sre/internal/snapshot"
+	"github.com/srenix-ai/agentic-sre/pkg/netpol"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
 // SecurityDrift surfaces audit-relevant gaps in cluster security
-// posture. Each signal is observational — CHA does not enforce; it
+// posture. Each signal is observational — Srenix does not enforce; it
 // surfaces the gap so an operator can react.
 //
 // What's surfaced (v1.8 first cut):
@@ -51,7 +51,7 @@ import (
 //
 //   - Active Cosign / Notation signature verification — admission-
 //     time concern that needs the cluster's policy controller to
-//     emit events; observational CHA is the wrong tool.
+//     emit events; observational Srenix is the wrong tool.
 //
 //   - NetworkPolicy egress-coverage analysis (a namespace has
 //     NetworkPolicies but none set `policyTypes: [Egress]`) —
@@ -173,8 +173,8 @@ func (s SecurityDrift) checkPSSPosture(ctx context.Context, src snapshot.Source)
 // in-house findings stand out. Operators can override the prefix
 // list (and the default severity) via env vars:
 //
-//	CHA_DIGEST_PIN_TRUSTED_PREFIXES   — comma-separated, replaces defaults
-//	CHA_DIGEST_PIN_UNTRUSTED_SEVERITY — "warning" (default) | "info"
+//	SRENIX_DIGEST_PIN_TRUSTED_PREFIXES   — comma-separated, replaces defaults
+//	SRENIX_DIGEST_PIN_UNTRUSTED_SEVERITY — "warning" (default) | "info"
 //
 // The list deliberately excludes docker.io/library/* (where most
 // supply-chain compromises have landed historically) and
@@ -222,7 +222,7 @@ func classifyDigestPinSeverity(img string) string {
 			}
 		}
 	}
-	if v := os.Getenv("CHA_DIGEST_PIN_UNTRUSTED_SEVERITY"); v == "info" {
+	if v := os.Getenv("SRENIX_DIGEST_PIN_UNTRUSTED_SEVERITY"); v == "info" {
 		return "info"
 	}
 	return "warning"
@@ -529,7 +529,7 @@ func (s SecurityDrift) checkNetworkPolicyCoverage(ctx context.Context, src snaps
 					"%s. Adding NetworkPolicies here would be decorative-only.",
 				len(candidates), cni.CNIName, cni.Evidence),
 			Remediation: "For real zero-trust enforcement: add Calico-for-policy alongside Flannel, " +
-				"or swap to Cilium. The CHA NetworkPolicy proposer (Phase 2d-β) only activates on " +
+				"or swap to Cilium. The Srenix NetworkPolicy proposer (Phase 2d-β) only activates on " +
 				"CNIs that enforce — barebones k3s with Flannel-only is intentionally left alone. " +
 				"See docs/design/2026-06-rag-networkpolicy-proposer.md.",
 		}}

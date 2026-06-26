@@ -4,29 +4,50 @@ All notable changes to this project will be documented in this file. The
 format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-The Helm chart `cluster-health-autopilot` follows the same version line as the
-`cha` binary (`appVersion == version`). Released chart artifacts are tagged
-`cluster-health-autopilot-X.Y.Z`; the binary itself is tagged `vX.Y.Z`. The
+The Helm chart `agentic-sre` follows the same version line as the
+`srenix` binary (`appVersion == version`). Released chart artifacts are tagged
+`agentic-sre-X.Y.Z`; the binary itself is tagged `vX.Y.Z`. The
 published Helm repository at
-`https://bionic-ai-solutions.github.io/cluster-health-autopilot/` always
+`https://srenix-ai.github.io/agentic-sre/` always
 serves the latest tagged chart cut.
 
 ## [Unreleased]
 
+## [0.2.0-alpha.6] — 2026-06-23
+
+### Fixed
+- **NetworkPolicy approval links now honor `--approval-ttl`.** `ManifestBridge` and `BuildApplyManifestProposalWithTTL` (new) accept a configurable TTL; the old `BuildApplyManifestProposal` is preserved for backward compatibility (delegates to TTL=0 → `DefaultProposalTTL`). Previously every NetworkPolicy approve/deny link expired in 15 minutes regardless of the operator-configured TTL, because `BuildApplyManifestProposal` hardcoded `DefaultProposalTTL`. The Srenix Enterprise aiwatch now passes `--approval-ttl` (default 4h) here so on-call SREs have a full window to respond. `ManifestBridge` gains a `ProposalTTL` field for OSS callers that register it directly.
+- **Probes: Spilo / Zalando PGO probe now scans all namespaces.** Previously hardcoded to the `pg` namespace; rewritten to cluster-wide list + per-cluster grouping by `cluster-name` label so multi-cluster and non-default-namespace Spilo deployments are detected.
+- **Probes: CrashLoopBackOff no longer mismatches container and restart count.** `podMaxRestartCount` previously took the highest restart count across all containers but the reason from the last container in a waiting state — completely unrelated containers. Now only waiting containers (reason != "") contribute and the winner is the waiting container with the most restarts.
+- **Probes: PVC `Lost` phase detected as critical.** Only `Pending` was previously checked. Lost PVCs (data-loss scenario) now emit a CRITICAL finding with PVC names and remediation.
+- **Probes: ETCD restarts on Ready members downgraded to WARNING.** Any restart count > 0 previously triggered CRITICAL, causing false pages after routine node maintenance where the pod came back healthy. A Ready member with restarts is now WARNING; CRITICAL is reserved for non-Ready + restarted (crash-loop) or not-Ready (quorum risk).
+- **Probes: Velero staleness check uses `completionTimestamp`.** Was using `creationTimestamp`, which could fire a "stale" critical for a long-running backup that had completed hours earlier. Now uses `status.completionTimestamp` (falls back to `startedAt` for in-progress).
+- **Probes: ArgoCD `Suspended` health is WARNING, not CRITICAL.** Suspension is an intentional operator action (`argocd app suspend`). Was incorrectly emitting CRITICAL alongside Degraded/Missing states.
+- **Analyzers: ImagePullAuth subject is now `Pod/ns/name`.** Was `image-pull-auth/ns/pod/container`, breaking the OSS investigator's `Kind/ns/name` parse and the Srenix Enterprise `runEnvTools` lookup.
+- **Analyzers: CertExpiry subject is now `Certificate/ns/name`.** Was `cert-expiry/ns/name`.
+- **Analyzers: WorkloadStateDrift subjects no longer carry `(followers)`/`(primary)` suffixes.** These suffixes broke Srenix Enterprise's `runEnvTools` subject parse.
+- **Analyzers: ImagePullAuth `notFoundSignals` guard narrows false-positive suppression.** Guard now restricted to `manifest unknown` and `name unknown` — unambiguous "image not found" signals. Removed `repository does not exist` (ambiguous on Docker Hub: also returned for private repos with wrong credentials).
+- **Analyzers: ImagePullAuth message truncation increased to 300 chars** (was 160) to retain enough registry error detail for diagnosis.
+- **Analyzers: ConfigDrift rollout remediation uses correct kubectl syntax.** Was emitting `kubectl rollout restart Workload/ns/name`; now emits `kubectl rollout restart deployment/name -n ns`.
+- **Report: `renderAIBlocks` now renders the `Investigation` field.** Was silently dropped — only `Enrichment` and `ApprovalURL` were rendered. Investigation (🔬) now renders before Enrichment (🤖).
+- **Report: `hasActionableFindings` returns true for critical severity** even without an `ApprovalURL`. Criticals were previously routed to "Advisory — Review (no action required)" when no approve/deny link was minted, giving a misleading low-urgency label to real incidents.
+- **Report: First-seen criticals no longer render green.** The Slack attachment color was computed only from stable (`critRendered`/`diagRendered`) findings, ignoring new-this-cycle criticals. A first-time critical fired green. Fixed by tracking `hasNewCritical` across the render loop.
+- **Report: `renderSilenceSnippet` no longer shown for brand-new findings.** A finding that just appeared this cycle should be investigated, not immediately silenced. The silence affordance (kubectl one-liner or signed click-link) is now gated on `!IsNewThisCycle`.
+
 ## [0.2.0-alpha.5] — 2026-06-19
 
 ### Changed
-- **Alertmanager push is now limited to critical + actionable findings.** Purely-advisory warnings (no approve/deny action) are no longer pushed to Alertmanager — they stay on CHA's native Slack with the honest "CHA Advisory" title. This stops the duplicate, misleadingly-titled "Human Action Required" alerts that the cluster Alertmanager's Slack receiver rendered for advisory findings. Criticals (always) and findings with a signed approve/deny URL still reach Alertmanager for paging/escalation.
+- **Alertmanager push is now limited to critical + actionable findings.** Purely-advisory warnings (no approve/deny action) are no longer pushed to Alertmanager — they stay on Srenix's native Slack with the honest "Srenix Advisory" title. This stops the duplicate, misleadingly-titled "Human Action Required" alerts that the cluster Alertmanager's Slack receiver rendered for advisory findings. Criticals (always) and findings with a signed approve/deny URL still reach Alertmanager for paging/escalation.
 
 ## [0.2.0-alpha.4] — 2026-06-19
 
 ### Fixed
-- **Terminating pods are no longer flagged as stuck/not-ready.** Pod probes (CrashLoopBackOff, PendingPods, FailedMounts, Services, ETCD) now skip pods with a `metadata.deletionTimestamp` (i.e. already Terminating) — they're intentionally being deleted, so flagging them (and proposing DeletePod, which then "already resolved" on click) was pure noise. Most visible during rollouts, including CHA's own pods. Non-terminating pods in the same state are still detected.
+- **Terminating pods are no longer flagged as stuck/not-ready.** Pod probes (CrashLoopBackOff, PendingPods, FailedMounts, Services, ETCD) now skip pods with a `metadata.deletionTimestamp` (i.e. already Terminating) — they're intentionally being deleted, so flagging them (and proposing DeletePod, which then "already resolved" on click) was pure noise. Most visible during rollouts, including Srenix's own pods. Non-terminating pods in the same state are still detected.
 
 ## [0.2.0-alpha.3] — 2026-06-19
 
 ### Added
-- **Configurable RBAC allowlist** — extend the built-in expected-system allowlist at runtime (no rebuild) via an optional `cha-rbac-allowlist` ConfigMap in the install namespace. Data keys `allowNamespaces`, `allowRolePrefixes`, `allowRoleNames` (comma/newline-separated) are merged with the built-ins per cycle; absent ConfigMap → built-ins only.
+- **Configurable RBAC allowlist** — extend the built-in expected-system allowlist at runtime (no rebuild) via an optional `srenix-rbac-allowlist` ConfigMap in the install namespace. Data keys `allowNamespaces`, `allowRolePrefixes`, `allowRoleNames` (comma/newline-separated) are merged with the built-ins per cycle; absent ConfigMap → built-ins only.
 - **Suppressed-RBAC digest** — instead of silently dropping allowlisted findings, `RBACDrift` emits one `info` summary per cycle (`RBACDrift/cluster/suppressed-expected-system`) listing how many wildcard-verb / unbound-SA findings were suppressed and which, so the silenced set stays visible (one info line + a DriftReport, replacing N paging warnings).
 
 ## [0.2.0-alpha.2] — 2026-06-19
@@ -37,7 +58,7 @@ serves the latest tagged chart cut.
 ## [0.2.0-alpha.1] — 2026-06-19
 
 ### Fixed
-- Slack alert headers are now **conditional on actionability**: the alarming `*CHA Alert — Human Action Required*` title is used only when a finding in the payload carries a signed Approve/Deny button. Purely advisory findings (e.g. RBAC-drift warnings: wildcard verbs, unbound ServiceAccounts) now render `*CHA Advisory — Review (no action required)*` so on-call engineers aren't paged to "act" on items that have no action. One-click Silence links are unchanged and still attached to every posted finding.
+- Slack alert headers are now **conditional on actionability**: the alarming `*Srenix Alert — Human Action Required*` title is used only when a finding in the payload carries a signed Approve/Deny button. Purely advisory findings (e.g. RBAC-drift warnings: wildcard verbs, unbound ServiceAccounts) now render `*Srenix Advisory — Review (no action required)*` so on-call engineers aren't paged to "act" on items that have no action. One-click Silence links are unchanged and still attached to every posted finding.
 
 ## [0.1.0-alpha.1] — 2026-06-18
 
@@ -63,7 +84,7 @@ Content carried from the v1.26.3 tree (what the prior 1.x line shipped):
   every safety/structural invariant except the creation-time rollback-description
   requirement, so human-approved token-based executions no longer fail with
   "ai proposal lacks rollback info". `Validate()` (creation/sign-time) unchanged.
-- **Standby `/healthz` fix (ex-1.26.1).** `cha watch` binds the health listener
+- **Standby `/healthz` fix (ex-1.26.1).** `srenix watch` binds the health listener
   before leader election (process lifetime, not lease lifetime); `/readyz` is an
   unconditional 200 alias. Fixes the `maxUnavailable=0` rolling-upgrade deadlock.
 - The full operator port, drift-class + M2 probes, supply-chain provenance,
@@ -74,26 +95,26 @@ Content carried from the v1.26.3 tree (what the prior 1.x line shipped):
 
 ### Added — one-click Silence links on the LIVE watcher "needs human" Slack path (OSS foundation)
 
-Non-actionable "human intervention" findings previously had no in-Slack way to dismiss them. The **live per-cycle watcher Slack post** (the `cha watch` delta path — `internal/watcher` → `report.RouteAndPost` → `SplitCriticalPayloads` / `FormatSlackDelta`, which is what the operator/watcher actually posts) now renders **two signed one-click silence links** under each posted finding when a signer + approval base URL are configured: **🔕 Silence 24h** (subject-scoped snooze, `matcher.subject` = the finding's real `Subject`) and **🔕 Silence class (90d)** (class-scoped mute, `matcher.source` = the finding's real `Source`). Clicking either hits the CHA-com approval-server's `/silence` endpoint, which consumes the signed token and creates a real OSS `Silence` CR (`api/v1alpha1`, `pkg/silence`) with the right `Matcher` + `Until`. Durations are configurable (default 24h / 90d) and the link label tracks the actual window. This PR ships the OSS foundation; the approval-server `/silence` handler is a separate CHA-com task.
+Non-actionable "human intervention" findings previously had no in-Slack way to dismiss them. The **live per-cycle watcher Slack post** (the `srenix watch` delta path — `internal/watcher` → `report.RouteAndPost` → `SplitCriticalPayloads` / `FormatSlackDelta`, which is what the operator/watcher actually posts) now renders **two signed one-click silence links** under each posted finding when a signer + approval base URL are configured: **🔕 Silence 24h** (subject-scoped snooze, `matcher.subject` = the finding's real `Subject`) and **🔕 Silence class (90d)** (class-scoped mute, `matcher.source` = the finding's real `Source`). Clicking either hits the Srenix Enterprise approval-server's `/silence` endpoint, which consumes the signed token and creates a real OSS `Silence` CR (`api/v1alpha1`, `pkg/silence`) with the right `Matcher` + `Until`. Durations are configurable (default 24h / 90d) and the link label tracks the actual window. This PR ships the OSS foundation; the approval-server `/silence` handler is a separate Srenix Enterprise task.
 
 When NO signer/base-URL is configured (OSS-only / air-gapped), the renderer keeps the existing **24h kubectl one-liner** fallback so the air-gapped affordance is never lost.
 
 - **Watcher delta-path wiring** (`internal/watcher/watcher.go`): `attachApprovalURLs` now also mints the two links for every posted finding via `pkgai.MintSilenceLinks` when `Config.SilenceLinks` is fully configured. `DeltaDiag` gained `Source`, `SilenceSubjectURL`, `SilenceClassLongURL`, `SilenceShortDur`, `SilenceLongDur`; the finding `Source` is threaded from `diagnose.Diagnostic.Source` through `seenEntry` into the rendered `DeltaDiag` (probe findings use their component as Source). The shared `renderSilenceSnippet` (used by both `SplitCriticalPayloads` and `FormatSlackDelta`) emits the click-links when present and the kubectl heredoc otherwise; the legacy hardcoded "Silence class (7d)" link is replaced by the single configurable-duration class link (no duplicate class links).
-- **Durations flow to `watch`**: `cha watch` gains `--silence-short-duration` (24h) / `--silence-long-duration` (90d), reusing the already-loaded approval signing key. The operator wires `spec.approval.silence.{shortDuration,longDuration}` → the watcher Deployment's `--silence-{short,long}-duration` flags (rendered only when explicitly set; unset keeps binary defaults).
+- **Durations flow to `watch`**: `srenix watch` gains `--silence-short-duration` (24h) / `--silence-long-duration` (90d), reusing the already-loaded approval signing key. The operator wires `spec.approval.silence.{shortDuration,longDuration}` → the watcher Deployment's `--silence-{short,long}-duration` flags (rendered only when explicitly set; unset keeps binary defaults).
 - **Signed silence token** (`pkg/ai/silence_token.go`): `SilenceTokenClaims{Scope, Source, Subject, MessagePattern, UntilUnix, …}` + `SignSilenceToken` / `VerifySilenceToken`, mirroring the existing approval `TokenClaims` EdDSA compact-JWS (same `kid`, same verify-before-unmarshal discipline). The silence WINDOW (`UntilUnix`), `Scope`, and the whole matcher are SIGNED — an attacker cannot widen a 24h subject snooze into a 90d cluster-wide class mute by editing the URL (it flips the signature). Security model is doc-commented.
 - **Link minter** (`pkg/ai/silence_link.go`): `MintSilenceLinks(priv, kid, baseURL, req, now)` returns the two signed `<baseURL>/silence?token=…` URLs (subject-scoped `now+ShortDur`, class-scoped `now+LongDur`), each with a unique JTI; token `exp` extends a clickability buffer past the silence window (mirrors approve-token exp policy).
-- **Legacy diagnose path** (`internal/report/slack.go`): the earlier `cha diagnose --slack-webhook` wiring (`FormatSlackWithSilence`, `FormatSlack` kept as a thin no-link wrapper, `--approval-server-url` / `--signing-key-path` / `--silence-{short,long}-duration` flags on `cha diagnose`) is retained as harmless secondary coverage; the watcher delta path above is the primary surface.
+- **Legacy diagnose path** (`internal/report/slack.go`): the earlier `srenix diagnose --slack-webhook` wiring (`FormatSlackWithSilence`, `FormatSlack` kept as a thin no-link wrapper, `--approval-server-url` / `--signing-key-path` / `--silence-{short,long}-duration` flags on `srenix diagnose`) is retained as harmless secondary coverage; the watcher delta path above is the primary surface.
 - **Config knobs**: `approval.silence.{shortDuration,longDuration}` Helm values + `spec.approval.silence.{shortDuration,longDuration}` CR fields (defaults 24h / 90d).
-- **RBAC**: the approval-server SA gets `create,get,list` on `silences.cha.bionicaisolutions.com` via a namespace-local Role in BOTH the chart (`approval-server-rbac.yaml`) and the operator (`BuildApprovalSilenceWriterRole`, reconciled + finalizer-owned). The operator/CSV/chart operator-ClusterRole also hold the silences verbs so RBAC escalation prevention passes when materializing that Role (chart↔operator↔bundle parity preserved).
+- **RBAC**: the approval-server SA gets `create,get,list` on `silences.srenix.ai` via a namespace-local Role in BOTH the chart (`approval-server-rbac.yaml`) and the operator (`BuildApprovalSilenceWriterRole`, reconciled + finalizer-owned). The operator/CSV/chart operator-ClusterRole also hold the silences verbs so RBAC escalation prevention passes when materializing that Role (chart↔operator↔bundle parity preserved).
 - **Tests**: silence token sign/verify round-trip + tamper (UntilUnix/Scope/Subject) + expiry + malformed; minter two-well-formed-URLs with correct scope/until/jti + messagePattern propagation; delta renderer (`SplitCriticalPayloads` + `FormatSlackDelta`) shows BOTH click-links with correct scope + configurable-duration labels when minted, falls back to the kubectl one-liner when unconfigured, and emits exactly one class link; `attachApprovalURLs` mints both links with the matcher built from real `Subject`/`Source` (not Component), verified by signature; operator watcher gets `--silence-{short,long}-duration` only when `spec.approval.silence.*` is set; legacy `FormatSlackWithSilence` configured/no-link regression; operator silence-writer Role/RoleBinding unit tests.
 
 ## [1.26.2] — 2026-06-17
 
 ### Fixed — human-approved (token-based) executions no longer fail with "ai proposal lacks rollback info" (OF1)
 
-The CHA-com approval-server executor reconstructs an `AIProposedAction` from the signed approval JWT and validated it with `(*AIProposedAction).Validate()` before applying the mutation. But the signed token deliberately carries only the safety-relevant identity (`action_id` / `tier` / `action_kind` / `target` / `diag_subject`) and intentionally OMITS the rollback description — while `Validate()` requires `Rollback.Description != ""` (`ErrMissingRollback`). So every human-approved, token-based execution failed at the execution gate even though the proposal was a fully-valid, approved action. Rollback is a proposal-CREATION quality gate (the LLM must supply a rollback plan, rendered to the approver in Slack/the ticket) — it is not an execution-time invariant and cannot be re-checked against a token that omits it by design.
+The Srenix Enterprise approval-server executor reconstructs an `AIProposedAction` from the signed approval JWT and validated it with `(*AIProposedAction).Validate()` before applying the mutation. But the signed token deliberately carries only the safety-relevant identity (`action_id` / `tier` / `action_kind` / `target` / `diag_subject`) and intentionally OMITS the rollback description — while `Validate()` requires `Rollback.Description != ""` (`ErrMissingRollback`). So every human-approved, token-based execution failed at the execution gate even though the proposal was a fully-valid, approved action. Rollback is a proposal-CREATION quality gate (the LLM must supply a rollback plan, rendered to the approver in Slack/the ticket) — it is not an execution-time invariant and cannot be re-checked against a token that omits it by design.
 
-- **New `(*AIProposedAction).ValidateForExecution()`** (`pkg/ai/validate.go`) enforces every safety/structural invariant `Validate()` does — action_kind closed enum, target presence/shape, protected-namespace boundary, patch-payload/kind pairing, manifest validity for `ApplyManifest`, pull-request URL shape, expiry window, proposal-tier check — EXCEPT the rollback-description requirement. This is the correct check for executing an already-approved, reconstructed action; the CHA-com approval-server executor is the intended caller.
+- **New `(*AIProposedAction).ValidateForExecution()`** (`pkg/ai/validate.go`) enforces every safety/structural invariant `Validate()` does — action_kind closed enum, target presence/shape, protected-namespace boundary, patch-payload/kind pairing, manifest validity for `ApplyManifest`, pull-request URL shape, expiry window, proposal-tier check — EXCEPT the rollback-description requirement. This is the correct check for executing an already-approved, reconstructed action; the Srenix Enterprise approval-server executor is the intended caller.
 - **`Validate()` behavior is UNCHANGED** (creation/sign-time contract stays strict, including `ErrMissingRollback`). The shared checks are factored into an unexported `validateStructural()` helper; `Validate()` = shared checks + rollback requirement, `ValidateForExecution()` = shared checks only. No signature or external-behavior change for existing callers/tests.
 - **Tests** pin the exact failing case (empty-rollback proposal passes `ValidateForExecution`, fails `Validate`) across every executor-reachable kind (`DeletePod` / `DeleteJob` / `DeleteCertRequest` / `DeleteACMEOrder` / `PatchDeployment` / `ApplyManifest`), assert `ValidateForExecution` still rejects the genuinely-unsafe cases (invalid/empty action_kind, missing target, protected namespace, patch on non-patch kind, invalid manifest, expired window, disallowed tier), and assert Validate↔ValidateForExecution parity when rollback is present.
 
@@ -103,11 +124,11 @@ The T3/runbook validation path (`VaultRunbook.Validate`, which reuses `ErrMissin
 
 ### Fixed — watcher standby pods now serve `/healthz`; rolling upgrades no longer deadlock (O11, production 1.26.0 upgrade incident)
 
-PR #186 (1.26.0) introduced the always-on `:8081` health server **and** the chart/operator liveness+readiness probes that target it — but started the listener inside `Watcher.Run`, which `cha watch` wraps in `RunWithLeader`, i.e. inside the leader-election `OnStartedLeading` callback. A standby (non-leader) pod therefore served nothing on `:8081`: the liveness probe got `connection refused` and kubelet kill-looped it. Under the operator-built Deployment's `RollingUpdate maxUnavailable=0` strategy this deadlocked **every** upgrade — the new pod could never pass its probes while the old leader held the `cha-watcher` lease, and the old pod was never terminated. Production recovery required deleting the old leader pod and temporarily relaxing `maxUnavailable`.
+PR #186 (1.26.0) introduced the always-on `:8081` health server **and** the chart/operator liveness+readiness probes that target it — but started the listener inside `Watcher.Run`, which `srenix watch` wraps in `RunWithLeader`, i.e. inside the leader-election `OnStartedLeading` callback. A standby (non-leader) pod therefore served nothing on `:8081`: the liveness probe got `connection refused` and kubelet kill-looped it. Under the operator-built Deployment's `RollingUpdate maxUnavailable=0` strategy this deadlocked **every** upgrade — the new pod could never pass its probes while the old leader held the `srenix-watcher` lease, and the old pod was never terminated. Production recovery required deleting the old leader pod and temporarily relaxing `maxUnavailable`.
 
-- **`cha watch` now binds the health listener BEFORE entering leader election**, on the command context (process lifetime, not lease lifetime), via the new idempotent `Watcher.StartHealthServer`. `/healthz` returns 200 as soon as the process is up — leader, standby, or still-acquiring. A bind failure is a hard startup error (loud exit beats a silent probe kill-loop). `Watcher.Run` still calls `StartHealthServer` defensively (idempotent no-op when already started), so direct `Run` callers and the `CHA_LEADER_ELECTION=off` path keep the listener.
+- **`srenix watch` now binds the health listener BEFORE entering leader election**, on the command context (process lifetime, not lease lifetime), via the new idempotent `Watcher.StartHealthServer`. `/healthz` returns 200 as soon as the process is up — leader, standby, or still-acquiring. A bind failure is a hard startup error (loud exit beats a silent probe kill-loop). `Watcher.Run` still calls `StartHealthServer` defensively (idempotent no-op when already started), so direct `Run` callers and the `SRENIX_LEADER_ELECTION=off` path keep the listener.
 - **`/readyz` added as an unconditional 200 alias of `/healthz`** — deliberately NOT gated on holding the leader lease. The chart and operator point both probes at `/healthz`; the watcher serves no Service traffic that readiness needs to gate, and a leadership-gated readiness would re-create the same deadlock (a standby pod that never goes Ready blocks `maxUnavailable=0` rollouts and single-replica rollover). Documented in the chart template, the operator's `watcherHealthProbes`, and the handler.
-- **Regression test** `TestStartHealthServer_Serves200WhileStandby_NotLeader` (internal/watcher) pins the incident: health server started the way `cmd/cha` does, leader election entered against a lease already held by another identity, asserts `/healthz` answers 200 while the watch-loop body has never run. Plus an idempotency test (second `StartHealthServer` must not re-bind).
+- **Regression test** `TestStartHealthServer_Serves200WhileStandby_NotLeader` (internal/watcher) pins the incident: health server started the way `cmd/srenix` does, leader election entered against a lease already held by another identity, asserts `/healthz` answers 200 while the watch-loop body has never run. Plus an idempotency test (second `StartHealthServer` must not re-bind).
 
 No probe endpoints, ports, or chart values changed — `helm upgrade` from 1.26.0 picks up the fixed binary and rolls cleanly (this release is itself the first upgrade that no longer needs the manual leader-pod delete).
 
@@ -117,11 +138,11 @@ Release cut covering everything merged since v1.25.1 (PRs #186–#203 plus the O
 
 ### Added — CI: CHANGELOG ↔ git-tag parity gate (`scripts/changelog-tag-check.sh`)
 
-Companion to `changelog-lint.sh` (which checks heading format): every released `## [x.y.z]` heading except the topmost (the release in flight) must have a matching `vx.y.z` tag (or chart-releaser `cluster-health-autopilot-x.y.z` tag — the 1.8.x line shipped chart-only cuts under that form), and `[Unreleased]` content may not present a version as already shipped (no dated `### [x.y.z] — YYYY-MM-DD` headings, no version-numbered headings). Both `[Unreleased]` checks are anchored to the markdown HEADING signature, so prose that merely cross-references a version and a date (e.g. `- Backport of [1.25.1] fix from 2026-05-11`) passes instead of false-positiving. Catches the claimed-but-never-tagged release class. Runs in the lint CI job next to changelog-lint (the job's checkout now fetches tags), followed by `scripts/changelog-tag-check_test.sh` — positive/negative fixture selftests for the gate itself, including the prose-mention case.
+Companion to `changelog-lint.sh` (which checks heading format): every released `## [x.y.z]` heading except the topmost (the release in flight) must have a matching `vx.y.z` tag (or chart-releaser `agentic-sre-x.y.z` tag — the 1.8.x line shipped chart-only cuts under that form), and `[Unreleased]` content may not present a version as already shipped (no dated `### [x.y.z] — YYYY-MM-DD` headings, no version-numbered headings). Both `[Unreleased]` checks are anchored to the markdown HEADING signature, so prose that merely cross-references a version and a date (e.g. `- Backport of [1.25.1] fix from 2026-05-11`) passes instead of false-positiving. Catches the claimed-but-never-tagged release class. Runs in the lint CI job next to changelog-lint (the job's checkout now fetches tags), followed by `scripts/changelog-tag-check_test.sh` — positive/negative fixture selftests for the gate itself, including the prose-mention case.
 
-### Added — cloud-probe message join keys for CHA-com's cross-resource RCA matchers
+### Added — cloud-probe message join keys for Srenix Enterprise's cross-resource RCA matchers
 
-CHA-com's cross-resource RCA matchers (ai/cloudcontext, PR #65) join Kubernetes resources to cloud findings via tokens parsed out of the finding MESSAGE. Three LB probes and the Azure cert probe omitted the join keys; they now carry them. **Message-only enrichment** — subjects, severities, and finding counts are unchanged, and the suffix format is a frozen cross-repo contract: single space, literal `(lb: ` / `(domains: `, comma-separated domains with no spaces, closing paren.
+Srenix Enterprise's cross-resource RCA matchers (ai/cloudcontext, PR #65) join Kubernetes resources to cloud findings via tokens parsed out of the finding MESSAGE. Three LB probes and the Azure cert probe omitted the join keys; they now carry them. **Message-only enrichment** — subjects, severities, and finding counts are unchanged, and the suffix format is a frozen cross-repo contract: single space, literal `(lb: ` / `(domains: `, comma-separated domains with no spaces, closing paren.
 
 - **`aws-alb-target-health`** — the 0-healthy-targets finding appends ` (lb: <load balancer DNS name>)`. The live wrapper resolves the target group's `LoadBalancerArns` via ONE `elbv2.DescribeLoadBalancers` per probe cycle (not per target group); new optional `ALBTargetGroup.LoadBalancerDNS` (`loadBalancerDNS` snapshot field).
 - **`gcp-lb-backends`** — the 0-healthy-backends finding appends ` (lb: <forwarding-rule IP or name>)`, falling back to the backend-service name when unmapped. The live wrapper adds ONE `compute.ForwardingRules.AggregatedList` per probe cycle, joining passthrough-LB rules on `rule.BackendService` (proxy-based rules would need a target-proxy + URL-map walk and are deliberately left to the name fallback); new optional `BackendService.ForwardingRule` (`forwardingRule` snapshot field).
@@ -130,63 +151,63 @@ CHA-com's cross-resource RCA matchers (ai/cloudcontext, PR #65) join Kubernetes 
 - **Backward/offline compat** — all four fields are optional snapshot additions; live-wrapper enrichment fetches are best-effort and never fail the probe.
   - AWS (`aws-alb-target-health`) and Azure certs (`azure-certs`): absent or failed enrichment → the pre-enrichment message with no suffix added (no `(lb: ...)` or `(domains: ...)`) (name is not enough — DNS/IP needs a separate API call, so without it there is nothing safe to emit).
   - GCP (`gcp-lb-backends`) and Azure AppGW (`azure-appgw-backends`): absent or failed enrichment → name-only suffix, e.g. `(lb: my-forwarding-rule)` or `(lb: my-appgw)`, because the backend/gateway name is already present in local data (name is in-process and always available; DNS/IP needs a separate API call). Never a panic or an empty `(lb: )`.
-- **Contract pinned** — shared suffix builders in `internal/cloud/joinkeys.go` (`JoinKeyLB`, `JoinKeyDomains`) + `internal/cloud/contract_test.go` freezing the literal `" (lb: %s)"` / `" (domains: %s)"` formats with a pointer at the CHA-com dependency; per-probe tests assert the exact enriched message with the data present AND the unsuffixed shape when absent; live-layer helper tests cover the ARN→DNS map, the forwarding-rule index, listener-hostname extraction, and SAN flattening. No chart/CRD changes.
+- **Contract pinned** — shared suffix builders in `internal/cloud/joinkeys.go` (`JoinKeyLB`, `JoinKeyDomains`) + `internal/cloud/contract_test.go` freezing the literal `" (lb: %s)"` / `" (domains: %s)"` formats with a pointer at the Srenix Enterprise dependency; per-probe tests assert the exact enriched message with the data present AND the unsuffixed shape when absent; live-layer helper tests cover the ARN→DNS map, the forwarding-rule index, listener-hostname extraction, and SAN flattening. No chart/CRD changes.
 
 ### Added — hash-chained audit-trail primitive in OSS `pkg/audit` (closes the features/policy source-citation gap)
 
-The website's features/policy page cites `pkg/audit/hash_chain.go` as the auditable open-source implementation of the tamper-evident audit trail, but the hash-chain primitive previously lived only in the private CHA-com repo — the cited file did not exist here. The primitive is now ported (first-party code, Apache-2.0), so "audit the envelope before you install" includes the chain itself.
+The website's features/policy page cites `pkg/audit/hash_chain.go` as the auditable open-source implementation of the tamper-evident audit trail, but the hash-chain primitive previously lived only in the private Srenix Enterprise repo — the cited file did not exist here. The primitive is now ported (first-party code, Apache-2.0), so "audit the envelope before you install" includes the chain itself.
 
 - **`pkg/audit/hash_chain.go`** (new, stdlib-only) — the full chain core operating directly on the OSS `ai.AuditEvent`/`ai.AuditSink` types: `ChainedSink` (canonical-JSON hashing, `prev_hash`/`entry_hash` linking, tamper-evident `entry_time` stamping via `EntryTimeKey`, failed inner write does NOT advance the chain), `NewChainedSinkResuming(inner, resumeHash, ChainOptions{Signer, CheckpointEvery})` (a restart continues the existing chain instead of re-anchoring at `""`; periodic signed checkpoints), `WriteCheckpoint` (caller-triggered tail anchor, e.g. on close), `CheckpointSigner` (narrow signing interface; concrete Ed25519 adapters live with the caller), `VerifyChain` (first broken index or -1), and `VerifyChainWithCheckpoints`/`ChainVerification` (tail-truncation detection: the hash links alone cannot catch lopping off the tail; only a signed checkpoint as the final entry anchors it).
-- **OSS vs paid boundary** — the chain primitive + verification are OSS; the richer sinks the chain wraps (JSONL chained file with rotation, Loki, OTLP/SIEM) remain in the paid CHA-com binary, registered via the registry without removing the defaults. The package doc states the split and the intended CHA-com adapter path (import swap + `NewChainedSinkResuming` from the store's last persisted `entry_hash` + `WriteCheckpoint` on close; the CHA-com swap itself is a separate follow-up after the next OSS release).
+- **OSS vs paid boundary** — the chain primitive + verification are OSS; the richer sinks the chain wraps (JSONL chained file with rotation, Loki, OTLP/SIEM) remain in the paid Srenix Enterprise binary, registered via the registry without removing the defaults. The package doc states the split and the intended Srenix Enterprise adapter path (import swap + `NewChainedSinkResuming` from the store's last persisted `entry_hash` + `WriteCheckpoint` on close; the Srenix Enterprise swap itself is a separate follow-up after the next OSS release).
 - **Tests** (`pkg/audit/hash_chain_test.go`, 23 cases) — chain integrity and link consistency; tamper detection at EVERY position for five tamper classes (struct field, Details key, `entry_hash` forgery, `prev_hash` forgery, timestamp edit); reordering detection; resumption continues across sink lifetimes with no `""` re-anchor; checkpoint cadence; signed-checkpoint tail-truncation detection (plain `VerifyChain` accepts the truncated prefix, the checkpoint-aware verifier flags it); unsigned/absent checkpoints report an unanchored tail; a broken chain reports `BrokenIndex` AND the last trustworthy `LastCheckpointIndex` (scanned over the verified prefix only) together; Ed25519 checkpoint signatures verify against the head hash; canonicalization stability (map insertion order, nested maps, unicode — CJK/RTL/emoji/combining marks — and fixed-clock determinism); and a golden-bytes canonical-format contract test (`TestCanonicalJSON_FormatContract`) freezing the exact `encoding/json.Marshal` form — declaration-order struct fields, sorted map keys, HTML-escaping ON — that production chains already use, so any accidental format change (e.g. `SetEscapeHTML(false)`) fails loudly instead of silently breaking cross-version verification.
 
-### Added — append-only protected-namespace extension (`CHA_PROTECTED_NAMESPACES_EXTRA`)
+### Added — append-only protected-namespace extension (`SRENIX_PROTECTED_NAMESPACES_EXTRA`)
 
 The website's policy page promised the protected-namespace list is "configurable; the operator extends this list per cluster", but both compiled-in lists (`internal/fix/protected.go` for the fixer guard, `pkg/ai/validate.go` for the AI-action validator) had no extension mechanism. Now there is one — APPEND-ONLY by construction: operators can ADD protected namespaces; nothing can remove the compiled-in floor (`kube-system`, `kube-public`, `kube-node-lease`, `rook-ceph`, `vault`, `external-secrets`, `cnpg-system`).
 
-- **Binary** — new env var `CHA_PROTECTED_NAMESPACES_EXTRA` (comma-separated; entries trimmed, empties dropped, duplicates collapsed) consumed by BOTH act-side guards. `pkg/ai` (new `protected.go`) owns the shared extra set — `EnvProtectedNamespacesExtra`, `ParseProtectedNamespacesExtra`, `SetExtraProtectedNamespaces(...)` (host/test initializer), `LoadExtraProtectedNamespacesFromEnv()`, `IsExtraProtectedNamespace`, `ExtraProtectedNamespaces()` — loaded lazily on first check, so the cha-com aiwatch (which links `pkg/ai`) inherits the widened floor with zero code change. `internal/fix.IsProtectedNamespace` keeps its compiled floor and ORs in the shared extras, so the fixer guard and the AI validator can never disagree. The detect side honors the same knob: `internal/probe.IsProtectedNamespace` (severity ESCALATION — in probe-land protected namespaces are "always-critical", e.g. the CrashLoop probe) ORs in the shared extras too, so an issue in an extra-protected namespace is escalated, not just shielded from auto-fix. **Backward compatible**: `ai.IsProtectedNamespace` / `ai.ProtectedNamespaces` signatures unchanged; the exported map is now documented as the compiled-in FLOOR (extras live alongside, never inside it).
-- **Helm** — new `protectedNamespaces.extra: []` value; a non-empty list renders `CHA_PROTECTED_NAMESPACES_EXTRA` on the watcher Deployment, diagnose + remediate CronJobs, AND the aiwatch Deployment (empty = byte-identical render). The Gatekeeper third-layer constraint (`gatekeeper.constraints.protectedNamespaces`) now appends `protectedNamespaces.extra` (deduped) so the admission gate enforces the same widened boundary.
+- **Binary** — new env var `SRENIX_PROTECTED_NAMESPACES_EXTRA` (comma-separated; entries trimmed, empties dropped, duplicates collapsed) consumed by BOTH act-side guards. `pkg/ai` (new `protected.go`) owns the shared extra set — `EnvProtectedNamespacesExtra`, `ParseProtectedNamespacesExtra`, `SetExtraProtectedNamespaces(...)` (host/test initializer), `LoadExtraProtectedNamespacesFromEnv()`, `IsExtraProtectedNamespace`, `ExtraProtectedNamespaces()` — loaded lazily on first check, so the srenix-enterprise aiwatch (which links `pkg/ai`) inherits the widened floor with zero code change. `internal/fix.IsProtectedNamespace` keeps its compiled floor and ORs in the shared extras, so the fixer guard and the AI validator can never disagree. The detect side honors the same knob: `internal/probe.IsProtectedNamespace` (severity ESCALATION — in probe-land protected namespaces are "always-critical", e.g. the CrashLoop probe) ORs in the shared extras too, so an issue in an extra-protected namespace is escalated, not just shielded from auto-fix. **Backward compatible**: `ai.IsProtectedNamespace` / `ai.ProtectedNamespaces` signatures unchanged; the exported map is now documented as the compiled-in FLOOR (extras live alongside, never inside it).
+- **Helm** — new `protectedNamespaces.extra: []` value; a non-empty list renders `SRENIX_PROTECTED_NAMESPACES_EXTRA` on the watcher Deployment, diagnose + remediate CronJobs, AND the aiwatch Deployment (empty = byte-identical render). The Gatekeeper third-layer constraint (`gatekeeper.constraints.protectedNamespaces`) now appends `protectedNamespaces.extra` (deduped) so the admission gate enforces the same widened boundary.
 - **Operator** — new top-level CR field `spec.protectedNamespacesExtra []string` (ONE field feeding both consumers — deliberately not under `spec.remediate` or `spec.ai`, because splitting the knob per consumer would invite the two safety floors to diverge; rationale in the field's doc comment). Rendered by the builders onto the watcher Deployment, both CronJobs, AND `aiEnv` (aiwatch). CRD schema added to both the chart template and `bundle/manifests` (the Go↔CRD and bundle↔chart parity gates pin them); `bundle/tests/sample-cr-full.yaml` extended; hand-maintained DeepCopy updated.
 - **Safety tests** — floor preserved under empty/garbage/whitespace env values and under attempts to "replace" the list (`pkg/ai/protected_test.go`, `internal/fix/protected_test.go`, `internal/probe/protected_test.go`); extension visible to the fixer guard, the probe severity escalation, the proposal validator (`Validate()` → `ErrProtectedNamespace`), and the safe-apply manifest validator (`ErrManifestProtectedNS`); lazy env load can never clobber a racing `SetExtraProtectedNamespaces` (double-checked locking, pinned by `TestLazyEnvLoad_DoesNotClobberRacingSetter`); operator builder env propagation + absent-when-unset (`internal/operator/protected_namespaces_test.go`); helm-unittest for all four workloads; the P1.8 toggle-drift gate now scans `pkg/ai/protected.go`.
-- **Docs** — `docs/SETUP_GUIDE.md` values appendix + TLSSecretMismatch safety constraints describe the floor + extension (and no longer claim a `cha.bionicaisolutions.com/protected` namespace-label mechanism that never existed in the code).
+- **Docs** — `docs/SETUP_GUIDE.md` values appendix + TLSSecretMismatch safety constraints describe the floor + extension (and no longer claim a `srenix.ai/protected` namespace-label mechanism that never existed in the code).
 
 ### Added — toggles for the 6 base probes + 7 core analyzers (docs said "each probe independently togglable"; now it's true)
 
 The public docs promised every probe/analyzer is independently disablable, but the six base probes (Ceph, Nodes, Postgres, PVCs, Critical Services, Endpoints) and seven core analyzers (SecretKeyMissing, FailingExternalSecrets, ProactiveSecretKeyCheck, UnprovisionedSecret, ImagePullAuth, CertExpiry, TLSSecretMismatch) were registered unconditionally in `catalog/catalog.go` — no env gate, no chart toggle.
 
-- **catalog** — each now follows the exact `os.Getenv("CHA_X") != "off"` opt-out pattern the 15 existing gated probes/analyzers use. New env vars: `CHA_PROBE_CEPH`, `CHA_PROBE_NODES`, `CHA_PROBE_POSTGRES`, `CHA_PROBE_PVCS`, `CHA_PROBE_CRITICAL_WORKLOADS` (gates the Critical Services probe — the documented env name), `CHA_PROBE_ENDPOINTS`, `CHA_ANALYZER_SECRET_KEY_MISSING`, `CHA_ANALYZER_FAILING_EXTERNAL_SECRETS`, `CHA_ANALYZER_PROACTIVE_SECRET_KEY_CHECK`, `CHA_ANALYZER_UNPROVISIONED_SECRET`, `CHA_ANALYZER_IMAGE_PULL_AUTH`, `CHA_ANALYZER_CERT_EXPIRY`, `CHA_ANALYZER_TLS_SECRET_MISMATCH`. **All 13 default ON — no behavior change for existing installs** (these probes/analyzers have shipped default-on since v1.0; the toggle only adds the documented opt-out, so the P3.3a default-off discipline records a status-quo soak rationale in the golden rather than shipping the secret-chain core signal default-off).
-- **chart** — `probes.{ceph,nodes,postgres,pvcs,criticalWorkloads,endpoints}.enabled` and `analyzers.{secretKeyMissing,failingExternalSecrets,proactiveSecretKeyCheck,unprovisionedSecret,imagePullAuth,certExpiry,tlsSecretMismatch}.enabled` (all default `true`), wired through the existing `cha.probeToggleEnv` / `cha.analyzerToggleEnv` helpers — `enabled: false` emits `CHA_*=off` on the watcher + diagnose containers, byte-identical render at defaults.
+- **catalog** — each now follows the exact `os.Getenv("SRENIX_X") != "off"` opt-out pattern the 15 existing gated probes/analyzers use. New env vars: `SRENIX_PROBE_CEPH`, `SRENIX_PROBE_NODES`, `SRENIX_PROBE_POSTGRES`, `SRENIX_PROBE_PVCS`, `SRENIX_PROBE_CRITICAL_WORKLOADS` (gates the Critical Services probe — the documented env name), `SRENIX_PROBE_ENDPOINTS`, `SRENIX_ANALYZER_SECRET_KEY_MISSING`, `SRENIX_ANALYZER_FAILING_EXTERNAL_SECRETS`, `SRENIX_ANALYZER_PROACTIVE_SECRET_KEY_CHECK`, `SRENIX_ANALYZER_UNPROVISIONED_SECRET`, `SRENIX_ANALYZER_IMAGE_PULL_AUTH`, `SRENIX_ANALYZER_CERT_EXPIRY`, `SRENIX_ANALYZER_TLS_SECRET_MISMATCH`. **All 13 default ON — no behavior change for existing installs** (these probes/analyzers have shipped default-on since v1.0; the toggle only adds the documented opt-out, so the P3.3a default-off discipline records a status-quo soak rationale in the golden rather than shipping the secret-chain core signal default-off).
+- **chart** — `probes.{ceph,nodes,postgres,pvcs,criticalWorkloads,endpoints}.enabled` and `analyzers.{secretKeyMissing,failingExternalSecrets,proactiveSecretKeyCheck,unprovisionedSecret,imagePullAuth,certExpiry,tlsSecretMismatch}.enabled` (all default `true`), wired through the existing `srenix.probeToggleEnv` / `srenix.analyzerToggleEnv` helpers — `enabled: false` emits `SRENIX_*=off` on the watcher + diagnose containers, byte-identical render at defaults.
 - **tests** — `catalog/catalog_test.go` (new): every toggle registers by default, skips on `=off`, doesn't drop siblings, and non-`off` values (`true`/`OFF`/garbage) do NOT disable; helm-unittest coverage extended (`probe_toggle_test.yaml` + new `analyzer_toggle_test.yaml`); the P1.8 toggle-drift and P3.3a default-off chartgates pass with the new inventory.
 - **operator** — no change needed: the CR has no probe/analyzer toggle surface today (the existing 15 toggles aren't operator-settable either); tracked as a follow-up alongside a watcher `extraEnv` passthrough rather than growing the CRD here.
 - **docs** — `docs/SETUP_GUIDE.md` env-var tables list the 13 new toggles with their Helm values.
 
 ### Added — chart: deploy the read-only hosted dashboard (P6.6)
 
-P6.6 shipped a `cha-com dashboard` subcommand (a read-only, server-rendered HTML view of findings/approvals/history). This wires the OSS Helm chart to actually deploy it, mirroring the approval-server's chart pattern.
+P6.6 shipped a `srenix-enterprise dashboard` subcommand (a read-only, server-rendered HTML view of findings/approvals/history). This wires the OSS Helm chart to actually deploy it, mirroring the approval-server's chart pattern.
 
-- **values.yaml** — a new `dashboard:` block, default `enabled: false` (byte-identical render for existing installs). Carries `image` (defaults to the `docker4zerocool/cha-com` image like `approval`/`ai`), `replicas`, `approvalBaseURL` (REQUIRED when enabled — the approval-server URL the Approve/Deny/Ignore links target), `authHeader` (default `X-Forwarded-User`), optional `auditLogPath`, `historyLimit`/`approvalsLimit`, `ingress.{host,ingressClassName,annotations,tls}`, and `networkPolicy.{enabled,gatewayNamespaceSelector}` (default-off, required-selector-when-enabled — the same P2.6b fail-closed contract as `approval.networkPolicy`).
-- **Templates** (all gated on `dashboard.enabled`) — `dashboard-deployment.yaml` (runs `cha-com dashboard` with `--approval-base-url` + `--auth-header`), `dashboard-service.yaml` (ClusterIP :8444), `dashboard-serviceaccount.yaml` (a DEDICATED `<release>-dashboard` SA), `dashboard-rbac.yaml` (a **read-only** ClusterRole — `get/list/watch` on `driftreports` only, plus `resolutionrecords` read when that CRD is enabled — bound to the dashboard SA; **no signing key, no mutate verbs, no Secret access**), `dashboard-ingress.yaml`, and `dashboard-networkpolicy.yaml` (mirrors the approval-server P2.6b NetworkPolicy: restricts ingress to the gateway namespace).
+- **values.yaml** — a new `dashboard:` block, default `enabled: false` (byte-identical render for existing installs). Carries `image` (defaults to the `docker4zerocool/srenix-enterprise` image like `approval`/`ai`), `replicas`, `approvalBaseURL` (REQUIRED when enabled — the approval-server URL the Approve/Deny/Ignore links target), `authHeader` (default `X-Forwarded-User`), optional `auditLogPath`, `historyLimit`/`approvalsLimit`, `ingress.{host,ingressClassName,annotations,tls}`, and `networkPolicy.{enabled,gatewayNamespaceSelector}` (default-off, required-selector-when-enabled — the same P2.6b fail-closed contract as `approval.networkPolicy`).
+- **Templates** (all gated on `dashboard.enabled`) — `dashboard-deployment.yaml` (runs `srenix-enterprise dashboard` with `--approval-base-url` + `--auth-header`), `dashboard-service.yaml` (ClusterIP :8444), `dashboard-serviceaccount.yaml` (a DEDICATED `<release>-dashboard` SA), `dashboard-rbac.yaml` (a **read-only** ClusterRole — `get/list/watch` on `driftreports` only, plus `resolutionrecords` read when that CRD is enabled — bound to the dashboard SA; **no signing key, no mutate verbs, no Secret access**), `dashboard-ingress.yaml`, and `dashboard-networkpolicy.yaml` (mirrors the approval-server P2.6b NetworkPolicy: restricts ingress to the gateway namespace).
 - **Guard test** — `chart_dashboard_binding_sa_test.go` asserts the dashboard ClusterRoleBinding targets the dashboard's OWN SA (`<fullname>-dashboard`, not the watcher SA — the silence-binding-bug class) AND that the ClusterRole carries ONLY `get/list/watch` with no mutate verb and no `secrets` reference.
 
 Operator path: this follow-up is **chart-only by design**. Wiring the operator (a `DashboardSpec` CRD field + DeepCopy + reconcile/teardown + a cluster-scoped ClusterRole/Binding requiring finalizer cleanup) would touch the CRD and trip the CRD/RBAC/bundle parity gates; per the P6.6 deploy note the operator path is tracked as a separate follow-up so the parity gates stay green and the CRD surface is unchanged.
 
 ### Added — hosted playground bundle: live synthetic-drift demo (P6.8) — **shipped** (deploy + DNS are the operator's final step)
 
-The website's "Try it now" / playground CTA now has a real, kind-verified, deployable implementation under `examples/playground/`. A visitor watches CHA detect synthetic K8s drift **live** — real watcher, real `DriftReport` CRs, real broken workloads — inside a fully isolated namespace that cannot disturb anything else.
+The website's "Try it now" / playground CTA now has a real, kind-verified, deployable implementation under `examples/playground/`. A visitor watches Srenix detect synthetic K8s drift **live** — real watcher, real `DriftReport` CRs, real broken workloads — inside a fully isolated namespace that cannot disturb anything else.
 
 - **Drift injector** (`drift-injector.yaml`): a CronJob (stock `alpine/k8s` image + inline bash, no custom build) that creates and rotates **four** synthetic scenarios every 15 min, each mapped 1:1 to a **shipped OSS analyzer/probe** (verified firing on kind): (1) Deployment with a bad imagePullSecret pulling a private Docker Hub repo → `ImagePullAuth` (`internal/diagnose/image_pull_auth.go`); (2) Job referencing a missing Secret key → `SecretKeyMissing` (`internal/diagnose/secret_key_missing.go`); (3) Ingress serving an **expired** TLS secret while a Ready cert-manager `Certificate` renews the same host into a **different** secret → `TLSSecretMismatch` (`internal/diagnose/tls_secret_mismatch.go`); (4) CrashLoopBackOff Deployment → `CrashLoopBackOff` probe (`internal/probe/crashloop.go`).
-- **Isolation** (`namespace.yaml`): dedicated `cha-playground` namespace (PSA `baseline`) + **ResourceQuota** (30 pods / 1 CPU / 1Gi) + **LimitRange** + **default-deny NetworkPolicy** (only DNS / in-namespace / HTTPS-out re-opened) + **namespaced injector RBAC** (acts only in-namespace) + a viewer ClusterRole granting **only** `get/list/watch` on `driftreports`. Every workload carries `nodeAffinity` excluding GPU nodes (`nvidia.com/gpu.present DoesNotExist`).
-- **Viewer** (`viewer/`, ~180 lines Go): a self-contained **OSS** read-only page (not the CHA-com dashboard, so anyone can `kind`-run it) that lists the cluster-scoped `DriftReport` CRs and renders them with `html/template` (**XSS-safe** — tested). Deployment + Service + Ingress (`playground.asre.baisoln.com`, Kong ingressClass + `cert-manager.io/cluster-issuer: letsencrypt-prod`, mirroring the cluster's website/grafana ingress).
-- **CHA watcher** (`cha-values.yaml`): the OSS chart installed scoped to `cha-playground`, **diagnose-only** (`watcher.remedy.enabled=false`), AI/approval/ticketing/cloud all off, single pod, GPU-excluded. The playground only DETECTS drift; it never mutates.
-- **Runbook** (`README.md`): kind quick-try (anyone can run locally), prod deploy, the **DNS step documented but NOT executed** (Cloudflare A record + `deploy/lib/dns.sh` `DNS_DOMAINS` entry per the dns-new-subdomains rule), and teardown. Honest scope note: `DriftReport` is cluster-scoped and `cha watch` lists cluster-wide, so the reader ClusterRole is cluster-wide read-only (safe with remedy off; only `cha-playground` ever contains injected drift).
+- **Isolation** (`namespace.yaml`): dedicated `srenix-playground` namespace (PSA `baseline`) + **ResourceQuota** (30 pods / 1 CPU / 1Gi) + **LimitRange** + **default-deny NetworkPolicy** (only DNS / in-namespace / HTTPS-out re-opened) + **namespaced injector RBAC** (acts only in-namespace) + a viewer ClusterRole granting **only** `get/list/watch` on `driftreports`. Every workload carries `nodeAffinity` excluding GPU nodes (`nvidia.com/gpu.present DoesNotExist`).
+- **Viewer** (`viewer/`, ~180 lines Go): a self-contained **OSS** read-only page (not the Srenix Enterprise dashboard, so anyone can `kind`-run it) that lists the cluster-scoped `DriftReport` CRs and renders them with `html/template` (**XSS-safe** — tested). Deployment + Service + Ingress (`playground.asre.baisoln.com`, Kong ingressClass + `cert-manager.io/cluster-issuer: letsencrypt-prod`, mirroring the cluster's website/grafana ingress).
+- **Srenix watcher** (`srenix-values.yaml`): the OSS chart installed scoped to `srenix-playground`, **diagnose-only** (`watcher.remedy.enabled=false`), AI/approval/ticketing/cloud all off, single pod, GPU-excluded. The playground only DETECTS drift; it never mutates.
+- **Runbook** (`README.md`): kind quick-try (anyone can run locally), prod deploy, the **DNS step documented but NOT executed** (Cloudflare A record + `deploy/lib/dns.sh` `DNS_DOMAINS` entry per the dns-new-subdomains rule), and teardown. Honest scope note: `DriftReport` is cluster-scoped and `srenix watch` lists cluster-wide, so the reader ClusterRole is cluster-wide read-only (safe with remedy off; only `srenix-playground` ever contains injected drift).
 - **kind verification:** created a kind cluster, installed the chart + bundle, injected all four scenarios, and confirmed the watcher produced DriftReports for each (`ImagePullAuth`, `SecretKeyMissing`, `TLSSecretMismatch`, `CrashLoopBackOff` probe) and the viewer rendered them (29 active reports, `/healthz` 200). `helm lint` + `kubeconform` + `kubectl apply --dry-run=server` clean; viewer `go build`/`vet`/`test`/`gofmt` clean incl. an XSS test. Hosted deploy + DNS remain the operator's final manual step.
 
-### Added — chart + operator: ticketing.{jira,servicenow,route} values → CHA-com ticketing env (makes the paid Jira/ServiceNow sinks deployable)
+### Added — chart + operator: ticketing.{jira,servicenow,route} values → Srenix Enterprise ticketing env (makes the paid Jira/ServiceNow sinks deployable)
 
-The CHA-com Jira/ServiceNow ticketing sinks just shipped but were undeployable end-to-end: nothing populated the `CHA_JIRA_*` / `CHA_SERVICENOW_*` / `CHA_TICKETING_ROUTE` env vars the aiwatch (cha-com) container reads. This wires them through both render paths the OSS chart/operator own.
+The Srenix Enterprise Jira/ServiceNow ticketing sinks just shipped but were undeployable end-to-end: nothing populated the `SRENIX_JIRA_*` / `SRENIX_SERVICENOW_*` / `SRENIX_TICKETING_ROUTE` env vars the aiwatch (srenix-enterprise) container reads. This wires them through both render paths the OSS chart/operator own.
 
-- **values.yaml** — the `ticketing:` block gains `route` (→ `CHA_TICKETING_ROUTE`), `jira.{url,project,email,issueType,priority.{critical,warning,info},webUrlBase}` + `jira.tokenSecret.{name,key}` (→ `CHA_JIRA_TOKEN`), and `servicenow.{url,user,urgency.*,impact.*,webUrlBase}` + `servicenow.passwordSecret.{name,key}` / `servicenow.bearerSecret.{name,key}` (→ `CHA_SERVICENOW_PASSWORD` / `CHA_SERVICENOW_BEARER`). All default empty/unset — byte-identical render for existing installs.
-- **Render (chart + operator).** New `cha.ticketingProviderEnv` helper (mirroring `cha.aiEnv`) and `internal/operator` `ticketingProviderEnv` add the env to the aiwatch container in lockstep. Plain (non-secret) values render as `value:`; **credentials (Jira token, ServiceNow password/bearer) render as `valueFrom.secretKeyRef` ONLY — the literal never appears in the manifest**, mirroring the existing `ai.apiKey.secretName` pattern. Each env var is emitted only when its source is set: no empty `CHA_JIRA_TOKEN` when no secret-ref is configured.
+- **values.yaml** — the `ticketing:` block gains `route` (→ `SRENIX_TICKETING_ROUTE`), `jira.{url,project,email,issueType,priority.{critical,warning,info},webUrlBase}` + `jira.tokenSecret.{name,key}` (→ `SRENIX_JIRA_TOKEN`), and `servicenow.{url,user,urgency.*,impact.*,webUrlBase}` + `servicenow.passwordSecret.{name,key}` / `servicenow.bearerSecret.{name,key}` (→ `SRENIX_SERVICENOW_PASSWORD` / `SRENIX_SERVICENOW_BEARER`). All default empty/unset — byte-identical render for existing installs.
+- **Render (chart + operator).** New `srenix.ticketingProviderEnv` helper (mirroring `srenix.aiEnv`) and `internal/operator` `ticketingProviderEnv` add the env to the aiwatch container in lockstep. Plain (non-secret) values render as `value:`; **credentials (Jira token, ServiceNow password/bearer) render as `valueFrom.secretKeyRef` ONLY — the literal never appears in the manifest**, mirroring the existing `ai.apiKey.secretName` pattern. Each env var is emitted only when its source is set: no empty `SRENIX_JIRA_TOKEN` when no secret-ref is configured.
 - **CRD parity.** `TicketingSpec` gains `Route`, `Jira` (`TicketingJiraSpec`), and `ServiceNow` (`TicketingServiceNowSpec`) with secret-refs via a new `TicketingSecretRef`; hand-ported into the chart CRD, the bundle CRD, and `bundle/tests/sample-cr-full.yaml` (full-surface coverage). DeepCopy hand-written per repo convention. All parity gates (CRD↔Go-types, bundle↔chart, full-surface sample, RBAC, toggle/flag) stay green. No RBAC change — the kubelet resolves the secret-ref at pod admission; the operator only emits the reference.
 
 ### Added — CycloneDX SBOM + cosign keyless image signing + attestation (P6.2)
@@ -197,7 +218,7 @@ The release pipeline now emits verifiable supply-chain provenance, making the we
 
 `Sink.Resolve` and `Sink.Comment` shipped in M1 with **zero call sites** — tickets never auto-closed and never got a recurrence comment, which trains operators to ignore the ticket sink. M2 wires both.
 
-- **Resolve-on-clear (default ON).** When a previously-ticketed finding is no longer present in the diagnose cycle, CHA closes the ticket with reason `CHA: condition cleared as of <ts>`. The cleared-subject set is computed in the watcher (seen last cycle, absent now) **independently of the Slack `postOnResolved` setting**, and `report.RouteResolves` runs **before** `Reconcile` deletes the DriftReport CR — the only point at which the persisted `TicketRef` on `status.ticket` is still readable. Idempotent: a resolved ticket is stamped `status.ticket.resolved=true` + `resolvedAt`, and CHA never re-resolves it.
+- **Resolve-on-clear (default ON).** When a previously-ticketed finding is no longer present in the diagnose cycle, Srenix closes the ticket with reason `Srenix: condition cleared as of <ts>`. The cleared-subject set is computed in the watcher (seen last cycle, absent now) **independently of the Slack `postOnResolved` setting**, and `report.RouteResolves` runs **before** `Reconcile` deletes the DriftReport CR — the only point at which the persisted `TicketRef` on `status.ticket` is still readable. Idempotent: a resolved ticket is stamped `status.ticket.resolved=true` + `resolvedAt`, and Srenix never re-resolves it.
 - **Comment-on-recurrence (debounced).** A finding that already has a ticket (still-open, or a resolved ticket whose finding reappeared) now comments on the **existing** ticket instead of the M1 no-op, debounced by `ticketing.commentInterval` (default `1h`) keyed on `status.ticket.lastCommentedAt` so a flapping finding can't spam the tracker. A recurrence after a clear also clears the `resolved` flag so the next clear resolves the ticket again. **After-interval recurrence reuses the existing ticket (no new ticket is opened)** — one ticket per finding keeps the operator's investigation history together.
 - **Severity-transition comment.** A still-open ticketed finding that changes severity gets a transition comment (debounced like recurrence). Severity is stamped on `status.ticket.severity` at open / last comment so the next transition is detectable.
 - **CRD/status:** new `status.ticket` fields `severity`, `resolved`, `resolvedAt`, `lastCommentedAt` (chart DriftReport CRD + bundle CRD).
@@ -225,13 +246,13 @@ The watcher Deployment shipped with no liveness/readiness probes (every sibling 
 
 ### Added — optional timestamped HMAC scheme (replay window)
 
-Webhook senders can now include `X-CHA-Timestamp: <unix-seconds>` and sign `timestamp + "." + body` (`X-CHA-Signature: sha256=hex(hmac-sha256(secret, ts+"."+body))`). Timestamped requests more than 5 minutes from server time are rejected with 401, so a captured request can no longer be replayed forever. Requests without the header keep the legacy body-only HMAC check (existing senders unaffected); a once-per-source log notice recommends adopting the timestamp header. New `webhook.SignWithTimestamp` helper for integrators.
+Webhook senders can now include `X-Srenix-Timestamp: <unix-seconds>` and sign `timestamp + "." + body` (`X-Srenix-Signature: sha256=hex(hmac-sha256(secret, ts+"."+body))`). Timestamped requests more than 5 minutes from server time are rejected with 401, so a captured request can no longer be replayed forever. Requests without the header keep the legacy body-only HMAC check (existing senders unaffected); a once-per-source log notice recommends adopting the timestamp header. New `webhook.SignWithTimestamp` helper for integrators.
 
 ### Changed — drive-by polish from the #203 quality review
 
 - `pkg/cloud/gcp.Subnet.SecondaryIPCount` doc comment now states it ships DATA-ONLY (snapshot capture surface; no probe consumes it), and new `internal/cloud/gcp/cidr_test.go` pins the full-size (`rangeSizeFromCIDR`, secondary ranges, no reservations) vs usable (`usableIPsFromCIDR`, primary range, minus GCP's 4 reserved) semantics against each other.
 - watcher: the `snapshot.AsMutator` gate is hoisted ABOVE `silence.CountMatches`, so snapshot/dry-run sources skip the per-silence match counting entirely (counts feed only the status writer; without a Mutator they were dead work).
-- `catalog/cloud.go`: comment pinning that the literal `os.Getenv(...) != "off"` form is load-bearing for the chartgate regex scanners; `gcpSubnetSmallPrefix()` now logs invalid `CHA_CLOUD_PROBE_GCP_SUBNETS_SMALL_PREFIX` values before falling back to the compiled-in /26 default (was: silent).
+- `catalog/cloud.go`: comment pinning that the literal `os.Getenv(...) != "off"` form is load-bearing for the chartgate regex scanners; `gcpSubnetSmallPrefix()` now logs invalid `SRENIX_CLOUD_PROBE_GCP_SUBNETS_SMALL_PREFIX` values before falling back to the compiled-in /26 default (was: silent).
 - test hygiene: `strings.HasPrefix` replaces the panicky `n[:4]` slice in `catalog/cloud_test.go`; `crd_printcolumn_parity_test.go` derives the chart CRD path from the `markerSources` entry instead of hardcoding `crd-silence.yaml` (a second CRD entry can no longer silently compare against the wrong file).
 
 ### Changed — housekeeping batch: cloud values wired-or-deleted (O6), GCP subnet capacity contract (O7), Silence UNTIL column + status writer (O8)
@@ -240,7 +261,7 @@ Three doc-vs-code honesty fixes shipped as one batch. After this change every ke
 
 **O6 — dead Helm cloud values: wired or deleted.**
 
-- **Wired: `cloud.<provider>.probes.*`** (previously "informational" — the comment admitted only `aws.enabled` did anything; the binary registered all 10 probes per provider unconditionally). Each cloud probe is now independently disablable via `CHA_CLOUD_PROBE_<PROVIDER>_<NAME>=off` (default ON — these probes have registered unconditionally since v1.8, so default-on preserves the status quo exactly; soak rationale recorded in the P3.3a golden), following the exact `os.Getenv(...) != "off"` pattern of the K8s `CHA_PROBE_*` gates. The chart renders the envs from `cloud.{aws,gcp,azure}.probes.*` via the new `cha.cloudProbeToggleEnv` helper (GCP and Azure gain `probes:` blocks to match AWS). The `eks` / `gke` / `aks` keys each gate BOTH the control-plane and node-pool probes (one asset, one key). Gates extended: P1.8 toggle-drift and P3.3a default-off now scan `catalog/cloud.go`; new `catalog/cloud_test.go` (default-on / `=off` skips / sibling isolation / non-off values keep registration) + helm-unittest `cloud_probe_toggle_test.yaml`; SETUP_GUIDE env-var table lists all 27 toggles.
+- **Wired: `cloud.<provider>.probes.*`** (previously "informational" — the comment admitted only `aws.enabled` did anything; the binary registered all 10 probes per provider unconditionally). Each cloud probe is now independently disablable via `SRENIX_CLOUD_PROBE_<PROVIDER>_<NAME>=off` (default ON — these probes have registered unconditionally since v1.8, so default-on preserves the status quo exactly; soak rationale recorded in the P3.3a golden), following the exact `os.Getenv(...) != "off"` pattern of the K8s `SRENIX_PROBE_*` gates. The chart renders the envs from `cloud.{aws,gcp,azure}.probes.*` via the new `srenix.cloudProbeToggleEnv` helper (GCP and Azure gain `probes:` blocks to match AWS). The `eks` / `gke` / `aks` keys each gate BOTH the control-plane and node-pool probes (one asset, one key). Gates extended: P1.8 toggle-drift and P3.3a default-off now scan `catalog/cloud.go`; new `catalog/cloud_test.go` (default-on / `=off` skips / sibling isolation / non-off values keep registration) + helm-unittest `cloud_probe_toggle_test.yaml`; SETUP_GUIDE env-var table lists all 27 toggles.
 - **Deleted: `cloud.rateLimitPerMin`** — consumed by nothing (rate protection is, and was, the `cloud.cadence` interval). Removed from values.yaml; design-doc sketch annotated as not-shipped.
 - **Deleted: `cloud.{aws,gcp,azure}.auth.mode` + `cloud.aws.auth.assumeRoleArn` + `cloud.*.auth.credentialsSecret`** — the `assumeRole` / `staticCredentials` modes were never implemented; only `roleArn` / `serviceAccount` / `clientId` are consumed (→ workload-identity SA annotations, which remain). `serviceaccount.yaml` simplified accordingly. Assume-role / static-credential support would be a net-new FEATURE, not a doc fix — recorded here so it can be reintroduced deliberately if demanded.
 - **Fixed: stale `catalog/cloud.go` comment** describing the v1.9 monitoring wiring as future work — rewritten in present tense to the actual live-mode coverage (Cloud SQL / Azure SQL storage-% and App Gateway health are Monitoring-API-backed best-effort; GCP subnets are capacity-only, see O7).
@@ -249,7 +270,7 @@ Three doc-vs-code honesty fixes shipped as one batch. After this change every ke
 **O7 — GCP Subnet probe: honest capacity-only contract (the last inert cloud signal).**
 
 - Decision (researched, documented in `internal/cloud/gcp/live.go`): GCP exposes **no cheap used-IP count** for a subnetwork — the allocation-ratio insight lives in Network Analyzer behind the **Recommender API** (`google.networkanalyzer.vpcnetwork.ipAddressInsight`; separate SDK + IAM surface + Network Analyzer dependency), there is **no Cloud Monitoring metric** for it, and deriving "used" from instance NICs would need an Instances aggregated fan-out per cycle. So instead of a signal that silently returns -1, the probe/docs contract changed honestly:
-- **Live mode is capacity-only**: `TotalIPCount` from the primary CIDR (minus GCP's 4 reserved), new `Subnet.SecondaryIPCount` summing secondary (alias) ranges, `AvailableIPCount` stays -1 — and the probe now FLAGS unmeasured subnets whose primary CIDR is smaller than /26 (warning; threshold configurable end-to-end: the chart's `cloud.gcp.subnetsSmallPrefixThreshold` renders `CHA_CLOUD_PROBE_GCP_SUBNETS_SMALL_PREFIX`, which the catalog feeds into `Subnets.SmallPrefixThreshold` at registration — 0 / unset / invalid = the compiled-in /26 default), pointing at Network Analyzer for the real allocation ratio. Measured mode (snapshot files / future clients with `AvailableIPCount >= 0`) keeps the existing <25%/<10% free-IP thresholds unchanged.
+- **Live mode is capacity-only**: `TotalIPCount` from the primary CIDR (minus GCP's 4 reserved), new `Subnet.SecondaryIPCount` summing secondary (alias) ranges, `AvailableIPCount` stays -1 — and the probe now FLAGS unmeasured subnets whose primary CIDR is smaller than /26 (warning; threshold configurable end-to-end: the chart's `cloud.gcp.subnetsSmallPrefixThreshold` renders `SRENIX_CLOUD_PROBE_GCP_SUBNETS_SMALL_PREFIX`, which the catalog feeds into `Subnets.SmallPrefixThreshold` at registration — 0 / unset / invalid = the compiled-in /26 default), pointing at Network Analyzer for the real allocation ratio. Measured mode (snapshot files / future clients with `AvailableIPCount >= 0`) keeps the existing <25%/<10% free-IP thresholds unchanged.
 - Probe Detail + README + values.yaml + design-doc claims updated to the capacity-only wording (no more "pending the Monitoring API (v1.9)"); tests cover small-CIDR warn, large-CIDR silent, threshold override, and CIDR-prefix parsing.
 
 **O8 — Silence CRD: UNTIL printer column + status writer (K1 findings).**
@@ -271,15 +292,15 @@ Before this change a `--webhook-source=<name>=<env-var>` whose env var was unset
 
 ### Fixed — operator: diagnose/remediate CronJobs NEVER succeeded when `spec.alerting` was configured (watch-only flags leaked)
 
-PRODUCTION BUG: the operator's `buildCronJobCommon` appended the watch-only alerting flags (`--alertmanager-url`, `--cluster-name`, `--slack-alerts`, `--slack-critical`) to BOTH CronJobs. `cha diagnose` / `cha remediate` register none of them, so on any operator-managed install with `spec.alerting` set the diagnose/remediate Jobs exited 1 with "unknown flag" on every run — the CronJobs had never succeeded on the live cluster. The chart's `cronjob-diagnose.yaml` / `cronjob-remediate.yaml` were always correct and are the reference shape:
+PRODUCTION BUG: the operator's `buildCronJobCommon` appended the watch-only alerting flags (`--alertmanager-url`, `--cluster-name`, `--slack-alerts`, `--slack-critical`) to BOTH CronJobs. `srenix diagnose` / `srenix remediate` register none of them, so on any operator-managed install with `spec.alerting` set the diagnose/remediate Jobs exited 1 with "unknown flag" on every run — the CronJobs had never succeeded on the live cluster. The chart's `cronjob-diagnose.yaml` / `cronjob-remediate.yaml` were always correct and are the reference shape:
 
 - **diagnose CronJob** now renders `diagnose --live --format=daily` (the previously missing `--format=daily` is what produces the #healthinfo daily digest) plus `--slack-healthinfo=$(SLACK_HEALTHINFO_URL)` when `spec.alerting.slack.healthInfo` is configured; its env carries ONLY `SLACK_HEALTHINFO_URL` (was: all three `SLACK_*_URL`s).
 - **remediate CronJob** renders `remediate --live [--dry-run=true]` with no alerting flags and no `SLACK_*` env (mirroring the chart).
-- **Bug-class guard** — new `cmd/cha/operatorflags_test.go` builds the watcher Deployment + both CronJobs from the bundle's full-surface sample CR (features force-enabled, resolved through the shared `internal/chartgate.SampleCRFullPath` fixture locator so a future `bundle/tests` move fails loudly in one place) and asserts every operator-rendered arg is registered on the REAL cobra subcommand (`newRootCmd()` in-process) — the operator-render sibling of the v1.23.0 chart↔flags parity gate, so ANY future builder emitting an unregistered flag fails CI instead of CrashLooping in production. Exact-args + role-scoped-env regression tests in `internal/operator/cronjob_args_test.go`.
+- **Bug-class guard** — new `cmd/srenix/operatorflags_test.go` builds the watcher Deployment + both CronJobs from the bundle's full-surface sample CR (features force-enabled, resolved through the shared `internal/chartgate.SampleCRFullPath` fixture locator so a future `bundle/tests` move fails loudly in one place) and asserts every operator-rendered arg is registered on the REAL cobra subcommand (`newRootCmd()` in-process) — the operator-render sibling of the v1.23.0 chart↔flags parity gate, so ANY future builder emitting an unregistered flag fails CI instead of CrashLooping in production. Exact-args + role-scoped-env regression tests in `internal/operator/cronjob_args_test.go`.
 
 ### Fixed — operator: watcher Deployment carried a `SLACK_HEALTHINFO_URL` secretKeyRef nothing in watch mode reads
 
-Pre-existing operator bug (since the alerting env was introduced, NOT introduced by the CronJob fix above): the builders' shared `alertingEnv` injected `SLACK_HEALTHINFO_URL` onto the WATCHER Deployment, but `cha watch` registers no `--slack-healthinfo` (it is a diagnose-only flag) and nothing reads the env var directly. Because the operator emits a NON-optional `secretKeyRef`, an absent healthinfo secret hard-failed watcher pod creation (`CreateContainerConfigError`) over an env var that could never be consumed. `alertingEnv` now emits only the two channels the watcher actually expands (`SLACK_ALERTS_URL` / `SLACK_CRITICAL_URL`); the diagnose CronJob keeps its `SLACK_HEALTHINFO_URL` via the dedicated `healthinfoEnv`. The Helm chart never had this issue — `watcher-deployment.yaml` renders `cha.slackAlertsEnv` + `cha.slackCriticalEnv` only, and is the reference shape. Pinned by `TestWatcherDeploymentEnv_NoHealthinfoSecretRef`.
+Pre-existing operator bug (since the alerting env was introduced, NOT introduced by the CronJob fix above): the builders' shared `alertingEnv` injected `SLACK_HEALTHINFO_URL` onto the WATCHER Deployment, but `srenix watch` registers no `--slack-healthinfo` (it is a diagnose-only flag) and nothing reads the env var directly. Because the operator emits a NON-optional `secretKeyRef`, an absent healthinfo secret hard-failed watcher pod creation (`CreateContainerConfigError`) over an env var that could never be consumed. `alertingEnv` now emits only the two channels the watcher actually expands (`SLACK_ALERTS_URL` / `SLACK_CRITICAL_URL`); the diagnose CronJob keeps its `SLACK_HEALTHINFO_URL` via the dedicated `healthinfoEnv`. The Helm chart never had this issue — `watcher-deployment.yaml` renders `srenix.slackAlertsEnv` + `srenix.slackCriticalEnv` only, and is the reference shape. Pinned by `TestWatcherDeploymentEnv_NoHealthinfoSecretRef`.
 
 ### Fixed — operator: `spec.diagnose.backoffLimit: 0` was silently overridden to 1
 
@@ -287,11 +308,11 @@ Pre-existing operator bug (since the alerting env was introduced, NOT introduced
 
 ### Fixed — deployed watcher/aiwatch spammed ~2.5 log lines/sec of `v1 Endpoints is deprecated in v1.33+` client-go warnings
 
-The DNSChainDrift analyzer issued a `Get` on deprecated core/v1 Endpoints per Ingress backend per diagnose cycle (plus the KongRoutes legacy fallback and `cha snapshot capture`); every call made the API server attach the deprecation warning header, which client-go printed verbatim — pure noise drowning real signal. (The watcher's `watchedGVRs` never actually watched core/v1 Endpoints, so the volume was list/get-driven, not watch-driven.)
+The DNSChainDrift analyzer issued a `Get` on deprecated core/v1 Endpoints per Ingress backend per diagnose cycle (plus the KongRoutes legacy fallback and `srenix snapshot capture`); every call made the API server attach the deprecation warning header, which client-go printed verbatim — pure noise drowning real signal. (The watcher's `watchedGVRs` never actually watched core/v1 Endpoints, so the volume was list/get-driven, not watch-driven.)
 
 - **Migrated (mechanical, semantics preserved)** — `DNSChainDrift` now resolves the endpoint layer EndpointSlice-first (`internal/diagnose/dns_chain_drift.go`, new `serviceReadyAddressCount`): lists `discovery.k8s.io/v1` EndpointSlices in the Service namespace, links shards back via the `kubernetes.io/service-name` label, and counts ready addresses (`conditions.ready == nil` is treated as ready per the API contract). The deprecated core/v1 Endpoints `Get` survives ONLY as a fallback when no slice for the Service is visible — old snapshot captures and clusters without the EndpointSlice mirroring controller — keeping pre-migration semantics for those sources. `KongRoutes` (already slice-first since v1.23.0) now reuses the shared `snapshot.GVREndpointSlice`/`GVREndpoints` constants.
 - **Watch trigger** — `watchedGVRs` gains `discovery.k8s.io/v1` EndpointSlice, so an endpoint-membership change (pod ready/unready behind a Service) triggers a debounced diagnose cycle directly via the canonical API; a guard test pins that the deprecated core/v1 Endpoints GVR is never (re)added to the watch set.
-- **Kept + suppressed (deliberate)** — the remaining legacy reads (DNSChainDrift/KongRoutes fallbacks, `cha snapshot capture` parity for old tooling) are intentional, so `pkg/snapshot.SuppressEndpointsDeprecationWarnings` installs a `rest.Config` WarningHandler that drops ONLY the `v1 Endpoints is deprecated` message and routes every other API-server warning through a deduplicating stderr writer (once per unique message per process instead of once per call). Wired into `internal/snapshot.buildConfig` (LoadLive + BuildKubeClientset), cmd/cha's silence kubeconfig builder, and `pkg/snapshot.NewLiveSource` (applied to a config COPY, only when the caller hasn't installed a handler — this is the constructor cha-com's aiwatch uses, so the paid binary inherits the fix without a code change).
+- **Kept + suppressed (deliberate)** — the remaining legacy reads (DNSChainDrift/KongRoutes fallbacks, `srenix snapshot capture` parity for old tooling) are intentional, so `pkg/snapshot.SuppressEndpointsDeprecationWarnings` installs a `rest.Config` WarningHandler that drops ONLY the `v1 Endpoints is deprecated` message and routes every other API-server warning through a deduplicating stderr writer (once per unique message per process instead of once per call). Wired into `internal/snapshot.buildConfig` (LoadLive + BuildKubeClientset), cmd/srenix's silence kubeconfig builder, and `pkg/snapshot.NewLiveSource` (applied to a config COPY, only when the caller hasn't installed a handler — this is the constructor srenix-enterprise's aiwatch uses, so the paid binary inherits the fix without a code change).
 - **Snapshot parity** — `CaptureGVRs` + the File-source kind map gain EndpointSlice so offline diagnose feeds the new slice-first read path; legacy Endpoints stays captured for the fallback path and old tooling.
 - **RBAC** — no change needed: both the chart's reader ClusterRole and the operator's `readerPolicyRules()` have carried `discovery.k8s.io/endpointslices` `get/list/watch` since v1.23.1 (verified against the chart↔operator parity gate).
 - **Tests** — watcher: EndpointSlice in `watchedGVRs`, never-legacy-Endpoints guard, and an end-to-end `watchGVR` test (fake dynamic client) asserting an EndpointSlice ADDED event reaches the trigger channel; DNSChainDrift: slice-preferred without any legacy object, zero-ready slices NOT overridden by a stale legacy object, nil-ready-counts-as-ready, and legacy-fallback-still-works fixtures; pkg/snapshot: warning filter drops both current and future-version Endpoints deprecation texts, passes other warnings through, dedups passthroughs, respects caller-provided handlers, and never mutates the caller's config.
@@ -306,7 +327,7 @@ Production bug: `DNSChainDrift` emitted diagnostics with `severity: "warn"` (dup
 
 ### Fixed — chart: silence ClusterRoleBinding bound the wrong ServiceAccount (live-verification finding)
 
-The chart's `clusterrole-silence` binding referenced the watcher SA via `cha.fullname` instead of `cha.serviceAccountName` (`<fullname>-sa`) — the SA the watcher Deployment actually runs as. So on chart installs the watcher could not `list silences`, and silence-filtering was **skipped on every diagnose cycle** (live symptom: `silences.cha.bionicaisolutions.com is forbidden`). Found by deploying the merged build to a real (RBAC-enforcing) kind cluster; unit tests missed it because the chart↔operator RBAC parity test excludes the `cha.bionicaisolutions.com` group. Fixed the binding + added `internal/operator/chart_watcher_binding_sa_test.go` asserting every watcher read-role binding uses `cha.serviceAccountName`.
+The chart's `clusterrole-silence` binding referenced the watcher SA via `srenix.fullname` instead of `srenix.serviceAccountName` (`<fullname>-sa`) — the SA the watcher Deployment actually runs as. So on chart installs the watcher could not `list silences`, and silence-filtering was **skipped on every diagnose cycle** (live symptom: `silences.srenix.ai is forbidden`). Found by deploying the merged build to a real (RBAC-enforcing) kind cluster; unit tests missed it because the chart↔operator RBAC parity test excludes the `srenix.ai` group. Fixed the binding + added `internal/operator/chart_watcher_binding_sa_test.go` asserting every watcher read-role binding uses `srenix.serviceAccountName`.
 
 ### Fixed — watcher: pending approval-URL cache grew unbounded (P1.9)
 
@@ -322,7 +343,7 @@ The workload feeder's pod-digest index was keyed by (namespace, container-name) 
 
 ### Fixed — operator: `spec.externalDNS` was accepted but did nothing (P1.5)
 
-The CRD documented `spec.externalDNS.cloudflare.*` (incl. `apiTokenSecretRef`) and the operator accepted it — but consumed it nowhere. The DNSChainDrift analyzer only wires its Cloudflare client when `CHA_CLOUDFLARE_TOKEN` is set at registration time, and nothing supplied that env on operator-managed installs, so external-hop DNS verification silently never ran. The operator's watcher Deployment now injects `CHA_CLOUDFLARE_TOKEN` via `secretKeyRef` from `apiTokenSecretRef.{name,key}` (key defaults to `token`) when `cloudflare.enabled=true`. The token value never appears in any manifest.
+The CRD documented `spec.externalDNS.cloudflare.*` (incl. `apiTokenSecretRef`) and the operator accepted it — but consumed it nowhere. The DNSChainDrift analyzer only wires its Cloudflare client when `SRENIX_CLOUDFLARE_TOKEN` is set at registration time, and nothing supplied that env on operator-managed installs, so external-hop DNS verification silently never ran. The operator's watcher Deployment now injects `SRENIX_CLOUDFLARE_TOKEN` via `secretKeyRef` from `apiTokenSecretRef.{name,key}` (key defaults to `token`) when `cloudflare.enabled=true`. The token value never appears in any manifest.
 
 ### Fixed — operator: `spec.watcher.triggers.webhook.serviceEnabled` was accepted but did nothing (P1.5)
 
@@ -334,7 +355,7 @@ The chart has shipped `watcher-webhook-service.yaml` since v1.23.0, but the oper
 
 v1.25.0 goreleaser failed at the docker buildx multi-arch build stage with `no space left on device`. The OSS workflow's transitive deps (AWS SDK v2 + k8s.io + buildx cache) overshoot the ~14 GiB free disk on the GH-hosted runner. v1.24.x and earlier just happened to fit; v1.25.0's added KEDA + extra ownerRef walker pushed past the limit.
 
-Same fix that the CHA-com workflow shipped in v1.20.0: pre-checkout cleanup step removes ~25 GiB of preinstalled .NET / Android SDK / Haskell / Swift / CodeQL toolchains that the workflow doesn't use.
+Same fix that the Srenix Enterprise workflow shipped in v1.20.0: pre-checkout cleanup step removes ~25 GiB of preinstalled .NET / Android SDK / Haskell / Swift / CodeQL toolchains that the workflow doesn't use.
 
 Chart 1.25.0 was published successfully to gh-pages before goreleaser exited; this patch re-publishes the chart at 1.25.1 alongside the new image so operators always pull a coherent pair. No code changes — v1.25.0 and v1.25.1 ship byte-identical Go binaries.
 
@@ -366,7 +387,7 @@ The workload-feeder previously read `owner_chart` only from Helm release labels 
 v1.25.0 walks the OwnerReferences chain and synthesizes:
 
 - `owner_kind = "Operator"`
-- `owner_chart = "<crkind-lowercase>-<crname>"` (e.g. `clusterhealthautopilot-bionic`)
+- `owner_chart = "<crkind-lowercase>-<crname>"` (e.g. `agenticsre-bionic`)
 - `owner_release = <CR name>`
 - `owner_release_namespace = workload namespace`
 
@@ -380,7 +401,7 @@ Built-in workload parents (apps/v1 ReplicaSet, batch/v1 Job, core/v1) are explic
 
 v1.24.0 added the Go types + operator reconciler for `spec.watcher.triggers.{prom,webhook}` but did NOT update the CRD's OpenAPIv3 schema. K8s 1.27+ structural-schema pruning stripped the field at the API server, so any `kubectl apply` of a CR with `triggers` set silently dropped the data. The operator then rendered the watcher Deployment with no trigger args.
 
-This patch adds the matching schema to both `bundle/manifests/cha.bionicaisolutions.com_clusterhealthautopilots.yaml` and `charts/cluster-health-autopilot/templates/crd-clusterhealthautopilot.yaml`. Verified live: `kubectl explain clusterhealthautopilots.spec.watcher.triggers` now resolves and the field persists on `kubectl get`.
+This patch adds the matching schema to both `bundle/manifests/srenix.ai_agenticsres.yaml` and `charts/agentic-sre/templates/crd-agenticsre.yaml`. Verified live: `kubectl explain agenticsres.spec.watcher.triggers` now resolves and the field persists on `kubectl get`.
 
 Caught during live activation of M5 on the dev cluster (kubectl apply succeeded with a warning, but the field was stripped silently — operator rendered no trigger args).
 
@@ -407,7 +428,7 @@ The v1.6.0 M1 expansion added HPA + Ingress + ArgoCD + DaemonSet to the watcher'
 
 1 new test asserts the GVR is present.
 
-### Pairs with CHA-com
+### Pairs with Srenix Enterprise
 
 `v1.21.0+` adds observability log lines for Phase 3.B (auto-merge gate armed at startup) and Phase 3.C (`ai.target_history.applied` audit event when the prompt block fires).
 
@@ -429,7 +450,7 @@ with `secretKeyRef` env-var projection per registered source.
 
 ### Fixed — Prometheus trigger CLI flags actually exist (M5 wiring gap)
 
-v1.23.0 shipped `Config.PromTriggerURL` but `cmd/cha/watch` never
+v1.23.0 shipped `Config.PromTriggerURL` but `cmd/srenix/watch` never
 registered matching CLI flags, so M5 was unreachable from
 `helm install` or `kubectl apply`. This release adds
 `--prom-trigger-url`, `--prom-trigger-interval`, and
@@ -459,22 +480,22 @@ to the watcher's inform-loop set.
 For each Kong-managed Ingress, verifies the backend Service has ≥1
 ready Endpoint + KongPlugin / KongConsumer annotation references
 resolve. Silent on clusters without Kong-managed Ingresses. Opt out
-via `CHA_PROBE_KONG_ROUTES=off`.
+via `SRENIX_PROBE_KONG_ROUTES=off`.
 
 ### Added — M3 `GPUNodes` probe + `LogPatternMatcher` analyzer
 
 - **GPUNodes** — critical on NotReady / zero-allocatable, warning
   on cordoned, for each GPU-advertising Node. Opt out:
-  `CHA_PROBE_GPU_NODES=off`.
+  `SRENIX_PROBE_GPU_NODES=off`.
 - **LogPatternMatcher** — scans Events for ImagePullBackOff,
   OOMKilled, probe-failed, volume-attach-failed, RBAC Forbidden.
   Dedup'd per (involved-object, pattern). Opt out:
-  `CHA_ANALYZER_LOG_PATTERN_MATCHER=off`.
+  `SRENIX_ANALYZER_LOG_PATTERN_MATCHER=off`.
 
 ### Added — M4 Endpoints probe Layer-7 mode
 
 `EndpointTarget.L7` populated from three Ingress annotations
-(`cha.bionicaisolutions.com/probe-l7-{path,expect,status}`). When
+(`srenix.ai/probe-l7-{path,expect,status}`). When
 set, second GET asserts both status + body content. Closes the
 "Kong returns 200 but body is wrong" failure class.
 
@@ -516,7 +537,7 @@ PV list call silently failed with RBAC denial, so PVOrphan kept
 emitting nothing on live clusters.
 
 Adds `persistentvolumes` to:
-- `charts/cluster-health-autopilot/templates/clusterrole-reader.yaml`
+- `charts/agentic-sre/templates/clusterrole-reader.yaml`
 - `internal/operator/rbac_builders.go` (used in operator-managed installs)
 
 Verified live: with the live ClusterRole patched and the watcher
@@ -544,14 +565,14 @@ The 3 most-requested signals from the deferred wishlist:
 - **`OOMKillRecurrence`** (warning) — Pod container with ≥3 OOMKilled
   restarts in 24h. Catches the sizing problem masquerading as a crash
   loop. One finding per pod (operator's edit pass fixes all containers
-  simultaneously). Opts out via `CHA_ANALYZER_OOMKILL_RECURRENCE=off`.
+  simultaneously). Opts out via `SRENIX_ANALYZER_OOMKILL_RECURRENCE=off`.
 - **`PVOrphan`** (warning) — PersistentVolume in `Released` phase for
   >7d. Underlying cloud disk (EBS / GCE-PD / Azure-Disk) may still be
   billing. Message surfaces storageClass + capacity + reclaimPolicy
-  for cost-sizing. Opts out via `CHA_ANALYZER_PV_ORPHAN=off`.
+  for cost-sizing. Opts out via `SRENIX_ANALYZER_PV_ORPHAN=off`.
 - **`CronJobStuck`** (warning/critical) — CronJob whose lastSuccessfulTime
   is >24h old OR has never succeeded OR is suspended. Each cause gets
-  tailored remediation guidance. Opts out via `CHA_ANALYZER_CRONJOB_STUCK=off`.
+  tailored remediation guidance. Opts out via `SRENIX_ANALYZER_CRONJOB_STUCK=off`.
 
 ### Added — `spec.ai.metrics` + `spec.ai.llmProposer` typed CR fields (Phase 3.D)
 
@@ -562,7 +583,7 @@ don't need escape hatches.
 - `AIMetricsSpec {Addr, Port}` — operator renders `--metrics-addr` arg +
   named container port + headless Service. Selectors target aiwatch pods
   so Prometheus pod-discovery sees per-pod endpoints (leader vs follower
-  stay distinct in `cha_cycle_total{leader=...}`).
+  stay distinct in `srenix_cycle_total{leader=...}`).
 - `AILLMProposerSpec {Enabled}` — typed switch for the Phase 2.D LLM
   fallback proposer.
 
@@ -570,9 +591,9 @@ CRD schema additions on both chart-side template and OLM bundle manifest.
 3 helm-template invariants preserved: legacy installs (no Metrics / no
 LLMProposer fields) render byte-identical to v1.21.1.
 
-### Pairs with CHA-com
+### Pairs with Srenix Enterprise
 
-The CHA-com binary `--metrics-addr` + `--llm-proposer` flags ship since
+The Srenix Enterprise binary `--metrics-addr` + `--llm-proposer` flags ship since
 v1.16.0; this release wires them through the operator schema. Cluster
 operators can now drop their `extraArgs: ["--metrics-addr=:9090"]`
 escape hatch in favor of `spec.ai.metrics.addr: ":9090"`.
@@ -587,10 +608,10 @@ tag time; this release bumps both together).
 ### Added — `spec.ai.digestPinAttestation` chart wiring (Phase 2.H)
 
 `DigestPinAttestationSpec {SecretName, SecretKey, KeyID}` on AISpec.
-When set, the chart mounts the Secret at `/etc/cha/attestation/` and
+When set, the chart mounts the Secret at `/etc/srenix/attestation/` and
 passes `--digest-pin-attestation-key` + `--digest-pin-attestation-kid`
 to the aiwatch container. Operator reconciler mirrors the chart.
-Mount path is separate from `/etc/cha/keys/` so attestation key
+Mount path is separate from `/etc/srenix/keys/` so attestation key
 rotation is independent of the approval-server signing key.
 
 ### Fixed — `internal/report.DeltaDiag` class-URL docs (Phase 2.B.6)
@@ -598,23 +619,23 @@ rotation is independent of the approval-server signing key.
 The render-only class-URL fields shipped in v1.21.0 — `ApproveClassURL`,
 `DenyClassURL`, `SilenceClassURL` — now carry a doc clarifying that
 the OSS enrich pipeline does NOT mint class-action JWTs (the signer
-lives in CHA-com's `ai/approval`). The CHA-com aiwatch's renderer
-(`cmd/cha-com/render.go`) is the active surface; the OSS render is
+lives in Srenix Enterprise's `ai/approval`). The Srenix Enterprise aiwatch's renderer
+(`cmd/srenix-enterprise/render.go`) is the active surface; the OSS render is
 preparatory for a future shared-signer extraction.
 
-### Pairs with CHA-com
+### Pairs with Srenix Enterprise
 
 `v1.16.0+` (binary-side surfaces are unchanged from v1.21.0 →
-v1.21.1; only the chart's wiring of an existing CHA-com flag is new).
+v1.21.1; only the chart's wiring of an existing Srenix Enterprise flag is new).
 
 ## [1.21.0] — 2026-06-08
 
-Phase 2 closure on the OSS side. Pairs with CHA-com `v1.16.0`
+Phase 2 closure on the OSS side. Pairs with Srenix Enterprise `v1.16.0`
 for the paid-tier binary half.
 
 ### Added — `spec.ai.replicas` for HA aiwatch (Phase 2.F)
 
-`ClusterHealthAutopilot.spec.ai.replicas` (`int32`, min 1 max 5).
+`AgenticSRE.spec.ai.replicas` (`int32`, min 1 max 5).
 Default 1 (single-replica, noop elector — byte-identical to pre-2.F).
 When `>1`, the chart turns on `--leader-election=true` + binds the
 SA to a scoped Lease Role; the binary races for a
@@ -625,7 +646,7 @@ Failover within ~30s on lease loss.
 
 `ai.metrics.{addr,port,serviceMonitor,grafanaDashboard,prometheusRule}`
 values opt in to: aiwatch `/metrics:9090` headless Service +
-optional `ServiceMonitor` + `dashboards/cha-overview.json` ConfigMap
+optional `ServiceMonitor` + `dashboards/srenix-overview.json` ConfigMap
 (Grafana sidecar labels) + `PrometheusRule` canaries
 (`ChaWatcherStuck`, `ChaBreakerOpen`, `ChaAutonomyRejectionSpike`).
 
@@ -638,13 +659,13 @@ deploys see no new resources.
 `DenyClassURL` / `SilenceClassURL`. When populated, `FormatSlackDelta`
 renders an extra row under the Approve/Deny pair. Render-only on
 OSS — the OSS enrich pipeline does NOT yet mint class-action JWTs
-(the signer lives in CHA-com). CHA-com aiwatch's renderer
-(`cmd/cha-com/render.go`) is the active surface in production.
+(the signer lives in Srenix Enterprise). Srenix Enterprise aiwatch's renderer
+(`cmd/srenix-enterprise/render.go`) is the active surface in production.
 
 ### Added — `Silence.spec.matcher.messagePattern` (Phase 2.B.9)
 
 Substring-match on `Diagnostic.Message`. Enables class-scoped
-silences from the CHA-com `/silence-class` click. `pkg/silence.Matches`
+silences from the Srenix Enterprise `/silence-class` click. `pkg/silence.Matches`
 ANDs MessagePattern alongside Source + Subject + Severity.
 
 ### Added — `DisruptionDrift` analyzer (Phase 2.E)
@@ -652,18 +673,18 @@ ANDs MessagePattern alongside Source + Subject + Severity.
 Three new signals: **PDB blocks all evictions** (`critical`),
 **stuck Indexed Job failed indexes** (`warning`), **stale
 ResourceQuota at 100%** (`warning`). Opts out via
-`CHA_ANALYZER_DISRUPTION_DRIFT=off`.
+`SRENIX_ANALYZER_DISRUPTION_DRIFT=off`.
 
 ### Added — `spec.ai.digestPinAttestation` chart wiring (Phase 2.H)
 
 `DigestPinAttestationSpec {SecretName, SecretKey, KeyID}` on AISpec.
-When set, chart mounts the Secret at `/etc/cha/attestation/` and
+When set, chart mounts the Secret at `/etc/srenix/attestation/` and
 passes `--digest-pin-attestation-key` + `--digest-pin-attestation-kid`
 to the aiwatch container. Operator reconciler mirrors the chart.
-Mount path is separate from `/etc/cha/keys/` so attestation key
+Mount path is separate from `/etc/srenix/keys/` so attestation key
 rotation is independent of the approval-server signing key.
 
-### Pairs with CHA-com
+### Pairs with Srenix Enterprise
 
 `v1.16.0+` carries the binary-side surfaces this chart drives:
 class-action JWT routes, `/metrics` endpoint, attestation signer,
@@ -684,13 +705,13 @@ Audit grep across `internal/diagnose/*.go` (non-test) Remediation strings for th
 
 ### Fixed — Align ticketing values shape with CRD (PR #170)
 
-Chart values block used nested `ticketing.openproject.{mcpURL, projectID, …}`; CRD uses flat `ticketing.{mcpURL, project, …}`. Users could not move YAML between `helm upgrade -f values.yaml` and `kubectl patch cha …` without reshaping. Fixed by flattening the chart shape to mirror the CRD exactly; legacy nested form honored as a fallback (will be removed in the next major chart bump).
+Chart values block used nested `ticketing.openproject.{mcpURL, projectID, …}`; CRD uses flat `ticketing.{mcpURL, project, …}`. Users could not move YAML between `helm upgrade -f values.yaml` and `kubectl patch srenix …` without reshaping. Fixed by flattening the chart shape to mirror the CRD exactly; legacy nested form honored as a fallback (will be removed in the next major chart bump).
 
 ## [1.20.0] — 2026-06-07
 
 ### Added — Operator-managed `spec.ticketing` (Phase 1.D, PR #167)
 
-Closes the Helm-values-vs-operator-managed-CR gap for issue-tracker delivery. Before this release, the chart had full `ticketing.*` Helm values + the `cmd/cha` flags + the `pkg/ticketing/openproject.Sink` implementation, but the operator's `BuildWatcherDeployment` never emitted any `--ticketing-*` flag and the CRD had no `spec.ticketing` field. Operators who set Helm values saw no effect on operator-managed installs.
+Closes the Helm-values-vs-operator-managed-CR gap for issue-tracker delivery. Before this release, the chart had full `ticketing.*` Helm values + the `cmd/srenix` flags + the `pkg/ticketing/openproject.Sink` implementation, but the operator's `BuildWatcherDeployment` never emitted any `--ticketing-*` flag and the CRD had no `spec.ticketing` field. Operators who set Helm values saw no effect on operator-managed installs.
 
 New `spec.ticketing` (TicketingSpec) on the CR drives flags + env injection:
 
@@ -703,7 +724,7 @@ New `spec.ticketing` (TicketingSpec) on the CR drives flags + env injection:
   - `--ticketing-dry-run` ← `spec.ticketing.dryRun: true`
   - `TICKETING_MCP_API_KEY` env via secretKeyRef ← `spec.ticketing.auth.{secretName,secretKey}` (only when `auth.enabled`)
 
-Schema is OpenProject-shaped (OSS's only supported provider); the enum allows jira/servicenow so CHA-com can add them additively without a v1alpha2 bump.
+Schema is OpenProject-shaped (OSS's only supported provider); the enum allows jira/servicenow so Srenix Enterprise can add them additively without a v1alpha2 bump.
 
 Disabled (the default) emits zero flags so existing CRs stay byte-identical.
 
@@ -717,7 +738,7 @@ Operators reading #ceph-critical can't tell at-a-glance which findings just appe
 - **Stable-collapse** (always on when new findings exist): the steady-state list collapses to a single `"…and N other stable finding(s) already posted in earlier cycles"` line. Cycles with 0 new findings render stable in full (operator is reading the periodic re-post — every finding matters).
 - **"✨ No new issues" digest** (opt-in via `--slack-no-change-digest=true`): on cycles where `newCount == 0 && resolved == 0 && stable > 0`, replaces the full re-post with a compact steady-state confirmation. Default OFF to preserve byte-identical legacy behaviour.
 
-Wiring chain: `cmd/cha --slack-no-change-digest` → `watcher.Config.NoChangeSlackDigest` → `report.RouteAndPostConfig` → `report.SplitCriticalPayloadsConfig` → `report.emitNoChangeDigest`. Legacy entry points (`SplitCriticalPayloads`, `RouteAndPost`) preserved as zero-config delegates.
+Wiring chain: `cmd/srenix --slack-no-change-digest` → `watcher.Config.NoChangeSlackDigest` → `report.RouteAndPostConfig` → `report.SplitCriticalPayloadsConfig` → `report.emitNoChangeDigest`. Legacy entry points (`SplitCriticalPayloads`, `RouteAndPost`) preserved as zero-config delegates.
 
 ### Fixed — Substitute placeholders in remediations (PVC StorageClass, Deployment selector) (PR #164)
 
@@ -764,44 +785,44 @@ Out-of-scope tokens audited + kept as-is when they represent operator-intent inp
 
 ### Changed — Promoted `internal/feeder` → `pkg/feeder` (v1.18.1)
 
-- **The workload feeder is now importable from external Go modules** (the paid cha-com binary in particular). Go's `internal/` visibility rule was blocking the cha-com aiwatch from instantiating `WorkloadFeeder` — meaning `kind=workload` entries were never being written to RAG, meaning the v1.11.0 cha-com `DigestPinProposer` would always miss its RAG lookup, meaning **no Approve/Deny buttons would have appeared on digest-pin findings even after the cluster rolled to v1.11.0**.
+- **The workload feeder is now importable from external Go modules** (the paid srenix-enterprise binary in particular). Go's `internal/` visibility rule was blocking the srenix-enterprise aiwatch from instantiating `WorkloadFeeder` — meaning `kind=workload` entries were never being written to RAG, meaning the v1.11.0 srenix-enterprise `DigestPinProposer` would always miss its RAG lookup, meaning **no Approve/Deny buttons would have appeared on digest-pin findings even after the cluster rolled to v1.11.0**.
 - **Mechanical move**: `git mv internal/feeder pkg/feeder`. The 4 Kubernetes GVRs (`Pod`, `Deployment`, `StatefulSet`, `DaemonSet`) the feeder needs are now defined locally in `pkg/feeder/workload.go` since `pkg/snapshot` doesn't carry them and `pkg/` cannot import `internal/snapshot`. No logic changes.
 - All 13 existing feeder tests still pass.
 
 
 ### Added — `spec.ai.extraArgs` + `spec.ai.extraEnv` escape hatches on the operator (v1.18.0)
 
-- **`api/v1alpha1/clusterhealthautopilot_types.go`** — new `AISpec.ExtraArgs []string` + `AISpec.ExtraEnv []AIExtraEnv` (with `AIExtraEnvSource` + `AIExtraEnvSecretKeyRef`).
-- **Why**: cha-com v1.11.0 ships new flags (`--cloudflare-feeder`, `--rag-store-url`, `--cluster-name`, `--digest-pin-proposer`, `--forge-token-env`, `--digest-pin-repo-map`) and env vars (`GITHUB_PAT`, `CLOUDFLARE_API_TOKEN`) that the operator's typed schema doesn't yet model. The escape hatches let operators wire them today via the existing CR-patch flow while typed fields land in subsequent minor releases.
+- **`api/v1alpha1/agenticsre_types.go`** — new `AISpec.ExtraArgs []string` + `AISpec.ExtraEnv []AIExtraEnv` (with `AIExtraEnvSource` + `AIExtraEnvSecretKeyRef`).
+- **Why**: srenix-enterprise v1.11.0 ships new flags (`--cloudflare-feeder`, `--rag-store-url`, `--cluster-name`, `--digest-pin-proposer`, `--forge-token-env`, `--digest-pin-repo-map`) and env vars (`GITHUB_PAT`, `CLOUDFLARE_API_TOKEN`) that the operator's typed schema doesn't yet model. The escape hatches let operators wire them today via the existing CR-patch flow while typed fields land in subsequent minor releases.
 - **`internal/operator/builders.go::aiArgs`** — appends `ai.ExtraArgs` AFTER the typed args so a typed flag wins on duplicate keys (later args override earlier in pflag).
 - **`internal/operator/builders.go::aiEnv`** — appends `ai.ExtraEnv` entries as `corev1.EnvVar`, supporting either literal `Value` or `ValueFrom.SecretKeyRef`. ConfigMapKeyRef / FieldRef / ResourceFieldRef are deliberately out of scope (aiwatch never needs them).
-- **CRD schema updated** — both the chart-managed `crd-clusterhealthautopilot.yaml` and the bundled `bundle/manifests/cha.bionicaisolutions.com_clusterhealthautopilots.yaml` accept the new fields with kubebuilder validators (`minLength=1` on `name`/`key`).
+- **CRD schema updated** — both the chart-managed `crd-agenticsre.yaml` and the bundled `bundle/manifests/srenix.ai_agenticsres.yaml` accept the new fields with kubebuilder validators (`minLength=1` on `name`/`key`).
 - **3 new operator builder tests** — `ExtraArgs_AppendedAfterTypedArgs` (order check), `ExtraEnv_SecretRefAppended` (both `ValueFrom.SecretKeyRef` + literal `Value` paths), `ExtraArgsEmpty_NoChange` (defensive baseline).
 
 ### Added — `ActionProposePullRequest` ActionKind (Phase 2d-γ-3 slice 3a)
 
 - **`pkg/ai/types.go`** — new `ActionProposePullRequest ActionKind = "ProposePullRequest"` for proposals that carry a forge PR URL instead of a cluster-side mutation. The cluster itself is NOT changed when the proposal is approved; only when the PR is merged + the next normal deploy runs.
-- **`AIProposedAction.PullRequestURL string`** — new field holding the forge URL the proposer already opened (the digest-pin proposer in slice 3b will populate it via the cha-com forge client).
+- **`AIProposedAction.PullRequestURL string`** — new field holding the forge URL the proposer already opened (the digest-pin proposer in slice 3b will populate it via the srenix-enterprise forge client).
 - **`Validate()` rules for the new kind** —
   - `PullRequestURL` non-empty (rejects with `ErrPullRequestURLEmpty`)
   - URL must parse as a well-formed HTTPS URL with a non-empty host (`ErrPullRequestURLInvalid`) — guards against an `http://` downgrade or a `https:///path` malformed link rendering as a phishing target in Slack
-  - `Target.Namespace` still subject to the protected-NS check — CHA never proposes PRs that would mutate `kube-system` / `vault` / `cnpg-system` infra
+  - `Target.Namespace` still subject to the protected-NS check — Srenix never proposes PRs that would mutate `kube-system` / `vault` / `cnpg-system` infra
   - `Rollback.Description` still required (PR rollback = "close PR + delete branch")
   - Tier still must be `T1`/`T2`/`T3` (T0 = narration-only)
   - `ManifestYAML` and `PatchPayload` MUST be empty on a `ProposePullRequest` (else `ErrInvalidActionKind` — proposer can't smuggle a cluster mutation through this kind)
 - **Self-hosted forges supported** — no OSS-side host allowlist; operators run self-hosted GitLab / Gitea / Forgejo with arbitrary hostnames. Allowlist enforcement (if needed for a specific deployment) belongs in the approval-server's per-CR policy layer in a future slice.
 - **12 test cases** (`pkg/ai/propose_pull_request_test.go`) — happy path, empty/whitespace URL, http downgrade, missing host, garbled URL, self-hosted-GitLab accepted, protected-namespace rejection, missing rollback, wrong-kind URL field, T0-tier rejection, ManifestYAML-on-PR-kind rejection.
-- Not yet wired into an executor — `pkg/ai` types only. cha-com slice 3b/3c lands the approval-server executor handler (Approve → post-merge comment / auto-merge per CR policy; Deny → close PR + record outcome to RAG) plus the `DigestPinProposer` that emits proposals of this kind.
+- Not yet wired into an executor — `pkg/ai` types only. srenix-enterprise slice 3b/3c lands the approval-server executor handler (Approve → post-merge comment / auto-merge per CR policy; Deny → close PR + record outcome to RAG) plus the `DigestPinProposer` that emits proposals of this kind.
 
 ### Added — Release-source detection (`pkg/releasesrc`, Phase 2d-γ-3 slice 1)
 
 - **`pkg/releasesrc`** — new public package finds the file + line in a release-source repo where a workload's image tag is declared. Keystone for the paid-tier digest-pin proposer: without knowing which `values.yaml` line holds `image.tag`, the proposer can't construct a one-line patch.
 - **`DetectInHelmValues(ctx, files, chartName, expectRepository) → *ImageRef`** — probes `charts/<chartName>/values.yaml` (umbrella layout) then `values.yaml` (single-chart root). Decodes the conventional `image: {repository, tag}` shape via `sigs.k8s.io/yaml`, requires `image.repository` to match `expectRepository` (guards against false matches in umbrella charts that ship multiple subchart blocks). Returns `ErrNotFound` cleanly when nothing matches; transport errors propagate unchanged.
 - **`ImageRef{File, Line, KeyPath, CurrentTag, Repository}`** — `Line` is 1-based for editor/`git blame` parity. `KeyPath` is a dot-separated YAML walk (today: always `"image.tag"`). Line lookup uses a regex anchor (`image:` header → first `tag:` line below it) because `sigs.k8s.io/yaml` doesn't preserve positions.
-- **`RepoFiles` interface** — minimal `Get(path) → bytes` + `List(patterns) → []string`. Defined in OSS so cha-com's forge client can implement it via a per-`(owner, repo, ref)` adapter without OSS taking a forge dependency.
+- **`RepoFiles` interface** — minimal `Get(path) → bytes` + `List(patterns) → []string`. Defined in OSS so srenix-enterprise's forge client can implement it via a per-`(owner, repo, ref)` adapter without OSS taking a forge dependency.
 - **Security defenses** — chart-name input is sanitized to `path.Base()` so a hostile `"../../etc"` chart name can't escape the chart dir. Empty `expectRepository` is rejected (would match every image block). Garbled YAML in one candidate file doesn't abort the probe — falls through to the next path.
 - **13 test cases** — happy-path umbrella + happy-path root layouts, repo-mismatch silently skipped, missing tag returns NotFound, garbled YAML doesn't crash, all-paths-missing returns NotFound, true transport error propagates, nil-files / empty-expectRepository guards, empty chart name falls back to root only, path-traversal sanitization, exact line-number calculation, unquoted-numeric-tag handling.
-- **Not yet wired** into any proposer — pure library slice. Foundation for **slice 2** (cha-com Forge → RepoFiles adapter + DigestPinProposer that consumes the v1.16.0+ workload feeder's `kind=workload` entries + this detector → forge.CreatePullRequest → Slack Approve/Deny buttons on every digest-pin warning). Argo CD Application + Kustomize + Flux HelmRelease detectors will join in follow-up slices.
+- **Not yet wired** into any proposer — pure library slice. Foundation for **slice 2** (srenix-enterprise Forge → RepoFiles adapter + DigestPinProposer that consumes the v1.16.0+ workload feeder's `kind=workload` entries + this detector → forge.CreatePullRequest → Slack Approve/Deny buttons on every digest-pin warning). Argo CD Application + Kustomize + Flux HelmRelease detectors will join in follow-up slices.
 
 ### Added — Workload feeder (Phase 2d-γ-2, RAG foundation slice)
 
@@ -809,17 +830,17 @@ Out-of-scope tokens audited + kept as-is when they represent operator-intent inp
 - **Digest resolution** — `image_digest` is read from the owning Pod's `status.containerStatuses[].imageID` (kubelet writes the resolved `sha256:` after a successful pull). Pods that haven't pulled yet (ImagePullBackOff, pending) contribute nothing, and that container's `image_digest` is simply omitted — the correct signal for a downstream proposer to skip the cycle and retry next time. Extraction tolerates `docker.io/`, `docker-pullable://`, and private-registry imageID formats.
 - **Owner detection** — reads `meta.helm.sh/release-name` + `meta.helm.sh/release-namespace` for Helm-managed workloads; `argocd.argoproj.io/instance` for Argo CD (`<namespace>_<name>` form). The `helm.sh/chart` label is parsed to extract the chart name with the trailing version stripped. Empty when neither annotation is set — the proposer slice will fall back to a PR-template path.
 - **System-namespace skip list** — `kube-system`, `kube-public`, `kube-node-lease`, `cnpg-system`, `rook-ceph`, `vault`, `external-secrets`, `calico-system`, `tigera-operator`, `calico-apiserver`, `local-path-storage`. Matches the digest-pin analyzer's system-namespace set so feeder and analyzer agree on "is this workload SRE-relevant".
-- **Fail-open everywhere** — nil receiver / missing Source / missing Writer errors at the contract boundary; per-workload parse + Upsert failures are silently skipped so one bad workload can't stall the sweep. Mirrors the cha-com `CloudflareFeeder` discipline.
+- **Fail-open everywhere** — nil receiver / missing Source / missing Writer errors at the contract boundary; per-workload parse + Upsert failures are silently skipped so one bad workload can't stall the sweep. Mirrors the srenix-enterprise `CloudflareFeeder` discipline.
 - **13 test cases** — happy path with digest, no-pod-no-digest, three-controller-kinds sweep, system-namespace skip, Helm annotations populate owner, Argo CD annotation parses `<ns>_<name>` form, no-annotations omits owner, multi-container with partial digests, degenerate empty workload skipped, writer error doesn't abort sweep, digest extraction across 5 imageID formats, default importance fallback, nil-guards table.
-- **Not yet wired** into `cha watch` — pure library slice. Next slice activates it via `cfg.RAGWriter rag.Writer` + a `--workload-feeder` flag on cmd/cha + an operator `spec.feeder.workload.enabled` knob on the CR. Foundation for Phase 2d-γ-3 (release-source detection enrichment) and Phase 2d-γ-4 (digest-pin proposer that consumes these entries).
+- **Not yet wired** into `srenix watch` — pure library slice. Next slice activates it via `cfg.RAGWriter rag.Writer` + a `--workload-feeder` flag on cmd/srenix + an operator `spec.feeder.workload.enabled` knob on the CR. Foundation for Phase 2d-γ-3 (release-source detection enrichment) and Phase 2d-γ-4 (digest-pin proposer that consumes these entries).
 
 ### Added — Watcher mints approve/deny URLs directly (Path B)
 
 - **`pkg/ai/manifest_bridge.go`** — new public `ManifestBridge` (implements `FixProposer`) that converts `Diagnostic.ProposedPolicyYAML` into a signed `ApplyManifest` `AIProposedAction` via the existing safe-apply validator (closed Kind whitelist + per-Kind shape; NetworkPolicy is the v1.15.0 entry). Refusal classes — egress in `policyTypes`, unsupported Kind, protected namespace, non-yaml — quietly return `nil` (no URL minted on dangerous YAML).
-- **`pkg/ai/signer.go`** — Ed25519 signer ported from cha-com (was proprietary, now Apache-2.0). Disk-backed (base64 raw bytes), trailing-whitespace tolerant, env-var fallback (`CHA_SIGNING_KEY_PATH`), `ErrSigningKeyMissing` sentinel for graceful fall-through. `GenerateAndPersistSigningKey()` for bootstrap.
-- **`cmd/cha/main.go`** — `cha watch` gains `--approval-server-url` + `--signing-key-path` flags. When both resolve, loads signer + registers `ManifestBridge` as fallback `FixProposer` (only when registry has no programmatically-registered proposer — keeps cha-com's LLM-backed proposer primary). Wires `Config.ApprovalBaseURL` so `enrichDiagnostics` mints URLs in the existing T1 path.
+- **`pkg/ai/signer.go`** — Ed25519 signer ported from srenix-enterprise (was proprietary, now Apache-2.0). Disk-backed (base64 raw bytes), trailing-whitespace tolerant, env-var fallback (`SRENIX_SIGNING_KEY_PATH`), `ErrSigningKeyMissing` sentinel for graceful fall-through. `GenerateAndPersistSigningKey()` for bootstrap.
+- **`cmd/srenix/main.go`** — `srenix watch` gains `--approval-server-url` + `--signing-key-path` flags. When both resolve, loads signer + registers `ManifestBridge` as fallback `FixProposer` (only when registry has no programmatically-registered proposer — keeps srenix-enterprise's LLM-backed proposer primary). Wires `Config.ApprovalBaseURL` so `enrichDiagnostics` mints URLs in the existing T1 path.
 - **`internal/operator/builders.go`** — `BuildWatcherDeployment` passes the new flags + mounts the signing-key Secret when both `cr.Spec.AI.ApprovalServerURL` AND `cr.Spec.Approval.SigningKey.SecretName` are set. Guards against half-configured installs (no key → no flags → no broken pod).
-- **Closes the architectural gap** where ProposedPolicyYAML-bearing diagnostics (NetworkPolicyProposer) had URLs minted in the cha-com aiwatch process but NEVER reached the user-facing Slack / Alertmanager / OpenProject surfaces — those are written by the OSS watcher, which had no URL-minting capability. After this change the OSS watcher mints URLs itself; they flow through the existing `d.ApprovalURL` field every adapter already renders.
+- **Closes the architectural gap** where ProposedPolicyYAML-bearing diagnostics (NetworkPolicyProposer) had URLs minted in the srenix-enterprise aiwatch process but NEVER reached the user-facing Slack / Alertmanager / OpenProject surfaces — those are written by the OSS watcher, which had no URL-minting capability. After this change the OSS watcher mints URLs itself; they flow through the existing `d.ApprovalURL` field every adapter already renders.
 - **22 new test cases**: `pkg/ai/manifest_bridge_test.go` (10 — happy path, FixProposer compliance, empty-YAML → nil, refusal classes, missing-metadata variants), `pkg/ai/signer_test.go` (10 — construction, sign happy path, validation errors, key load round-trip with trailing whitespace / missing / bad / wrong-size, env-var fallback, generate-and-persist), `internal/operator/builders_test.go` (2 — watcher wires flags + volume when both spec fields set; watcher omits flags when only ApprovalServerURL set without signing key).
 - **Backward compatible**: watcher built from a CR without `ai.approvalServerUrl` stays byte-identical to v1.15.0; new flags default empty; existing scripts/manifests unaffected.
 
@@ -839,9 +860,9 @@ Out-of-scope tokens audited + kept as-is when they represent operator-intent inp
 
 - `internal/cloud/azure`: `ListSubnets` now computes `AvailableIPCount = TotalIPCount - used`, summing every IP-consuming resource type attached to the subnet (`IPConfigurations` NIC refs, `ApplicationGatewayIPConfigurations`, `IPConfigurationProfiles`, `PrivateEndpoints`). These fields are READ-ONLY on the Subnet resource and populated by the apiserver automatically — no `$expand` needed, no extra API call. The IP-exhaustion probe now fires on real data instead of skipping. Pure `subnetUsedIPCount` helper is fully unit-tested.
 
-### Added — typed `AISpec` on `ClusterHealthAutopilot` v1alpha1 (operator Phase-2 schema slice)
+### Added — typed `AISpec` on `AgenticSRE` v1alpha1 (operator Phase-2 schema slice)
 
-- `api/v1alpha1`: new `AISpec` + `AIAPIKeySpec` + `AIT3Spec` + `AIMemorySpec` + `AIMemoryStorageSpec` + `AIEmbeddingsSpec` types mirroring the chart's `ai.*` helm values surface. Exposed as `ClusterHealthAutopilotSpec.AI` (optional). DeepCopy methods hand-written matching the Phase-1 pattern.
+- `api/v1alpha1`: new `AISpec` + `AIAPIKeySpec` + `AIT3Spec` + `AIMemorySpec` + `AIMemoryStorageSpec` + `AIEmbeddingsSpec` types mirroring the chart's `ai.*` helm values surface. Exposed as `AgenticSRESpec.AI` (optional). DeepCopy methods hand-written matching the Phase-1 pattern.
 - CRD YAML extended to accept `spec.ai` so the apiserver validates the schema. Tier uses `kubebuilder:validation:Enum=off;t0;t1;t2;t3`.
 - **Controller does NOT yet consume these fields.** The reconciler still relies on the chart's `ai.*` helm values for the running aiwatch + approval-server. Schema lands now so operator-managed manifests are forward-compatible with the Phase 2 reconciler wiring; the misleading comment that previously claimed the fields were "opaque pass-throughs" is corrected.
 
@@ -851,14 +872,14 @@ Out-of-scope tokens audited + kept as-is when they represent operator-intent inp
 
 ### Added — Operator Phase 1c (slice B) — OLM bundle scaffolding
 
-- New `bundle/` directory and `bundle.Dockerfile` carrying the OLM ClusterServiceVersion + the four shipped CRDs (`ClusterHealthAutopilot`, `Silence`, `ResolutionRecord`, `DriftReport`). The CSV's `install.spec` mirrors `templates/operator-deployment.yaml` (image, args, env, ports, probes, securityContext) so `operator-sdk run bundle <image>` produces structurally the same operator as `helm install`.
+- New `bundle/` directory and `bundle.Dockerfile` carrying the OLM ClusterServiceVersion + the four shipped CRDs (`AgenticSRE`, `Silence`, `ResolutionRecord`, `DriftReport`). The CSV's `install.spec` mirrors `templates/operator-deployment.yaml` (image, args, env, ports, probes, securityContext) so `operator-sdk run bundle <image>` produces structurally the same operator as `helm install`.
 - `installModes`: `OwnNamespace` + `SingleNamespace` + `AllNamespaces` (true); `MultiNamespace` (false) — explicit because the reconciler scope decisions in Phase 1b watch all-namespaces.
 - New parity-guard tests in `internal/operator/bundle_parity_test.go`: (1) CSV is valid YAML + kind=ClusterServiceVersion; (2) every CRD shipped in `bundle/manifests/` is declared under CSV `customresourcedefinitions.owned` (no orphan CRDs); (3) the chart's operator ClusterRole rules and the CSV's `clusterPermissions[0].rules` carry the same `(apiGroup, resource)` set (catches the common drift pattern where someone adds a rule to one file and forgets the other).
 - **NOT in this slice**: CI bundle-smoke job using `operator-sdk run bundle` against kind — Phase 1c slice C, separate PR.
 
 ### Added — Operator Phase 1c (slice A) — operator-provisioned reader RBAC
 
-- `api/v1alpha1`: new `ConditionReaderRBACReady` condition + `FinalizerOperatorRBAC` (`cha.bionicaisolutions.com/operator-rbac`) — cluster-scoped resources can't carry namespaced ownerRefs, so the finalizer drives cleanup.
+- `api/v1alpha1`: new `ConditionReaderRBACReady` condition + `FinalizerOperatorRBAC` (`srenix.ai/operator-rbac`) — cluster-scoped resources can't carry namespaced ownerRefs, so the finalizer drives cleanup.
 - `internal/operator/rbac_builders.go`: `BuildReaderClusterRole()` returns a shared cluster-scoped role mirroring `templates/clusterrole-reader.yaml`'s verb set. `BuildReaderClusterRoleBinding(cr)` returns a per-CR binding labeled `managed-by-cr` + `cr-namespace` for safe identification by the finalizer.
 - `internal/operator/reconciler.go`: adds `reconcileReaderRBAC()` (idempotent CreateOrUpdate on the shared role + per-CR binding), `finalizeReaderRBAC()` (deletes ONLY bindings we labeled; defense-in-depth against name collisions), and finalizer add/remove paths on every reconcile. `ReaderRBACReady` is computed from observed state: ClusterRole present + binding present + subject targets the CR's SA. `Ready` is now `(no reconcile error) AND ReaderRBACReady`; `WatcherRunning` continues to track availability orthogonally.
 - Chart: operator ClusterRole extended with cluster-wide CRUD on `rbac.authorization.k8s.io/{clusterroles,clusterrolebindings}`.
@@ -868,12 +889,12 @@ Out-of-scope tokens audited + kept as-is when they represent operator-intent inp
 
 ### Added — `Silence` CRD + watch-loop suppression
 
-- New `Silence` CRD (`silences.cha.bionicaisolutions.com`, namespace-scoped, `sil` short name). Operators create a Silence to mute a known-benign-but-unfixable finding for a bounded window. Matcher fields: `source` / `subject` / `severity` (empty = wildcard); CRD validation rejects an entirely-empty matcher. `spec.until` is required; past expiry the Silence becomes a no-op but is NOT auto-deleted (audit trail). Optional `reason` + `createdBy` for "why is this muted?" answers.
+- New `Silence` CRD (`silences.srenix.ai`, namespace-scoped, `sil` short name). Operators create a Silence to mute a known-benign-but-unfixable finding for a bounded window. Matcher fields: `source` / `subject` / `severity` (empty = wildcard); CRD validation rejects an entirely-empty matcher. `spec.until` is required; past expiry the Silence becomes a no-op but is NOT auto-deleted (audit trail). Optional `reason` + `createdBy` for "why is this muted?" answers.
 - New pure `pkg/silence.Filter()` + `Matches()` — namespaced lookup, exact-field matching, expired-silence-never-matches guard. Order-preserving, doesn't mutate the caller's slice. 8 unit tests.
 - New `pkg/silence.K8sLister` (dynamic-client backed) lists active Silences cluster-wide once per watcher cycle. Soft-fails on a missing CRD (returns nil, nil) so a chart < 1.9 install still works.
-- Watcher integration: `Watcher.WithSilenceLister(lister)` — wired in `cmd/cha/main.go`. Silenced diagnostics are dropped in `runDiagnose()` BEFORE downstream emission (DriftReport / Slack / Alertmanager / ticketing), so a muted finding never re-pages.
+- Watcher integration: `Watcher.WithSilenceLister(lister)` — wired in `cmd/srenix/main.go`. Silenced diagnostics are dropped in `runDiagnose()` BEFORE downstream emission (DriftReport / Slack / Alertmanager / ticketing), so a muted finding never re-pages.
 - Chart: `templates/crd-silence.yaml` (gated on `silence.installCRD`, default ON) + `templates/clusterrole-silence.yaml` (cluster-wide list/watch on `silences`, gated on `silence.enabled`, default ON). Reserves `silences/status` write permission for a future matchCount/lastMatchAt updater.
-- Closes post-v1.9 adversarial-review finding #2: previously CHA had only endpoint-probe flake debounce — no user-controlled per-fingerprint, time-bounded suppression. Now Silence is a first-class, K8s-native concept matching the Alertmanager-silences pattern.
+- Closes post-v1.9 adversarial-review finding #2: previously Srenix had only endpoint-probe flake debounce — no user-controlled per-fingerprint, time-bounded suppression. Now Silence is a first-class, K8s-native concept matching the Alertmanager-silences pattern.
 
 (Reserve for v1.9+ — operator Phase 1c per `docs/design/2026-05-v1.9-operator-phase-1c.md`; Phase 2 reconciler consumption of the AISpec; remaining cloud Monitoring-API signals; trigger-classes C/E.)
 
@@ -881,11 +902,11 @@ Out-of-scope tokens audited + kept as-is when they represent operator-intent inp
 
 ## [1.8.12] — 2026-05-30
 
-Chart wiring for the approval-server HA backend introduced in CHA-com PR #16.
+Chart wiring for the approval-server HA backend introduced in Srenix Enterprise PR #16.
 
 ### Added
 
-- `approval.store.backend=configmap` (and `.namespace`, `.replayConfigMap`, `.runbookConfigMap`): when set, passes the matching `--store-*` flags to `cha-com approval-server`, switches the Deployment to `RollingUpdate`, and provisions a per-namespace Role + RoleBinding granting the approval-server SA `get/update/create` on the named ConfigMaps (minimum-privilege: NOT granted in the default in-memory posture). With this set + `approval.replicas > 1`, the approval-server is HA-safe (a JTI used on replica A cannot be replayed on B; T3 dual-approval state cannot fork).
+- `approval.store.backend=configmap` (and `.namespace`, `.replayConfigMap`, `.runbookConfigMap`): when set, passes the matching `--store-*` flags to `srenix-enterprise approval-server`, switches the Deployment to `RollingUpdate`, and provisions a per-namespace Role + RoleBinding granting the approval-server SA `get/update/create` on the named ConfigMaps (minimum-privilege: NOT granted in the default in-memory posture). With this set + `approval.replicas > 1`, the approval-server is HA-safe (a JTI used on replica A cannot be replayed on B; T3 dual-approval state cannot fork).
 
 ---
 
@@ -905,7 +926,7 @@ P2/G5c chart wiring — connects the deployed aiwatch to the RAG store.
 
 ### Added
 
-- When `ai.memory.enabled`, `cha.aiArgs` now passes `--memory-store-url` (defaults to the in-namespace Qdrant service `http://<release>-rag.<ns>.svc:6333`), `--memory-embeddings-endpoint` (defaults to `ai.endpoint`), `--memory-embeddings-model` (required), and `--memory-topk` to the aiwatch. With this, the commercial binary's RAG grounding (CHA-com G5c retrieve half) is reachable end-to-end; off by default.
+- When `ai.memory.enabled`, `srenix.aiArgs` now passes `--memory-store-url` (defaults to the in-namespace Qdrant service `http://<release>-rag.<ns>.svc:6333`), `--memory-embeddings-endpoint` (defaults to `ai.endpoint`), `--memory-embeddings-model` (required), and `--memory-topk` to the aiwatch. With this, the commercial binary's RAG grounding (Srenix Enterprise G5c retrieve half) is reachable end-to-end; off by default.
 
 ---
 
@@ -915,7 +936,7 @@ P1/G4 foundation for the AI-remediation memory loop. Chart-only effect (new CRD 
 
 ### Added — ResolutionRecord CRD + recorder
 
-- **`ResolutionRecord` CRD** (`resolutionrecords.cha.bionicaisolutions.com`, cluster-scoped, `rr` short name) — the append-only outcome log: one CR per applied+verified (or rejected/reverted) remediation, capturing `{fingerprint, source, subjectKind, diagnosticDigest, proposal{actionKind,target,rationale,rollback}, delivery, applied, verified}`. This is the durable system-of-record the dedicated RAG memory layer (1.8.8 Qdrant) embeds + retrieves.
+- **`ResolutionRecord` CRD** (`resolutionrecords.srenix.ai`, cluster-scoped, `rr` short name) — the append-only outcome log: one CR per applied+verified (or rejected/reverted) remediation, capturing `{fingerprint, source, subjectKind, diagnosticDigest, proposal{actionKind,target,rationale,rollback}, delivery, applied, verified}`. This is the durable system-of-record the dedicated RAG memory layer (1.8.8 Qdrant) embeds + retrieves.
 - **`internal/resolution` recorder** — `Recorder.Record()` appends a CR through the snapshot.Mutator (nil-safe / no-op in dry-run); stable `Fingerprint(source, subject)` join key to DriftReport.
 - **ResolutionRecord ClusterRole** — create/get/list/watch + status patch (for the RAG layer's `embeddedAt`/`vectorId` stamp), bound to the chart SA. Append-only (no delete verb).
 
@@ -927,14 +948,14 @@ P2/G5a — the dedicated RAG vector store deployment (chart-only; off by default
 
 ### Added — in-namespace Qdrant RAG
 
-- **`ai.memory.enabled`** stands up a dedicated **Qdrant** vector store (StatefulSet + PVC + ClusterIP Service) in the install namespace, alongside the other CHA objects. The aiwatch (P2/G5b–c, CHA-com) embeds ResolutionRecords via the in-cluster gpu-ai embeddings endpoint and retrieves prior resolutions to ground T1–T3 proposals. The ResolutionRecord CRD (1.8.9) is the system-of-record; Qdrant is the rebuildable semantic index over it.
+- **`ai.memory.enabled`** stands up a dedicated **Qdrant** vector store (StatefulSet + PVC + ClusterIP Service) in the install namespace, alongside the other Srenix objects. The aiwatch (P2/G5b–c, Srenix Enterprise) embeds ResolutionRecords via the in-cluster gpu-ai embeddings endpoint and retrieves prior resolutions to ground T1–T3 proposals. The ResolutionRecord CRD (1.8.9) is the system-of-record; Qdrant is the rebuildable semantic index over it.
 - New `ai.memory.*` values: `image`, `storage.{size,className}`, `resources`, `embeddings.{endpoint,model}`, `storeUrl`, `topK`. Off by default and independent of `ai.enabled` so it can be rolled out separately.
 
 ---
 
 ## [1.8.6] — 2026-05-29
 
-P0 signal-hygiene from the AI-remediation plan (`docs/design/` in CHA-com), plus the chart arg that activates commercial click-to-fix delivery.
+P0 signal-hygiene from the AI-remediation plan (`docs/design/` in Srenix Enterprise), plus the chart arg that activates commercial click-to-fix delivery.
 
 ### Fixed — false-positive criticals (alert-fatigue de-noising)
 
@@ -943,7 +964,7 @@ P0 signal-hygiene from the AI-remediation plan (`docs/design/` in CHA-com), plus
 
 ### Added
 
-- **`ai.approvalServerUrl`** chart value → `--approval-server-url` arg on the aiwatch (via `cha.aiArgs`). When set (with `approval.enabled`), the commercial CHA-com binary emits signed one-click click-to-fix links for T1/T2 proposals.
+- **`ai.approvalServerUrl`** chart value → `--approval-server-url` arg on the aiwatch (via `srenix.aiArgs`). When set (with `approval.enabled`), the commercial Srenix Enterprise binary emits signed one-click click-to-fix links for T1/T2 proposals.
 
 ---
 
@@ -953,7 +974,7 @@ Chart-only fix found while enabling the paid tier on a live cluster.
 
 ### Fixed — approval-server keygen-job image tag
 
-The `approval-server-keygen-job` (a Helm pre-install/upgrade hook that mints the Ed25519 signing key) still defaulted its image tag to `.Chart.AppVersion` (e.g. `1.8.2`), but cha-com images are tagged with a leading `v` (`v1.8.2`). On a fresh paid enable the keygen hook hit `ImagePullBackOff` and stalled the whole `helm upgrade` in `pending-upgrade`. Now uses the same `v<AppVersion>` default as the approval-server Deployment (fixed in 1.8.4). Without this, enabling `approval.enabled=true` required a manual `approval.image.tag` override.
+The `approval-server-keygen-job` (a Helm pre-install/upgrade hook that mints the Ed25519 signing key) still defaulted its image tag to `.Chart.AppVersion` (e.g. `1.8.2`), but srenix-enterprise images are tagged with a leading `v` (`v1.8.2`). On a fresh paid enable the keygen hook hit `ImagePullBackOff` and stalled the whole `helm upgrade` in `pending-upgrade`. Now uses the same `v<AppVersion>` default as the approval-server Deployment (fixed in 1.8.4). Without this, enabling `approval.enabled=true` required a manual `approval.image.tag` override.
 
 ---
 
@@ -963,15 +984,15 @@ Corrects the AI-tier deployment model shipped in 1.8.3. No Go changes.
 
 ### Fixed — AI tier deploys as an additive companion, not an OSS-binary flag-swap
 
-1.8.3 folded the `--ai-*` flags into the **OSS** watcher Deployment and diagnose CronJob args, on the assumption that the commercial binary is a flag-superset of OSS. It is not: `cha-com watch` / `cha-com diagnose` are the **AI-layered counterparts** with a deliberately reduced flag surface — they reject the OSS operational flags (`--live`, `--write-driftreports`, `--slack-*`, `--remedy`, `--ticketing-*`, `--cloud-*`). Enabling 1.8.3's wiring + the cha-com image would have crash-looped the watcher on an unknown flag. (1.8.3 was gated on `ai.enabled=true`, default false, so no OSS or default install was affected.)
+1.8.3 folded the `--ai-*` flags into the **OSS** watcher Deployment and diagnose CronJob args, on the assumption that the commercial binary is a flag-superset of OSS. It is not: `srenix-enterprise watch` / `srenix-enterprise diagnose` are the **AI-layered counterparts** with a deliberately reduced flag surface — they reject the OSS operational flags (`--live`, `--write-driftreports`, `--slack-*`, `--remedy`, `--ticketing-*`, `--cloud-*`). Enabling 1.8.3's wiring + the srenix-enterprise image would have crash-looped the watcher on an unknown flag. (1.8.3 was gated on `ai.enabled=true`, default false, so no OSS or default install was affected.)
 
 The corrected, **purely additive** model:
 
 - The OSS watcher Deployment + diagnose / remediate CronJobs are **never swapped or modified** — they keep the OSS image and own the event-driven probe → fix → Slack / ticketing / DriftReport pipeline.
-- Setting `ai.enabled=true` stands up a **separate `aiwatch` Deployment** (new `templates/aiwatch-deployment.yaml`) running `cha-com watch` — the AI-layered counterpart that polls the same merged catalog on `ai.interval` and fires the AI tiers (t0→t3) against new diagnostics, signing click-to-fix URLs for the approval-server at t1+.
-- `cha.aiArgs` now emits exactly the `cha-com watch` flag surface (incl. `--interval`); `cha.aiImage` resolves the commercial image (`docker4zerocool/cha-com:v<AppVersion>`).
+- Setting `ai.enabled=true` stands up a **separate `aiwatch` Deployment** (new `templates/aiwatch-deployment.yaml`) running `srenix-enterprise watch` — the AI-layered counterpart that polls the same merged catalog on `ai.interval` and fires the AI tiers (t0→t3) against new diagnostics, signing click-to-fix URLs for the approval-server at t1+.
+- `srenix.aiArgs` now emits exactly the `srenix-enterprise watch` flag surface (incl. `--interval`); `srenix.aiImage` resolves the commercial image (`docker4zerocool/srenix-enterprise:v<AppVersion>`).
 - New `ai.image.*`, `ai.interval`, `ai.resources` values. The aiwatch pod reuses the chart's read-only reader SA (it only reads + proposes; never mutates).
-- Fixed the approval-server image-tag default to the `v`-prefixed cha-com convention (`v<AppVersion>`), which previously resolved to a non-existent tag.
+- Fixed the approval-server image-tag default to the `v`-prefixed srenix-enterprise convention (`v<AppVersion>`), which previously resolved to a non-existent tag.
 
 **Go-to-market:** OSS install + the single flag `ai.enabled=true` = the paid tier. No image-swap-and-pray. Full setup in `docs/DEPLOYMENT.md`.
 
@@ -979,14 +1000,14 @@ The corrected, **purely additive** model:
 
 ## [1.8.3] — 2026-05-28
 
-Chart-only release that completes the AI-tier (commercial CHA-com) deployment path. No Go changes.
+Chart-only release that completes the AI-tier (commercial Srenix Enterprise) deployment path. No Go changes.
 
 ### Added — AI-tier flag wiring in the chart
 
-The chart now renders the commercial `--ai-*` flag surface onto the watcher Deployment and diagnose CronJob when `ai.enabled=true`, via two new nil-safe helpers (`cha.aiArgs`, `cha.aiEnv`). Previously the `ai:` values block existed but was consumed by no template, so the paid tier could not actually be turned on through Helm.
+The chart now renders the commercial `--ai-*` flag surface onto the watcher Deployment and diagnose CronJob when `ai.enabled=true`, via two new nil-safe helpers (`srenix.aiArgs`, `srenix.aiEnv`). Previously the `ai:` values block existed but was consumed by no template, so the paid tier could not actually be turned on through Helm.
 
-- **`cha.aiArgs`** emits `--ai-tier`, `--ai-endpoint`, `--ai-model`, `--ai-api-key-header`, `--ai-allow-saas`, `--ai-llm-fixer-matcher`, `--ai-audit-log`, and (for t3) repeatable `--t3-vault-allowed-prefix`. `ai.endpoint` and `ai.model` are `required` when enabled. The OSS `cha` binary does not understand these flags, so the block is inert unless `image.repository` points at `docker4zerocool/cha-com`.
-- **`cha.aiEnv`** injects the LLM bearer token into the env var the binary reads (`ai.apiKey.envName`, default `AI_API_KEY`) via `secretKeyRef` — never inlined, ESO-managed.
+- **`srenix.aiArgs`** emits `--ai-tier`, `--ai-endpoint`, `--ai-model`, `--ai-api-key-header`, `--ai-allow-saas`, `--ai-llm-fixer-matcher`, `--ai-audit-log`, and (for t3) repeatable `--t3-vault-allowed-prefix`. `ai.endpoint` and `ai.model` are `required` when enabled. The OSS `srenix` binary does not understand these flags, so the block is inert unless `image.repository` points at `docker4zerocool/srenix-enterprise`.
+- **`srenix.aiEnv`** injects the LLM bearer token into the env var the binary reads (`ai.apiKey.envName`, default `AI_API_KEY`) via `secretKeyRef` — never inlined, ESO-managed.
 - New `ai:` keys: `model`, `llmFixerMatcher`, `auditLog`, `apiKey.{envName,header}`, and `t3.vaultAllowedPrefixes` (gates the Vault blast radius the t3 runbook proposer may reference).
 - Approval-server templates (deployment / service / ingress / rbac / keygen-job) were already present; this release makes the watcher/diagnose side consumable.
 
@@ -1009,17 +1030,17 @@ These require the cloud Monitoring API / a long-running BackendHealth operation 
 
 ### Fixed — operator BYO-ServiceAccount no longer adopts a pre-existing SA
 
-When a `ClusterHealthAutopilot` CR pins `spec.serviceAccountName` (the supported path for giving an operator-managed watcher the probe RBAC it needs — point it at the chart's reader-bound SA), the reconciler used to still create+own that SA, grafting an owner-ref onto a pre-existing object and garbage-collecting it on CR deletion. The reconciler now skips SA creation entirely when `spec.serviceAccountName` is set.
+When a `AgenticSRE` CR pins `spec.serviceAccountName` (the supported path for giving an operator-managed watcher the probe RBAC it needs — point it at the chart's reader-bound SA), the reconciler used to still create+own that SA, grafting an owner-ref onto a pre-existing object and garbage-collecting it on CR deletion. The reconciler now skips SA creation entirely when `spec.serviceAccountName` is set.
 
 **Known limitation (tracked for Phase 1c):** the operator does not yet provision its own reader `ClusterRoleBinding`, so an operator-managed watcher gets probe RBAC **only** via the BYO-SA path above. Documented on the CRD field and in the operator design doc.
 
 ### Added — M2 probe-class Helm toggles (roadmap AC parity)
 
-`probes.{kong,hpaScaling,argocdApp,velero}.enabled` now exist in `values.yaml` and emit `CHA_PROBE_*=off` via the new `cha.probeToggleEnv` helper (mirrors `cha.analyzerToggleEnv`). Closes the v1.8 acceptance criterion that promised per-probe Helm values; the probes were previously gated only by env opt-out + CRD auto-skip. All default ON (auto-skip when the CRD is absent).
+`probes.{kong,hpaScaling,argocdApp,velero}.enabled` now exist in `values.yaml` and emit `SRENIX_PROBE_*=off` via the new `srenix.probeToggleEnv` helper (mirrors `srenix.analyzerToggleEnv`). Closes the v1.8 acceptance criterion that promised per-probe Helm values; the probes were previously gated only by env opt-out + CRD auto-skip. All default ON (auto-skip when the CRD is absent).
 
 ### Changed
 
-- Cleared stale "not shipped yet" / "M1 follow-up" / "Azure remains a stub" comments in `values.yaml`, `cmd/cha/main.go`, and `catalog/cloud.go` — all three cloud providers and the M2 probe set shipped in v1.8.
+- Cleared stale "not shipped yet" / "M1 follow-up" / "Azure remains a stub" comments in `values.yaml`, `cmd/srenix/main.go`, and `catalog/cloud.go` — all three cloud providers and the M2 probe set shipped in v1.8.
 
 ---
 
@@ -1030,7 +1051,7 @@ Patch release fixing two issues found while deploying v1.8.0 to a live cluster. 
 ### Fixed
 
 - **Diagnose / remediate `activeDeadlineSeconds` raised 120 → 300.** The v1.8 analyzer + M2-probe set adds a meaningful number of cluster List calls (CRDs, HPAs, all namespaces + pods + NetworkPolicies, Kong / Velero / Argo CRDs). A live diagnose on a busy cluster (~80 KongPlugins, ~250 drift records) was measured at ~157s — past the old 120s cap, so the CronJob was killed mid-run with `DeadlineExceeded`. 300s gives headroom while still failing fast on a genuinely hung cluster API.
-- **Operator templates made nil-safe for `--reuse-values` upgrades.** `operator-deployment.yaml` (`.Values.operator.enabled`) and `crd-clusterhealthautopilot.yaml` (`.Values.operator.installCRD`) dereferenced `.Values.operator` directly, so a `helm upgrade --reuse-values` from a pre-v1.8 install (whose stored values predate the `operator:` block) hit `nil pointer evaluating interface {}.enabled`. Now guarded with `(.Values.operator).enabled` / `(.Values.operator).installCRD`, matching the existing `(.Values.analyzers).*` pattern.
+- **Operator templates made nil-safe for `--reuse-values` upgrades.** `operator-deployment.yaml` (`.Values.operator.enabled`) and `crd-agenticsre.yaml` (`.Values.operator.installCRD`) dereferenced `.Values.operator` directly, so a `helm upgrade --reuse-values` from a pre-v1.8 install (whose stored values predate the `operator:` block) hit `nil pointer evaluating interface {}.enabled`. Now guarded with `(.Values.operator).enabled` / `(.Values.operator).installCRD`, matching the existing `(.Values.analyzers).*` pattern.
 
 ### Verified on live cluster
 
@@ -1045,14 +1066,14 @@ Drift-class completion + operator port + full multi-cloud release. Closes the bu
 ### Added — Azure cloud-probe Live SDK wrapper (probes now execute against real Azure) — all 3 clouds live
 
 - **`internal/cloud/azure/live.go`** — `LiveClient` implements all 10 `pkgazure.Client` methods against `azure-sdk-for-go` (armsql, armcompute, armcontainerservice, armmsi, armnetwork, armappservice, armstorage, armkeyvault, armauthorization). Auth via `DefaultAzureCredential` (AAD Workload Identity in-cluster, `az login` locally). Read-only. Resolves server→database, vnet→subnet, and cluster→nodepool nesting; extracts resource group from ARM IDs; counts role assignments per managed-identity principal.
-- **`cmd/cha buildCloudSource()`** — `--cloud-azure-enabled` now constructs the live client (requires `--cloud-azure-subscription-id`; optional `--cloud-azure-location`) instead of erroring. **With this, all three providers (AWS, GCP, Azure) execute against real clouds.**
+- **`cmd/srenix buildCloudSource()`** — `--cloud-azure-enabled` now constructs the live client (requires `--cloud-azure-subscription-id`; optional `--cloud-azure-location`) instead of erroring. **With this, all three providers (AWS, GCP, Azure) execute against real clouds.**
 - Two documented limitations populated conservatively (no false-positives): VNet subnet free-IP (Network API exposes none → CIDR-derived total, available=total) and App Gateway backend health (per-gateway LRO too heavy per cycle → reports pool size as healthy). Both have Monitoring/LRO follow-ups noted in code.
 - **Verification boundary:** compiles cleanly against the real `azure-sdk-for-go` ARM modules (API-surface correctness), but **not** integration-tested against a live Azure subscription — needs credentials. Probe evaluation logic remains unit-tested against fakes.
 
 ### Added — GCP cloud-probe Live SDK wrapper (probes now execute against real GCP)
 
 - **`internal/cloud/gcp/live.go`** — `LiveClient` implements all 10 `pkggcp.Client` methods against `google.golang.org/api` (sqladmin, compute, container, iam, cloudkms, storage). Auth via Application Default Credentials (GKE Workload Identity in-cluster). Read-only. Compiles against the real SDK surface.
-- **`cmd/cha buildCloudSource()`** — `--cloud-gcp-enabled` now constructs the live client (requires `--cloud-gcp-project`; optional `--cloud-gcp-region`) instead of erroring. The GCP probes are no longer dormant — they run against a real project when enabled.
+- **`cmd/srenix buildCloudSource()`** — `--cloud-gcp-enabled` now constructs the live client (requires `--cloud-gcp-project`; optional `--cloud-gcp-region`) instead of erroring. The GCP probes are no longer dormant — they run against a real project when enabled.
 - Two documented SDK limitations populated conservatively so probes never false-positive: VPC subnet free-IP count (Compute API exposes no free-IP field → reports fully-free pending a Monitoring-API follow-up) and per-backend LB health (aggregated via `BackendServices.GetHealth`).
 - **Verification boundary:** the wrapper compiles cleanly against `google.golang.org/api v0.282.0` (proves API-surface correctness) but is **not** integration-tested against a live GCP project — that needs credentials. Probe evaluation logic remains unit-tested against fakes.
 - Azure Live wrapper follows in the next PR; until then `--cloud-azure-enabled` still errors.
@@ -1066,13 +1087,13 @@ Drift-class completion + operator port + full multi-cloud release. Closes the bu
 - Walks via owner-reference chain Pod → ReplicaSet → Deployment.
 - Skips system namespaces (kube-system, kube-public, kube-node-lease).
 - Reader ClusterRole extended with read on `apiextensions.k8s.io/customresourcedefinitions`.
-- Default ON; flip `analyzers.configDrift.enabled=false` to disable, or set `CHA_ANALYZER_CONFIG_DRIFT=off`. 16 unit tests.
+- Default ON; flip `analyzers.configDrift.enabled=false` to disable, or set `SRENIX_ANALYZER_CONFIG_DRIFT=off`. 16 unit tests.
 
 ### Added — Operator port Phase 1 (foundations)
 
-- **`api/v1alpha1/`** — `ClusterHealthAutopilot` CRD types (Spec, Status, Conditions) with hand-written DeepCopy methods. Foundations only; the controller-runtime Reconcile loop, the manager binary, and the chart wiring for operator-managed installs all come in Phase 1b. See `docs/design/2026-05-v1.8-operator-phase-1.md` for the staged-release rationale.
-- **`internal/operator/builders.go`** — pure-function builders that translate `ClusterHealthAutopilotSpec` → `*appsv1.Deployment` (watcher) and `*batchv1.CronJob` (diagnose, remediate). Mirror the existing chart's CLI argument format so an operator-managed install behaves identically to a Helm-managed install. 19 unit tests cover defaults, overrides, image-policy inference, pull-secret round-trip, and alerting-flag emission.
-- **`charts/.../templates/crd-clusterhealthautopilot.yaml`** — CRD shipped via the chart, gated behind `operator.installCRD` (default `true`). Installing the CRD on a cluster without the operator binary is harmless: the resource is queryable state with no controller acting on it.
+- **`api/v1alpha1/`** — `AgenticSRE` CRD types (Spec, Status, Conditions) with hand-written DeepCopy methods. Foundations only; the controller-runtime Reconcile loop, the manager binary, and the chart wiring for operator-managed installs all come in Phase 1b. See `docs/design/2026-05-v1.8-operator-phase-1.md` for the staged-release rationale.
+- **`internal/operator/builders.go`** — pure-function builders that translate `AgenticSRESpec` → `*appsv1.Deployment` (watcher) and `*batchv1.CronJob` (diagnose, remediate). Mirror the existing chart's CLI argument format so an operator-managed install behaves identically to a Helm-managed install. 19 unit tests cover defaults, overrides, image-policy inference, pull-secret round-trip, and alerting-flag emission.
+- **`charts/.../templates/crd-agenticsre.yaml`** — CRD shipped via the chart, gated behind `operator.installCRD` (default `true`). Installing the CRD on a cluster without the operator binary is harmless: the resource is queryable state with no controller acting on it.
 
 ### Added — Workstream B5 (capacity drift)
 
@@ -1084,7 +1105,7 @@ Drift-class completion + operator port + full multi-cloud release. Closes the bu
   - **PVC volume-expansion stuck** — `FileSystemResizePending=True` past grace, OR `spec.resources.requests.storage > status.capacity.storage` past grace. Volume-expansion got requested but the CSI driver didn't complete it. Critical.
 - Skips kube-system / kube-public / kube-node-lease.
 - Reader ClusterRole extended with read on `autoscaling/horizontalpodautoscalers`; PVC reads already covered by the core probe rule.
-- Default ON; flip `analyzers.capacityDrift.enabled=false` to disable, or set `CHA_ANALYZER_CAPACITY_DRIFT=off`. 17 unit tests.
+- Default ON; flip `analyzers.capacityDrift.enabled=false` to disable, or set `SRENIX_ANALYZER_CAPACITY_DRIFT=off`. 17 unit tests.
 
 ### Added — Workstream B6 (security drift)
 
@@ -1094,17 +1115,17 @@ Drift-class completion + operator port + full multi-cloud release. Closes the bu
   - **NetworkPolicy coverage gap** — user namespaces running pods with zero NetworkPolicies. K8s default networking is fully permissive without at least one policy. Warning per namespace.
 - Skips kube-system / kube-public / kube-node-lease / cnpg-system / rook-ceph / vault / external-secrets — system namespaces whose security posture is controller-managed.
 - Reader ClusterRole extended with `networking.k8s.io/networkpolicies`; namespaces already covered by the core probe rule.
-- Default ON; flip `analyzers.securityDrift.enabled=false` to disable, or set `CHA_ANALYZER_SECURITY_DRIFT=off`. 16 unit tests.
-- Out of scope for v1.8 (deferred to a v1.8.x follow-up): true PSS-downgrade detection (requires label history) and active Cosign / Notation signature verification (admission-time concern; CHA is observational).
+- Default ON; flip `analyzers.securityDrift.enabled=false` to disable, or set `SRENIX_ANALYZER_SECURITY_DRIFT=off`. 16 unit tests.
+- Out of scope for v1.8 (deferred to a v1.8.x follow-up): true PSS-downgrade detection (requires label history) and active Cosign / Notation signature verification (admission-time concern; Srenix is observational).
 
 ### Added — Operator port Phase 1b (controller-runtime + Reconciler + manager binary)
 
 - **`sigs.k8s.io/controller-runtime v0.24.1`** added — chosen for compatibility with the current `k8s.io v0.36` baseline (controller-runtime v0.21 had a `ResourceEventHandlerRegistration` interface mismatch with newer client-go).
-- **`internal/operator/reconciler.go`** — `Reconciler` implementation. Reconcile flow: fetch CR → validate `spec.image.tag` → reconcile ServiceAccount + watcher Deployment + diagnose CronJob + remediate CronJob via createOrUpdate (delete-on-disable) → compute `Ready` and `WatcherRunning` conditions from observed Deployment state → patch status. Uses controller-runtime CreateOrUpdate rather than server-side-apply to keep the cutover boring (existing chart installs are not disturbed unless an operator explicitly creates a `ClusterHealthAutopilot` CR).
-- **`cmd/cha-operator/main.go`** — manager binary: leader-election lease (`cha-operator.cha.bionicaisolutions.com`, namespace from downward-API `MY_POD_NAMESPACE`), `:8080` Prometheus metrics, `:8081` healthz/readyz probes, structured zap logging.
+- **`internal/operator/reconciler.go`** — `Reconciler` implementation. Reconcile flow: fetch CR → validate `spec.image.tag` → reconcile ServiceAccount + watcher Deployment + diagnose CronJob + remediate CronJob via createOrUpdate (delete-on-disable) → compute `Ready` and `WatcherRunning` conditions from observed Deployment state → patch status. Uses controller-runtime CreateOrUpdate rather than server-side-apply to keep the cutover boring (existing chart installs are not disturbed unless an operator explicitly creates a `AgenticSRE` CR).
+- **`cmd/srenix-operator/main.go`** — manager binary: leader-election lease (`srenix-operator.srenix.ai`, namespace from downward-API `MY_POD_NAMESPACE`), `:8080` Prometheus metrics, `:8081` healthz/readyz probes, structured zap logging.
 - **`api/v1alpha1/groupversion_info.go`** — `AddToScheme` wired via `runtime.NewSchemeBuilder` directly (sidesteps the deprecated `controller-runtime/pkg/scheme.Builder`).
 - **`charts/.../templates/operator-deployment.yaml`** — operator Deployment + ServiceAccount + ClusterRole + ClusterRoleBinding. Gated behind `operator.enabled` (default `false`). Operator has the read+write+delete verbs on ServiceAccount / Deployment / CronJob in any namespace; status-subresource write on the CR; Lease verbs for leader-election; events create+patch for `kubectl describe`. SecurityContext: `runAsNonRoot`, `readOnlyRootFilesystem`, drops all capabilities.
-- **`Dockerfile`** — second `go build` step compiles `/cha-operator` alongside `/usr/local/bin/cha`. Single image hosts both binaries; the operator Deployment overrides `command:` to invoke `/cha-operator` instead of the watcher.
+- **`Dockerfile`** — second `go build` step compiles `/srenix-operator` alongside `/usr/local/bin/srenix`. Single image hosts both binaries; the operator Deployment overrides `command:` to invoke `/srenix-operator` instead of the watcher.
 - **11 reconciler unit tests** using the controller-runtime fake client — covers create-all-subresources, owner-ref attachment, condition computation, watcher disabled (no-create + delete-on-disable), validation short-circuit (empty image tag), update-existing-deployment, remediate flow, ServiceAccountName override, post-delete reconcile silence.
 
 ### Added — GCP cloud probes (Sprint 1 slice)
@@ -1171,11 +1192,11 @@ Final 4 Azure probes — completes 10-probe parity with AWS + GCP. All three pro
 - `catalog/cloud.go` registers all 10 Azure probes when `azureEnabled=true`.
 - 17 unit tests.
 
-> **Note on cloud-probe execution:** the GCP + Azure probe *detection logic* is complete and unit-tested (10 probes each, parity with AWS), but neither provider has a Live SDK wrapper yet (`internal/cloud/{gcp,azure}/live.go` absent; `cloud.google.com/go` / `azure-sdk-for-go` not in go.mod). `cmd/cha buildCloudSource()` still errors for `--cloud-gcp-enabled` / `--cloud-azure-enabled`. Until the Live wrappers land, only **AWS** cloud probes execute against a real cloud; GCP/Azure are dormant. The Live wrappers are the remaining v1.8 cloud item.
+> **Note on cloud-probe execution:** the GCP + Azure probe *detection logic* is complete and unit-tested (10 probes each, parity with AWS), but neither provider has a Live SDK wrapper yet (`internal/cloud/{gcp,azure}/live.go` absent; `cloud.google.com/go` / `azure-sdk-for-go` not in go.mod). `cmd/srenix buildCloudSource()` still errors for `--cloud-gcp-enabled` / `--cloud-azure-enabled`. Until the Live wrappers land, only **AWS** cloud probes execute against a real cloud; GCP/Azure are dormant. The Live wrappers are the remaining v1.8 cloud item.
 
 ### Added — M2 K8s probes (Kong / HPA / ArgoCD / Velero)
 
-Four new resource-event-driven probes from `docs/design/2026-05-trigger-expansion-roadmap.md` M2/M3 and v1.8 roadmap §A5. Each auto-skips when its CRD is absent (or no-ops on an empty list for HPA), so default-on is safe. Each is independently disablable via `CHA_PROBE_<NAME>=off`.
+Four new resource-event-driven probes from `docs/design/2026-05-trigger-expansion-roadmap.md` M2/M3 and v1.8 roadmap §A5. Each auto-skips when its CRD is absent (or no-ops on an empty list for HPA), so default-on is safe. Each is independently disablable via `SRENIX_PROBE_<NAME>=off`.
 
 - **`Kong`** — flags `KongPlugin` resources reporting `status.conditions[type=Programmed,status=False]` (the gateway is serving upstream traffic without the intended policy). Critical. Auto-skips when `configuration.konghq.com` CRDs are absent.
 - **`HPAScaling`** — fast-path complement to the v1.8 `CapacityDrift` analyzer: any HPA with `ScalingActive=False` or `AbleToScale=False` *right now* (no grace) is critical. Empty cluster → HEALTHY (no opt-out needed).
@@ -1197,21 +1218,21 @@ Drift-class expansion release. Closes Workstream B of the AI SRE positioning pla
 
 ### Added — three new drift-class analyzers
 
-- **`GitOpsDrift`** (B1, [#69](https://github.com/Bionic-AI-Solutions/cluster-health-autopilot/pull/69)) — Argo CD `Application` out-of-sync / Degraded health + Flux `Kustomization` / `HelmRelease` Ready=False past grace. Reasons matching `*Failed` (BuildFailed, UpgradeFailed, InstallFailed) escalate to critical. 10-minute default grace period (controllers reconcile continuously). Reader ClusterRole extended with read on `argoproj.io/applications`, `kustomize.toolkit.fluxcd.io/kustomizations`, `helm.toolkit.fluxcd.io/helmreleases`. Default ON; flip `analyzers.gitopsDrift.enabled=false` on clusters without Argo/Flux. 15 unit tests.
+- **`GitOpsDrift`** (B1, [#69](https://github.com/srenix-ai/agentic-sre/pull/69)) — Argo CD `Application` out-of-sync / Degraded health + Flux `Kustomization` / `HelmRelease` Ready=False past grace. Reasons matching `*Failed` (BuildFailed, UpgradeFailed, InstallFailed) escalate to critical. 10-minute default grace period (controllers reconcile continuously). Reader ClusterRole extended with read on `argoproj.io/applications`, `kustomize.toolkit.fluxcd.io/kustomizations`, `helm.toolkit.fluxcd.io/helmreleases`. Default ON; flip `analyzers.gitopsDrift.enabled=false` on clusters without Argo/Flux. 15 unit tests.
 
-- **`WorkloadStateDrift`** (B2, [#70](https://github.com/Bionic-AI-Solutions/cluster-health-autopilot/pull/70)) — state-tier health drift the basic "X/Y ready" probe misses. CNPG cluster: non-healthy phase (warning, or critical if failover/failed), follower-degraded-while-phase-healthy (early signal), primary switchover stuck (critical, names both endpoints). StatefulSet ordinal-zero: pod-0 missing while other ordinals running (critical), pod-0 unready while higher ordinals Ready (warning). 5-minute default grace. Default ON; flip `analyzers.workloadStateDrift.enabled=false` to disable. 12 unit tests.
+- **`WorkloadStateDrift`** (B2, [#70](https://github.com/srenix-ai/agentic-sre/pull/70)) — state-tier health drift the basic "X/Y ready" probe misses. CNPG cluster: non-healthy phase (warning, or critical if failover/failed), follower-degraded-while-phase-healthy (early signal), primary switchover stuck (critical, names both endpoints). StatefulSet ordinal-zero: pod-0 missing while other ordinals running (critical), pod-0 unready while higher ordinals Ready (warning). 5-minute default grace. Default ON; flip `analyzers.workloadStateDrift.enabled=false` to disable. 12 unit tests.
 
-- **`RBACDrift`** (B3, [#71](https://github.com/Bionic-AI-Solutions/cluster-health-autopilot/pull/71)) — RBAC posture changes that are audit-relevant. Wildcard verbs in user-defined Role/ClusterRole (warning) — skips system canonical roles (`cluster-admin`, `system:*`) and kube-system / kube-public / kube-node-lease namespaces. Unbound ServiceAccount mounted by a Pod (warning) — skips the `default` SA in every namespace + kube-system Pods. Remediation includes the exact `kubectl create rolebinding` command. Reader ClusterRole extended with read on `rbac.authorization.k8s.io/{roles,rolebindings,clusterroles,clusterrolebindings}` + `core/serviceaccounts`. Default ON; flip `analyzers.rbacDrift.enabled=false` to disable. 12 unit tests.
+- **`RBACDrift`** (B3, [#71](https://github.com/srenix-ai/agentic-sre/pull/71)) — RBAC posture changes that are audit-relevant. Wildcard verbs in user-defined Role/ClusterRole (warning) — skips system canonical roles (`cluster-admin`, `system:*`) and kube-system / kube-public / kube-node-lease namespaces. Unbound ServiceAccount mounted by a Pod (warning) — skips the `default` SA in every namespace + kube-system Pods. Remediation includes the exact `kubectl create rolebinding` command. Reader ClusterRole extended with read on `rbac.authorization.k8s.io/{roles,rolebindings,clusterroles,clusterrolebindings}` + `core/serviceaccounts`. Default ON; flip `analyzers.rbacDrift.enabled=false` to disable. 12 unit tests.
 
 ### Added — chart wiring
 
 - New `analyzers.gitopsDrift.enabled` / `analyzers.workloadStateDrift.enabled` / `analyzers.rbacDrift.enabled` values (all default `true`)
-- New `cha.analyzerToggleEnv` chart helper emits `CHA_ANALYZER_<NAME>=off` env when an analyzer is disabled
+- New `srenix.analyzerToggleEnv` chart helper emits `SRENIX_ANALYZER_<NAME>=off` env when an analyzer is disabled
 - Watcher Deployment + diagnose CronJob both pick up the helper
 
 ### Demo
 
-- `demo/run-demo-v3.sh` (Workstream A4, [#68](https://github.com/Bionic-AI-Solutions/cluster-health-autopilot/pull/68)) — sales/stakeholder walkthrough leading with the AI SRE agent flow rather than the OSS engine bootstrap. T0 narration → T1 fix proposer → T3 vault break-glass → JSONL audit. 510 lines, six narration sections.
+- `demo/run-demo-v3.sh` (Workstream A4, [#68](https://github.com/srenix-ai/agentic-sre/pull/68)) — sales/stakeholder walkthrough leading with the AI SRE agent flow rather than the OSS engine bootstrap. T0 narration → T1 fix proposer → T3 vault break-glass → JSONL audit. 510 lines, six narration sections.
 
 ### Out of scope (deliberately deferred)
 
@@ -1222,9 +1243,9 @@ Drift-class expansion release. Closes Workstream B of the AI SRE positioning pla
 - **GCP + Azure cloud probes** — v1.7+ (`pkg/cloud/{gcp,azure}` scaffolds in place)
 - **Operator port** (controller-runtime / kubebuilder) — v1.7+
 
-### Companion CHA-com release
+### Companion Srenix Enterprise release
 
-CHA-com v1.7.0 (separate repo) lands the C5 stretch: `LLMFixerMatcher` replaces the keyword `DefaultFixerMatcher` switch with an opt-in LLM classification call (`--ai-llm-fixer-matcher`). Same action_kind whitelist, but the decision of which fixer to invoke becomes LLM-driven. Falls back to keyword on LLM error / invalid response — worst case is identical to v1.6 behavior.
+Srenix Enterprise v1.7.0 (separate repo) lands the C5 stretch: `LLMFixerMatcher` replaces the keyword `DefaultFixerMatcher` switch with an opt-in LLM classification call (`--ai-llm-fixer-matcher`). Same action_kind whitelist, but the decision of which fixer to invoke becomes LLM-driven. Falls back to keyword on LLM error / invalid response — worst case is identical to v1.6 behavior.
 
 ---
 
@@ -1251,7 +1272,7 @@ Operator-driven Slack-noise fixes after a stable warning was observed re-posting
 
 ### Added
 - **Per-severity Slack repeat intervals.** New `--slack-critical-repeat-interval`
-  flag on `cha watch` lets operators keep critical alerts loud (e.g. `4h`)
+  flag on `srenix watch` lets operators keep critical alerts loud (e.g. `4h`)
   while letting warnings calm down (e.g. `--slack-repeat-interval=24h`).
   Zero (default) falls back to `--slack-repeat-interval` so pre-v1.6.1
   callers see identical behavior. Chart value:
@@ -1292,26 +1313,26 @@ Sprint 1–4 hardening release. Closes 22/23 items from the 2026-05-22 adversari
   - `CrashLoopBackOff` — generic crash-loop detector for any namespace, replacing the previous behavior where only workloads on the hardcoded critical list were caught. Severity scales: protected-namespace = Critical immediately; user namespaces = Warning until restart count exceeds the configurable threshold (default 10).
   - `ETCD` — watches the static-pod etcd members in `kube-system` (kubeadm convention) for Ready=False or restartCount>0. Honestly reports Warning ("probe is blind") when no in-cluster etcd is found rather than false-greening on managed control planes.
   - `FailedMounts` — joins Pods stuck in ContainerCreating past a 90s grace window with their kubelet `FailedMount` / `FailedAttachVolume` / `ProvisioningFailed` events to name the volume that's stuck and explain why.
-- Configurable Services-probe targets via `CHA_CRITICAL_SERVICES` env var (semicolon-separated `ns/selector|Display` pairs) and the `cha.bionicaisolutions.com/probe-critical: "true"` annotation on any Deployment / StatefulSet. The compiled-in defaults remain the baseline; set `CHA_CRITICAL_SERVICES_REPLACE=true` to fully replace them.
+- Configurable Services-probe targets via `SRENIX_CRITICAL_SERVICES` env var (semicolon-separated `ns/selector|Display` pairs) and the `srenix.ai/probe-critical: "true"` annotation on any Deployment / StatefulSet. The compiled-in defaults remain the baseline; set `SRENIX_CRITICAL_SERVICES_REPLACE=true` to fully replace them.
 - New `IsProtectedNamespace` helper in `internal/probe/` (duplicated from `internal/fix/protected.go` for package isolation; consolidation tracked under Sprint 5).
-- `GVRDaemonSet` exposed by `internal/snapshot/` and wired into both `snapshot.CaptureGVRs` and the watcher's `watchedGVRs` so the new probe sees changes in real time and is captured by `cha snapshot capture`.
-- Per-probe opt-out env vars: `CHA_PROBE_NODE_PRESSURE`, `CHA_PROBE_DAEMONSETS`, `CHA_PROBE_PENDING_PODS`, `CHA_PROBE_CRASHLOOP`, `CHA_PROBE_ETCD`, `CHA_PROBE_FAILED_MOUNTS` (set to `off` to silence individual probes without forking).
-- **Sprint 3 — AI safety hardening (CHA-com paid binary).** Patch-payload semantic validator (`ai/approval/patch_validator.go`) — the closed-enum `ActionKind` whitelist now gates *shape* as well as verbs; LLM-proposed `{"spec":{"replicas":0}}` on a StatefulSet is rejected at admission. Investigation rate limiter (`ai/rate_limit.go::TakeInvestigation`) with per-diagnostic-class budgets, independent from the proposal budget. Cold-start bucket initialization (default 0 tokens) closes the pod-restart burst attack. Hash-chained audit sink (`ai/audit/hash_chain.go`) makes audit-trail tampering detectable via `VerifyChain`. See [CHA-com commits at d38287d..552004b](https://github.com/Bionic-AI-Solutions/CHA-com/commits/main) for the private repo history.
+- `GVRDaemonSet` exposed by `internal/snapshot/` and wired into both `snapshot.CaptureGVRs` and the watcher's `watchedGVRs` so the new probe sees changes in real time and is captured by `srenix snapshot capture`.
+- Per-probe opt-out env vars: `SRENIX_PROBE_NODE_PRESSURE`, `SRENIX_PROBE_DAEMONSETS`, `SRENIX_PROBE_PENDING_PODS`, `SRENIX_PROBE_CRASHLOOP`, `SRENIX_PROBE_ETCD`, `SRENIX_PROBE_FAILED_MOUNTS` (set to `off` to silence individual probes without forking).
+- **Sprint 3 — AI safety hardening (Srenix Enterprise paid binary).** Patch-payload semantic validator (`ai/approval/patch_validator.go`) — the closed-enum `ActionKind` whitelist now gates *shape* as well as verbs; LLM-proposed `{"spec":{"replicas":0}}` on a StatefulSet is rejected at admission. Investigation rate limiter (`ai/rate_limit.go::TakeInvestigation`) with per-diagnostic-class budgets, independent from the proposal budget. Cold-start bucket initialization (default 0 tokens) closes the pod-restart burst attack. Hash-chained audit sink (`ai/audit/hash_chain.go`) makes audit-trail tampering detectable via `VerifyChain`. See [Srenix Enterprise commits at d38287d..552004b](https://github.com/srenix-ai/agentic-sre-enterprise/commits/main) for the private repo history.
 - **Sprint 3.4 — Event-message secret scrubbing in OSS.** New helpers `pkg/ai.RedactEventMessage` and `pkg/ai.RedactEvents` apply both identifier redaction and the existing secret heuristics (AWS access keys, Vault tokens, JWTs, GitHub PATs, Slack tokens) to event `.Message` strings. Wired into `internal/investigator.LiveEnvironment.GetEvents` so any LLM-backed investigator sees scrubbed events.
 - **Sprint 4.1 — Watcher unit tests.** 12 new tests covering `fingerprint()`, `buildCurrentState()`, `diff()`, `updateSeen()` — the dedup logic that previously had zero unit coverage. Brings the watcher package up from 2 to 14 tests, and any future refactor of the seen-map or post-fix-state handling now has a regression net.
 - **Sprint 4.2 — Ticketing flag validation.** `--ticketing-provider=openproject` now fails fast with a descriptive error when `--ticketing-mcp-url`, `--ticketing-project`, or `$TICKETING_MCP_API_KEY` are missing — instead of silently constructing a misconfigured client that errors at first-ticket time.
-- **Sprint 4.3 — Lease-based leader election.** `internal/watcher/leader.go` wraps the watcher loop with `k8s.io/client-go/tools/leaderelection`. Default lease name `cha-watcher` in the install namespace; 30s LeaseDuration / 20s RenewDeadline / 5s RetryPeriod (kube-controller-manager defaults). Two watcher replicas now race for the lease — only the holder runs the probe/fix/post cycle. Set `CHA_LEADER_ELECTION=off` or `watcher.leaderElection.enabled=false` to disable for single-pod dev. New namespace-scoped `Role` for the `cha-watcher` Lease minimizes blast radius. Downward-API env (`MY_POD_NAMESPACE`, `MY_POD_NAME`) wired in the watcher deployment template.
-- **Sprint 4.4 — Multi-registry image default.** Helm chart now pulls `ghcr.io/bionic-ai-solutions/cluster-health-autopilot` by default. `docker4zerocool/cluster-health-autopilot` remains as a mirror (the GoReleaser config publishes to both registries on every tag). Operators who can't reach GHCR continue to work unchanged.
-- **Sprint 4.5 — OSS/paid boundary exerciser.** CHA-com's `catalog/paid.go` now registers a no-op `PaidBoundaryAnalyzer` whose only purpose is to fail the paid build at CI time if the OSS `pkg/diagnose.Analyzer` interface or `pkg/registry.Registry` shape drifts.
+- **Sprint 4.3 — Lease-based leader election.** `internal/watcher/leader.go` wraps the watcher loop with `k8s.io/client-go/tools/leaderelection`. Default lease name `srenix-watcher` in the install namespace; 30s LeaseDuration / 20s RenewDeadline / 5s RetryPeriod (kube-controller-manager defaults). Two watcher replicas now race for the lease — only the holder runs the probe/fix/post cycle. Set `SRENIX_LEADER_ELECTION=off` or `watcher.leaderElection.enabled=false` to disable for single-pod dev. New namespace-scoped `Role` for the `srenix-watcher` Lease minimizes blast radius. Downward-API env (`MY_POD_NAMESPACE`, `MY_POD_NAME`) wired in the watcher deployment template.
+- **Sprint 4.4 — Multi-registry image default.** Helm chart now pulls `ghcr.io/srenix-ai/agentic-sre` by default. `docker4zerocool/agentic-sre` remains as a mirror (the GoReleaser config publishes to both registries on every tag). Operators who can't reach GHCR continue to work unchanged.
+- **Sprint 4.5 — OSS/paid boundary exerciser.** Srenix Enterprise's `catalog/paid.go` now registers a no-op `PaidBoundaryAnalyzer` whose only purpose is to fail the paid build at CI time if the OSS `pkg/diagnose.Analyzer` interface or `pkg/registry.Registry` shape drifts.
 
 ### Changed
 - README architecture section now describes the actual Go-binary-on-distroless image and the three ClusterRoles (reader, remediator, driftreport) — the old description of a bash/jq/curl container and "two ClusterRoles" was inherited from a v0.x iteration.
-- README and `docs/CHA_OVERVIEW.md` clarify that `VaultPathMissing` source code is Apache-2.0 OSS but ships unwired (you supply the Vault client); the paid CHA Enterprise binary auto-wires it.
+- README and `docs/SRENIX_OVERVIEW.md` clarify that `VaultPathMissing` source code is Apache-2.0 OSS but ships unwired (you supply the Vault client); the paid Srenix Enterprise binary auto-wires it.
 - README roadmap section replaced the user-local path with links to `docs/design/`.
 - `docs/FAILURE_MODES.md` analyzer count corrected from "seven" to "eight"; intro now distinguishes "source ships OSS" vs. "auto-wired in paid."
 
 ### Fixed
-- **StuckRSPods** now refuses to `kubectl rollout restart` a Deployment that is GitOps-managed (Argo CD / Flux / Helm via `app.kubernetes.io/managed-by` or the per-controller annotations) or has `spec.paused=true`. Previously CHA would patch the restart annotation and the GitOps controller would revert it on the next reconcile, locking the two into a tight fight loop.
+- **StuckRSPods** now refuses to `kubectl rollout restart` a Deployment that is GitOps-managed (Argo CD / Flux / Helm via `app.kubernetes.io/managed-by` or the per-controller annotations) or has `spec.paused=true`. Previously Srenix would patch the restart annotation and the GitOps controller would revert it on the next reconcile, locking the two into a tight fight loop.
 - **StuckJobsWithBadSecretRef** now fetches the parent CronJob and refuses to delete the broken Job when the CronJob has `spec.suspend=true` (an operator's deliberate freeze) or is GitOps-managed.
 - **StaleErrorPods** now skips Failed pods that are either GitOps-annotated themselves or owned by a GitOps-managed Job. When the owning Job isn't in the captured snapshot the fixer falls back to today's cleanup behavior — orphan Failed pods remain garbage-collectable.
 - **StuckCertificateRequests** now refuses to delete CRs when the cert-manager controller Deployment is captured in the snapshot and reports `readyReplicas=0`. cert-manager cannot recreate them in that state; the deletion would just nuke the diagnostic evidence without enabling retry.
@@ -1341,7 +1362,7 @@ Sprint 1–4 hardening release. Closes 22/23 items from the 2026-05-22 adversari
 ### Added
 - Layer-2 Investigator: read-only deep-dive on CRITICAL findings.
 - OSS ships a deterministic, rule-based investigator (TLS expiry, TLS SAN mismatch, DNS, slow-DNS, status mismatch, ExternalSecret, Certificate state).
-- CHA-com paid binary swaps in an LLM-backed investigator via the same `Environment` interface.
+- Srenix Enterprise paid binary swaps in an LLM-backed investigator via the same `Environment` interface.
 
 ## [1.4.0] — 2026-05-12
 
@@ -1386,7 +1407,7 @@ Sprint 1–4 hardening release. Closes 22/23 items from the 2026-05-22 adversari
 ## [0.9.0] — 2026-05-07
 
 ### Added
-- `cha watch --live` event-driven watcher with Slack dedup (Phase 1).
+- `srenix watch --live` event-driven watcher with Slack dedup (Phase 1).
 
 ---
 

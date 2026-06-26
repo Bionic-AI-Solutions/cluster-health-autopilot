@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package watcher
@@ -18,7 +18,7 @@ import (
 
 // Sprint 4.3 — leader election via client-go's Lease-based primitive.
 //
-// CHA's watcher loop is safe at replicas=1. With replicas>=2, both pods
+// Srenix's watcher loop is safe at replicas=1. With replicas>=2, both pods
 // would race to apply fixes and post duplicate Slack alerts. The chart
 // historically defaulted to one replica with no enforcement; this file
 // adds Lease-based leader election so HA deployments are safe.
@@ -31,10 +31,10 @@ import (
 // LeaderConfig configures the elector. All fields have defaults.
 type LeaderConfig struct {
 	// Namespace is where the coordination.k8s.io/v1.Lease object lives.
-	// Defaults to MY_POD_NAMESPACE (downward API) or "cluster-health-autopilot".
+	// Defaults to MY_POD_NAMESPACE (downward API) or "agentic-sre".
 	Namespace string
 
-	// LeaseName is the Lease object's name. Defaults to "cha-watcher".
+	// LeaseName is the Lease object's name. Defaults to "srenix-watcher".
 	// The Sprint 5 operator port keeps this name so the lease survives.
 	LeaseName string
 
@@ -58,9 +58,9 @@ type LeaderConfig struct {
 	Clientset kubernetes.Interface
 
 	// Disabled bypasses election entirely — RunWithLeader runs the body
-	// immediately without acquiring a lease. Set via CHA_LEADER_ELECTION=off
+	// immediately without acquiring a lease. Set via SRENIX_LEADER_ELECTION=off
 	// or the matching Helm value. Use in single-pod dev or when running
-	// outside K8s (cha snapshot capture, ad-hoc diagnose).
+	// outside K8s (srenix snapshot capture, ad-hoc diagnose).
 	Disabled bool
 }
 
@@ -71,10 +71,10 @@ func (c LeaderConfig) withDefaults() LeaderConfig {
 		out.Namespace = os.Getenv("MY_POD_NAMESPACE")
 	}
 	if out.Namespace == "" {
-		out.Namespace = "cluster-health-autopilot"
+		out.Namespace = "agentic-sre"
 	}
 	if out.LeaseName == "" {
-		out.LeaseName = "cha-watcher"
+		out.LeaseName = "srenix-watcher"
 	}
 	if out.Identity == "" {
 		out.Identity = os.Getenv("MY_POD_NAME")
@@ -86,7 +86,7 @@ func (c LeaderConfig) withDefaults() LeaderConfig {
 		}
 	}
 	if out.Identity == "" {
-		out.Identity = fmt.Sprintf("cha-watcher-%d", time.Now().UnixNano())
+		out.Identity = fmt.Sprintf("srenix-watcher-%d", time.Now().UnixNano())
 	}
 	if out.LeaseDuration == 0 {
 		out.LeaseDuration = 30 * time.Second
@@ -177,9 +177,9 @@ func RunWithLeader(ctx context.Context, cfg LeaderConfig, body func(context.Cont
 	}
 }
 
-// leaderElectionDisabledFromEnv reads CHA_LEADER_ELECTION; "off" returns
-// true. Used by the cha watch command to wire the Disabled flag.
+// leaderElectionDisabledFromEnv reads SRENIX_LEADER_ELECTION; "off" returns
+// true. Used by the srenix watch command to wire the Disabled flag.
 func leaderElectionDisabledFromEnv() bool {
-	v := os.Getenv("CHA_LEADER_ELECTION")
+	v := os.Getenv("SRENIX_LEADER_ELECTION")
 	return v == "off" || v == "false" || v == "0"
 }

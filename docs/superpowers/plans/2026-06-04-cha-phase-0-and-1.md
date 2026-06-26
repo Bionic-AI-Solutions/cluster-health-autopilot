@@ -1,4 +1,4 @@
-# CHA Phase 0 + Phase 1 Implementation Plan
+# Srenix Phase 0 + Phase 1 Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -6,14 +6,14 @@
 
 **Architecture:**
 - Phase 0 is release hygiene — clean-cut PRs against `main` for each fix already in working dev tags, then goreleaser for canonical multi-arch images, then roll cluster.
-- Phase 1 layers 5 independently-shippable features: cha-com→Slack bridge, OSS analyzer placeholder substitution, Forge rate-limiter + workload-key dedup, OpenProject delivery, per-cycle delta render.
-- Every Phase 1 deliverable is additive — no breaking changes to OSS public surface; cha-com side gets new flags (default off where risky).
+- Phase 1 layers 5 independently-shippable features: srenix-enterprise→Slack bridge, OSS analyzer placeholder substitution, Forge rate-limiter + workload-key dedup, OpenProject delivery, per-cycle delta render.
+- Every Phase 1 deliverable is additive — no breaking changes to OSS public surface; srenix-enterprise side gets new flags (default off where risky).
 
 **Tech Stack:**
-- Go 1.26 (cluster-health-autopilot OSS + CHA-com proprietary, two separate repos)
-- Helm 3 chart at `charts/cluster-health-autopilot/`
+- Go 1.26 (agentic-sre OSS + Srenix Enterprise proprietary, two separate repos)
+- Helm 3 chart at `charts/agentic-sre/`
 - Kubernetes operator (controller-runtime) at `internal/operator/`
-- Qdrant for RAG (`bionic-rag` StatefulSet, `cha-rag` collection)
+- Qdrant for RAG (`bionic-rag` StatefulSet, `srenix-rag` collection)
 - GitHub REST API v3 via `ai/forge/forge.go` for PR creation
 - Slack incoming webhooks (write-only) for delivery
 - ExternalSecrets Operator → Vault for secret material
@@ -21,9 +21,9 @@
 - Local docker build + push for dev iteration (per `local-docker-build-iteration` memory)
 
 **Repos involved:**
-- OSS: `/home/skadam/CHA/cluster-health-autopilot` (`Bionic-AI-Solutions/cluster-health-autopilot`)
-- Paid: `/home/skadam/CHA/CHA-com` (`Bionic-AI-Solutions/CHA-com`)
-- Deploy: `/home/skadam/deploy` (`Bionic-AI-Solutions/Deploy`)
+- OSS: `/home/skadam/Srenix/agentic-sre` (`Srenix/agentic-sre`)
+- Paid: `/home/skadam/Srenix/Srenix Enterprise` (`Srenix/Srenix Enterprise`)
+- Deploy: `/home/skadam/deploy` (`Srenix/Deploy`)
 - K8s infrastructure: subdir of Deploy (`/home/skadam/deploy/k8s-infrastructure`)
 
 **Branch convention:** `phase0/<short-desc>` and `phase1/<deliverable>-<sub-desc>` for trackability.
@@ -36,12 +36,12 @@
 
 ### Phase 1 — new modules + their tests:
 
-**cha-com (1.A bridge):**
-- `cmd/cha-com/ai_slack_digest.go` — NEW (~200 LOC). Renderer that produces `🤖 AI Tier Activity` SlackPayload from `proposalRecord[]`. Three sections: Auto-applied (autonomy fired) / Awaiting approval (autonomy declined for safety) / Declined (autonomy declined with reason). Includes chunking + sort to stay under Slack's 40K char attachment cap.
-- `cmd/cha-com/ai_slack_digest_test.go` — NEW (~250 LOC). Six unit tests covering all three sections, chunk-boundary, dedup, and no-activity-no-post behavior.
-- `cmd/cha-com/ai_slack_wiring.go` — NEW (~100 LOC). `aiSlackFlags` struct, `register()`, `buildAISlackPoster()`.
-- `cmd/cha-com/ai_slack_wiring_test.go` — NEW (~80 LOC). Flag-binding + builder tests.
-- `cmd/cha-com/watch_cmd.go` — MODIFY (~30 LOC added). Thread aiSlackPoster into watchLoop; call after autonomy.Consider in tick().
+**srenix-enterprise (1.A bridge):**
+- `cmd/srenix-enterprise/ai_slack_digest.go` — NEW (~200 LOC). Renderer that produces `🤖 AI Tier Activity` SlackPayload from `proposalRecord[]`. Three sections: Auto-applied (autonomy fired) / Awaiting approval (autonomy declined for safety) / Declined (autonomy declined with reason). Includes chunking + sort to stay under Slack's 40K char attachment cap.
+- `cmd/srenix-enterprise/ai_slack_digest_test.go` — NEW (~250 LOC). Six unit tests covering all three sections, chunk-boundary, dedup, and no-activity-no-post behavior.
+- `cmd/srenix-enterprise/ai_slack_wiring.go` — NEW (~100 LOC). `aiSlackFlags` struct, `register()`, `buildAISlackPoster()`.
+- `cmd/srenix-enterprise/ai_slack_wiring_test.go` — NEW (~80 LOC). Flag-binding + builder tests.
+- `cmd/srenix-enterprise/watch_cmd.go` — MODIFY (~30 LOC added). Thread aiSlackPoster into watchLoop; call after autonomy.Consider in tick().
 
 **OSS (1.B placeholders):**
 - `internal/diagnose/capacity_drift.go` — MODIFY (~30 LOC). PVC expansion-stuck remediation looks up StorageClass + branches text based on allowVolumeExpansion.
@@ -52,22 +52,22 @@
 - `internal/diagnose/dns_chain_drift.go` — MODIFY (~20 LOC). Include actual Ingress + Service paths in remediation.
 - `internal/diagnose/dns_chain_drift_test.go` — MODIFY (~25 LOC).
 
-**cha-com (1.C rate-limiter + dedup):**
+**srenix-enterprise (1.C rate-limiter + dedup):**
 - `ai/forge/forge.go` — MODIFY (~80 LOC). Add `RateLimiter` field (golang.org/x/time/rate.Limiter). All HTTP methods acquire 1 token before sending. On HTTP 403 with secondary-rate-limit body: sleep + retry once. On HTTP 429: respect Retry-After header.
 - `ai/forge/forge_test.go` — MODIFY (~80 LOC). Test 100-call burst rate-limited; 403-with-secondary-rate-limit-body retries.
 - `ai/proposer/digest_pin.go` — MODIFY (~25 LOC). Add per-cycle workload-key dedup map. Caller responsibility to reset between cycles.
 - `ai/proposer/digest_pin_test.go` — MODIFY (~40 LOC). Test: 3 calls for same workloadKey → 1 forge interaction.
-- `cmd/cha-com/watch_cmd.go` — MODIFY (~10 LOC). Reset proposer dedup map at top of each tick.
+- `cmd/srenix-enterprise/watch_cmd.go` — MODIFY (~10 LOC). Reset proposer dedup map at top of each tick.
 
-**OSS + CHA Deploy (1.D OpenProject):**
-- `api/v1alpha1/clusterhealthautopilot_types.go` — MODIFY (~20 LOC). Add `spec.ticketing.openProject{url, secretName}`.
+**OSS + Srenix Deploy (1.D OpenProject):**
+- `api/v1alpha1/agenticsre_types.go` — MODIFY (~20 LOC). Add `spec.ticketing.openProject{url, secretName}`.
 - `api/v1alpha1/zz_generated.deepcopy.go` — REGENERATE.
 - `internal/operator/builders.go` — MODIFY (~30 LOC). CR field → deployment env wiring.
-- `charts/cluster-health-autopilot/templates/watcher-deployment.yaml` — MODIFY (~15 LOC). Add env: OPENPROJECT_URL, OPENPROJECT_API_TOKEN.
-- `cmd/cha/main.go` — MODIFY (~15 LOC). Bind --openproject-url + --openproject-token-env flags; instantiate sink.
+- `charts/agentic-sre/templates/watcher-deployment.yaml` — MODIFY (~15 LOC). Add env: OPENPROJECT_URL, OPENPROJECT_API_TOKEN.
+- `cmd/srenix/main.go` — MODIFY (~15 LOC). Bind --openproject-url + --openproject-token-env flags; instantiate sink.
 - `pkg/ticketing/openproject/integration_test.go` — NEW (~150 LOC). Integration test against mock OpenProject server.
-- **External**: `/home/skadam/deploy/k8s-infrastructure/cha-paid-tier/04-externalsecret-cha-openproject.yaml` — NEW. ESO for OpenProject API token.
-- **External Vault**: `vault kv put secret/t6-apps/cha/openproject-config api_token=<user-provided>`.
+- **External**: `/home/skadam/deploy/k8s-infrastructure/srenix-paid-tier/04-externalsecret-srenix-openproject.yaml` — NEW. ESO for OpenProject API token.
+- **External Vault**: `vault kv put secret/t6-apps/srenix/openproject-config api_token=<user-provided>`.
 
 **OSS (1.E per-cycle delta render):**
 - `internal/report/routing.go` — MODIFY (~40 LOC). Add "🆕 New this cycle" section above "⚠️ Diagnostics"; collapse stable findings into summary line.
@@ -87,7 +87,7 @@
 **Source code:** already on local branch `slack-toPostDiags-approval-fields` (verified in 1.18.3-dev1).
 
 **Steps:**
-- [ ] Checkout the existing branch: `git -C /home/skadam/CHA/cluster-health-autopilot checkout slack-toPostDiags-approval-fields`
+- [ ] Checkout the existing branch: `git -C /home/skadam/Srenix/agentic-sre checkout slack-toPostDiags-approval-fields`
 - [ ] Rebase onto latest main: `git pull --rebase origin main`
 - [ ] Push the branch: `git push -u origin slack-toPostDiags-approval-fields`
 - [ ] Open PR via gh: title `feat(watcher): collapse toPostDiags + allActive into seenEntryToDeltaDiag helper`, body explains 2026-06-04 outage diagnosed during session + regression test rationale
@@ -120,24 +120,24 @@
 - [ ] Wait for CI
 - [ ] Merge
 
-### Task 0.4 — Tag + release `cluster-health-autopilot v1.18.3`
+### Task 0.4 — Tag + release `agentic-sre v1.18.3`
 
 **Steps:**
 - [ ] On main, after all three PRs merged: `git tag -a v1.18.3 -m "..."`
 - [ ] Push tag: `git push origin v1.18.3`
 - [ ] Wait for goreleaser run (~80 min). Spawn poller in background.
-- [ ] Verify image: `docker manifest inspect docker4zerocool/cluster-health-autopilot:1.18.3` shows multi-arch list.
+- [ ] Verify image: `docker manifest inspect docker4zerocool/agentic-sre:1.18.3` shows multi-arch list.
 
-### Task 0.5 — Open cha-com PR #D: `fix(ai/memory): paginated Qdrant scroll`
+### Task 0.5 — Open srenix-enterprise PR #D: `fix(ai/memory): paginated Qdrant scroll`
 
-**Source:** dev1 changes already on `/home/skadam/CHA/CHA-com` branch `qdrant-scroll-pagination`.
+**Source:** dev1 changes already on `/home/skadam/Srenix/Srenix Enterprise` branch `qdrant-scroll-pagination`.
 
 **Steps:**
 - [ ] Push + open PR
 - [ ] Wait for CI (~16 min)
 - [ ] Merge
 
-### Task 0.6 — Open cha-com PR #E: `feat(ai/forge): per-forge read cache TTL=5m`
+### Task 0.6 — Open srenix-enterprise PR #E: `feat(ai/forge): per-forge read cache TTL=5m`
 
 **Source:** dev3 changes on local branch `forge-read-cache`.
 
@@ -146,7 +146,7 @@
 - [ ] Wait for CI
 - [ ] Merge
 
-### Task 0.7 — Tag + release `cha-com v1.11.4`
+### Task 0.7 — Tag + release `srenix-enterprise v1.11.4`
 
 **Steps:**
 - [ ] `git tag -a v1.11.4`
@@ -157,32 +157,32 @@
 ### Task 0.8 — Roll cluster to canonical tags
 
 **Steps:**
-- [ ] `helm upgrade cha cha/cluster-health-autopilot --reset-then-reuse-values --version 1.18.3 --set image.tag=1.18.3`
-- [ ] `kubectl patch clusterhealthautopilot/bionic -n cluster-health-autopilot --type=merge --patch='{"spec":{"image":{"tag":"1.18.3"},"ai":{"image":{"tag":"1.11.4"}}}}'`
+- [ ] `helm upgrade srenix srenix/agentic-sre --reset-then-reuse-values --version 1.18.3 --set image.tag=1.18.3`
+- [ ] `kubectl patch agenticsre/bionic -n agentic-sre --type=merge --patch='{"spec":{"image":{"tag":"1.18.3"},"ai":{"image":{"tag":"1.11.4"}}}}'`
 - [ ] Wait for both rollouts (bionic-watcher + bionic-aiwatch)
-- [ ] Verify: `kubectl get deploy -n cluster-health-autopilot -o jsonpath=...` shows all on canonical tags
+- [ ] Verify: `kubectl get deploy -n agentic-sre -o jsonpath=...` shows all on canonical tags
 - [ ] Wait for one cycle to complete; verify ≥1 PR created
 - [ ] Commit + document: add memory entry summarizing the 7 session fixes
 
-**Phase 0 done when:** cluster runs `cluster-health-autopilot:1.18.3` + `cha-com:1.11.4`, all dev tags retired from use, one verification cycle completed cleanly.
+**Phase 0 done when:** cluster runs `agentic-sre:1.18.3` + `srenix-enterprise:1.11.4`, all dev tags retired from use, one verification cycle completed cleanly.
 
 ---
 
 ## Phase 1 — Critical UX Gaps (~3 weeks)
 
-### Deliverable 1.A — cha-com → Slack Bridge
+### Deliverable 1.A — srenix-enterprise → Slack Bridge
 
-**Branch:** `phase1/cha-com-slack-bridge`
+**Branch:** `phase1/srenix-enterprise-slack-bridge`
 
 #### Task 1.A.1 — Write failing test: renderAISlackDigest auto-applied section
-- [ ] Create `cmd/cha-com/ai_slack_digest_test.go` with `TestRenderAISlackDigest_AutoAppliedSectionListsActionedItems`
+- [ ] Create `cmd/srenix-enterprise/ai_slack_digest_test.go` with `TestRenderAISlackDigest_AutoAppliedSectionListsActionedItems`
 - [ ] Test constructs 3 proposalRecords where `Autonomy.AutoApply=true` + `Action.PullRequestURL` set
 - [ ] Asserts payload contains `🔧 Auto-applied (3)` section header
 - [ ] Asserts each proposal's PR URL appears as markdown link
 - [ ] Run test to confirm it fails (helper doesn't exist yet)
 
 #### Task 1.A.2 — Implement renderAISlackDigest minimal scaffold
-- [ ] Create `cmd/cha-com/ai_slack_digest.go`
+- [ ] Create `cmd/srenix-enterprise/ai_slack_digest.go`
 - [ ] Define `SlackPayload` (local, mirrors `internal/report.SlackPayload` shape; CANNOT import OSS internal pkg)
 - [ ] Define `renderAISlackDigest(proposals []proposalRecord) SlackPayload`
 - [ ] Implement auto-applied section only (sufficient to make test 1.A.1 pass)
@@ -230,28 +230,28 @@
 - [ ] Run, all 5 tests pass
 
 #### Task 1.A.11 — Write failing test: wiring
-- [ ] Create `cmd/cha-com/ai_slack_wiring_test.go`
+- [ ] Create `cmd/srenix-enterprise/ai_slack_wiring_test.go`
 - [ ] `TestAISlackFlags_RegisterBindsFlags` — invoke `aiSlackFlags.register(...)` with a captured slice; assert `--ai-slack-url-env` registered
 - [ ] `TestAISlackFlags_BuildPosterFromEnv` — set env, invoke buildAISlackPoster, assert non-nil poster
 - [ ] `TestAISlackFlags_BuildPosterNoEnv_ReturnsNil` — no env → nil poster (feature off)
 - [ ] Run, confirm failure
 
 #### Task 1.A.12 — Implement aiSlackFlags + buildAISlackPoster
-- [ ] Create `cmd/cha-com/ai_slack_wiring.go`
+- [ ] Create `cmd/srenix-enterprise/ai_slack_wiring.go`
 - [ ] Mirror the digestPinFlags pattern
 - [ ] `aiSlackPoster` struct with `webhookURL string` + `Post(ctx, []SlackPayload) error` method
 - [ ] Run, tests pass
 
 #### Task 1.A.13 — Wire into watch_cmd
-- [ ] Modify `cmd/cha-com/watch_cmd.go`:
+- [ ] Modify `cmd/srenix-enterprise/watch_cmd.go`:
   - Add `aiSlackPoster *aiSlackPoster` to watchLoop struct
   - In RunE: bind flags via aiSlackFlags.register; build poster; thread into loop
   - In `tick()` after autonomy.Consider loop: render proposals → poster.Post(payloads); log post outcome
 - [ ] Run full test suite: `go test ./...`
 
 #### Task 1.A.14 — Local build + push dev tag
-- [ ] Build: `CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /tmp/cha-com-1.12.0-dev1 ./cmd/cha-com`
-- [ ] Wrap in distroless: docker build + push `docker4zerocool/cha-com:1.12.0-dev1`
+- [ ] Build: `CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /tmp/srenix-enterprise-1.12.0-dev1 ./cmd/srenix-enterprise`
+- [ ] Wrap in distroless: docker build + push `docker4zerocool/srenix-enterprise:1.12.0-dev1`
 
 #### Task 1.A.15 — Deploy to cluster + verify
 - [ ] Patch CR: `spec.ai.image.tag=1.12.0-dev1` + add `--ai-slack-url-env=SLACK_CRITICAL_URL` to `spec.ai.extraArgs`
@@ -261,7 +261,7 @@
 - [ ] Verify: message contains the 11 PRs from this morning under "Auto-applied"
 
 #### Task 1.A.16 — Open PR + tag canonical release
-- [ ] Open cha-com PR; CHANGELOG entry; CI green; merge
+- [ ] Open srenix-enterprise PR; CHANGELOG entry; CI green; merge
 - [ ] Tag `v1.12.0`; goreleaser (~80 min); deploy
 
 ---
@@ -305,7 +305,7 @@
 **Branch:** `phase1/forge-rate-limiter-and-dedup`
 
 #### Task 1.C.1 — Add rate limiter dependency
-- [ ] Run `go get golang.org/x/time/rate` in cha-com
+- [ ] Run `go get golang.org/x/time/rate` in srenix-enterprise
 - [ ] `go mod tidy`
 - [ ] Commit
 
@@ -350,7 +350,7 @@
 - [ ] Run test, pass
 
 #### Task 1.C.10 — Wire ResetCycle into watch_cmd tick
-- [ ] In `cmd/cha-com/watch_cmd.go::tick()`: at top, call `l.digestPin.ResetCycle()` if non-nil
+- [ ] In `cmd/srenix-enterprise/watch_cmd.go::tick()`: at top, call `l.digestPin.ResetCycle()` if non-nil
 - [ ] Run full test suite
 
 #### Task 1.C.11 — Local build + deploy + verify
@@ -369,18 +369,18 @@
 **Branch:** `phase1/openproject-delivery-live`
 
 **External pre-requisites (USER ACTION REQUIRED before code work):**
-- [ ] User confirms target OpenProject URL (e.g., `https://openproject.bionicaisolutions.com`)
+- [ ] User confirms target OpenProject URL (e.g., `https://openproject.srenix.ai`)
 - [ ] User provisions OpenProject API token (with permission to create work packages in target project)
-- [ ] User stores token: `vault kv put secret/t6-apps/cha/openproject-config api_token=<value>` (uses kv patch if other keys exist)
+- [ ] User stores token: `vault kv put secret/t6-apps/srenix/openproject-config api_token=<value>` (uses kv patch if other keys exist)
 
 #### Task 1.D.1 — Failing test: CR validates openProject sub-spec
-- [ ] In `api/v1alpha1/clusterhealthautopilot_types_test.go`: test that `spec.ticketing.openProject{url, secretName}` validates correctly
+- [ ] In `api/v1alpha1/agenticsre_types_test.go`: test that `spec.ticketing.openProject{url, secretName}` validates correctly
 - [ ] Run, confirm failure (field doesn't exist)
 
 #### Task 1.D.2 — Add openProject sub-spec to CR
-- [ ] Modify `api/v1alpha1/clusterhealthautopilot_types.go` to add ticketing.openProject
+- [ ] Modify `api/v1alpha1/agenticsre_types.go` to add ticketing.openProject
 - [ ] `make generate` (regenerates deepcopy)
-- [ ] Update `bundle/manifests/cha.bionicaisolutions.com_clusterhealthautopilots.yaml` CRD schema
+- [ ] Update `bundle/manifests/srenix.ai_agenticsres.yaml` CRD schema
 - [ ] Run test, pass
 
 #### Task 1.D.3 — Failing test: operator builds watcher with openproject env vars
@@ -391,11 +391,11 @@
 - [ ] Modify `internal/operator/builders.go::buildWatcherDeployment` to add env when openProject configured
 - [ ] Run test, pass
 
-#### Task 1.D.5 — Failing test: cmd/cha binary instantiates OpenProject sink on flag
-- [ ] In a new test for cmd/cha: with --openproject-url + --openproject-token-env set, assert RouteTickets receives a non-nil OpenProject sink
+#### Task 1.D.5 — Failing test: cmd/srenix binary instantiates OpenProject sink on flag
+- [ ] In a new test for cmd/srenix: with --openproject-url + --openproject-token-env set, assert RouteTickets receives a non-nil OpenProject sink
 - [ ] Run, confirm failure
 
-#### Task 1.D.6 — Wire --openproject-* flags in cmd/cha/main.go
+#### Task 1.D.6 — Wire --openproject-* flags in cmd/srenix/main.go
 - [ ] Bind flags via cobra
 - [ ] Instantiate `openproject.NewClient(url, token)` and pass to RouteTickets configuration
 - [ ] Run test, pass
@@ -407,16 +407,16 @@
 - [ ] Run, pass
 
 #### Task 1.D.8 — Helm chart updates
-- [ ] Modify `charts/cluster-health-autopilot/templates/watcher-deployment.yaml` to include OPENPROJECT_URL + OPENPROJECT_API_TOKEN env vars (from secretKeyRef)
+- [ ] Modify `charts/agentic-sre/templates/watcher-deployment.yaml` to include OPENPROJECT_URL + OPENPROJECT_API_TOKEN env vars (from secretKeyRef)
 - [ ] Update chart values.yaml with default off + documentation
 
 #### Task 1.D.9 — Provision ESO in user's k8s-infrastructure
-- [ ] Create `/home/skadam/deploy/k8s-infrastructure/cha-paid-tier/04-externalsecret-cha-openproject.yaml`
-- [ ] Wire to `secret/t6-apps/cha/openproject-config` Vault path
+- [ ] Create `/home/skadam/deploy/k8s-infrastructure/srenix-paid-tier/04-externalsecret-srenix-openproject.yaml`
+- [ ] Wire to `secret/t6-apps/srenix/openproject-config` Vault path
 - [ ] `kubectl apply`; verify ESO sync ready
 
 #### Task 1.D.10 — Patch CR to enable
-- [ ] `kubectl patch clusterhealthautopilot/bionic ... --patch '{"spec":{"ticketing":{"openProject":{"url":"...","secretName":"cha-openproject-token"}}}}'`
+- [ ] `kubectl patch agenticsre/bionic ... --patch '{"spec":{"ticketing":{"openProject":{"url":"...","secretName":"srenix-openproject-token"}}}}'`
 - [ ] Wait rollout
 
 #### Task 1.D.11 — Live verification
@@ -466,7 +466,7 @@
 - [ ] Run test, pass
 
 #### Task 1.E.8 — Local build + deploy + verify
-- [ ] Build cluster-health-autopilot dev tag
+- [ ] Build agentic-sre dev tag
 - [ ] Deploy; wait 2 cycles
 - [ ] Verify: cycle 1 message has clear "🆕 New" section; cycle 2 (no changes) shows compact "no change" digest
 - [ ] User feedback: confirm signal:noise ratio improved
@@ -504,7 +504,7 @@ Each deliverable is independently revertable:
 - HA aiwatch
 - Grafana dashboards
 - 15 new analyzers
-- Auto-merge of CHA PRs
+- Auto-merge of Srenix PRs
 - "Approve + remember class" workflow
 - "Ignore via click" workflow
 

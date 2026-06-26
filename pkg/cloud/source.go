@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 // Package cloud is the cloud-API counterpart to pkg/snapshot. A
@@ -12,7 +12,7 @@
 // pkg/cloud/gcp, pkg/cloud/azure) and wrap the official Go SDKs.
 //
 // Mode reports whether the source is backed by a live cloud API
-// session or a snapshot bundle captured via `cha snapshot capture
+// session or a snapshot bundle captured via `srenix snapshot capture
 // --include-cloud`. Probes treat snapshot mode as point-in-time: the
 // captured-at timestamp is surfaced in DriftReport messages so
 // operators see "as of …" context for cloud findings.
@@ -23,9 +23,9 @@
 package cloud
 
 import (
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/cloud/aws"
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/cloud/azure"
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/cloud/gcp"
+	"github.com/srenix-ai/agentic-sre/pkg/cloud/aws"
+	"github.com/srenix-ai/agentic-sre/pkg/cloud/azure"
+	"github.com/srenix-ai/agentic-sre/pkg/cloud/gcp"
 )
 
 // Source is the cloud-API counterpart to snapshot.Source. Probes call

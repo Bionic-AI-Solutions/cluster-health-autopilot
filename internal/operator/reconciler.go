@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package operator
@@ -7,7 +7,7 @@ import (
 	"context"
 	"fmt"
 
-	chav1alpha1 "github.com/Bionic-AI-Solutions/cluster-health-autopilot/api/v1alpha1"
+	chav1alpha1 "github.com/srenix-ai/agentic-sre/api/v1alpha1"
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -24,14 +24,14 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
-// Reconciler reconciles a ClusterHealthAutopilot CR into the
+// Reconciler reconciles a AgenticSRE CR into the
 // workloads the existing chart-managed install also produces:
 // ServiceAccount, watcher Deployment, diagnose CronJob, remediate
 // CronJob.
 //
 // Phase 1b deliberately ships *only* the lifecycle manager — the
 // controller never runs probes / analyzers / fixers itself. The
-// existing `cmd/cha` binary running inside the watcher Deployment is
+// existing `cmd/srenix` binary running inside the watcher Deployment is
 // the loop. The operator's job is to make sure the workload is
 // shaped according to the CR.
 //
@@ -53,7 +53,7 @@ import (
 // migration when adopting the operator on top of a chart-managed
 // install. CreateOrUpdate keeps the cutover boring: existing chart
 // installs aren't disturbed unless an operator explicitly creates
-// a ClusterHealthAutopilot CR, in which case the controller takes
+// a AgenticSRE CR, in which case the controller takes
 // over the named resources.
 type Reconciler struct {
 	client.Client
@@ -63,12 +63,12 @@ type Reconciler struct {
 // Reconcile is the controller-runtime entrypoint. Signature is
 // pinned by the framework.
 func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	log := log.FromContext(ctx).WithValues("clusterhealthautopilot", req.NamespacedName)
+	log := log.FromContext(ctx).WithValues("agenticsre", req.NamespacedName)
 
 	// 1. Fetch the CR. Tolerate NotFound — that's the normal
 	// post-delete reconcile (owner-refs have already cleaned up
 	// children).
-	var cr chav1alpha1.ClusterHealthAutopilot
+	var cr chav1alpha1.AgenticSRE
 	if err := r.Get(ctx, req.NamespacedName, &cr); err != nil {
 		if apierrors.IsNotFound(err) {
 			return ctrl.Result{}, nil
@@ -114,7 +114,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		return ctrl.Result{}, r.updateStatus(ctx, &cr)
 	}
 	if AIEnabled(&cr) {
-		// Mirror the chart's `required` directives for `cha.aiArgs`.
+		// Mirror the chart's `required` directives for `srenix.aiArgs`.
 		// Better to fail fast here than to ship the aiwatch with an
 		// empty --ai-endpoint / --ai-model and CrashLoopBackoff.
 		if cr.Spec.AI.Endpoint == "" {
@@ -222,7 +222,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 
 // reconcileServiceAccount ensures the SA the workloads reference
 // exists. The owner-ref makes the CR's deletion cascade clean it up.
-func (r *Reconciler) reconcileServiceAccount(ctx context.Context, cr *chav1alpha1.ClusterHealthAutopilot) error {
+func (r *Reconciler) reconcileServiceAccount(ctx context.Context, cr *chav1alpha1.AgenticSRE) error {
 	// BYO ServiceAccount: when the CR pins spec.serviceAccountName the
 	// operator must NOT create or own that SA — it belongs to the
 	// caller (typically the chart's reader-bound SA, which already
@@ -254,7 +254,7 @@ func (r *Reconciler) reconcileServiceAccount(ctx context.Context, cr *chav1alpha
 // Neither object carries an ownerRef back to the CR — they're cluster-
 // scoped, and Kubernetes drops namespaced ownerRefs on cluster-scoped
 // children. Cleanup runs through the finalizer (see finalizeReaderRBAC).
-func (r *Reconciler) reconcileReaderRBAC(ctx context.Context, cr *chav1alpha1.ClusterHealthAutopilot) error {
+func (r *Reconciler) reconcileReaderRBAC(ctx context.Context, cr *chav1alpha1.AgenticSRE) error {
 	// 1. Shared ClusterRole — create-or-update idempotently. Survives
 	//    every CR delete on purpose (other CRs may still reference it).
 	desiredRole := BuildReaderClusterRole()
@@ -288,7 +288,7 @@ func (r *Reconciler) reconcileReaderRBAC(ctx context.Context, cr *chav1alpha1.Cl
 // binding when AI/approval is enabled. Both bindings are cluster-scoped
 // and labeled with ManagedByCRLabel, so the same defense-in-depth check
 // applies.
-func (r *Reconciler) finalizeReaderRBAC(ctx context.Context, cr *chav1alpha1.ClusterHealthAutopilot) error {
+func (r *Reconciler) finalizeReaderRBAC(ctx context.Context, cr *chav1alpha1.AgenticSRE) error {
 	bindingNames := []string{
 		ReaderClusterRoleBindingName(cr),
 		ApprovalFixerClusterRoleBindingName(cr),
@@ -343,7 +343,7 @@ func (r *Reconciler) finalizeReaderRBAC(ctx context.Context, cr *chav1alpha1.Clu
 // reconcileWatcher creates / updates / deletes the watcher
 // Deployment based on Spec.Watcher, plus the class-E webhook
 // receiver Service when spec.watcher.triggers.webhook.serviceEnabled.
-func (r *Reconciler) reconcileWatcher(ctx context.Context, cr *chav1alpha1.ClusterHealthAutopilot) error {
+func (r *Reconciler) reconcileWatcher(ctx context.Context, cr *chav1alpha1.AgenticSRE) error {
 	desired := BuildWatcherDeployment(cr)
 	name := NamesFor(cr).Watcher
 	svcName := WebhookServiceNameFor(cr)
@@ -392,7 +392,7 @@ func (r *Reconciler) reconcileWatcher(ctx context.Context, cr *chav1alpha1.Clust
 }
 
 // reconcileDiagnose creates / updates / deletes the diagnose CronJob.
-func (r *Reconciler) reconcileDiagnose(ctx context.Context, cr *chav1alpha1.ClusterHealthAutopilot) error {
+func (r *Reconciler) reconcileDiagnose(ctx context.Context, cr *chav1alpha1.AgenticSRE) error {
 	desired := BuildDiagnoseCronJob(cr)
 	name := NamesFor(cr).Diagnose
 	if desired == nil {
@@ -414,7 +414,7 @@ func (r *Reconciler) reconcileDiagnose(ctx context.Context, cr *chav1alpha1.Clus
 
 // reconcileRemediate creates / updates / deletes the remediate
 // CronJob. Same shape as diagnose.
-func (r *Reconciler) reconcileRemediate(ctx context.Context, cr *chav1alpha1.ClusterHealthAutopilot) error {
+func (r *Reconciler) reconcileRemediate(ctx context.Context, cr *chav1alpha1.AgenticSRE) error {
 	desired := BuildRemediateCronJob(cr)
 	name := NamesFor(cr).Remediate
 	if desired == nil {
@@ -434,7 +434,7 @@ func (r *Reconciler) reconcileRemediate(ctx context.Context, cr *chav1alpha1.Clu
 	})
 }
 
-// reconcileAIWatch creates / updates / deletes the CHA-com aiwatch
+// reconcileAIWatch creates / updates / deletes the Srenix Enterprise aiwatch
 // Deployment based on Spec.AI. Mirrors reconcileWatcher.
 //
 // Phase 2: the aiwatch container is the AI-companion to the OSS
@@ -442,7 +442,7 @@ func (r *Reconciler) reconcileRemediate(ctx context.Context, cr *chav1alpha1.Clu
 // recommendation-only AI tiers against new diagnostics. Enabling AI
 // is purely additive — the OSS watcher Deployment and the diagnose /
 // remediate CronJobs keep running independently.
-func (r *Reconciler) reconcileAIWatch(ctx context.Context, cr *chav1alpha1.ClusterHealthAutopilot) error {
+func (r *Reconciler) reconcileAIWatch(ctx context.Context, cr *chav1alpha1.AgenticSRE) error {
 	desired := BuildAIWatchDeployment(cr)
 	name := NamesFor(cr).AIWatch
 	if desired == nil {
@@ -498,7 +498,7 @@ func (r *Reconciler) reconcileAIWatch(ctx context.Context, cr *chav1alpha1.Clust
 // idempotent — once created, never regenerated. Replicas of the
 // operator reading the same Secret produce the same JWT verification
 // behavior.
-func (r *Reconciler) reconcileApprovalServer(ctx context.Context, cr *chav1alpha1.ClusterHealthAutopilot) error {
+func (r *Reconciler) reconcileApprovalServer(ctx context.Context, cr *chav1alpha1.AgenticSRE) error {
 	ns := cr.Namespace
 	name := ApprovalServerName(cr)
 
@@ -701,7 +701,7 @@ func (r *Reconciler) reconcileApprovalServer(ctx context.Context, cr *chav1alpha
 // the first reconcile and leaves it alone after. The operator MUST NOT
 // regenerate the keypair on subsequent reconciles — every outstanding
 // approval JWT (signed by the previous key) would become unverifiable.
-func (r *Reconciler) reconcileSigningKeySecret(ctx context.Context, cr *chav1alpha1.ClusterHealthAutopilot) error {
+func (r *Reconciler) reconcileSigningKeySecret(ctx context.Context, cr *chav1alpha1.AgenticSRE) error {
 	name := ApprovalSigningKeySecretName(cr)
 	var existing corev1.Secret
 	err := r.Get(ctx, types.NamespacedName{Namespace: cr.Namespace, Name: name}, &existing)
@@ -746,7 +746,7 @@ func (r *Reconciler) reconcileSigningKeySecret(ctx context.Context, cr *chav1alp
 // — the only safe in-place mutations are spec.{replicas,template,
 // updateStrategy,minReadySeconds}. So the Update path explicitly
 // overwrites just those.
-func (r *Reconciler) reconcileQdrant(ctx context.Context, cr *chav1alpha1.ClusterHealthAutopilot) error {
+func (r *Reconciler) reconcileQdrant(ctx context.Context, cr *chav1alpha1.AgenticSRE) error {
 	ns := cr.Namespace
 	name := NamesFor(cr).RAG
 
@@ -835,7 +835,7 @@ func (r *Reconciler) deleteIfExists(ctx context.Context, obj client.Object, name
 
 // computeConditions sets the two stable conditions Phase 1 documents
 // in the CRD's printer columns: Ready + WatcherRunning.
-func (r *Reconciler) computeConditions(ctx context.Context, cr *chav1alpha1.ClusterHealthAutopilot, firstErr error) {
+func (r *Reconciler) computeConditions(ctx context.Context, cr *chav1alpha1.AgenticSRE, firstErr error) {
 	// WatcherRunning — read the live Deployment's status.
 	var watcherStatus metav1.ConditionStatus
 	var watcherReason, watcherMsg string
@@ -1111,12 +1111,12 @@ func bindingTargetsSA(b *rbacv1.ClusterRoleBinding, saName, saNamespace string) 
 }
 
 // markReady is the validation-short-circuit helper.
-func (r *Reconciler) markReady(cr *chav1alpha1.ClusterHealthAutopilot, status metav1.ConditionStatus, reason, msg string) {
+func (r *Reconciler) markReady(cr *chav1alpha1.AgenticSRE, status metav1.ConditionStatus, reason, msg string) {
 	setCondition(&cr.Status, chav1alpha1.ConditionReady, status, reason, msg, cr.Generation)
 }
 
 // updateStatus pushes the in-memory status back to the apiserver.
-func (r *Reconciler) updateStatus(ctx context.Context, cr *chav1alpha1.ClusterHealthAutopilot) error {
+func (r *Reconciler) updateStatus(ctx context.Context, cr *chav1alpha1.AgenticSRE) error {
 	return r.Status().Update(ctx, cr)
 }
 
@@ -1127,7 +1127,7 @@ func (r *Reconciler) updateStatus(ctx context.Context, cr *chav1alpha1.ClusterHe
 // adds Ingress (approval-server, optional).
 func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&chav1alpha1.ClusterHealthAutopilot{}, builder.WithPredicates()).
+		For(&chav1alpha1.AgenticSRE{}, builder.WithPredicates()).
 		Owns(&corev1.ServiceAccount{}).
 		Owns(&corev1.Service{}).
 		Owns(&corev1.Secret{}).
@@ -1141,7 +1141,7 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 }
 
 // setCondition upserts the named condition on the status.
-func setCondition(s *chav1alpha1.ClusterHealthAutopilotStatus, condType string, status metav1.ConditionStatus, reason, msg string, gen int64) {
+func setCondition(s *chav1alpha1.AgenticSREStatus, condType string, status metav1.ConditionStatus, reason, msg string, gen int64) {
 	now := metav1.Now()
 	for i := range s.Conditions {
 		if s.Conditions[i].Type == condType {
@@ -1192,6 +1192,6 @@ func mergeLabels(meta *metav1.ObjectMeta, desired map[string]string) {
 
 // controllerutilSetOwnerRef sets the CR as the owner of the child.
 // Wrapper isolates the controllerutil import to one place.
-func controllerutilSetOwnerRef(cr *chav1alpha1.ClusterHealthAutopilot, child client.Object, scheme *runtime.Scheme) error {
+func controllerutilSetOwnerRef(cr *chav1alpha1.AgenticSRE, child client.Object, scheme *runtime.Scheme) error {
 	return controllerutilHelper(cr, child, scheme)
 }

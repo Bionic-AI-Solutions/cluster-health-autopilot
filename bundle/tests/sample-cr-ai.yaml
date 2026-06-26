@@ -4,7 +4,7 @@
 # (aiwatch Deployment, approval-server SA/Deployment/Service/Secret, fixer
 # ClusterRoleBinding, signing-key Secret) without errors. We do NOT wait
 # for these pods to reach Ready=True because the smoke image is the OSS
-# binary, not the cha-com binary the AI tier needs. What we DO verify:
+# binary, not the srenix-enterprise binary the AI tier needs. What we DO verify:
 #   - All objects are created (kubectl get)
 #   - signing-key Secret has both PEM keys
 #   - ApprovalServerReady condition exists (even as False/NoAvailableReplicas
@@ -13,16 +13,16 @@
 #     inmemory backend is valid)
 #
 # The approval-server endpoint URL below points at the in-cluster OSS
-# watcher Service — the cha-com binary won't start (wrong image), but the
+# watcher Service — the srenix-enterprise binary won't start (wrong image), but the
 # operator only needs the endpoint field to be non-empty for validation.
-apiVersion: cha.bionicaisolutions.com/v1alpha1
-kind: ClusterHealthAutopilot
+apiVersion: srenix.ai/v1alpha1
+kind: AgenticSRE
 metadata:
   name: smoke-ai
-  namespace: cha-system
+  namespace: srenix-system
 spec:
   image:
-    repository: cluster-health-autopilot
+    repository: agentic-sre
     tag: "smoke"
     pullPolicy: IfNotPresent
   watcher:
@@ -36,7 +36,7 @@ spec:
     # endpoint + model are required when ai.enabled=true. The aiwatch
     # container will not successfully call this (wrong binary), but the
     # operator needs valid values to pass reconciler validation.
-    endpoint: "http://smoke-ai-watcher.cha-system.svc:8000/v1"
+    endpoint: "http://smoke-ai-watcher.srenix-system.svc:8000/v1"
     model: "smoke-model"
     interval: "3600s"
   approval:

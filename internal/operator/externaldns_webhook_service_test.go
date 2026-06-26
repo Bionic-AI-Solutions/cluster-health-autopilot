@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package operator
@@ -7,7 +7,7 @@ import (
 	"context"
 	"testing"
 
-	chav1alpha1 "github.com/Bionic-AI-Solutions/cluster-health-autopilot/api/v1alpha1"
+	chav1alpha1 "github.com/srenix-ai/agentic-sre/api/v1alpha1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -17,16 +17,16 @@ import (
 // P1.5 — spec.externalDNS.cloudflare.* and
 // spec.watcher.triggers.webhook.{serviceEnabled,servicePort} were
 // accepted by the CRD schema but consumed nowhere in the operator:
-// catalog.go reads CHA_CLOUDFLARE_TOKEN at registration time but
+// catalog.go reads SRENIX_CLOUDFLARE_TOKEN at registration time but
 // nothing supplied it on operator-managed installs, and the webhook
 // receiver was reachable only by pod IP because no Service and no
 // containerPort were ever built. These tests pin the wiring.
 
-// --- spec.externalDNS → CHA_CLOUDFLARE_TOKEN env ---
+// --- spec.externalDNS → SRENIX_CLOUDFLARE_TOKEN env ---
 
 // externalDNSCR returns a watcher-enabled CR with Cloudflare DNS
 // drift enabled and a token Secret reference.
-func externalDNSCR() *chav1alpha1.ClusterHealthAutopilot {
+func externalDNSCR() *chav1alpha1.AgenticSRE {
 	cr := sampleCR()
 	cr.Spec.Watcher = &chav1alpha1.WatcherSpec{Enabled: true}
 	cr.Spec.ExternalDNS = &chav1alpha1.ExternalDNSSpec{
@@ -52,16 +52,16 @@ func findEnv(env []corev1.EnvVar, name string) *corev1.EnvVar {
 func TestBuildWatcherDeployment_ExternalDNSCloudflareEnv_DefaultKey(t *testing.T) {
 	cr := externalDNSCR()
 	d := BuildWatcherDeployment(cr)
-	e := findEnv(d.Spec.Template.Spec.Containers[0].Env, "CHA_CLOUDFLARE_TOKEN")
+	e := findEnv(d.Spec.Template.Spec.Containers[0].Env, "SRENIX_CLOUDFLARE_TOKEN")
 	if e == nil {
-		t.Fatalf("externalDNS.cloudflare.enabled must inject CHA_CLOUDFLARE_TOKEN; env=%+v",
+		t.Fatalf("externalDNS.cloudflare.enabled must inject SRENIX_CLOUDFLARE_TOKEN; env=%+v",
 			d.Spec.Template.Spec.Containers[0].Env)
 	}
 	if e.Value != "" {
-		t.Errorf("CHA_CLOUDFLARE_TOKEN must NEVER carry a literal value; got %q", e.Value)
+		t.Errorf("SRENIX_CLOUDFLARE_TOKEN must NEVER carry a literal value; got %q", e.Value)
 	}
 	if e.ValueFrom == nil || e.ValueFrom.SecretKeyRef == nil {
-		t.Fatalf("CHA_CLOUDFLARE_TOKEN must use secretKeyRef; got %+v", e)
+		t.Fatalf("SRENIX_CLOUDFLARE_TOKEN must use secretKeyRef; got %+v", e)
 	}
 	if got := e.ValueFrom.SecretKeyRef.Name; got != "cloudflare-token-secret" {
 		t.Errorf("secretKeyRef.Name=%q want cloudflare-token-secret", got)
@@ -76,9 +76,9 @@ func TestBuildWatcherDeployment_ExternalDNSCloudflareEnv_ExplicitKey(t *testing.
 	cr := externalDNSCR()
 	cr.Spec.ExternalDNS.Cloudflare.APITokenSecretRef.Key = "cf-api-token"
 	d := BuildWatcherDeployment(cr)
-	e := findEnv(d.Spec.Template.Spec.Containers[0].Env, "CHA_CLOUDFLARE_TOKEN")
+	e := findEnv(d.Spec.Template.Spec.Containers[0].Env, "SRENIX_CLOUDFLARE_TOKEN")
 	if e == nil {
-		t.Fatal("expected CHA_CLOUDFLARE_TOKEN env var")
+		t.Fatal("expected SRENIX_CLOUDFLARE_TOKEN env var")
 	}
 	if got := e.ValueFrom.SecretKeyRef.Key; got != "cf-api-token" {
 		t.Errorf("secretKeyRef.Key=%q want cf-api-token", got)
@@ -91,16 +91,16 @@ func TestBuildWatcherDeployment_ExternalDNSDisabled_NoEnv(t *testing.T) {
 	cr := externalDNSCR()
 	cr.Spec.ExternalDNS.Cloudflare.Enabled = false
 	d := BuildWatcherDeployment(cr)
-	if e := findEnv(d.Spec.Template.Spec.Containers[0].Env, "CHA_CLOUDFLARE_TOKEN"); e != nil {
-		t.Errorf("cloudflare.enabled=false must not inject CHA_CLOUDFLARE_TOKEN; got %+v", e)
+	if e := findEnv(d.Spec.Template.Spec.Containers[0].Env, "SRENIX_CLOUDFLARE_TOKEN"); e != nil {
+		t.Errorf("cloudflare.enabled=false must not inject SRENIX_CLOUDFLARE_TOKEN; got %+v", e)
 	}
 
 	// Nil stanza — legacy CRs stay byte-identical.
 	cr2 := sampleCR()
 	cr2.Spec.Watcher = &chav1alpha1.WatcherSpec{Enabled: true}
 	d2 := BuildWatcherDeployment(cr2)
-	if e := findEnv(d2.Spec.Template.Spec.Containers[0].Env, "CHA_CLOUDFLARE_TOKEN"); e != nil {
-		t.Errorf("nil externalDNS must not inject CHA_CLOUDFLARE_TOKEN; got %+v", e)
+	if e := findEnv(d2.Spec.Template.Spec.Containers[0].Env, "SRENIX_CLOUDFLARE_TOKEN"); e != nil {
+		t.Errorf("nil externalDNS must not inject SRENIX_CLOUDFLARE_TOKEN; got %+v", e)
 	}
 }
 
@@ -110,7 +110,7 @@ func TestBuildWatcherDeployment_ExternalDNSEnabledWithoutRef_NoEnv(t *testing.T)
 	cr := externalDNSCR()
 	cr.Spec.ExternalDNS.Cloudflare.APITokenSecretRef = nil
 	d := BuildWatcherDeployment(cr)
-	if e := findEnv(d.Spec.Template.Spec.Containers[0].Env, "CHA_CLOUDFLARE_TOKEN"); e != nil {
+	if e := findEnv(d.Spec.Template.Spec.Containers[0].Env, "SRENIX_CLOUDFLARE_TOKEN"); e != nil {
 		t.Errorf("enabled without apiTokenSecretRef must not inject env; got %+v", e)
 	}
 }
@@ -119,7 +119,7 @@ func TestBuildWatcherDeployment_ExternalDNSEnabledWithoutRef_NoEnv(t *testing.T)
 
 // webhookCR returns a watcher-enabled CR with the class-E webhook
 // receiver listening and its Service rendered.
-func webhookCR() *chav1alpha1.ClusterHealthAutopilot {
+func webhookCR() *chav1alpha1.AgenticSRE {
 	cr := sampleCR()
 	cr.Spec.Watcher = &chav1alpha1.WatcherSpec{
 		Enabled: true,
@@ -192,8 +192,8 @@ func TestBuildWatcherWebhookService_BasicShape(t *testing.T) {
 	if svc.Name != "bionic-webhook" {
 		t.Errorf("name=%q want bionic-webhook (chart: <fullname>-webhook)", svc.Name)
 	}
-	if svc.Namespace != "cha-system" {
-		t.Errorf("namespace=%q want cha-system", svc.Namespace)
+	if svc.Namespace != "srenix-system" {
+		t.Errorf("namespace=%q want srenix-system", svc.Namespace)
 	}
 	if svc.Spec.Type != corev1.ServiceTypeClusterIP {
 		t.Errorf("type=%q want ClusterIP", svc.Spec.Type)
@@ -207,8 +207,8 @@ func TestBuildWatcherWebhookService_BasicShape(t *testing.T) {
 				k, svc.Spec.Selector[k], v)
 		}
 	}
-	if svc.Labels["cha.bionicaisolutions.com/role"] != "watcher-webhook" {
-		t.Errorf("role label=%q want watcher-webhook", svc.Labels["cha.bionicaisolutions.com/role"])
+	if svc.Labels["srenix.ai/role"] != "watcher-webhook" {
+		t.Errorf("role label=%q want watcher-webhook", svc.Labels["srenix.ai/role"])
 	}
 	if len(svc.Spec.Ports) != 1 {
 		t.Fatalf("want exactly 1 port; got %+v", svc.Spec.Ports)
@@ -281,7 +281,7 @@ func TestReconcile_WebhookServiceEnabled_CreatesService(t *testing.T) {
 
 	var svc corev1.Service
 	if err := c.Get(context.Background(),
-		types.NamespacedName{Namespace: "cha-system", Name: "bionic-webhook"},
+		types.NamespacedName{Namespace: "srenix-system", Name: "bionic-webhook"},
 		&svc); err != nil {
 		t.Fatalf("webhook Service not created: %v", err)
 	}
@@ -291,7 +291,7 @@ func TestReconcile_WebhookServiceEnabled_CreatesService(t *testing.T) {
 	// Owner-ref'd to the CR so deletion cascades.
 	found := false
 	for _, ref := range svc.OwnerReferences {
-		if ref.Kind == "ClusterHealthAutopilot" && ref.Name == "bionic" {
+		if ref.Kind == "AgenticSRE" && ref.Name == "bionic" {
 			found = true
 		}
 	}
@@ -308,7 +308,7 @@ func TestReconcile_WebhookServiceDisabled_NoService(t *testing.T) {
 
 	var svc corev1.Service
 	err := c.Get(context.Background(),
-		types.NamespacedName{Namespace: "cha-system", Name: "bionic-webhook"},
+		types.NamespacedName{Namespace: "srenix-system", Name: "bionic-webhook"},
 		&svc)
 	if !apierrors.IsNotFound(err) {
 		t.Errorf("expected NotFound for serviceEnabled=false; got err=%v", err)
@@ -322,9 +322,9 @@ func TestReconcile_WebhookServiceFlipOff_DeletesService(t *testing.T) {
 	reconcileOnce(t, r, cr)
 
 	// Flip serviceEnabled off.
-	var stored chav1alpha1.ClusterHealthAutopilot
+	var stored chav1alpha1.AgenticSRE
 	if err := c.Get(context.Background(),
-		types.NamespacedName{Namespace: "cha-system", Name: "bionic"},
+		types.NamespacedName{Namespace: "srenix-system", Name: "bionic"},
 		&stored); err != nil {
 		t.Fatalf("get cr: %v", err)
 	}
@@ -337,7 +337,7 @@ func TestReconcile_WebhookServiceFlipOff_DeletesService(t *testing.T) {
 
 	var svc corev1.Service
 	err := c.Get(context.Background(),
-		types.NamespacedName{Namespace: "cha-system", Name: "bionic-webhook"},
+		types.NamespacedName{Namespace: "srenix-system", Name: "bionic-webhook"},
 		&svc)
 	if !apierrors.IsNotFound(err) {
 		t.Errorf("webhook Service not deleted after serviceEnabled flip-off; got err=%v", err)
@@ -351,16 +351,16 @@ func TestReconcile_ExternalDNSEnabled_WatcherDeploymentHasEnv(t *testing.T) {
 
 	var dep appsv1.Deployment
 	if err := c.Get(context.Background(),
-		types.NamespacedName{Namespace: "cha-system", Name: "bionic-watcher"},
+		types.NamespacedName{Namespace: "srenix-system", Name: "bionic-watcher"},
 		&dep); err != nil {
 		t.Fatalf("get watcher deployment: %v", err)
 	}
-	e := findEnv(dep.Spec.Template.Spec.Containers[0].Env, "CHA_CLOUDFLARE_TOKEN")
+	e := findEnv(dep.Spec.Template.Spec.Containers[0].Env, "SRENIX_CLOUDFLARE_TOKEN")
 	if e == nil {
-		t.Fatal("reconciled watcher Deployment missing CHA_CLOUDFLARE_TOKEN env")
+		t.Fatal("reconciled watcher Deployment missing SRENIX_CLOUDFLARE_TOKEN env")
 	}
 	if e.ValueFrom == nil || e.ValueFrom.SecretKeyRef == nil ||
 		e.ValueFrom.SecretKeyRef.Name != "cloudflare-token-secret" {
-		t.Errorf("CHA_CLOUDFLARE_TOKEN must be a secretKeyRef to cloudflare-token-secret; got %+v", e)
+		t.Errorf("SRENIX_CLOUDFLARE_TOKEN must be a secretKeyRef to cloudflare-token-secret; got %+v", e)
 	}
 }

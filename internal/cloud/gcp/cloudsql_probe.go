@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 // Package gcp contains the GCP implementation of the cloud probe
@@ -12,9 +12,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/cloud"
-	pkggcp "github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/cloud/gcp"
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/probe"
+	"github.com/srenix-ai/agentic-sre/pkg/cloud"
+	pkggcp "github.com/srenix-ai/agentic-sre/pkg/cloud/gcp"
+	"github.com/srenix-ai/agentic-sre/pkg/probe"
 )
 
 // CloudSQL reports drift on GCP Cloud SQL instances:

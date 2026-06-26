@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package aws
@@ -10,7 +10,7 @@ import (
 	elbv2types "github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2/types"
 )
 
-// lbDNSByARN + firstLoadBalancerDNS feed the CHA-com "(lb: ...)" join
+// lbDNSByARN + firstLoadBalancerDNS feed the Srenix Enterprise "(lb: ...)" join
 // key — one DescribeLoadBalancers per probe cycle builds the ARN → DNS
 // map; each target group resolves through its LoadBalancerArns.
 //

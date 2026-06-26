@@ -1,6 +1,6 @@
 # examples/k3s-edge/values.yaml
 #
-# CHA values overlay for bare-metal k3s clusters.
+# Srenix values overlay for bare-metal k3s clusters.
 #
 # k3s ships Traefik as the default ingress controller and local-path as
 # the default StorageClass. The kubeadm ETCD probe is meaningless (k3s
@@ -10,8 +10,8 @@
 # single-server and small clusters produce.
 #
 # Apply on top of the chart defaults:
-#   helm upgrade --install cha bionic-ai-solutions/cluster-health-autopilot \
-#     -f examples/k3s-edge/values.yaml -n cha --create-namespace
+#   helm upgrade --install srenix bionic-ai-solutions/agentic-sre \
+#     -f examples/k3s-edge/values.yaml -n srenix --create-namespace
 
 # ── Probe overrides ──────────────────────────────────────────────────
 #
@@ -24,24 +24,24 @@
 # (v1.10). This overlay makes the intent explicit and documents the
 # rationale.
 #
-# NOTE: CHA_PROBE_ETCD, CHA_PROBE_TRAEFIK_ROUTES, CHA_PROBE_K3S_LOCALPATH,
-# and CHA_PROBE_K3S_DATASTORE are read directly by the cha binary. Until
+# NOTE: SRENIX_PROBE_ETCD, SRENIX_PROBE_TRAEFIK_ROUTES, SRENIX_PROBE_K3S_LOCALPATH,
+# and SRENIX_PROBE_K3S_DATASTORE are read directly by the srenix binary. Until
 # v1.10 ships these entries are forward-declared; the binary silently
 # ignores unknown env vars.
 extraEnv:
-  - name: CHA_PROBE_ETCD
+  - name: SRENIX_PROBE_ETCD
     value: "off"
-  - name: CHA_PROBE_TRAEFIK_ROUTES
+  - name: SRENIX_PROBE_TRAEFIK_ROUTES
     value: "on"
-  - name: CHA_PROBE_K3S_LOCALPATH
+  - name: SRENIX_PROBE_K3S_LOCALPATH
     value: "on"
-  - name: CHA_PROBE_K3S_DATASTORE
+  - name: SRENIX_PROBE_K3S_DATASTORE
     value: "on"
 
 # ── Probe toggles ────────────────────────────────────────────────────
 #
-# The probes block maps to CHA_PROBE_* env vars via the chart's
-# cha.probeToggleEnv helper. Entries are additive — only override what
+# The probes block maps to SRENIX_PROBE_* env vars via the chart's
+# srenix.probeToggleEnv helper. Entries are additive — only override what
 # differs from the chart defaults.
 probes:
   # Traefik Routes probe (v1.10) — k3s default ingress controller.
@@ -76,8 +76,8 @@ probes:
 # node-role.kubernetes.io/master and/or control-plane taints that
 # prevent ordinary workload pods from scheduling on them by default.
 #
-# The tolerations below allow CHA CronJob and Watcher pods to land on
-# these nodes so CHA itself is not blocked by the scheduling constraints
+# The tolerations below allow Srenix CronJob and Watcher pods to land on
+# these nodes so Srenix itself is not blocked by the scheduling constraints
 # it watches. The node-role tolerations match the standard k3s/RKE2
 # control-plane taint names.
 tolerations:
@@ -98,7 +98,7 @@ tolerations:
 # override is needed here.
 
 # ── local-path storage class ─────────────────────────────────────────
-# local-path is the default StorageClass on k3s. CHA's own memory store
+# local-path is the default StorageClass on k3s. Srenix's own memory store
 # (if ai.memory.enabled=true) should use a network-backed StorageClass
 # on multi-node clusters so Qdrant data survives node failure. On a
 # single-node k3s install local-path is fine.
@@ -116,8 +116,8 @@ tolerations:
 # while keeping the TraefikRoutes probe active, add the following to
 # the extraEnv block above:
 #
-#   - name: CHA_DISCOVERY_TRAEFIK
+#   - name: SRENIX_DISCOVERY_TRAEFIK
 #     value: "off"
 #
 # (This env var gates the DiscoverTraefikRouteTargets call in
-# ingress_discovery.go, independent of CHA_PROBE_TRAEFIK_ROUTES.)
+# ingress_discovery.go, independent of SRENIX_PROBE_TRAEFIK_ROUTES.)

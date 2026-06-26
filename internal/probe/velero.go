@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package probe
@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/snapshot"
+	"github.com/srenix-ai/agentic-sre/internal/snapshot"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )
@@ -79,11 +79,12 @@ func (v Velero) Run(ctx context.Context, src snapshot.Source) Result {
 
 	// Group by schedule name; keep most-recent per group.
 	type latest struct {
-		name      string
-		ns        string
-		phase     string
-		startedAt time.Time
-		message   string
+		name          string
+		ns            string
+		phase         string
+		startedAt     time.Time
+		completedAt   time.Time // zero when not yet completed
+		message       string
 	}
 	bySchedule := map[string]latest{}
 	for i := range list.Items {
@@ -98,14 +99,24 @@ func (v Velero) Run(ctx context.Context, src snapshot.Source) Result {
 		started := b.GetCreationTimestamp().Time
 		message, _, _ := unstructured.NestedString(b.Object, "status", "failureReason")
 
+		// Use completionTimestamp for the SLA check so that the age of a completed
+		// backup is measured from when it FINISHED, not when it was created. A backup
+		// that takes 3 hours would otherwise fire the SLA alert immediately at
+		// creation time.
+		var completedAt time.Time
+		if compRaw, _, _ := unstructured.NestedString(b.Object, "status", "completionTimestamp"); compRaw != "" {
+			completedAt, _ = time.Parse(time.RFC3339, compRaw)
+		}
+
 		cur := bySchedule[schedule]
 		if cur.startedAt.IsZero() || started.After(cur.startedAt) {
 			bySchedule[schedule] = latest{
-				name:      name,
-				ns:        b.GetNamespace(),
-				phase:     phase,
-				startedAt: started,
-				message:   message,
+				name:        name,
+				ns:          b.GetNamespace(),
+				phase:       phase,
+				startedAt:   started,
+				completedAt: completedAt,
+				message:     message,
 			}
 		}
 	}
@@ -116,14 +127,19 @@ func (v Velero) Run(ctx context.Context, src snapshot.Source) Result {
 		subject := fmt.Sprintf("Backup/%s/%s", l.ns, schedule)
 		switch l.phase {
 		case "Completed":
-			// Stale-SLA check: even completed backups can drift past
-			// their schedule (operator paused the Schedule, or the
-			// controller is stalled).
-			if t.Sub(l.startedAt) > sla {
+			// SLA check: use completionTimestamp when available so that a
+			// long-running backup isn't flagged the moment it's created.
+			// Fall back to creationTimestamp only when completionTimestamp
+			// is absent (pre-v1.0 Velero or in-flight race).
+			slaRef := l.completedAt
+			if slaRef.IsZero() {
+				slaRef = l.startedAt
+			}
+			if t.Sub(slaRef) > sla {
 				findings = append(findings, Finding{
 					Component:   subject,
 					Severity:    SeverityCritical,
-					Message:     fmt.Sprintf("Velero schedule %q latest backup is older than %s (last: %s)", schedule, sla, l.startedAt.UTC().Format(time.RFC3339)),
+					Message:     fmt.Sprintf("Velero schedule %q latest backup completed more than %s ago (completed: %s)", schedule, sla, slaRef.UTC().Format(time.RFC3339)),
 					Remediation: fmt.Sprintf("kubectl -n %s get schedule %s -o yaml — confirm the schedule is not paused; `velero schedule create %s --schedule='0 1 * * *' ...` to rebuild if necessary.", l.ns, schedule, schedule),
 				})
 			}

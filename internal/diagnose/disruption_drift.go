@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package diagnose
@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/snapshot"
+	"github.com/srenix-ai/agentic-sre/internal/snapshot"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )
@@ -46,7 +46,7 @@ import (
 // Each analyzer is on by default but can be opted out via env var
 // for clusters that don't use the targeted asset class:
 //
-//   - CHA_ANALYZER_DISRUPTION_DRIFT=off — disables the whole bundle
+//   - SRENIX_ANALYZER_DISRUPTION_DRIFT=off — disables the whole bundle
 type DisruptionDrift struct{}
 
 // Name returns the analyzer's stable identifier, used in

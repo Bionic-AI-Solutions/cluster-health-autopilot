@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package v1alpha1
@@ -27,11 +27,11 @@ func TestTicketingSpec_DeepCopy_AllFields(t *testing.T) {
 			Warning:  "74",
 			Info:     "73",
 		},
-		Labels: []string{"cha", "auto-filed"},
+		Labels: []string{"srenix", "auto-filed"},
 		DryRun: true,
 		Auth: &TicketingAuthSpec{
 			Enabled:    true,
-			SecretName: "cha-ticketing-mcp",
+			SecretName: "srenix-ticketing-mcp",
 			SecretKey:  "api-key",
 		},
 	}
@@ -107,13 +107,13 @@ func TestTicketingSpec_DeepCopy_OptionalsAbsent(t *testing.T) {
 	}
 }
 
-// TestTicketingSpec_RoundTripThroughClusterHealthAutopilot — proves the
+// TestTicketingSpec_RoundTripThroughAgenticSRE — proves the
 // outer Spec's DeepCopy traverses spec.ticketing correctly (catches the
-// case where someone adds a field to ClusterHealthAutopilotSpec but
+// case where someone adds a field to AgenticSRESpec but
 // forgets to DeepCopy it).
-func TestTicketingSpec_RoundTripThroughClusterHealthAutopilot(t *testing.T) {
-	cr := &ClusterHealthAutopilot{
-		Spec: ClusterHealthAutopilotSpec{
+func TestTicketingSpec_RoundTripThroughAgenticSRE(t *testing.T) {
+	cr := &AgenticSRE{
+		Spec: AgenticSRESpec{
 			Image: ImageSpec{Repository: "x/y", Tag: "1.0"},
 			Ticketing: &TicketingSpec{
 				Enabled:          true,

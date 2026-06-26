@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package probe
@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/snapshot"
+	"github.com/srenix-ai/agentic-sre/internal/snapshot"
 )
 
 // ServiceTarget describes a Deployment-shaped workload to probe.
@@ -144,10 +144,10 @@ func podIsReady(pod map[string]any) bool {
 	return true
 }
 
-// DefaultTargets returns the OSS-default ServiceTarget list. CHA OSS ships
+// DefaultTargets returns the OSS-default ServiceTarget list. Srenix OSS ships
 // EMPTY — bundling specific workload selectors here would silently make
 // every install probe whichever organization's apps were baked in at build
-// time. That's a cluster-leak. The pre-1.10.5 default list was a CHA-
+// time. That's a cluster-leak. The pre-1.10.5 default list was a Srenix-
 // development-cluster fixture (Letta + MCP fan-out + LiveKit + web app
 // selectors) that never belonged in OSS.
 //

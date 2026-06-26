@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package watcher
@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/diagnose"
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/fix"
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/probe"
+	"github.com/srenix-ai/agentic-sre/internal/diagnose"
+	"github.com/srenix-ai/agentic-sre/internal/fix"
+	"github.com/srenix-ai/agentic-sre/internal/probe"
 )
 
 // TestDiffUsesPreFixStateWhenFixersAct verifies that when fixers delete
@@ -381,7 +381,7 @@ func TestSeenEntryToDeltaDiag_CarriesApprovalFields(t *testing.T) {
 		investigation:    "rule R-IMG-01 flagged this",
 		enrichment:       "LLM narrative addendum",
 		proposedActionID: "Pod/ns/app-xyz:digest-pin:abcdef012345",
-		approvalURL:      "https://cha-approve.example.com/approve?token=eyJ...",
+		approvalURL:      "https://srenix-approve.example.com/approve?token=eyJ...",
 	}
 	got := seenEntryToDeltaDiag(e)
 	if got.Subject != e.subject ||

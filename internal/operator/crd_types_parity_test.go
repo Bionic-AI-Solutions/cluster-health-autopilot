@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package operator
@@ -10,7 +10,7 @@ import (
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	chav1alpha1 "github.com/Bionic-AI-Solutions/cluster-health-autopilot/api/v1alpha1"
+	chav1alpha1 "github.com/srenix-ai/agentic-sre/api/v1alpha1"
 )
 
 // Go-types ↔ CRD schema parity gate — the ROOT CAUSE check for the
@@ -20,7 +20,7 @@ import (
 // has no controller-gen / `make manifests` — see
 // docs/design/2026-05-v1.8-operator-phase-1.md "Why hand-written
 // DeepCopy"). That makes the failure mode structural: a field added to
-// api/v1alpha1/clusterhealthautopilot_types.go without hand-porting it
+// api/v1alpha1/agenticsre_types.go without hand-porting it
 // into the CRD schemas is silently PRUNED by schema-strict apiservers
 // — exactly how v1.24.0 shipped with spec.watcher.triggers dropped on
 // apply, and how the bundle CRD later lost spec.externalDNS.
@@ -51,9 +51,9 @@ var crdTypesParityAllowlist = map[string]string{}
 
 func TestCRD_ChartSchemaMatchesGoTypes(t *testing.T) {
 	chartCRDs := loadChartCRDs(t)
-	cha, ok := chartCRDs["clusterhealthautopilots.cha.bionicaisolutions.com"]
+	srenix, ok := chartCRDs["agenticsres.srenix.ai"]
 	if !ok {
-		t.Fatal("chart CRD for clusterhealthautopilots not found")
+		t.Fatal("chart CRD for agenticsres not found")
 	}
 
 	// Expected paths from the Go types. The CRD's root-level
@@ -62,12 +62,12 @@ func TestCRD_ChartSchemaMatchesGoTypes(t *testing.T) {
 	// the apiserver) — compare the spec and status subtrees, which are
 	// the surfaces this repo hand-maintains.
 	goPaths := map[string]string{}
-	collectGoTypePaths(reflect.TypeOf(chav1alpha1.ClusterHealthAutopilotSpec{}), "spec", goPaths)
-	collectGoTypePaths(reflect.TypeOf(chav1alpha1.ClusterHealthAutopilotStatus{}), "status", goPaths)
+	collectGoTypePaths(reflect.TypeOf(chav1alpha1.AgenticSRESpec{}), "spec", goPaths)
+	collectGoTypePaths(reflect.TypeOf(chav1alpha1.AgenticSREStatus{}), "status", goPaths)
 	goPaths["spec"] = "object"
 	goPaths["status"] = "object"
 
-	for _, v := range cha.crd.Spec.Versions {
+	for _, v := range srenix.crd.Spec.Versions {
 		crdPaths := map[string]string{}
 		collectSchemaPaths(v.Schema.OpenAPIV3Schema, "", crdPaths)
 		// Root boilerplate properties — out of scope (see above).
@@ -83,8 +83,8 @@ func TestCRD_ChartSchemaMatchesGoTypes(t *testing.T) {
 				t.Logf("allowlisted go-only path %q: %s", path, reason)
 				continue
 			}
-			t.Errorf("Go types declare %q but the chart CRD (%s, version %s) has no matching schema path — schema-strict clusters will SILENTLY PRUNE the field on apply (the v1.24.0 class); hand-port the subtree into the chart CRD AND bundle/manifests/cha.bionicaisolutions.com_clusterhealthautopilots.yaml",
-				path, cha.path, v.Name)
+			t.Errorf("Go types declare %q but the chart CRD (%s, version %s) has no matching schema path — schema-strict clusters will SILENTLY PRUNE the field on apply (the v1.24.0 class); hand-port the subtree into the chart CRD AND bundle/manifests/srenix.ai_agenticsres.yaml",
+				path, srenix.path, v.Name)
 		}
 		for _, path := range sortedKeys(crdPaths) {
 			if _, ok := goPaths[path]; ok {
@@ -95,7 +95,7 @@ func TestCRD_ChartSchemaMatchesGoTypes(t *testing.T) {
 				continue
 			}
 			t.Errorf("chart CRD (%s, version %s) declares schema path %q but the Go types in api/v1alpha1 have no matching field — dead schema; remove it from the CRD (and the bundle CRD) or add the field to the types",
-				cha.path, v.Name, path)
+				srenix.path, v.Name, path)
 		}
 		// Type agreement on shared paths.
 		for _, path := range sortedKeys(goPaths) {

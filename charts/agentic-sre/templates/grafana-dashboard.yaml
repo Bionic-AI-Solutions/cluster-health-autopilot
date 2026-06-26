@@ -1,0 +1,26 @@
+{{- if and (.Values.ai).enabled (.Values.ai.metrics).addr (.Values.ai.metrics.grafanaDashboard).enabled }}
+# Phase 2.G.3 — Grafana dashboard JSON shipped as a ConfigMap.
+#
+# When sidecar-style dashboard discovery is enabled on the Grafana
+# instance (label-selector + sidecar-data-import container), this
+# ConfigMap's content is auto-mounted and registered. The chart-
+# operator pattern is the most portable surface — kube-prometheus-stack,
+# upstream Grafana Helm chart, and bitnami all honor the same labels.
+#
+# Dashboard charts panel `srenix_*` metrics surfaced by aiwatch's
+# /metrics endpoint (Phase 2.G.1).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "srenix.fullname" . }}-grafana-dashboard
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "srenix.labels" . | nindent 4 }}
+    grafana_dashboard: "1"      # kube-prometheus-stack sidecar label
+    {{- with (.Values.ai.metrics.grafanaDashboard).extraLabels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+data:
+  srenix-overview.json: |
+    {{- .Files.Get "dashboards/srenix-overview.json" | nindent 4 }}
+{{- end }}

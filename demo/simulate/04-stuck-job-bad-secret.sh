@@ -11,7 +11,7 @@
 #   1. Creates the broken state (Secret has API_KEY_NEW, CronJob wants API_KEY → stuck pod)
 #   2. Fixes the CronJob template to reference API_KEY_NEW (root cause resolved)
 #   3. But the old stuck Job is still blocking (Forbid policy)
-#   4. CHA StuckJobsWithBadSecretRef fixer deletes the frozen Job
+#   4. Srenix StuckJobsWithBadSecretRef fixer deletes the frozen Job
 #   5. CronJob next tick spawns a new Job → succeeds ✓
 #
 # Set KUBE_CONTEXT to target a specific cluster:
@@ -100,7 +100,7 @@ echo ""
 echo "    OLD Job '${STUCK_JOB}' is ACTIVE (pod in CreateContainerConfigError)"
 echo "    CronJob is correct NOW but cannot spawn a new Job (concurrencyPolicy=Forbid)"
 echo ""
-echo "==> CHA StuckJobsWithBadSecretRef fixer will:"
+echo "==> Srenix StuckJobsWithBadSecretRef fixer will:"
 echo "    1. Find the pod with 'couldn't find key API_KEY' in waiting message"
 echo "    2. Confirm its parent Job '${STUCK_JOB}' has a CronJob owner"
 echo "    3. Delete Job '${STUCK_JOB}'"

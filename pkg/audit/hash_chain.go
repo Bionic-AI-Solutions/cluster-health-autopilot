@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package audit
@@ -13,7 +13,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/ai"
+	"github.com/srenix-ai/agentic-sre/pkg/ai"
 )
 
 // Tamper-evident audit trail.
@@ -218,7 +218,7 @@ func (s *ChainedSink) writeCheckpointLocked(ctx context.Context) {
 	head := s.lastHash
 	cp := ai.AuditEvent{
 		Type:  CheckpointType,
-		Actor: "cha/audit",
+		Actor: "srenix/audit",
 		Details: map[string]any{
 			"checkpoint_head": head,
 		},
@@ -391,7 +391,7 @@ func stampEntryTime(e *ai.AuditEvent, now func() time.Time) {
 // this (declaration-order struct fields and sorted map keys are part of
 // its documented behavior).
 //
-// COMPATIBILITY: production chains (CHA-com 1.21.0 binaries) are
+// COMPATIBILITY: production chains (Srenix Enterprise 1.21.0 binaries) are
 // already written in this exact form. Do NOT "clean up" the encoding —
 // e.g. switching to json.Encoder with SetEscapeHTML(false) — because
 // verifiers recompute hashes from the canonical bytes, so any format

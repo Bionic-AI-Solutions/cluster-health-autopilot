@@ -7,28 +7,28 @@
 # Two operating modes — choose ONE by toggling the `if:` on each job:
 #
 # MODE A — Self-hosted runner (RECOMMENDED, no MinIO needed)
-#   The runner lives inside the cluster. The workflow runs `cha diagnose --live`
-#   directly and pipes output through `cha anonymize`. No intermediate object
+#   The runner lives inside the cluster. The workflow runs `srenix diagnose --live`
+#   directly and pipes output through `srenix anonymize`. No intermediate object
 #   storage required. Set runs-on to [self-hosted, cluster] (or your runner label).
 #   → Set publish-self-hosted.if: true  AND  publish-minio.if: false
 #
 # MODE B — GitHub-hosted runner + MinIO
 #   Credentials are read from Vault at runtime via hashicorp/vault-action.
 #   Requires ONE GitHub Actions secret: VAULT_TOKEN
-#   All MinIO/bucket config lives in Vault at secret/t6-apps/cha/config.
+#   All MinIO/bucket config lives in Vault at secret/t6-apps/srenix/config.
 #   IMPORTANT: MinIO must be reachable from the internet (not cluster-internal).
 #   If the endpoint is private/unreachable, the job emits a warning and skips
 #   cleanly — it does NOT fail the workflow.
 #   → Set publish-minio.if: true  AND  publish-self-hosted.if: false
 #
-# Vault secret (already created at secret/t6-apps/cha/config):
+# Vault secret (already created at secret/t6-apps/srenix/config):
 #   minio_endpoint   = "https://s3.baisoln.com"   ← must be internet-reachable
 #   minio_access_key = "<scoped service account>"
 #   minio_secret_key = "<scoped service account>"
-#   minio_bucket     = "cha-runs"
+#   minio_bucket     = "srenix-runs"
 #
 # GitHub Actions secrets required:
-#   VAULT_TOKEN  — token with policy cha-publish-runs (read on above path)
+#   VAULT_TOKEN  — token with policy srenix-publish-runs (read on above path)
 #                  (Only needed for Mode B; Mode A uses the in-cluster runner SA)
 #
 # Vault address is baked in (vault.baisoln.com is publicly reachable).
@@ -73,11 +73,11 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - name: Build cha
+      - name: Build srenix
         run: |
           VERSION=$(git describe --tags --always 2>/dev/null || echo "dev")
-          go build -ldflags "-X main.version=${VERSION}" -o cha ./cmd/cha
-          echo "Built cha ${VERSION}"
+          go build -ldflags "-X main.version=${VERSION}" -o srenix ./cmd/srenix
+          echo "Built srenix ${VERSION}"
 
       - name: Resolve target date
         id: date
@@ -92,11 +92,11 @@ jobs:
         run: |
           DATE=${{ steps.date.outputs.date }}
           RUN_ID="run-${DATE}"
-          mkdir -p /tmp/cha-runs
-          ./cha diagnose --live --format json \
-            | ./cha anonymize --run-id "$RUN_ID" --timestamp "${DATE}T02:00:00Z" \
-            > /tmp/cha-runs/"$DATE".jsonl
-          echo "Wrote 1 record to /tmp/cha-runs/$DATE.jsonl"
+          mkdir -p /tmp/srenix-runs
+          ./srenix diagnose --live --format json \
+            | ./srenix anonymize --run-id "$RUN_ID" --timestamp "${DATE}T02:00:00Z" \
+            > /tmp/srenix-runs/"$DATE".jsonl
+          echo "Wrote 1 record to /tmp/srenix-runs/$DATE.jsonl"
 
       - name: Switch to data branch
         run: |
@@ -112,8 +112,8 @@ jobs:
       - name: Merge new JSONL + regenerate SUMMARY.md
         run: |
           DATE=${{ steps.date.outputs.date }}
-          cp /tmp/cha-runs/"$DATE".jsonl runs/"$DATE".jsonl
-          ./cha summarize runs/ > runs/SUMMARY.md
+          cp /tmp/srenix-runs/"$DATE".jsonl runs/"$DATE".jsonl
+          ./srenix summarize runs/ > runs/SUMMARY.md
           echo "Added run for $DATE; total runs: $(ls runs/*.jsonl 2>/dev/null | wc -l)"
 
       - name: Commit and push to data branch
@@ -144,8 +144,8 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - name: Build cha
-        run: go build -o cha ./cmd/cha
+      - name: Build srenix
+        run: go build -o srenix ./cmd/srenix
 
       - name: Pull MinIO credentials from Vault
         id: vault
@@ -154,10 +154,10 @@ jobs:
           url: https://vault.baisoln.com
           token: ${{ secrets.VAULT_TOKEN }}
           secrets: |
-            secret/data/t6-apps/cha/config minio_endpoint       | MINIO_ENDPOINT ;
-            secret/data/t6-apps/cha/config minio_access_key     | MINIO_ACCESS_KEY ;
-            secret/data/t6-apps/cha/config minio_secret_key     | MINIO_SECRET_KEY ;
-            secret/data/t6-apps/cha/config minio_bucket         | MINIO_BUCKET
+            secret/data/t6-apps/srenix/config minio_endpoint       | MINIO_ENDPOINT ;
+            secret/data/t6-apps/srenix/config minio_access_key     | MINIO_ACCESS_KEY ;
+            secret/data/t6-apps/srenix/config minio_secret_key     | MINIO_SECRET_KEY ;
+            secret/data/t6-apps/srenix/config minio_bucket         | MINIO_BUCKET
 
       - name: Install MinIO client (mc)
         run: |
@@ -176,7 +176,7 @@ jobs:
       - name: Configure mc alias and pull run files from MinIO
         run: |
           DATE=${{ steps.date.outputs.date }}
-          mkdir -p /tmp/cha-runs/"$DATE"
+          mkdir -p /tmp/srenix-runs/"$DATE"
           # mc alias set probes MinIO with a signed request; if the endpoint is
           # private/unreachable from this runner, treat it as "no files" rather
           # than a hard failure so the job completes cleanly.
@@ -184,8 +184,8 @@ jobs:
             echo "::warning::MinIO endpoint unreachable from this runner — skipping publish."
             echo "skip=true" >> "$GITHUB_ENV"
           else
-            ./mc cp --recursive minio/"$MINIO_BUCKET"/runs/"$DATE"/ /tmp/cha-runs/"$DATE"/ || true
-            COUNT=$(find /tmp/cha-runs/"$DATE" -name "*.json" | wc -l)
+            ./mc cp --recursive minio/"$MINIO_BUCKET"/runs/"$DATE"/ /tmp/srenix-runs/"$DATE"/ || true
+            COUNT=$(find /tmp/srenix-runs/"$DATE" -name "*.json" | wc -l)
             echo "Downloaded $COUNT run file(s) for $DATE"
             if [ "$COUNT" -eq 0 ]; then
               echo "No run files found for $DATE — skipping."
@@ -197,13 +197,13 @@ jobs:
         if: env.skip != 'true'
         run: |
           DATE=${{ steps.date.outputs.date }}
-          mkdir -p /tmp/cha-runs-out
-          for f in /tmp/cha-runs/"$DATE"/*.json; do
+          mkdir -p /tmp/srenix-runs-out
+          for f in /tmp/srenix-runs/"$DATE"/*.json; do
             RUN_ID="$(basename "$f" .json)"
-            ./cha anonymize --run-id "$RUN_ID" --timestamp "${DATE}T02:00:00Z" "$f" \
-              >> /tmp/cha-runs-out/"$DATE".jsonl
+            ./srenix anonymize --run-id "$RUN_ID" --timestamp "${DATE}T02:00:00Z" "$f" \
+              >> /tmp/srenix-runs-out/"$DATE".jsonl
           done
-          echo "Anonymized $(wc -l < /tmp/cha-runs-out/"$DATE".jsonl) record(s)"
+          echo "Anonymized $(wc -l < /tmp/srenix-runs-out/"$DATE".jsonl) record(s)"
 
       - name: Switch to data branch
         if: env.skip != 'true'
@@ -221,8 +221,8 @@ jobs:
         if: env.skip != 'true'
         run: |
           DATE=${{ steps.date.outputs.date }}
-          cp /tmp/cha-runs-out/"$DATE".jsonl runs/"$DATE".jsonl
-          ./cha summarize runs/ > runs/SUMMARY.md
+          cp /tmp/srenix-runs-out/"$DATE".jsonl runs/"$DATE".jsonl
+          ./srenix summarize runs/ > runs/SUMMARY.md
           echo "Added run for $DATE; total runs: $(ls runs/*.jsonl 2>/dev/null | wc -l)"
 
       - name: Commit and push to data branch

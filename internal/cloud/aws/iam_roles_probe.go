@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package aws
@@ -9,13 +9,13 @@ import (
 	"os"
 	"strings"
 
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/cloud"
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/probe"
+	"github.com/srenix-ai/agentic-sre/pkg/cloud"
+	"github.com/srenix-ai/agentic-sre/pkg/probe"
 )
 
 // IAMRoles verifies that a Helm-configured list of IAM role ARNs / names
 // actually exist. Typical use: list every IRSA-pointed role from your
-// cluster's ServiceAccount annotations so CHA flags drift between K8s
+// cluster's ServiceAccount annotations so Srenix flags drift between K8s
 // expectation and IAM reality (the classic "role got renamed, IRSA
 // silently broken" failure mode).
 //

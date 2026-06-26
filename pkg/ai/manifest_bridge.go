@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package ai
@@ -12,7 +12,7 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"sigs.k8s.io/yaml"
 
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/diagnose"
+	"github.com/srenix-ai/agentic-sre/pkg/diagnose"
 )
 
 // ManifestBridge turns Diagnostic.ProposedPolicyYAML into a signable
@@ -36,10 +36,15 @@ import (
 // Validation is delegated to ValidateManifest — refuses anything
 // outside the closed Kind/shape whitelist. Unsafe shapes silently
 // drop to a nil proposal rather than mint a URL on a dangerous YAML.
-type ManifestBridge struct{}
+type ManifestBridge struct {
+	// ProposalTTL overrides DefaultProposalTTL for the approval link
+	// ExpiresAt. Wire from --approval-ttl so on-call SREs have time to
+	// respond. Zero = DefaultProposalTTL (15 min).
+	ProposalTTL time.Duration
+}
 
 // Name satisfies FixProposer.
-func (ManifestBridge) Name() string { return "ManifestBridge" }
+func (m ManifestBridge) Name() string { return "ManifestBridge" }
 
 // Propose constructs an ApplyManifest action from `d.ProposedPolicyYAML`
 // when present and safe. Returns nil when:
@@ -47,22 +52,36 @@ func (ManifestBridge) Name() string { return "ManifestBridge" }
 //     handful of YAML-emitting analyzers populate this field)
 //   - the YAML fails the safe-apply validator (Egress in policyTypes,
 //     non-`0.0.0.0/0` ipBlock, protected namespace, unsupported Kind…)
-func (ManifestBridge) Propose(_ context.Context, d diagnose.Diagnostic) (*AIProposedAction, error) {
+func (m ManifestBridge) Propose(_ context.Context, d diagnose.Diagnostic) (*AIProposedAction, error) {
 	if d.ProposedPolicyYAML == "" {
 		return nil, nil
 	}
-	return BuildApplyManifestProposal(d), nil
+	return BuildApplyManifestProposalWithTTL(d, m.ProposalTTL), nil
 }
 
 // BuildApplyManifestProposal is the underlying builder. Exposed for
 // callers that want the bridge logic without going through the
-// FixProposer interface (e.g. cha-com's diagnose subcommand renders
+// FixProposer interface (e.g. srenix-enterprise's diagnose subcommand renders
 // proposals inline). Returns nil when validation refuses the YAML.
+//
+// Uses DefaultProposalTTL (15 min). For a configurable TTL, use
+// BuildApplyManifestProposalWithTTL.
 func BuildApplyManifestProposal(d diagnose.Diagnostic) *AIProposedAction {
+	return BuildApplyManifestProposalWithTTL(d, 0)
+}
+
+// BuildApplyManifestProposalWithTTL is BuildApplyManifestProposal with a
+// configurable TTL. ttl=0 falls back to DefaultProposalTTL. Wire
+// --approval-ttl here so NetworkPolicy approval links stay alive long
+// enough for an on-call SRE to act on them.
+func BuildApplyManifestProposalWithTTL(d diagnose.Diagnostic, ttl time.Duration) *AIProposedAction {
 	yamlBytes := []byte(d.ProposedPolicyYAML)
 	target, kindLabel, err := parseManifestTarget(yamlBytes)
 	if err != nil {
 		return nil
+	}
+	if ttl <= 0 {
+		ttl = DefaultProposalTTL
 	}
 	now := time.Now().UTC()
 	action := AIProposedAction{
@@ -78,7 +97,7 @@ func BuildApplyManifestProposal(d diagnose.Diagnostic) *AIProposedAction {
 		DiagnosticSubject: d.Subject,
 		Tier:              TierT1,
 		CreatedAt:         now,
-		ExpiresAt:         now.Add(DefaultProposalTTL),
+		ExpiresAt:         now.Add(ttl),
 	}
 	if err := action.Validate(); err != nil {
 		return nil

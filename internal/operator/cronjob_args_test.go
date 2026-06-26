@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package operator
@@ -8,14 +8,14 @@ import (
 	"strings"
 	"testing"
 
-	chav1alpha1 "github.com/Bionic-AI-Solutions/cluster-health-autopilot/api/v1alpha1"
+	chav1alpha1 "github.com/srenix-ai/agentic-sre/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 )
 
 // PRODUCTION BUG (fixed v1.26.0): buildCronJobCommon appended
 // alertingArgs() — which emits the WATCH-ONLY flags --alertmanager-url,
 // --cluster-name, --slack-alerts, --slack-critical — to BOTH CronJobs.
-// `cha diagnose` / `cha remediate` do not register those flags, so on
+// `srenix diagnose` / `srenix remediate` do not register those flags, so on
 // any cluster with spec.alerting configured the bionic-diagnose /
 // bionic-remediate Jobs exited 1 with "unknown flag" on EVERY run; the
 // CronJobs had never succeeded. The Helm chart templates
@@ -26,7 +26,7 @@ import (
 // These tests pin the EXACT arg lists so a watch-only flag can never
 // leak back in. The bug-CLASS guard (every operator-rendered arg must
 // be registered on the real cobra subcommand) lives in
-// cmd/cha/operatorflags_test.go.
+// cmd/srenix/operatorflags_test.go.
 
 // fullAlerting returns an AlertingSpec with every channel configured —
 // the shape that triggered the production bug.
@@ -37,9 +37,9 @@ func fullAlerting() *chav1alpha1.AlertingSpec {
 			ClusterName: "bionic-cluster",
 		},
 		Slack: &chav1alpha1.SlackSpec{
-			Alerts:     &chav1alpha1.SlackChannelSpec{SecretName: "cha-alerts"},
-			Critical:   &chav1alpha1.SlackChannelSpec{SecretName: "cha-critical"},
-			HealthInfo: &chav1alpha1.SlackChannelSpec{SecretName: "cha-healthinfo"},
+			Alerts:     &chav1alpha1.SlackChannelSpec{SecretName: "srenix-alerts"},
+			Critical:   &chav1alpha1.SlackChannelSpec{SecretName: "srenix-critical"},
+			HealthInfo: &chav1alpha1.SlackChannelSpec{SecretName: "srenix-healthinfo"},
 		},
 	}
 }
@@ -104,7 +104,7 @@ func TestBuildRemediateCronJob_ArgsExact_DryRunFullAlerting(t *testing.T) {
 // The diagnose container must carry ONLY the SLACK_HEALTHINFO_URL env
 // (the one its --slack-healthinfo arg expands); remediate carries no
 // SLACK_* env at all — mirroring the chart, which renders
-// cha.slackHealthinfoEnv on diagnose only.
+// srenix.slackHealthinfoEnv on diagnose only.
 func TestCronJobAlertingEnv_RoleScoped(t *testing.T) {
 	cr := sampleCR()
 	cr.Spec.Diagnose = &chav1alpha1.DiagnoseSpec{Enabled: true}
@@ -130,14 +130,14 @@ func TestCronJobAlertingEnv_RoleScoped(t *testing.T) {
 }
 
 // The WATCHER must not carry a SLACK_HEALTHINFO_URL secretKeyRef:
-// nothing in `cha watch` reads it (--slack-healthinfo is registered on
+// nothing in `srenix watch` reads it (--slack-healthinfo is registered on
 // the diagnose subcommand only, and there is no direct env read), and
 // secretRefEnv emits a NON-optional secretKeyRef — so when the
 // healthinfo secret is absent the kubelet hard-fails watcher pod
 // creation (CreateContainerConfigError) over an env var that could
 // never be consumed. The chart's watcher-deployment.yaml is the
-// reference: it renders cha.slackAlertsEnv + cha.slackCriticalEnv
-// only (cha.slackHealthinfoEnv appears solely on cronjob-diagnose).
+// reference: it renders srenix.slackAlertsEnv + srenix.slackCriticalEnv
+// only (srenix.slackHealthinfoEnv appears solely on cronjob-diagnose).
 func TestWatcherDeploymentEnv_NoHealthinfoSecretRef(t *testing.T) {
 	cr := sampleCR()
 	cr.Spec.Watcher = &chav1alpha1.WatcherSpec{Enabled: true}
@@ -149,7 +149,7 @@ func TestWatcherDeploymentEnv_NoHealthinfoSecretRef(t *testing.T) {
 	}
 	env := d.Spec.Template.Spec.Containers[0].Env
 	if hasEnv(env, "SLACK_HEALTHINFO_URL") {
-		t.Errorf("watcher Deployment carries SLACK_HEALTHINFO_URL — `cha watch` never reads it, and the non-optional secretKeyRef hard-fails pod creation when the secret is absent; have %v", envNames(env))
+		t.Errorf("watcher Deployment carries SLACK_HEALTHINFO_URL — `srenix watch` never reads it, and the non-optional secretKeyRef hard-fails pod creation when the secret is absent; have %v", envNames(env))
 	}
 	// The two channels the watcher DOES consume must still be present.
 	for _, want := range []string{"SLACK_ALERTS_URL", "SLACK_CRITICAL_URL"} {

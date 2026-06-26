@@ -1,6 +1,6 @@
-# Readiness Assessment — Cluster Health Autopilot v1.6.0
+# Readiness Assessment — Agentic SRE v1.6.0
 
-This document is the cha team's readiness assessment of the **current
+This document is the srenix team's readiness assessment of the **current
 shipping release (v1.6.0)** for design-partner deployment and pilot
 customer use. Read alongside [ADVERSARIAL_ANALYSIS.md](./ADVERSARIAL_ANALYSIS.md)
 and [design/2026-05-final-adversarial-review.md](design/2026-05-final-adversarial-review.md).
@@ -23,14 +23,14 @@ not credibility-class. Headline gains:
   budget, cold-start bucket mitigation, event-message secret scrubbing,
   audit hash chain.
 - **Tests**: OSS `internal/fix/` 36→57; `internal/probe/` 0→70 (incl. 6
-  new probes); `internal/watcher/` 2→31. CHA-com 32→94. Chart-level
+  new probes); `internal/watcher/` 2→31. Srenix Enterprise 32→94. Chart-level
   helm-unittest with 19 cases.
 
 The original [Vault → Pod Drift solution brief](./vault_pod_drift_solution_brief.docx.pdf)
 defined a five-layer detection stack (L1–L5). v0.2 closed all five gaps; v0.3
 through v0.9.5 hardened those layers and added the operational features (real-
 time mode, multi-channel routing, alert hub integration, auto-remediation)
-needed for production deployment. v1.0 introduced the AI tier (CHA-com).
+needed for production deployment. v1.0 introduced the AI tier (Srenix Enterprise).
 v1.2–v1.5 added auto-discovery of Ingress hosts, a TLS cert/secret-mismatch
 analyzer with opt-in fixer, Layer-1 flake suppression on probe failures,
 and a Layer-2 read-only Investigator that attaches root-cause hints to
@@ -61,7 +61,7 @@ features the brief did not specify. These shipped in v0.5 – v1.5.2:
 
 | Capability | First in | What it does |
 |---|---|---|
-| **Auto-remediation** | v0.5 | Whitelisted fixers run in `cha remediate --live` (opt-in) — `StaleErrorPods`, `StuckJobsWithBadSecretRef`, `StuckRSPods` |
+| **Auto-remediation** | v0.5 | Whitelisted fixers run in `srenix remediate --live` (opt-in) — `StaleErrorPods`, `StuckJobsWithBadSecretRef`, `StuckRSPods` |
 | **Slack reporting** | v0.5 | Formatted attachment with component status + diagnostics |
 | **UnprovisionedSecret analyzer** | v0.9.1 | Detects workloads referencing Secrets with no ExternalSecret + suggests canonical Vault path |
 | **CertExpiry analyzer** | v0.7 | cert-manager Certificate: not-Ready, expired, or expiring within 14 days |
@@ -71,17 +71,17 @@ features the brief did not specify. These shipped in v0.5 – v1.5.2:
 | **DriftReport seeding for Slack dedup** | v0.9.0 | Watcher seeds its seen-map from existing DriftReport CRs on pod startup — no Slack flood after rolling update |
 | **Watcher `--remedy`** | v0.9.0 | Fixers run after every diagnose cycle, post-fix state reported |
 | **Endpoint reachability probe** | v0.9.x | HTTP(S) GET against canonical hostnames — catches TLS faults, missing Kong routes, DNS failures |
-| **Three-channel Slack routing** | v0.9.4 | `#ceph-alerts` (CHA-fixed) · `#ceph-critical` (needs human) · `#healthinfo` (daily digest) |
+| **Three-channel Slack routing** | v0.9.4 | `#ceph-alerts` (Srenix-fixed) · `#ceph-critical` (needs human) · `#healthinfo` (daily digest) |
 | **Daily digest** | v0.9.4 | `--format=daily` reads DriftReport history; reports new/persistent/resolved with age annotations |
 | **Alertmanager-as-hub** | v0.9.5 | Direct POST to `/api/v2/alerts` every cycle; AM handles dedup/silencing/fan-out to all configured receivers |
 | **Fixed Alertmanager dispatch** | v0.9.5 | `fsGroup` patch on AM pod resolves 3-month-old `permission denied` on nflog/silences |
-| **AI tier (CHA-com)** | v1.0.0 | Recommendation-only LLM enrichment + signed JWT approval-server; OSS engine remains AI-free |
-| **Ingress auto-discovery** | v1.2.0 | Endpoint probe enumerates every Ingress host (read-only RBAC), opt-out via `cha.bionicaisolutions.com/probe-disable: "true"`; protected namespaces skipped; legacy `IngressCoverage` analyzer removed (pattern-matched on hostnames) |
+| **AI tier (Srenix Enterprise)** | v1.0.0 | Recommendation-only LLM enrichment + signed JWT approval-server; OSS engine remains AI-free |
+| **Ingress auto-discovery** | v1.2.0 | Endpoint probe enumerates every Ingress host (read-only RBAC), opt-out via `srenix.ai/probe-disable: "true"`; protected namespaces skipped; legacy `IngressCoverage` analyzer removed (pattern-matched on hostnames) |
 | **TLSSecretMismatch analyzer** | v1.3.0 | Compares the x509 cert in `Secret.tls.crt` against the target name of the owning `Certificate` CR; read-only |
 | **TLSSecretMismatch fixer (opt-in)** | v1.3.0 | Patches `Ingress.spec.tls[].secretName` to the correct Secret; default off; adds the narrow verb `networking.k8s.io/ingresses [patch]` only when enabled; skips protected namespaces AND GitOps-managed Ingresses |
 | **Layer-1 flake suppression** | v1.4.0 | Single in-cycle retry (1.5× timeout) on flake-class errors + N-of-M in-memory streak counter — sub-threshold streaks surface as Warning, ≥ threshold escalates to Critical; restart loses the streak by design |
 | **Layer-2 Investigator (rule-based, OSS)** | v1.5.0 | `pkg/ai.Investigator` runs on CRITICAL findings against a closed-enum `pkg/ai.Environment` of read-only tools (`DNSLookup`, `HTTPProbe`, `TLSInspect`, `Describe`, `GetEvents`); 20s hard wall-clock cap per cycle; soft-fail per investigation; attaches a root-cause hint to the DriftReport (additive, never replaces the original finding) |
-| **Layer-2 Investigator (LLM-backed)** | v1.5.x (CHA-com) | Same closed-enum `Environment` surface; max 6 tool calls/investigation; same wall-clock cap; rate-limited per the existing AI-tier limiter |
+| **Layer-2 Investigator (LLM-backed)** | v1.5.x (Srenix Enterprise) | Same closed-enum `Environment` surface; max 6 tool calls/investigation; same wall-clock cap; rate-limited per the existing AI-tier limiter |
 
 ---
 
@@ -100,7 +100,7 @@ features the brief did not specify. These shipped in v0.5 – v1.5.2:
 
 **Aggregate vs v0.1**: 100+ new tests, 1 new CRD, 3 ClusterRoles, 1 Deployment
 (watcher), 1 optional Deployment (self-hosted runner), 2 CronJobs, plus the
-optional CHA-com AI tier (approval-server Deployment + isolated SA).
+optional Srenix Enterprise AI tier (approval-server Deployment + isolated SA).
 
 ---
 
@@ -150,7 +150,7 @@ partners aren't surprised.
 
 ## 6. Net readiness
 
-> **Are we ready to take CHA to a design-partner conversation?**
+> **Are we ready to take Srenix to a design-partner conversation?**
 
 **Yes.** v1.5.2 closes every L1–L5 gap from the original brief and adds
 the operational features (real-time mode, multi-channel routing,
@@ -205,7 +205,7 @@ The honest disclosures we'd make to a design partner:
       Ingress auto-discovery enumerates the cluster's hosts; Layer-1
       streak suppression observed on flaky targets; rule-based
       Investigator attaches root-cause hints to CRITICAL findings
-- [x] CHA-com paid binary tracks v1.5.2 OSS dep
+- [x] Srenix Enterprise paid binary tracks v1.5.2 OSS dep
 
 ## 8. What "ready" does NOT mean
 
@@ -217,6 +217,6 @@ The honest disclosures we'd make to a design partner:
   is current scope.
 - It does **not** mean v1.5.2 is feature-complete. The operator
   architecture (controller-runtime) is the next major shape change;
-  v1.5.2 is the smallest cha that can credibly run in production
+  v1.5.2 is the smallest srenix that can credibly run in production
   while shipping flake-tolerant probing and read-only root-cause
   investigation.

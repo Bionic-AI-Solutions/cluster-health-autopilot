@@ -2,9 +2,9 @@
 
 **Status:** active — execution started 2026-06-07; sub-plan REVISED 2026-06-08 after pre-execution survey discovered the WRITE path is already shipped.
 
-**Parent:** [2026-06-07-cha-phase-2-master.md](2026-06-07-cha-phase-2-master.md)
+**Parent:** [2026-06-07-srenix-phase-2-master.md](2026-06-07-srenix-phase-2-master.md)
 
-**Branch:** `phase2a/rag-outcomes` (CHA-com)
+**Branch:** `phase2a/rag-outcomes` (Srenix Enterprise)
 
 ---
 
@@ -17,8 +17,8 @@ The original 2.A plan assumed both write and read paths needed building. **Pre-e
 | `OutcomeRecorder` interface | ✅ exists | `ai/approval/executor.go:57` |
 | Approve handler records | ✅ wired | `ai/approval/server.go:450` |
 | Deny handler records | ✅ wired | `ai/approval/server.go:496` |
-| Autonomy auto-apply records | ✅ wired | `cmd/cha-com/autonomy_engine.go:130` |
-| `memoryOutcomeRecorder` adapter | ✅ exists | `cmd/cha-com/ai_wiring.go:300` |
+| Autonomy auto-apply records | ✅ wired | `cmd/srenix-enterprise/autonomy_engine.go:130` |
+| `memoryOutcomeRecorder` adapter | ✅ exists | `cmd/srenix-enterprise/ai_wiring.go:300` |
 | Helm/operator hook | ✅ exists | `ai_wiring.go::outcomeRecorder()` |
 
 **The actual gap is the READ side**: nobody queries outcomes back from Qdrant. `Memory.Retrieve` exists but it's embedding-similarity by digest, not by-class or by-target lookup. That's what 2.B/2.C/2.D will need.
@@ -41,7 +41,7 @@ This revised 2.A ships the read helpers, wires DigestPin to use them, and adds r
 - [ ] Implement both helpers using `QdrantRAG.List(ctx, rag.Query{Kind: rag.KindFindingOutcome, ...})` + post-filter (Qdrant payload-filter would be ideal but `Query` doesn't expose it yet; post-filter is fine for v1 since outcome volume is ~50/day).
 - [ ] Run, pass.
 
-### 2.A.2 — Revert detection in `cmd/cha-com/watch_cmd.go::tick()`
+### 2.A.2 — Revert detection in `cmd/srenix-enterprise/watch_cmd.go::tick()`
 - [ ] After building the new diagnostic set for the cycle, for each newly-seen finding query `mem.RecentOutcomesByTarget(target, 24h)`.
 - [ ] If a prior outcome's Verdict=cleared within 24h AND the same finding is back → the prior fix didn't stick. Append a follow-up signal with `Verdict="reverted"`.
 - [ ] Failing test in `watch_cmd_test.go`: fake memory returns a 1h-old cleared outcome for the finding's target; assert a "reverted" signal is appended.
@@ -55,7 +55,7 @@ This revised 2.A ships the read helpers, wires DigestPin to use them, and adds r
 - [ ] Implement (pass a Reader into the proposer's struct; thread through wiring), pass.
 
 ### 2.A.4 — Per-cycle observability log
-- [ ] In `cmd/cha-com/watch_cmd.go::tick()`: at cycle end, query `mem.RecentOutcomesByClass` for the current cycle window (~1 min) and log:
+- [ ] In `cmd/srenix-enterprise/watch_cmd.go::tick()`: at cycle end, query `mem.RecentOutcomesByClass` for the current cycle window (~1 min) and log:
   `outcomes: cycle=N applied=A approved=B denied=C reverted=D`
 - [ ] Failing test on the log line presence + counts.
 - [ ] Implement, pass.
@@ -68,19 +68,19 @@ This revised 2.A ships the read helpers, wires DigestPin to use them, and adds r
 - [ ] Catches the DriftReport.spec.remediation class of bug: write side green + read side green + integration silently dropping the field.
 
 ### 2.A.6 — Wire memory into DigestPin's construction in `watch_cmd.go`
-- [ ] In `cmd/cha-com/watch_cmd.go::RunE`: pass the `*Memory` instance into `dp.buildDigestPinProposer(...)`.
+- [ ] In `cmd/srenix-enterprise/watch_cmd.go::RunE`: pass the `*Memory` instance into `dp.buildDigestPinProposer(...)`.
 - [ ] Adjust `digest_pin_wiring.go::buildDigestPinProposer` signature to accept a `MemoryReader` interface.
 - [ ] Failing test on the wiring (similar to existing `TestDigestPinFlags_BuildDigestPinProposerWiresEverything`).
 - [ ] Implement, pass.
 
 ### 2.A.7 — Local build + dev tag + cluster verify
-- [ ] `CGO_ENABLED=0 go build -o /tmp/cha-com ./cmd/cha-com`
-- [ ] `docker build` + push `docker4zerocool/cha-com:1.15.0-dev1`
+- [ ] `CGO_ENABLED=0 go build -o /tmp/srenix-enterprise ./cmd/srenix-enterprise`
+- [ ] `docker build` + push `docker4zerocool/srenix-enterprise:1.15.0-dev1`
 - [ ] Patch CR `ai.image.tag=1.15.0-dev1`; wait rollout
 - [ ] Click Approve/Deny on real Slack URLs in the wild; verify the next cycle's log shows `outcomes: applied=N…`
 - [ ] Verify DigestPin proposal rationale (when one fires) mentions prior outcome if any
 
-### 2.A.8 — Open CHA-com PR + tag canonical release
+### 2.A.8 — Open Srenix Enterprise PR + tag canonical release
 - [ ] PR; CI green; merge
 - [ ] Tag `v1.15.0`; goreleaser (~80 min); confirm multi-arch manifest assembled (manual fallback per master-plan refinement); roll cluster
 

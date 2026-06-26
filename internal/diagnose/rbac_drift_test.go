@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package diagnose
@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	pkgsnapshot "github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/snapshot"
+	pkgsnapshot "github.com/srenix-ai/agentic-sre/pkg/snapshot"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )
@@ -554,11 +554,11 @@ func makeConfigMap(ns, name string, data map[string]string) unstructured.Unstruc
 }
 
 // TestRBACDrift_ConfigMapAllowlist_ExtendsPrefixes verifies that a
-// `cha-rbac-allowlist` ConfigMap with `allowRolePrefixes: "myoperator-"`
+// `srenix-rbac-allowlist` ConfigMap with `allowRolePrefixes: "myoperator-"`
 // causes a ClusterRole named "myoperator-controller" (which has wildcard
 // verbs) to be suppressed instead of flagged.
 func TestRBACDrift_ConfigMapAllowlist_ExtendsPrefixes(t *testing.T) {
-	cm := makeConfigMap("cluster-health-autopilot", "cha-rbac-allowlist", map[string]string{
+	cm := makeConfigMap("agentic-sre", "srenix-rbac-allowlist", map[string]string{
 		"allowRolePrefixes": "myoperator-",
 	})
 	src := &memSourceRBAC{byResource: map[string][]unstructured.Unstructured{
@@ -577,7 +577,7 @@ func TestRBACDrift_ConfigMapAllowlist_ExtendsPrefixes(t *testing.T) {
 // TestRBACDrift_ConfigMapAllowlist_ExtendsNamespaces verifies that adding
 // "my-ns" to `allowNamespaces` suppresses an unbound SA in that namespace.
 func TestRBACDrift_ConfigMapAllowlist_ExtendsNamespaces(t *testing.T) {
-	cm := makeConfigMap("cluster-health-autopilot", "cha-rbac-allowlist", map[string]string{
+	cm := makeConfigMap("agentic-sre", "srenix-rbac-allowlist", map[string]string{
 		"allowNamespaces": "my-ns",
 	})
 	src := &memSourceRBAC{byResource: map[string][]unstructured.Unstructured{
@@ -674,7 +674,7 @@ func TestRBACDrift_SuppressedDigest_EmittedWhenSuppressed(t *testing.T) {
 	if !strings.Contains(d.Message, "k10-admin") {
 		t.Errorf("digest message must contain suppressed subject; got %q", d.Message)
 	}
-	if !strings.Contains(d.Remediation, "cha-rbac-allowlist") {
+	if !strings.Contains(d.Remediation, "srenix-rbac-allowlist") {
 		t.Errorf("digest remediation must mention ConfigMap name; got %q", d.Remediation)
 	}
 }

@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package report
@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/fix"
+	"github.com/srenix-ai/agentic-sre/pkg/fix"
 )
 
 // TestDeltaSilence_ClickLinks_WhenMinted asserts that the LIVE critical
@@ -22,7 +22,7 @@ func TestDeltaSilence_ClickLinks_WhenMinted(t *testing.T) {
 		Source:              "FailingExternalSecrets",
 		Severity:            "critical",
 		Message:             "ExternalSecret prod/api stuck SecretSyncError",
-		IsNewThisCycle:      true,
+		IsNewThisCycle:      false, // silence only renders for recurring findings (not brand-new this cycle)
 		SilenceSubjectURL:   "https://approve.example.com/silence?token=SUBJ",
 		SilenceClassLongURL: "https://approve.example.com/silence?token=CLASS",
 		SilenceShortDur:     24 * time.Hour,
@@ -69,7 +69,7 @@ func TestDeltaSilence_KubectlFallback_WhenUnconfigured(t *testing.T) {
 		Source:         "FailingExternalSecrets",
 		Severity:       "critical",
 		Message:        "ExternalSecret prod/api stuck SecretSyncError",
-		IsNewThisCycle: true,
+		IsNewThisCycle: false, // silence only renders for recurring findings (not brand-new this cycle)
 	}
 
 	for name, body := range map[string]string{
@@ -93,7 +93,7 @@ func TestDeltaSilence_DurationLabelsConfigurable(t *testing.T) {
 		Source:              "ImageDigestPin",
 		Severity:            "warning",
 		Message:             "no digest pin",
-		IsNewThisCycle:      true,
+		IsNewThisCycle:      false, // silence only renders for recurring findings (not brand-new this cycle)
 		SilenceSubjectURL:   "https://x/silence?token=S",
 		SilenceClassLongURL: "https://x/silence?token=C",
 		SilenceShortDur:     12 * time.Hour,

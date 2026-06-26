@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package report
@@ -11,29 +11,34 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/fix"
+	"github.com/srenix-ai/agentic-sre/internal/fix"
 )
 
 // SlackChannels holds webhook URLs for the unified three-channel alert routing model.
 //
-//   - Alerts   → #ceph-alerts:   CHA acted (fixers ran and resolved issues)
+//   - Alerts   → #ceph-alerts:   Srenix acted (fixers ran and resolved issues)
 //   - Critical → #ceph-critical: human action required (unfixable or still active)
 //
 // Either field may be empty; posts are silently skipped for empty URLs.
 type SlackChannels struct {
-	Alerts   string // #ceph-alerts — event-driven, CHA acted
+	Alerts   string // #ceph-alerts — event-driven, Srenix acted
 	Critical string // #ceph-critical — event-driven, needs human
 }
 
-// renderAIBlocks appends optional AI-tier blocks (enrichment, approval URL)
-// to a Slack message builder. Renders nothing when no AI fields are populated
-// — OSS deployments produce identical output to today.
+// renderAIBlocks appends optional AI-tier blocks (investigation, enrichment,
+// approval URL) to a Slack message builder. Renders nothing when no AI fields
+// are populated — OSS deployments produce identical output to today.
+// renderAIBlocks emits the AI-tier addenda for one finding: the LLM narrative
+// enrichment and the Approve/Deny action row. The Layer-2 investigation
+// (root cause) is NOT rendered here — it leads the guidance block via
+// renderGuidance so every finding is root-cause-first; rendering it here too
+// would duplicate it.
 func renderAIBlocks(b *strings.Builder, d DeltaDiag) {
 	if d.Enrichment != "" {
 		fmt.Fprintf(b, "  🤖 _%s_\n", d.Enrichment)
 	}
 	if d.ApprovalURL != "" {
-		// Symmetric Approve / Deny pair (cha-com #17 one-shot tokens).
+		// Symmetric Approve / Deny pair (srenix-enterprise #17 one-shot tokens).
 		// Whichever the SRE clicks first wins, the other is burned.
 		// Denial records a RAG outcome so the proposer learns from
 		// rejections.
@@ -66,8 +71,8 @@ func renderSilenceSnippet(b *strings.Builder, d DeltaDiag) {
 		return
 	}
 	fmt.Fprintf(b, "  🔕 silence 24h: ```kubectl apply -f - <<EOF\n"+
-		"apiVersion: cha.bionicaisolutions.com/v1alpha1\n"+
-		"kind: Silence\nmetadata:\n  name: %s\n  namespace: cluster-health-autopilot\n"+
+		"apiVersion: srenix.ai/v1alpha1\n"+
+		"kind: Silence\nmetadata:\n  name: %s\n  namespace: agentic-sre\n"+
 		"spec:\n  matcher:\n    subject: %q\n  until: %q\n  reason: silenced-from-slack\nEOF```\n",
 		slackSilenceName(d.Subject), d.Subject,
 		time.Now().UTC().Add(24*time.Hour).Format("2006-01-02T15:04:05Z"))
@@ -108,13 +113,13 @@ func humanizeSilenceDuration(dur, def time.Duration) string {
 }
 
 // FormatAlertsPayload renders the #ceph-alerts message for a watcher cycle
-// where CHA auto-remediation fired. Shows what triggered the fix and what
+// where Srenix auto-remediation fired. Shows what triggered the fix and what
 // actions were taken.
 func FormatAlertsPayload(fixedIssues []DeltaDiag, fixResults []fix.Result) SlackPayload {
 	now := time.Now().UTC()
 	var b strings.Builder
 
-	fmt.Fprintf(&b, "*CHA Auto-Remediation* — %s\n", now.Format("2006-01-02 15:04:05 UTC"))
+	fmt.Fprintf(&b, "*Srenix Auto-Remediation* — %s\n", now.Format("2006-01-02 15:04:05 UTC"))
 
 	if len(fixedIssues) > 0 {
 		fmt.Fprintf(&b, "\n*⚡ Triggered by (%d):*\n", len(fixedIssues))
@@ -143,7 +148,7 @@ func FormatAlertsPayload(fixedIssues []DeltaDiag, fixResults []fix.Result) Slack
 		Attachments: []SlackAttachment{{
 			Color:    "good",
 			Text:     b.String(),
-			Footer:   "CHA Auto-Remediation",
+			Footer:   "Srenix Auto-Remediation",
 			Ts:       now.Unix(),
 			MrkdwnIn: []string{"text"},
 		}},
@@ -177,7 +182,7 @@ type CriticalRenderConfig struct {
 // findings) were silently truncated by Slack — alphabetically-late
 // findings + their "✅ Approve" links never reached the channel even
 // though the OSS render included them correctly. The chunker carries
-// the "*CHA Alert — Human Action Required*" header on every chunk and
+// the "*Srenix Alert — Human Action Required*" header on every chunk and
 // adds a "(part N/M)" indicator when more than one chunk results.
 // Resolved findings stay in the last chunk (they're typically small).
 func SplitCriticalPayloads(unfixable []DeltaDiag, resolved []ResolvedDiag) []SlackPayload {
@@ -207,6 +212,7 @@ func SplitCriticalPayloadsConfig(unfixable []DeltaDiag, resolved []ResolvedDiag,
 	var newRendered []string
 	var newCount int
 	var stableCritCount, stableDiagCount int
+	var hasNewCritical bool
 	for _, d := range unfixable {
 		var b strings.Builder
 		if d.Severity == "critical" {
@@ -214,14 +220,21 @@ func SplitCriticalPayloadsConfig(unfixable []DeltaDiag, resolved []ResolvedDiag,
 		} else {
 			fmt.Fprintf(&b, "• ⚠️ *%s*\n  %s\n", d.Subject, d.Message)
 		}
-		if d.Remediation != "" {
-			fmt.Fprintf(&b, "  _→ %s_\n", d.Remediation)
+		// Root-cause-first guidance (investigation before remediation).
+		renderGuidance(&b, d.Investigation, d.Remediation)
+		// Only show the silence affordance for findings that have been
+		// around at least one cycle — a brand-new problem should be
+		// investigated, not immediately silenced.
+		if !d.IsNewThisCycle {
+			renderSilenceSnippet(&b, d)
 		}
-		renderSilenceSnippet(&b, d)
 		renderAIBlocks(&b, d)
 		if d.IsNewThisCycle {
 			newRendered = append(newRendered, b.String())
 			newCount++
+			if d.Severity == "critical" {
+				hasNewCritical = true
+			}
 			continue
 		}
 		if d.Severity == "critical" {
@@ -269,6 +282,7 @@ func SplitCriticalPayloadsConfig(unfixable []DeltaDiag, resolved []ResolvedDiag,
 			if r.Message != "" {
 				fmt.Fprintf(&b, "  _%s_\n", r.Message)
 			}
+			renderResolvedRootCause(&b, r)
 		}
 		resolvedSection = b.String()
 	}
@@ -360,20 +374,20 @@ func SplitCriticalPayloadsConfig(unfixable []DeltaDiag, resolved []ResolvedDiag,
 			marker := fmt.Sprintf(" _(part %d/%d)_", i+1, len(chunks))
 			// Insert the marker right after the first newline (just
 			// after the header line) so it stays adjacent to the
-			// "CHA Alert" title.
+			// "Srenix Alert" title.
 			if nl := strings.Index(chunks[i], "\n"); nl > 0 {
 				chunks[i] = chunks[i][:nl] + marker + chunks[i][nl:]
 			}
 		}
 	}
 
-	// Pick color per chunk: danger if any critical, warning if only
-	// diagnostics, good if neither (resolved-only).
+	// Pick color per chunk: danger if any critical (stable or new-this-cycle),
+	// warning if only diagnostics/new-warnings, good if neither (resolved-only).
 	color := "danger"
-	if len(critRendered) == 0 && len(diagRendered) > 0 {
+	if len(critRendered) == 0 && !hasNewCritical && len(diagRendered) > 0 {
 		color = "warning"
 	}
-	if len(critRendered) == 0 && len(diagRendered) == 0 {
+	if len(critRendered) == 0 && !hasNewCritical && len(diagRendered) == 0 {
 		color = "good"
 	}
 
@@ -386,7 +400,7 @@ func SplitCriticalPayloadsConfig(unfixable []DeltaDiag, resolved []ResolvedDiag,
 			Attachments: []SlackAttachment{{
 				Color:    color,
 				Text:     text,
-				Footer:   "CHA — Human action required",
+				Footer:   "Srenix — Human action required",
 				Ts:       now,
 				MrkdwnIn: []string{"text"},
 			}},
@@ -408,7 +422,7 @@ func emitNoChangeDigest(stableTotal int) []SlackPayload {
 	text := fmt.Sprintf(
 		"%s — %s\n\n"+
 			"*✨ No new issues since last cycle* — steady state at %d finding%s. "+
-			"_Run `cha diagnose` or check #ceph-critical history for the active list._\n",
+			"_Run `srenix diagnose` or check #ceph-critical history for the active list._\n",
 		alertTitle(false),
 		time.Now().UTC().Format("2006-01-02 15:04:05 UTC"),
 		stableTotal, plural(stableTotal),
@@ -419,7 +433,7 @@ func emitNoChangeDigest(stableTotal int) []SlackPayload {
 		Attachments: []SlackAttachment{{
 			Color:    "warning", // still problems — just no NEW problems
 			Text:     text,
-			Footer:   "CHA — Human action required",
+			Footer:   "Srenix — Human action required",
 			Ts:       time.Now().UTC().Unix(),
 			MrkdwnIn: []string{"text"},
 		}},
@@ -436,14 +450,19 @@ func plural(n int) string {
 	return "s"
 }
 
-// hasActionableFindings reports whether any finding in ds carries a signed
-// ApprovalURL — i.e. an Approve/Deny button will appear in the Slack post.
-// Used to choose between "Human Action Required" (approve/deny buttons
-// present) and "Advisory — Review (no action required)" (purely informational
-// findings with no interactive controls) as the Slack alert title.
+// hasActionableFindings reports whether the Slack alert should carry the
+// "Human Action Required" title rather than the softer advisory form.
+//
+// Two conditions qualify: an ApprovalURL is present (the operator must click
+// Approve/Deny) OR any finding is critical severity (the operator must act
+// even if no Approve/Deny button exists — OSS deployments have no approval
+// server but critical findings still need a human response).
 func hasActionableFindings(ds []DeltaDiag) bool {
 	for _, d := range ds {
 		if d.ApprovalURL != "" {
+			return true
+		}
+		if d.Severity == "critical" {
 			return true
 		}
 	}
@@ -457,13 +476,13 @@ func hasActionableFindings(ds []DeltaDiag) bool {
 // "Advisory — Review" title so on-call engineers can triage at a glance.
 func alertTitle(actionable bool) string {
 	if actionable {
-		return "*CHA Alert — Human Action Required*"
+		return "*Srenix Alert — Human Action Required*"
 	}
-	return "*CHA Advisory — Review (no action required)*"
+	return "*Srenix Advisory — Review (no action required)*"
 }
 
 // FormatCriticalPayload renders the #ceph-critical message for a watcher cycle
-// where issues require human intervention — either unfixable by CHA or still
+// where issues require human intervention — either unfixable by Srenix or still
 // active after fixers ran.
 //
 // Retained for callers that want a single payload (tests, OSS examples).
@@ -492,9 +511,7 @@ func FormatCriticalPayload(unfixable []DeltaDiag, resolved []ResolvedDiag) Slack
 				continue
 			}
 			fmt.Fprintf(&b, "• ❌ *%s*\n  %s\n", d.Subject, d.Message)
-			if d.Remediation != "" {
-				fmt.Fprintf(&b, "  _→ %s_\n", d.Remediation)
-			}
+			renderGuidance(&b, d.Investigation, d.Remediation)
 			renderSilenceSnippet(&b, d)
 			renderAIBlocks(&b, d)
 		}
@@ -507,9 +524,7 @@ func FormatCriticalPayload(unfixable []DeltaDiag, resolved []ResolvedDiag) Slack
 				continue
 			}
 			fmt.Fprintf(&b, "• ⚠️ *%s*\n  %s\n", d.Subject, d.Message)
-			if d.Remediation != "" {
-				fmt.Fprintf(&b, "  _→ %s_\n", d.Remediation)
-			}
+			renderGuidance(&b, d.Investigation, d.Remediation)
 			renderSilenceSnippet(&b, d)
 			renderAIBlocks(&b, d)
 		}
@@ -522,6 +537,7 @@ func FormatCriticalPayload(unfixable []DeltaDiag, resolved []ResolvedDiag) Slack
 			if r.Message != "" {
 				fmt.Fprintf(&b, "  _%s_\n", r.Message)
 			}
+			renderResolvedRootCause(&b, r)
 		}
 	}
 
@@ -539,7 +555,7 @@ func FormatCriticalPayload(unfixable []DeltaDiag, resolved []ResolvedDiag) Slack
 		Attachments: []SlackAttachment{{
 			Color:    color,
 			Text:     b.String(),
-			Footer:   "CHA — Human action required",
+			Footer:   "Srenix — Human action required",
 			Ts:       now.Unix(),
 			MrkdwnIn: []string{"text"},
 		}},
@@ -547,7 +563,7 @@ func FormatCriticalPayload(unfixable []DeltaDiag, resolved []ResolvedDiag) Slack
 }
 
 // RouteAndPost splits watcher cycle results into the correct Slack channels:
-//   - issues that disappeared from postFix (fixed by CHA) → channels.Alerts
+//   - issues that disappeared from postFix (fixed by Srenix) → channels.Alerts
 //   - issues still present in postFix (unfixable) + resolved → channels.Critical
 //
 // postFixSubjects is the set of subject keys still active after fixers ran.

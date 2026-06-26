@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 // Package azure contains the Azure implementation of the cloud probe
@@ -11,9 +11,9 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/cloud"
-	pkgazure "github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/cloud/azure"
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/probe"
+	"github.com/srenix-ai/agentic-sre/pkg/cloud"
+	pkgazure "github.com/srenix-ai/agentic-sre/pkg/cloud/azure"
+	"github.com/srenix-ai/agentic-sre/pkg/probe"
 )
 
 // SQLDatabases reports drift on Azure SQL Database resources:
@@ -24,7 +24,7 @@ import (
 //     tier auto-pauses by design, so it's expected there; we still
 //     warn-only since we can't always tell from the projection)
 //   - Restoring / RecoveryPending / Recovery / Scaling / Resuming
-//     → warning (transitional; CHA does not page on routine ops)
+//     → warning (transitional; Srenix does not page on routine ops)
 //   - UsedPercent >= 80 → warning; >= 90 → critical
 //   - BackupConfigured=false → warning (operator-config drift)
 type SQLDatabases struct{}

@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package report
@@ -8,13 +8,14 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/snapshot"
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/ticketing"
+	"github.com/srenix-ai/agentic-sre/internal/snapshot"
+	"github.com/srenix-ai/agentic-sre/pkg/ticketing"
 )
 
 // tixSource returns a fixed UnstructuredList for any List call. Other
@@ -98,7 +99,7 @@ func (r *recordingSink) Comment(_ context.Context, ref ticketing.TicketRef, body
 
 func makeDriftReport(subject, name string, ticket map[string]any) unstructured.Unstructured {
 	obj := map[string]any{
-		"apiVersion": "cha.bionicaisolutions.com/v1alpha1",
+		"apiVersion": "srenix.ai/v1alpha1",
 		"kind":       "DriftReport",
 		"metadata": map[string]any{
 			"name": name,
@@ -123,7 +124,7 @@ func TestTicketFromDeltaCarriesAllFields(t *testing.T) {
 	}
 	cfg := TicketingConfig{
 		Cluster: "gpu-cluster",
-		Labels:  []string{"cha", "auto-filed"},
+		Labels:  []string{"srenix", "auto-filed"},
 	}
 	tk := ticketFromDelta(delta, cfg, "run-42")
 
@@ -145,7 +146,7 @@ func TestTicketFromDeltaCarriesAllFields(t *testing.T) {
 	if !strings.Contains(tk.Body, "gpu-cluster") || !strings.Contains(tk.Body, "run-42") {
 		t.Errorf("body missing cluster/runID footer: %q", tk.Body)
 	}
-	if len(tk.Labels) != 2 || tk.Labels[0] != "cha" {
+	if len(tk.Labels) != 2 || tk.Labels[0] != "srenix" {
 		t.Errorf("labels=%v want config labels propagated", tk.Labels)
 	}
 }
@@ -181,7 +182,7 @@ func TestRouteTicketsUpsertsForUnfixableWithoutExistingRef(t *testing.T) {
 
 	RouteTickets(
 		context.Background(),
-		TicketingConfig{Sink: sink, Cluster: "gpu", Labels: []string{"cha"}},
+		TicketingConfig{Sink: sink, Cluster: "gpu", Labels: []string{"srenix"}},
 		src,
 		mut,
 		map[string]bool{"Pod/default/broken": true},
@@ -310,3 +311,65 @@ func TestRouteTicketsHandlesUpsertError(t *testing.T) {
 // ensure our fake satisfies the Source/Mutator interfaces at compile time
 var _ snapshot.Source = (*tixSource)(nil)
 var _ snapshot.Mutator = (*tixMutator)(nil)
+
+func TestRouteTickets_BelowFloorNotTicketed(t *testing.T) {
+	// Default floor = critical. A warning finding must NOT open a ticket.
+	src := &tixSource{items: []unstructured.Unstructured{
+		makeDriftReport("Namespace/cluster/x/missing-network-policy", "drift-w", nil),
+	}}
+	mut := &tixMutator{}
+	sink := &recordingSink{ref: ticketing.TicketRef{Key: "WP-1"}}
+	RouteTickets(context.Background(),
+		TicketingConfig{Sink: sink, Cluster: "gpu"}, // MinSeverity empty → critical
+		src, mut,
+		map[string]bool{"Namespace/cluster/x/missing-network-policy": true},
+		[]DeltaDiag{{Subject: "Namespace/cluster/x/missing-network-policy", Severity: "warning"}},
+		"run-1",
+	)
+	if len(sink.upserts) != 0 {
+		t.Fatalf("warning finding must not be ticketed at critical floor; upserts=%d", len(sink.upserts))
+	}
+}
+
+func TestRouteTickets_WidenedFloorTicketsWarning(t *testing.T) {
+	src := &tixSource{items: []unstructured.Unstructured{
+		makeDriftReport("Pod/default/warn", "drift-warn", nil),
+	}}
+	mut := &tixMutator{}
+	sink := &recordingSink{ref: ticketing.TicketRef{Provider: "openproject", Key: "WP-2"}}
+	RouteTickets(context.Background(),
+		TicketingConfig{Sink: sink, Cluster: "gpu", MinSeverity: "warning"},
+		src, mut,
+		map[string]bool{"Pod/default/warn": true},
+		[]DeltaDiag{{Subject: "Pod/default/warn", Severity: "warning"}},
+		"run-2",
+	)
+	if len(sink.upserts) != 1 {
+		t.Fatalf("warning floor should ticket a warning; upserts=%d", len(sink.upserts))
+	}
+}
+
+func TestRouteTicketCleanup_ClosesBelowFloorTickets(t *testing.T) {
+	// A warning finding that already has an OPEN ticket (filed under an old
+	// loose policy) must be auto-closed when the floor is critical.
+	dr := makeDriftReport("Namespace/cluster/x/missing-network-policy", "drift-old",
+		map[string]any{"provider": "openproject", "key": "WP-7", "resolved": false})
+	_ = unstructured.SetNestedField(dr.Object, "warning", "spec", "severity")
+	// A critical finding with an open ticket must be LEFT open.
+	dr2 := makeDriftReport("Pod/default/crit", "drift-crit",
+		map[string]any{"provider": "openproject", "key": "WP-8", "resolved": false})
+	_ = unstructured.SetNestedField(dr2.Object, "critical", "spec", "severity")
+
+	src := &tixSource{items: []unstructured.Unstructured{dr, dr2}}
+	mut := &tixMutator{}
+	sink := &recordingSink{}
+	RouteTicketCleanup(context.Background(),
+		TicketingConfig{Sink: sink, Cluster: "gpu", ResolveOnClear: true}, // critical floor
+		src, mut, fixedNowTix(),
+	)
+	if len(sink.resolve) != 1 || sink.resolve[0].Key != "WP-7" {
+		t.Fatalf("expected only WP-7 (warning) closed; got %+v", sink.resolve)
+	}
+}
+
+func fixedNowTix() time.Time { return time.Date(2026, 6, 24, 0, 0, 0, 0, time.UTC) }

@@ -1,10 +1,10 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 // CROSS-REPO CONTRACT TEST — do not change the literal suffix formats
-// below without coordinating with CHA-com.
+// below without coordinating with Srenix Enterprise.
 //
-// CHA-com's cross-resource RCA matchers (ai/cloudcontext, PR #65) join
+// Srenix Enterprise's cross-resource RCA matchers (ai/cloudcontext, PR #65) join
 // Kubernetes resources to cloud findings by parsing tokens out of the
 // finding MESSAGE:
 //
@@ -12,10 +12,10 @@
 //	                          gcp-lb-backends, azure-appgw-backends)
 //	" (domains: <d1>,<d2>)" — azure-certs cert findings
 //
-// CHA-com's fixtures encode this exact shape: single leading space,
+// Srenix Enterprise's fixtures encode this exact shape: single leading space,
 // literal "(lb: " / "(domains: ", comma-separated domains with NO
 // spaces, closing paren. If a test in this file fails, you are breaking
-// the CHA-com RCA join contract — fix the format back or update both
+// the Srenix Enterprise RCA join contract — fix the format back or update both
 // repos in lockstep.
 package cloud
 
@@ -24,7 +24,7 @@ import (
 	"testing"
 )
 
-// The literal cross-repo format strings. CHA-com ai/cloudcontext
+// The literal cross-repo format strings. Srenix Enterprise ai/cloudcontext
 // matchers parse exactly these.
 const (
 	contractLBFormat      = " (lb: %s)"

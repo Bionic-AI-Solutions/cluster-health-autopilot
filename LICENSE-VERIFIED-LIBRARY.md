@@ -1,7 +1,7 @@
-# Cluster Health Autopilot — Verified Signature Library License
+# Agentic SRE — Verified Signature Library License
 
 **Version 1.0 (DRAFT) — 2026-05-22**
-**Licensor:** Bionic AI Solutions, Inc. ("Bionic")
+**Licensor:** Srenix, Inc. ("Bionic")
 **Contact:** licensing@baisoln.com
 
 > ## ⚠️ DRAFT — DO NOT EXECUTE WITHOUT LEGAL REVIEW
@@ -38,7 +38,7 @@
 >    (master services agreement) so the documents don't contradict
 >    each other on payment terms, termination, or auto-renewal.
 > 4. Insert Bionic's actual registered legal-entity name and address
->    (line 4 above references "Bionic AI Solutions, Inc." — confirm
+>    (line 4 above references "Srenix, Inc." — confirm
 >    incorporation status before use).
 > 5. Add a signature block or specify the electronic-acceptance
 >    mechanism (click-through, DocuSign, etc.).
@@ -51,24 +51,24 @@
 
 ## 1. What this document covers
 
-The Cluster Health Autopilot ("CHA") project is dual-licensed:
+The Agentic SRE ("Srenix") project is dual-licensed:
 
 | Component | License | Where it lives |
 |---|---|---|
-| CHA engine (the `cha` binary, all of `cmd/`, `internal/`, `pkg/`) | **Apache License 2.0** | This repository, [`LICENSE`](LICENSE) |
+| Srenix engine (the `srenix` binary, all of `cmd/`, `internal/`, `pkg/`) | **Apache License 2.0** | This repository, [`LICENSE`](LICENSE) |
 | Default Signature Library — the analyzers, fixers, probes, and rule-based investigator that ship in [`catalog/`](catalog/) of this repository | **Apache License 2.0** | This repository, covered by [`LICENSE`](LICENSE) |
-| **Verified Signature Library** ("the Library") — the curated, regression-tested, monthly-updated bundle of additional analyzers, fixers, probes, investigators, and AI prompts distributed with the paid CHA Enterprise tier | **This document (commercial subscription license)** | Distributed as a signed bundle to subscribers only; not in this repository |
+| **Verified Signature Library** ("the Library") — the curated, regression-tested, monthly-updated bundle of additional analyzers, fixers, probes, investigators, and AI prompts distributed with the paid Srenix Enterprise tier | **This document (commercial subscription license)** | Distributed as a signed bundle to subscribers only; not in this repository |
 
-**Apache 2.0 is unaffected.** Nothing in this document modifies or supersedes the Apache 2.0 license that covers the CHA engine and the Default Signature Library. You may continue to use, modify, and redistribute the engine and Default Library under Apache 2.0 terms regardless of whether you are a Verified Signature Library subscriber.
+**Apache 2.0 is unaffected.** Nothing in this document modifies or supersedes the Apache 2.0 license that covers the Srenix engine and the Default Signature Library. You may continue to use, modify, and redistribute the engine and Default Library under Apache 2.0 terms regardless of whether you are a Verified Signature Library subscriber.
 
 ---
 
 ## 2. Definitions
 
-- **"Library"** means the Verified Signature Library — the bundle of files distributed by Bionic AI Solutions to active subscribers, signed by Bionic's release-signing key, containing curated detector signatures, fixer recipes, investigator rules, and prompt templates not present in the public Apache-2.0 repository.
-- **"Engine"** means the CHA binary and its Default Signature Library, distributed under Apache 2.0.
-- **"Subscriber"** means a legal entity that has executed a current, paid CHA Enterprise subscription agreement with Bionic and is not in breach of that agreement.
-- **"Subscription Period"** means the time during which the Subscriber's CHA Enterprise subscription is paid and active.
+- **"Library"** means the Verified Signature Library — the bundle of files distributed by Srenix to active subscribers, signed by Bionic's release-signing key, containing curated detector signatures, fixer recipes, investigator rules, and prompt templates not present in the public Apache-2.0 repository.
+- **"Engine"** means the Srenix binary and its Default Signature Library, distributed under Apache 2.0.
+- **"Subscriber"** means a legal entity that has executed a current, paid Srenix Enterprise subscription agreement with Bionic and is not in breach of that agreement.
+- **"Subscription Period"** means the time during which the Subscriber's Srenix Enterprise subscription is paid and active.
 - **"Production Use"** means use of the Library to monitor or remediate any Kubernetes cluster that is not solely a development, test, or non-production environment.
 - **"Internal Use"** means use within the Subscriber's own organization, on infrastructure the Subscriber owns or has direct contractual access to, on behalf of the Subscriber's own business operations. Internal Use does not include offering the Library — directly or indirectly — as a service to third parties.
 
@@ -89,7 +89,7 @@ Subject to the Subscriber's continued compliance with this license and the under
 
 The Subscriber shall not, and shall not permit any third party to:
 
-1. **Redistribute** the Library, in whole or in part, in any form, to any party that does not hold its own current CHA Enterprise subscription.
+1. **Redistribute** the Library, in whole or in part, in any form, to any party that does not hold its own current Srenix Enterprise subscription.
 2. **Offer the Library as a service** — including but not limited to managed Kubernetes services, SaaS platforms, consulting engagements, or any other arrangement where third parties derive the benefit of the Library without holding their own subscription.
 3. **Reverse engineer, decompile, or disassemble** the Library, except to the extent that applicable law expressly permits such activity notwithstanding this restriction.
 4. **Extract, copy, or republish** the signature definitions, rules, or prompts from the Library into any other tool, product, or open-source project.
@@ -137,11 +137,11 @@ If the Subscriber provides Bionic with feedback, suggestions, bug reports, or im
 
 THE LIBRARY IS PROVIDED **"AS IS"** AND **"AS AVAILABLE"** WITHOUT WARRANTY OF ANY KIND, WHETHER EXPRESS, IMPLIED, OR STATUTORY, INCLUDING BUT NOT LIMITED TO WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, TITLE, OR NON-INFRINGEMENT.
 
-**Operational scope.** CHA — both the Engine and the Library — performs automated detection and, where configured, automated remediation of Kubernetes cluster state. Automated remediation carries inherent risk. The Subscriber acknowledges that:
+**Operational scope.** Srenix — both the Engine and the Library — performs automated detection and, where configured, automated remediation of Kubernetes cluster state. Automated remediation carries inherent risk. The Subscriber acknowledges that:
 
 - No signature, however well-tested, can anticipate every cluster configuration.
 - Bionic does not guarantee that any signature will detect every instance of the condition it targets, nor that any fixer will succeed without unintended side effects.
-- The Subscriber is responsible for configuring CHA's safety controls (dry-run mode, fixer allow-lists, GitOps guards, approval gates) appropriately for their environment.
+- The Subscriber is responsible for configuring Srenix's safety controls (dry-run mode, fixer allow-lists, GitOps guards, approval gates) appropriately for their environment.
 
 Bionic strongly recommends that all new signatures and fixers be evaluated in a non-production environment before being enabled in production.
 
@@ -167,7 +167,7 @@ TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW:
 
 11.3. **Survival.** Sections 4 (Restrictions, post-termination only), 7 (Ownership), 8 (Feedback), 9 (No warranty), 10 (Limitation of liability), 11 (Termination), and 12 (Governing law) survive termination.
 
-11.4. **Engine unaffected.** Termination of this license does **not** affect the Subscriber's rights to use the Engine and the Default Signature Library under Apache 2.0. The Subscriber may continue to use the Apache-2.0-licensed portions of CHA after the subscription ends; only the Library bundle must be removed.
+11.4. **Engine unaffected.** Termination of this license does **not** affect the Subscriber's rights to use the Engine and the Default Signature Library under Apache 2.0. The Subscriber may continue to use the Apache-2.0-licensed portions of Srenix after the subscription ends; only the Library bundle must be removed.
 
 ---
 
@@ -200,9 +200,9 @@ TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW:
 ## Contact
 
 - **Licensing inquiries:** licensing@baisoln.com
-- **Security disclosures:** cha-security@baisoln.com — see [SECURITY.md](SECURITY.md)
-- **Open-source engine support:** GitHub Issues at https://github.com/Bionic-AI-Solutions/cluster-health-autopilot
+- **Security disclosures:** security@srenix.ai — see [SECURITY.md](SECURITY.md)
+- **Open-source engine support:** GitHub Issues at https://github.com/srenix-ai/agentic-sre
 
 ---
 
-*Copyright © 2026 Bionic AI Solutions, Inc. All rights reserved. The CHA engine and Default Signature Library are licensed under Apache License 2.0. The Verified Signature Library is proprietary and licensed separately under the terms above.*
+*Copyright © 2026 Srenix, Inc. All rights reserved. The Srenix engine and Default Signature Library are licensed under Apache License 2.0. The Verified Signature Library is proprietary and licensed separately under the terms above.*

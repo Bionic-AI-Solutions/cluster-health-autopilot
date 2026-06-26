@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package probe
@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/snapshot"
+	"github.com/srenix-ai/agentic-sre/internal/snapshot"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 
@@ -36,10 +36,10 @@ import (
 //
 //   - SQLite mode (no etcd pods) is healthy-by-design on a single-node k3s
 //     install. The probe emits a SeverityInfo advisory about the lack of HA
-//     unless CHA_K3S_SINGLE_NODE_OK=true suppresses it.
+//     unless SRENIX_K3S_SINGLE_NODE_OK=true suppresses it.
 //
-// Opt-out: set CHA_PROBE_K3S_DATASTORE=off to disable entirely.
-// Recommendation: set CHA_PROBE_ETCD=off when using this probe to avoid the
+// Opt-out: set SRENIX_PROBE_K3S_DATASTORE=off to disable entirely.
+// Recommendation: set SRENIX_PROBE_ETCD=off when using this probe to avoid the
 // redundant "no etcd pods" warning from the kubeadm ETCD probe.
 type K3sDatastore struct {
 	// SnapshotSLA caps how stale the newest etcd snapshot ConfigMap may be
@@ -155,7 +155,7 @@ func (d K3sDatastore) Run(ctx context.Context, src snapshot.Source) Result {
 
 	if len(members) == 0 {
 		// ── SQLite mode (single-node k3s, no etcd pods) ───────────────────
-		singleNodeOK := os.Getenv("CHA_K3S_SINGLE_NODE_OK") == "true"
+		singleNodeOK := os.Getenv("SRENIX_K3S_SINGLE_NODE_OK") == "true"
 		if !singleNodeOK {
 			findings = append(findings, Finding{
 				Component: k3sDatastoreName,
@@ -163,7 +163,7 @@ func (d K3sDatastore) Run(ctx context.Context, src snapshot.Source) Result {
 				Message:   "k3s cluster appears to use SQLite (single-node, no etcd static pods found); no HA for the datastore",
 				Remediation: "For production deployments, run at least 3 control-plane nodes to enable embedded etcd HA. " +
 					"See: https://docs.k3s.io/datastore/ha-embedded. " +
-					"To suppress this advisory on an intentional single-node install, set CHA_K3S_SINGLE_NODE_OK=true.",
+					"To suppress this advisory on an intentional single-node install, set SRENIX_K3S_SINGLE_NODE_OK=true.",
 			})
 		}
 
@@ -357,7 +357,7 @@ func (d K3sDatastore) Run(ctx context.Context, src snapshot.Source) Result {
 			Component:   k3sDatastoreName,
 			Severity:    SeverityWarning,
 			Message:     "Could not list kube-system ConfigMaps to check etcd snapshot age: " + err.Error(),
-			Remediation: "Verify that the CHA service account has `get,list,watch` on ConfigMaps in kube-system.",
+			Remediation: "Verify that the Srenix service account has `get,list,watch` on ConfigMaps in kube-system.",
 		})
 	} else {
 		var newestSnapshot time.Time
