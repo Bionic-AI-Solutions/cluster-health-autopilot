@@ -24,9 +24,109 @@ func makeEvent(invKind, invNS, invName, message string) unstructured.Unstructure
 	return u
 }
 
+// makePodStatus builds a Pod with one container's ready + restartCount status.
+func makePodStatus(ns, name string, ready bool, restarts int64) unstructured.Unstructured {
+	u := unstructured.Unstructured{Object: map[string]any{}}
+	u.SetAPIVersion("v1")
+	u.SetKind("Pod")
+	u.SetNamespace(ns)
+	u.SetName(name)
+	cs := map[string]any{"name": "c", "ready": ready, "restartCount": restarts}
+	_ = unstructured.SetNestedSlice(u.Object, []any{cs}, "status", "containerStatuses")
+	return u
+}
+
+// makeEventCount is makeEvent with the Event aggregation count set.
+func makeEventCount(invKind, invNS, invName, message string, count int64) unstructured.Unstructured {
+	u := makeEvent(invKind, invNS, invName, message)
+	_ = unstructured.SetNestedField(u.Object, count, "count")
+	return u
+}
+
+const livenessFailMsg = "Liveness probe failed: zookeeper healthcheck failed"
+
 func TestLogPatternMatcher_Name(t *testing.T) {
 	if (LogPatternMatcher{}).Name() != "LogPatternMatcher" {
 		t.Error("Name mismatch")
+	}
+}
+
+// A single liveness-probe blip on a pod that is now Ready (0 restarts) is a
+// transient, self-healed event → stays advisory (warning). This is the
+// langfuse-zookeeper-0 case the user asked about.
+func TestLogPatternMatcher_ProbeFailed_TransientBlip_StaysWarning(t *testing.T) {
+	src := &memSourceDD{byResource: map[string][]unstructured.Unstructured{
+		"events": {makeEvent("Pod", "langfuse", "langfuse-zookeeper-0", livenessFailMsg)},
+		"pods":   {makePodStatus("langfuse", "langfuse-zookeeper-0", true, 0)},
+	}}
+	got := LogPatternMatcher{}.Run(context.Background(), src)
+	if len(got) != 1 || got[0].Source != "LogPatternMatcher.ProbeFailed" {
+		t.Fatalf("expected one ProbeFailed finding; got %+v", got)
+	}
+	if got[0].Severity != "warning" {
+		t.Errorf("a recovered blip must stay warning (advisory); got %q", got[0].Severity)
+	}
+	if strings.Contains(got[0].Message, "escalated") {
+		t.Errorf("transient blip must not carry an escalation marker; got %q", got[0].Message)
+	}
+}
+
+// A probe failure on a pod that is currently NotReady is genuinely down →
+// escalate to critical (→ Human Action Required channel).
+func TestLogPatternMatcher_ProbeFailed_PodNotReady_Escalates(t *testing.T) {
+	src := &memSourceDD{byResource: map[string][]unstructured.Unstructured{
+		"events": {makeEvent("Pod", "data", "zk-0", livenessFailMsg)},
+		"pods":   {makePodStatus("data", "zk-0", false, 0)},
+	}}
+	got := LogPatternMatcher{}.Run(context.Background(), src)
+	if len(got) != 1 || got[0].Severity != "critical" {
+		t.Fatalf("NotReady pod must escalate to critical; got %+v", got)
+	}
+	if !strings.Contains(got[0].Message, "escalated: pod NotReady") {
+		t.Errorf("escalation reason missing; got %q", got[0].Message)
+	}
+}
+
+// A restart loop (restartCount past threshold) escalates even if the pod
+// briefly reports ready between restarts.
+func TestLogPatternMatcher_ProbeFailed_RestartLoop_Escalates(t *testing.T) {
+	src := &memSourceDD{byResource: map[string][]unstructured.Unstructured{
+		"events": {makeEvent("Pod", "data", "zk-1", livenessFailMsg)},
+		"pods":   {makePodStatus("data", "zk-1", true, 4)},
+	}}
+	got := LogPatternMatcher{}.Run(context.Background(), src)
+	if len(got) != 1 || got[0].Severity != "critical" {
+		t.Fatalf("restart loop must escalate; got %+v", got)
+	}
+	if !strings.Contains(got[0].Message, "restart-looping") {
+		t.Errorf("escalation reason missing; got %q", got[0].Message)
+	}
+}
+
+// A persistently flapping probe (recurrence past threshold) escalates on the
+// recurrence signal alone — even without a readable Pod.
+func TestLogPatternMatcher_ProbeFailed_Recurring_Escalates(t *testing.T) {
+	src := &memSourceDD{byResource: map[string][]unstructured.Unstructured{
+		"events": {makeEventCount("Pod", "data", "zk-2", livenessFailMsg, 9)},
+		// no pod fixture — recurrence alone must escalate
+	}}
+	got := LogPatternMatcher{}.Run(context.Background(), src)
+	if len(got) != 1 || got[0].Severity != "critical" {
+		t.Fatalf("recurring probe failure must escalate; got %+v", got)
+	}
+	if !strings.Contains(got[0].Message, "escalated: recurring") {
+		t.Errorf("escalation reason missing; got %q", got[0].Message)
+	}
+}
+
+// When the live Pod can't be read and recurrence is low, do NOT over-escalate.
+func TestLogPatternMatcher_ProbeFailed_NoPod_LowRecurrence_StaysWarning(t *testing.T) {
+	src := &memSourceDD{byResource: map[string][]unstructured.Unstructured{
+		"events": {makeEvent("Pod", "data", "zk-3", livenessFailMsg)},
+	}}
+	got := LogPatternMatcher{}.Run(context.Background(), src)
+	if len(got) != 1 || got[0].Severity != "warning" {
+		t.Fatalf("unreadable pod + low recurrence must stay warning; got %+v", got)
 	}
 }
 
