@@ -46,6 +46,13 @@ type logPattern struct {
 	re       *regexp.Regexp
 	severity string
 	remed    string
+	// escalate marks a warning pattern that is promoted to critical when the
+	// workload is GENUINELY unhealthy rather than a transient, self-healed
+	// blip. Only ProbeFailed uses it: a liveness probe that flaps once and
+	// recovers is advisory (Kubernetes' own restart already remediated it),
+	// but one that keeps the pod NotReady, drives a restart loop, or recurs
+	// many times in the window needs a human. See escalatedSeverity.
+	escalate bool
 }
 
 // patterns are the canonical, low-false-positive matchers. Anchoring is
@@ -73,6 +80,7 @@ var logPatterns = []logPattern{
 		label:    "ProbeFailed",
 		re:       regexp.MustCompile(`(?i)(Liveness probe failed|Readiness probe failed|Startup probe failed)`),
 		severity: "warning",
+		escalate: true,
 		remed:    "Verify the probe URL/port is correct + the workload's startup is fast enough: kubectl describe pod <pod>",
 	},
 	{
@@ -100,8 +108,14 @@ func (a LogPatternMatcher) Run(ctx context.Context, src snapshot.Source) []Diagn
 		return nil
 	}
 	type key struct{ subject, label string }
-	seen := make(map[key]struct{})
-	var out []Diagnostic
+	type agg struct {
+		invKind, invNS, invName, subject string
+		pat                              logPattern
+		occurrences                      int    // sum of event aggregation counts
+		sampleMsg                        string // first matching message (stable)
+	}
+	aggs := make(map[key]*agg)
+	var order []key // preserve first-seen order for deterministic output
 	for i := range events.Items {
 		e := &events.Items[i]
 		msg, _, _ := unstructured.NestedString(e.Object, "message")
@@ -115,27 +129,127 @@ func (a LogPatternMatcher) Run(ctx context.Context, src snapshot.Source) []Diagn
 			continue
 		}
 		subject := invKind + "/" + invNS + "/" + invName
-		for _, p := range logPatterns {
+		occ := eventOccurrences(e)
+		for idx := range logPatterns {
+			p := logPatterns[idx]
 			if !p.re.MatchString(msg) {
 				continue
 			}
 			k := key{subject: subject, label: p.label}
-			if _, dup := seen[k]; dup {
+			if a, ok := aggs[k]; ok {
+				a.occurrences += occ // dedup per (object,label) but COUNT recurrence
 				continue
 			}
-			seen[k] = struct{}{}
-			out = append(out, Diagnostic{
-				Source:   "LogPatternMatcher." + p.label,
-				Subject:  subject,
-				Severity: p.severity,
-				Message: fmt.Sprintf(
-					"%s event on %s — matched pattern %s: %s",
-					invKind, subject, p.label, truncateLogMsg(msg, 220)),
-				Remediation: p.remed,
-			})
+			aggs[k] = &agg{invKind, invNS, invName, subject, p, occ, msg}
+			order = append(order, k)
 		}
 	}
+
+	out := make([]Diagnostic, 0, len(order))
+	for _, k := range order {
+		a := aggs[k]
+		severity := a.pat.severity
+		reason := ""
+		if a.pat.escalate {
+			severity, reason = escalatedSeverity(ctx, src, a.invKind, a.invNS, a.invName, a.occurrences, a.pat.severity)
+		}
+		// The escalation reason is appended to the message as a STABLE marker
+		// (a boolean state, never the fluctuating exact count) so it doesn't
+		// churn the cross-cycle dedup fingerprint — only the genuine
+		// warning→critical transition re-alerts, which is intended.
+		suffix := ""
+		if reason != "" {
+			suffix = " — escalated: " + reason
+		}
+		out = append(out, Diagnostic{
+			Source:   "LogPatternMatcher." + a.pat.label,
+			Subject:  a.subject,
+			Severity: severity,
+			Message: fmt.Sprintf(
+				"%s event on %s — matched pattern %s: %s%s",
+				a.invKind, a.subject, a.pat.label, truncateLogMsg(a.sampleMsg, 220), suffix),
+			Remediation: a.pat.remed,
+		})
+	}
 	return out
+}
+
+// Escalation thresholds for self-healing patterns (ProbeFailed).
+const (
+	// probeRecurrenceThreshold: matching events in the window beyond which a
+	// probe failure is treated as persistent (flapping), not a one-off blip.
+	probeRecurrenceThreshold = 5
+	// probeRestartThreshold: container restart count indicating a restart loop.
+	probeRestartThreshold = 3
+)
+
+// eventOccurrences reads an Event's aggregation count (.count, then
+// .series.count), defaulting to 1 when absent. Kubelets that aggregate repeats
+// report count>1; those that emit a distinct Event per occurrence are summed by
+// the caller across the matching events.
+func eventOccurrences(e *unstructured.Unstructured) int {
+	if c, ok, _ := unstructured.NestedInt64(e.Object, "count"); ok && c > 0 {
+		return int(c)
+	}
+	if c, ok, _ := unstructured.NestedInt64(e.Object, "series", "count"); ok && c > 0 {
+		return int(c)
+	}
+	return 1
+}
+
+// escalatedSeverity promotes base (warning) to critical when the workload is
+// genuinely unhealthy rather than recovered, and returns a short STABLE reason
+// for the message. A one-off probe blip on a now-Ready pod keeps base severity
+// (reason ""). Escalates when: the failure recurs past the threshold, OR the
+// live Pod is NotReady, OR its restart count indicates a loop. When the live
+// Pod can't be read, it does NOT over-escalate (returns base) — recurrence
+// alone still escalates.
+func escalatedSeverity(ctx context.Context, src snapshot.Source, invKind, ns, name string, occurrences int, base string) (severity, reason string) {
+	if occurrences >= probeRecurrenceThreshold {
+		return "critical", "recurring"
+	}
+	if invKind != "Pod" || ns == "" || name == "" {
+		return base, ""
+	}
+	pod, err := src.Get(ctx, snapshot.GVRPod, ns, name)
+	if err != nil || pod == nil {
+		return base, "" // can't confirm live state → don't over-escalate
+	}
+	notReady, maxRestarts := podHealthSignals(pod)
+	switch {
+	case notReady:
+		return "critical", "pod NotReady"
+	case maxRestarts >= probeRestartThreshold:
+		return "critical", "restart-looping"
+	}
+	return base, ""
+}
+
+// podHealthSignals reports whether any container is NOT ready and the maximum
+// restartCount across containers. A pod with no containerStatuses yet returns
+// (false, 0) so a not-yet-scheduled pod isn't mistaken for unhealthy.
+func podHealthSignals(pod *unstructured.Unstructured) (notReady bool, maxRestarts int) {
+	css, _, _ := unstructured.NestedSlice(pod.Object, "status", "containerStatuses")
+	for _, raw := range css {
+		cs, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		if ready, _ := cs["ready"].(bool); !ready {
+			notReady = true
+		}
+		switch rc := cs["restartCount"].(type) {
+		case int64:
+			if int(rc) > maxRestarts {
+				maxRestarts = int(rc)
+			}
+		case float64:
+			if int(rc) > maxRestarts {
+				maxRestarts = int(rc)
+			}
+		}
+	}
+	return notReady, maxRestarts
 }
 
 // truncateLogMsg returns msg with a soft cap at n runes — long stack
